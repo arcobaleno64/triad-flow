@@ -49,6 +49,17 @@ npm run review
 
 ---
 
+## 30-Second Engineering ROI Comparison
+
+| Dimension | Single Model (`claude --review`) | Static Linters (Sonar / ESLint) | **Triad-Flow Closed-Loop** |
+|---|---|---|---|
+| **Macro Call-Chain** | Blind to distant caller regressions (>10 files) | AST-only, zero architectural comprehension | **Gemini 2M Context Radar**: Scans 50+ callers and CI/CD drift |
+| **Deep Concurrency** | Glances over complex state-machine races | Cannot simulate multi-thread runtime interleaving | **OpenAI o3/Codex CoT**: Generates executable counter-examples |
+| **Token Efficiency** | Flat high token cost on all diffs | Zero token, but high false alarms & no fixes | **Scale-Adaptive Graph**: 80% small PRs stay single-agent (0 overhead) |
+| **Closed-Loop Fix** | Verbal suggestions requiring human edits | Reports errors only without auto-healing | **OODA Loop Controller**: Generates verified patches & SARIF 2.1.0 |
+
+---
+
 ## License
 
 Apache-2.0
