@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/banner.jpg" alt="Triad-Flow Banner" width="800">
+</p>
+
 # Triad-Flow ⚡
 
 > **Adaptive Multi-Agent Closed-Loop Control Architecture**  

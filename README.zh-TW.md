@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/banner.jpg" alt="Triad-Flow Banner" width="800">
+</p>
+
 # Triad-Flow ⚡（繁體中文操作手冊）
 
 > **自適應多代理人閉環控制架構**  
