@@ -10,7 +10,7 @@ test("redactSecrets masks API keys and private keys", () => {
 });
 
 test("isPathSafe blocks path traversal outside workspace root", () => {
-  const root = "C:/Users/arcobaleno/Documents/Code/council-forge-2";
+  const root = "C:/Users/arcobaleno/Documents/Code/Triad-Flow";
   assert.equal(isPathSafe("src/app.ts", root), true);
   assert.equal(isPathSafe("../../../Windows/System32", root), false);
 });

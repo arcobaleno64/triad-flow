@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Council-Forge 2.0 CLI Entry Point
+ * Triad-Flow CLI Entry Point
  */
 
 import { evaluateDiffScale } from "./core/router.mjs";
@@ -12,7 +12,7 @@ const command = args[0] || "doctor";
 
 function printBanner() {
   console.log("\n=======================================================");
-  console.log("  Council-Forge 2.0 • Adaptive Multi-Agent Closed Loop");
+  console.log("  Triad-Flow • Adaptive Multi-Agent Closed Loop");
   console.log("=======================================================\n");
 }
 
@@ -22,13 +22,13 @@ switch (command) {
     console.log("🩺 Running Environment Doctor:");
     console.log(`  ✔ Node.js Runtime: ${process.version}`);
     console.log("  ✔ Architecture Triad: Graph + Loop + Harness Loaded");
-    console.log("  ✔ Ready for Claude Code & Multi-Agent Dispatch\n");
+    console.log("  ✔ Tri-Agent Matrix: Claude + Gemini + Codex Configured\n");
     break;
   }
 
   case "review": {
     printBanner();
-    console.log("🔍 Simulating Adaptive Multi-Agent Review...");
+    console.log("🔍 Simulating Adaptive Multi-Agent Review (Triad-Flow)...");
     const sampleFiles = [
       { path: "src/auth/jwt.ts", additions: 45, deletions: 12 },
       { path: "src/utils/calc.ts", additions: 10, deletions: 2 }
@@ -50,7 +50,7 @@ switch (command) {
   }
 
   default: {
-    console.log(`Usage: council-forge [doctor | review | gate]`);
+    console.log(`Usage: triad-flow [doctor | review | gate]`);
     process.exit(1);
   }
 }

@@ -1,11 +1,11 @@
 {
-  "name": "council-forge-2",
+  "name": "triad-flow",
   "version": "2.0.0",
-  "description": "Adaptive Multi-Agent Closed-Loop Control Architecture (Graph + Loop + Harness Triad)",
+  "description": "Triad-Flow: Adaptive Multi-Agent Closed-Loop Control Architecture (Graph + Loop + Harness Triad)",
   "type": "module",
   "main": "src/cli.mjs",
   "bin": {
-    "council-forge": "src/cli.mjs"
+    "triad-flow": "src/cli.mjs"
   },
   "scripts": {
     "test": "node --test tests/*.test.mjs",
@@ -18,7 +18,8 @@
     "adversarial-review",
     "harness-engineering",
     "graph-engineering",
-    "ai-safety"
+    "ai-safety",
+    "triad-flow"
   ],
   "author": "arcobaleno64",
   "license": "Apache-2.0",

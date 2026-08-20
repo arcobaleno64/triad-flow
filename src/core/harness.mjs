@@ -62,9 +62,9 @@ export function formatSarifReport(findings = [], metadata = {}) {
       {
         tool: {
           driver: {
-            name: "Council-Forge 2.0 Adversarial Sentry",
+            name: "Triad-Flow Sentry",
             version: "2.0.0",
-            informationUri: "https://github.com/arcobaleno64/council-forge-2"
+            informationUri: "https://github.com/arcobaleno64/triad-flow"
           }
         },
         results: findings.map(f => ({
