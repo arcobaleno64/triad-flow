@@ -1,0 +1,28 @@
+{
+  "name": "council-forge-2",
+  "version": "2.0.0",
+  "description": "Adaptive Multi-Agent Closed-Loop Control Architecture (Graph + Loop + Harness Triad)",
+  "type": "module",
+  "main": "src/cli.mjs",
+  "bin": {
+    "council-forge": "src/cli.mjs"
+  },
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "review": "node src/cli.mjs review",
+    "doctor": "node src/cli.mjs doctor"
+  },
+  "keywords": [
+    "multi-agent",
+    "closed-loop",
+    "adversarial-review",
+    "harness-engineering",
+    "graph-engineering",
+    "ai-safety"
+  ],
+  "author": "arcobaleno64",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
