@@ -19,7 +19,9 @@
     "doctor": "node bin/triad-flow.mjs doctor",
     "demo": "node bin/triad-flow.mjs demo",
     "review": "node bin/triad-flow.mjs review",
-    "factory": "node bin/triad-flow.mjs factory"
+    "factory": "node bin/triad-flow.mjs factory",
+    "bump-version": "node scripts/bump-version.mjs",
+    "check-version": "node scripts/bump-version.mjs --check"
   },
   "keywords": [
     "multi-agent",
@@ -31,6 +33,14 @@
   ],
   "author": "arcobaleno64",
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/arcobaleno64/triad-flow.git"
+  },
+  "homepage": "https://github.com/arcobaleno64/triad-flow#readme",
+  "bugs": {
+    "url": "https://github.com/arcobaleno64/triad-flow/issues"
+  },
   "publishConfig": {
     "access": "public"
   },
