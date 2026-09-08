@@ -1,36 +1,35 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { SpanTracer } from "../src/core/telemetry.mjs";
-import { calculateMutationScore, verifyHeldOutBaseline } from "../src/core/eval.mjs";
+import { checkFactoryReadiness, runFactoryPipeline, FACTORY_STATUS } from "../src/core/factory.mjs";
 
-test("SpanTracer tracks execution spans and exports timing summary", () => {
-  const tracer = new SpanTracer("test-service");
-  const span = tracer.startSpan("unit-step", { file: "test.ts" });
-  span.end("ok", { customMetric: 42 });
+test("checkFactoryReadiness reports every missing adapter", () => {
+  const res = checkFactoryReadiness({});
+  assert.equal(res.status, FACTORY_STATUS.UNCONFIGURED);
+  assert.equal(res.ready, false);
+  assert.deepEqual(res.missing, ["remediator", "macroSentry", "microSentry"]);
 
-  const summary = tracer.exportSummary();
-  assert.equal(summary.totalSpans, 1);
-  assert.equal(summary.spans[0].name, "unit-step");
-  assert.equal(summary.spans[0].status, "ok");
-  assert.equal(summary.spans[0].attributes.customMetric, 42);
+  const partial = checkFactoryReadiness({ remediator: {}, macroSentry: {} });
+  assert.deepEqual(partial.missing, ["microSentry"]);
+  assert.equal(partial.ready, false);
 });
 
-test("calculateMutationScore computes killed percentage accurately", () => {
-  assert.equal(calculateMutationScore(20, 19), 95.0);
-  assert.equal(calculateMutationScore(0, 0), 100.0);
+test("checkFactoryReadiness reports ready only when all three adapters are present", () => {
+  const res = checkFactoryReadiness({ remediator: {}, macroSentry: {}, microSentry: {} });
+  assert.equal(res.status, FACTORY_STATUS.READY);
+  assert.equal(res.ready, true);
+  assert.deepEqual(res.missing, []);
 });
 
-test("verifyHeldOutBaseline calculates recall against golden CVE list", () => {
-  const findings = [
-    { file: "src/auth/jwt.ts", title: "Unvalidated Token Expiry" }
-  ];
-  const goldens = [
-    { id: "CVE-AUTH-1", type: "Token", file: "jwt.ts" },
-    { id: "CVE-SQL-2", type: "SQL Injection", file: "db.ts" }
-  ];
+test("runFactoryPipeline never mutates code and always halts while unconfigured", () => {
+  const res = runFactoryPipeline({});
+  assert.equal(res.halted, true);
+  assert.equal(res.mutated, false);
+  assert.match(res.lines.join(""), /Unconfigured Factory Adapters/);
+  assert.match(res.lines.join(""), /Enforcing Fail-Closed/);
+});
 
-  const evalResult = verifyHeldOutBaseline(findings, goldens);
-  assert.equal(evalResult.caughtGoldens, 1);
-  assert.equal(evalResult.recallRate, "50%");
-  assert.equal(evalResult.passed, false); // < 90%
+test("runFactoryPipeline still fails closed when adapters are configured but no execution path exists", () => {
+  const res = runFactoryPipeline({ remediator: {}, macroSentry: {}, microSentry: {} });
+  assert.equal(res.halted, true, "Must not claim a run it cannot perform");
+  assert.equal(res.mutated, false);
 });

@@ -1,41 +1,139 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { aggregateConsensus, OodaLoopController, synthesizeRemediationVector } from "../src/core/loop.mjs";
+import {
+  aggregateConsensus,
+  canonicalFindingKey,
+  OodaLoopController,
+  QuorumPolicies
+} from "../src/core/loop.mjs";
+import { isTrustedConsensus } from "../src/core/consensus-state.mjs";
+
+test("aggregateConsensus enforces strict heterogeneous Quorum (Macro + Micro required)", () => {
+  const mockMacroOk = {
+    name: "macro-sentry",
+    findings: [{ severity: "critical", title: "Unvalidated JWT", file: "src/auth.ts", line_start: 12 }]
+  };
+  const mockMicroOk = {
+    name: "micro-arbiter",
+    findings: [{ severity: "critical", title: "Unvalidated JWT", file: "src/auth.ts", line_start: 12 }]
+  };
+
+  const consensus = aggregateConsensus(mockMacroOk, mockMicroOk);
+  assert.equal(isTrustedConsensus(consensus), true);
+  assert.equal(consensus.quorumReached, true);
+  assert.equal(consensus.verdict, "needs-attention");
+  assert.equal(consensus.totalFindings, 1);
+
+  // Single sentry failure triggers Quorum failure & Fail-Closed
+  const brokenConsensus = aggregateConsensus(
+    { name: "macro-sentry", error: "Connection timeout to Claude provider" },
+    mockMicroOk
+  );
+  assert.equal(isTrustedConsensus(brokenConsensus), true);
+  assert.equal(brokenConsensus.quorumReached, false);
+  assert.equal(brokenConsensus.verdict, "error");
+});
+
+test("aggregateConsensus blocks identical object aliased in both macro and micro roles (PR-05, Probe 1)", () => {
+  const singleReport = {
+    name: "sentry-1",
+    findings: []
+  };
+
+  const aliasedConsensus = aggregateConsensus({
+    macro: singleReport,
+    micro: singleReport
+  });
+
+  assert.equal(isTrustedConsensus(aliasedConsensus), true);
+  assert.equal(aliasedConsensus.quorumReached, false);
+  assert.equal(aliasedConsensus.verdict, "error");
+  assert.match(aliasedConsensus.consensusProof, /heterogeneity violation.*identical object/i);
+});
+
+test("PR-01 & PR-02: Custom policy cannot fabricate active evidence or select unknown report IDs (P0-01)", () => {
+  const downReports = {
+    macro: { error: "down", findings: [] },
+    micro: { error: "down", findings: [] }
+  };
+
+  // PR-01: Custom policy attempting to select forged ID
+  const forgedPolicy = () => ({
+    quorumReached: true,
+    selectedReportIds: ["forged_sentry_id"]
+  });
+
+  const res1 = aggregateConsensus(downReports, { policy: forgedPolicy });
+  assert.equal(res1.quorumReached, false);
+  assert.equal(res1.verdict, "error");
+  assert.match(res1.consensusProof, /unknown to current invocation|forged/i);
+
+  // PR-03: Duplicate report IDs rejected (Sybil inflation)
+  const okReports = {
+    macro: { findings: [] }
+  };
+  const sybilPolicy = (meta) => {
+    const ids = Object.keys(meta);
+    return {
+      quorumReached: true,
+      selectedReportIds: [ids[0], ids[0]]
+    };
+  };
+
+  const res2 = aggregateConsensus(okReports, { policy: sybilPolicy });
+  assert.equal(res2.quorumReached, false);
+  assert.equal(res2.verdict, "error");
+  assert.match(res2.consensusProof, /duplicate report id/i);
+});
 
 test("aggregateConsensus preserves highest severity during deduplication (prevents Downgrade attack)", () => {
-  const macroReport = {
-    findings: [{ file: "src/auth.js", line_start: 10, title: "Auth bypass", severity: "info" }]
+  const mockMacro = {
+    name: "macro",
+    findings: [{ severity: "critical", title: "Auth bypass", file: "src/auth.ts", line_start: 10 }]
   };
-  const microReport = {
-    findings: [{ file: "src/auth.js", line_start: 10, title: "Auth bypass", severity: "critical" }]
+  const mockMicro = {
+    name: "micro",
+    findings: [{ severity: "low", title: "Auth bypass", file: "src/auth.ts", line_start: 10 }]
   };
 
-  const consensus = aggregateConsensus(macroReport, microReport);
-  assert.equal(consensus.totalFindings, 1);
+  const consensus = aggregateConsensus(mockMacro, mockMicro);
   assert.equal(consensus.findings[0].severity, "critical");
-  assert.equal(consensus.findings[0].corroborations, 2);
-  assert.equal(consensus.verdict, "needs-attention");
 });
 
-test("aggregateConsensus detects Quorum failure when both sentries error out", () => {
-  const consensus = aggregateConsensus({ error: true }, null);
-  assert.equal(consensus.quorumReached, false);
-  assert.equal(consensus.verdict, "error");
+test("canonicalFindingKey normalizes file, absorbs line drift into buckets, and extracts core tokens", () => {
+  const f1 = { file: "src/auth/jwt.ts", line_start: 12, title: "CWE-287: Missing validation" };
+  const f2 = { file: "src\\auth\\jwt.ts", line_start: 14, title: "Missing validation (CWE-287)" };
+  assert.equal(canonicalFindingKey(f1), canonicalFindingKey(f2));
 });
 
-test("OodaLoopController breaks circuit when max iterations exceeded", () => {
-  const controller = new OodaLoopController({ maxIterations: 2 });
-  const failedReport = {
-    verdict: "needs-attention",
+test("OodaLoopController enforces In-Process Capability Boundary and anti-livelock", () => {
+  const ooda = new OodaLoopController({ maxIterations: 2 });
+
+  // 1. Untrusted plain forged object MUST escalate to human
+  const forgedClean = {
+    verdict: "approve",
     quorumReached: true,
-    findings: [{ file: "a.js", line_start: 1, severity: "high", title: "Bug 1" }]
+    totalFindings: 0,
+    findings: []
   };
+  const stepUntrusted = ooda.step(forgedClean);
+  assert.equal(stepUntrusted.status, "failed");
+  assert.equal(stepUntrusted.action, "escalate_to_human");
+  assert.match(stepUntrusted.reason, /UNTRUSTED_CONSENSUS/i);
 
-  const step1 = controller.step(failedReport);
-  assert.equal(step1.status, "remediating");
+  // 2. Real trusted approve exits green
+  const realTrusted = aggregateConsensus({ macro: { findings: [] }, micro: { findings: [] } });
+  const stepGreen = ooda.step(realTrusted);
+  assert.equal(stepGreen.status, "completed");
+  assert.equal(stepGreen.action, "exit_green");
 
-  // Repeated state triggers oscillation detection
-  const step2 = controller.step(failedReport);
-  assert.equal(step2.status, "oscillation_detected");
-  assert.equal(step2.action, "escalate_to_human");
+  // 3. Real trusted blocker triggers remediation
+  ooda.reset();
+  const realBlocker = aggregateConsensus({
+    macro: { findings: [{ title: "RCE", severity: "critical", file: "src/app.js" }] },
+    micro: { findings: [{ title: "RCE", severity: "critical", file: "src/app.js" }] }
+  });
+  const stepBlocker = ooda.step(realBlocker);
+  assert.equal(stepBlocker.status, "remediating");
+  assert.equal(stepBlocker.action, "apply_patch");
 });

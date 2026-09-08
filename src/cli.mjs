@@ -1,167 +1,154 @@
-#!/usr/bin/env node
 /**
- * Triad-Flow CLI Entry Point
- * Autonomous Software Factory Engine
+ * Triad-Flow CLI: Command Routing, Capability Doctor, Simulation Demo & Real Review
  */
 
-import { execSync } from "node:child_process";
-import { evaluateDiffScale } from "./core/router.mjs";
-import { evaluateGateDecision, redactSecrets, formatSarifReport } from "./core/harness.mjs";
-import { aggregateConsensus, synthesizeRemediationVector, OodaLoopController } from "./core/loop.mjs";
 import { SpanTracer } from "./core/telemetry.mjs";
-import { calculateMutationScore, verifyHeldOutBaseline } from "./core/eval.mjs";
+import { evaluateDiffScale } from "./core/graph-router.mjs";
+import { aggregateConsensus } from "./core/loop.mjs";
+import { evaluateGateDecision, formatSarifReport } from "./core/harness.mjs";
+import { collectGitWorkingState } from "./core/git-collector.mjs";
+import { runFactoryPipeline } from "./core/factory.mjs";
 
-const args = process.argv.slice(2);
-const command = args[0] || "doctor";
+export const EXIT_CODES = {
+  SUCCESS: 0,
+  GATE_BLOCKED: 1,
+  USAGE_ERROR: 2,
+  SYSTEM_FAILURE: 3
+};
 
-function printBanner(title = "Triad-Flow • Adaptive Multi-Agent Closed Loop") {
-  console.log("\n=======================================================");
-  console.log(`  ${title}`);
-  console.log("=======================================================\n");
+function printBanner(io, title) {
+  io.stderr.write("\n=======================================================\n");
+  io.stderr.write(`  ${title}\n`);
+  io.stderr.write("=======================================================\n\n");
 }
 
-function getStagedGitDiff() {
-  try {
-    const raw = execSync("git diff --cached --numstat", { encoding: "utf-8" });
-    if (!raw.trim()) {
-      const working = execSync("git diff --numstat", { encoding: "utf-8" });
-      if (!working.trim()) return [];
-      return parseNumstat(working);
+export async function runCli(argv = process.argv.slice(2), io = { stdout: process.stdout, stderr: process.stderr }, options = {}) {
+  const command = argv[0] || "doctor";
+  const formatArg = argv.find(a => a.startsWith("--format="))?.split("=")[1] || "text";
+
+  switch (command) {
+    case "doctor": {
+      printBanner(io, "Triad-Flow • Environment & Capability Doctor");
+      io.stderr.write("🩺 Probing Environment Capabilities:\n");
+      io.stderr.write(`  ✔ Node.js Runtime: ${process.version}\n`);
+
+      const gitState = typeof options.getGitState === "function" ? options.getGitState() : collectGitWorkingState(options.cwd || process.cwd());
+      if (gitState.ok) {
+        io.stderr.write("  ✔ Git Repository: Detected and active\n");
+      } else {
+        io.stderr.write(`  ⚠️ Git Repository: Not detected or unreadable (${gitState.error?.message || "none"})\n`);
+      }
+
+      io.stderr.write("  ✔ Deterministic Safety Core: Loaded (Harness + Loop + Graph)\n");
+
+      const hasAnthropic = Boolean(process.env.ANTHROPIC_API_KEY);
+      const hasGemini = Boolean(process.env.GEMINI_API_KEY);
+      const hasOpenAI = Boolean(process.env.OPENAI_API_KEY);
+
+      io.stderr.write(`  ℹ Anthropic Key: ${hasAnthropic ? "Configured" : "Unset (Real provider execution requires adapter)"}\n`);
+      io.stderr.write(`  ℹ Google Gemini Key: ${hasGemini ? "Configured" : "Unset (Real provider execution requires adapter)"}\n`);
+      io.stderr.write(`  ℹ OpenAI Codex Key: ${hasOpenAI ? "Configured" : "Unset (Real provider execution requires adapter)"}\n`);
+      io.stderr.write(`  ℹ Provider Integration Status: Standalone Core Ready (External adapters require explicit configuration)\n\n`);
+
+      return EXIT_CODES.SUCCESS;
     }
-    return parseNumstat(raw);
-  } catch (e) {
-    return [];
-  }
-}
 
-function parseNumstat(raw) {
-  return raw.trim().split("\n").map(line => {
-    const [additions, deletions, path] = line.split(/\s+/);
-    return {
-      path,
-      additions: parseInt(additions, 10) || 0,
-      deletions: parseInt(deletions, 10) || 0
-    };
-  });
-}
+    case "demo": {
+      printBanner(io, "Triad-Flow • Deterministic Simulation [DEMO / SIMULATION MODE]");
+      const tracer = new SpanTracer("triad-flow-demo");
+      const rootSpan = tracer.startSpan("simulation-run");
 
-switch (command) {
-  case "doctor": {
-    printBanner();
-    console.log("🩺 Running Environment Doctor:");
-    console.log(`  ✔ Node.js Runtime: ${process.version}`);
-    
-    try {
-      execSync("git rev-parse --is-inside-work-tree", { stdio: "ignore" });
-      console.log("  ✔ Git Repository: Detected and active");
-    } catch {
-      console.log("  ⚠️ Git Repository: Not inside a git repository");
-    }
-
-    const hasAnthropic = Boolean(process.env.ANTHROPIC_API_KEY);
-    const hasGemini = Boolean(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY);
-    const hasOpenAI = Boolean(process.env.OPENAI_API_KEY);
-
-    console.log(`  ${hasAnthropic ? "✔" : "ℹ"} Anthropic Key: ${hasAnthropic ? "Found" : "Not set (uses CLI session context)"}`);
-    console.log(`  ${hasGemini ? "✔" : "ℹ"} Google Gemini Key: ${hasGemini ? "Found" : "Not set (uses local AGY OAuth / companion)"}`);
-    console.log(`  ${hasOpenAI ? "✔" : "ℹ"} OpenAI Codex Key: ${hasOpenAI ? "Found" : "Not set (uses companion / codex CLI)"}`);
-    console.log("  ✔ Autonomous Factory Core: Precision-Engineered & Ready\n");
-    break;
-  }
-
-  case "factory":
-  case "review": {
-    const tracer = new SpanTracer("autonomous-factory");
-    const rootSpan = tracer.startSpan("autonomous-cycle");
-
-    printBanner("Triad-Flow • Autonomous Software Factory Pipeline");
-    console.log(`🚀 [Trace ID: ${tracer.traceId}] Starting Factory Cycle...\n`);
-
-    // 1. Guardrail & Sandbox Pre-flight
-    const s1 = tracer.startSpan("guardrail-preflight");
-    console.log("1️⃣  [Guardrail & Harness] Running pre-flight security sanitization...");
-    const sampleEnv = "CONFIG_KEY=AIzaSyD4_demo_key_123456789012345";
-    const sanitized = redactSecrets(sampleEnv);
-    console.log(`  ✔ Secrets Masked: ${sanitized.includes("[REDACTED_SECRET]") ? "PASSED" : "FAILED"}`);
-    s1.end("ok");
-
-    // 2. Graph Routing
-    const s2 = tracer.startSpan("graph-scale-routing");
-    console.log("\n2️⃣  [Graph Engineering] Evaluating diff scale & risk topology...");
-    let files = getStagedGitDiff();
-    if (files.length === 0) {
-      files = [
+      io.stderr.write("1️⃣  [Simulation] Evaluating sample Diff topology...\n");
+      const sampleFiles = [
         { path: "src/auth/jwt.ts", additions: 45, deletions: 12 },
         { path: "src/utils/calc.ts", additions: 10, deletions: 2 }
       ];
-    }
-    const plan = evaluateDiffScale(files);
-    console.log(`  ▶ Active Files: ${plan.totalFiles} | Total Lines: ${plan.totalLines}`);
-    console.log(`  ▶ Routing Decision: Mode = ${plan.mode.toUpperCase()} (${plan.reason})`);
-    if (plan.subagents.length > 0) {
-      console.log(`  ⚡ Spawned Subagents: ${plan.subagents.join(", ")}`);
-    }
-    s2.end("ok", { mode: plan.mode, subagents: plan.subagents.length });
+      const plan = evaluateDiffScale(sampleFiles);
+      io.stderr.write(`  ▶ Simulated Mode: ${plan.mode.toUpperCase()} (${plan.reason})\n`);
+      io.stderr.write(`  ⚡ Simulated Swarm: ${plan.subagents.join(", ")}\n\n`);
 
-    // 3. Tri-Agent Consensus
-    const s3 = tracer.startSpan("tri-agent-consensus");
-    console.log("\n3️⃣  [Heterogeneous Consensus] Executing Gemini Macro Radar + OpenAI Micro Arbiter...");
-    const mockMacro = {
-      findings: [
-        { severity: "critical", title: "Unvalidated Token Signature", file: files[0]?.path || "src/auth/jwt.ts", line_start: 34, body: "Token decoded without signature verification." }
-      ]
-    };
-    const mockMicro = {
-      findings: [
-        { severity: "critical", title: "Unvalidated Token Signature", file: files[0]?.path || "src/auth/jwt.ts", line_start: 34, recommendation: "Use jwt.verify(token, secret) with HS256 algorithm." }
-      ]
-    };
-    const consensus = aggregateConsensus(mockMacro, mockMicro);
-    console.log(`  ★ Consensus Verdict: ${consensus.verdict.toUpperCase()}`);
-    console.log(`  ✔ Severity Escalation Merge: Preserved ${consensus.findings[0]?.severity.toUpperCase()} finding`);
-    s3.end("ok", { verdict: consensus.verdict, findingsCount: consensus.totalFindings });
+      io.stderr.write("2️⃣  [Simulation] Synthesizing mock multi-sentry findings...\n");
+      const mockMacro = {
+        name: "macro-sentry",
+        findings: [
+          { severity: "critical", title: "Unvalidated Token Signature", file: "src/auth/jwt.ts", line_start: 34, body: "Token decoded without signature verification." }
+        ]
+      };
+      const mockMicro = {
+        name: "micro-arbiter",
+        findings: [
+          { severity: "critical", title: "Unvalidated Token Signature", file: "src/auth/jwt.ts", line_start: 34, recommendation: "Use jwt.verify(token, secret)" }
+        ]
+      };
 
-    // 4. Loop Controller & OODA Auto-Remediation
-    const s4 = tracer.startSpan("ooda-loop-remediation");
-    console.log("\n4️⃣  [Loop Engineering] Activating OODA Controller & Auto-Remediation...");
-    const loopController = new OodaLoopController({ maxIterations: 3 });
-    const step1 = loopController.step(consensus);
-    console.log(`  ▶ OODA State: ${step1.status.toUpperCase()} (Iteration ${step1.iteration}/3)`);
-    
-    if (step1.status === "remediating") {
-      console.log(`  🔄 Injected Remediation Vector to Master Driver (Claude):`);
-      console.log(`    + Replace jwt.decode() with jwt.verify() in ${files[0]?.path}`);
-      console.log(`    ✔ Master Driver applied patch and re-submitted.`);
+      const consensus = aggregateConsensus(mockMacro, mockMicro);
+      io.stderr.write(`  ★ Simulated Consensus: ${consensus.verdict.toUpperCase()}\n`);
+
+      const gate = evaluateGateDecision(consensus);
+      io.stderr.write(`  🛡️ Simulated Gate: ${gate.decision.toUpperCase()} - ${gate.reason}\n\n`);
+
+      const sarif = formatSarifReport(consensus.findings);
+      if (formatArg === "sarif") {
+        io.stdout.write(JSON.stringify(sarif, null, 2) + "\n");
+      }
+
+      rootSpan.end("ok");
+      io.stderr.write("ℹ [Simulation Complete] Demo run finished successfully.\n\n");
+      return EXIT_CODES.SUCCESS;
     }
 
-    // 5. Re-Verification & Eval Benchmark Gate
-    const s5 = tracer.startSpan("eval-benchmark-gate");
-    console.log("\n5️⃣  [Eval & Benchmark Engineering] Running Mutation & SARIF Gate...");
-    const cleanConsensus = aggregateConsensus({ findings: [] }, { findings: [] });
-    const finalGate = evaluateGateDecision(cleanConsensus.findings);
-    const mutationScore = calculateMutationScore(25, 24); // 24/25 mutants killed
-    const evalCheck = verifyHeldOutBaseline(consensus.findings, [{ id: "CVE-2026-TOKEN", type: "Token", file: "jwt" }]);
+    case "review": {
+      printBanner(io, "Triad-Flow • Real Scale-Adaptive Review");
+      const gitState = typeof options.getGitState === "function" ? options.getGitState() : collectGitWorkingState(options.cwd || process.cwd());
 
-    console.log(`  ✔ Mutation Score: ${mutationScore}% (Threshold: 85%)`);
-    console.log(`  ✔ Held-Out Recall: ${evalCheck.recallRate} (1/1 Caught)`);
-    console.log(`  ✔ Gate Decision: ${finalGate.decision.toUpperCase()} - ${finalGate.reason}`);
-    
-    const sarif = formatSarifReport(cleanConsensus.findings);
-    console.log(`  ✔ OASIS SARIF 2.1.0: Generated (0 Errors, 0 Blockers)`);
-    s5.end("ok", { mutationScore, gateDecision: finalGate.decision });
+      // Invariant (INV-01): Git inspection failure MUST fail closed as SYSTEM_FAILURE (3)
+      if (!gitState || !gitState.ok) {
+        const errorMsg = gitState?.error?.message || "Failed to inspect Git repository state.";
+        io.stderr.write(`✖ [FATAL SYSTEM FAILURE] Git inspection error: ${errorMsg}\n\n`);
+        return EXIT_CODES.SYSTEM_FAILURE;
+      }
 
-    rootSpan.end("ok");
-    const summary = tracer.exportSummary();
+      const files = gitState.files || [];
 
-    console.log("\n-------------------------------------------------------");
-    console.log(`🔭 [Observability] Pipeline Trace Completed in ${summary.totalDurationMs}ms across ${summary.totalSpans} Spans.`);
-    console.log("-------------------------------------------------------");
-    console.log(`🎉 [Autonomous Factory Result] PR verified and safely merged with zero human intervention!\n`);
-    break;
-  }
+      if (files.length === 0) {
+        io.stderr.write("✔ [No Changes] Working tree and staging area are clean. No files to review (No-op).\n\n");
+        if (formatArg === "sarif") {
+          io.stdout.write(JSON.stringify(formatSarifReport([]), null, 2) + "\n");
+        }
+        return EXIT_CODES.SUCCESS;
+      }
 
-  default: {
-    console.log(`Usage: triad-flow [doctor | review | factory]`);
-    process.exit(1);
+      io.stderr.write(`✔ Captured Real Git Working State: ${files.length} active file(s)\n`);
+      const plan = evaluateDiffScale(files);
+      io.stderr.write(`▶ Scale Routing: Mode = ${plan.mode.toUpperCase()} (${plan.reason})\n`);
+
+      // In standalone CLI without live provider adapters, fail closed on unconfigured sentries
+      const consensus = aggregateConsensus(
+        { error: "No configured macro sentry provider" },
+        { error: "No configured micro sentry provider" }
+      );
+      const gate = evaluateGateDecision(consensus);
+
+      io.stderr.write(`\n★ Consensus Verdict: ${consensus.verdict.toUpperCase()} (${consensus.consensusProof})\n`);
+      io.stderr.write(`🛡️ Gate Decision: ${gate.decision.toUpperCase()} - ${gate.reason}\n\n`);
+
+      if (formatArg === "sarif") {
+        io.stdout.write(JSON.stringify(formatSarifReport(consensus.findings), null, 2) + "\n");
+      }
+
+      return gate.decision === "approve" ? EXIT_CODES.SUCCESS : EXIT_CODES.GATE_BLOCKED;
+    }
+
+    case "factory": {
+      printBanner(io, "Triad-Flow • Autonomous Factory Pipeline");
+      const factoryResult = runFactoryPipeline(options.factoryAdapters || {});
+      for (const line of factoryResult.lines) io.stderr.write(line);
+      return factoryResult.halted ? EXIT_CODES.GATE_BLOCKED : EXIT_CODES.SUCCESS;
+    }
+
+    default: {
+      io.stderr.write(`Usage: triad-flow [doctor | demo | review | factory] [--format=sarif]\n`);
+      return EXIT_CODES.USAGE_ERROR;
+    }
   }
 }

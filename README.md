@@ -5,7 +5,7 @@
 # Triad-Flow ⚡
 
 > **Adaptive Multi-Agent Closed-Loop Control Architecture**  
-> *A lean, high-velocity, zero-bureaucracy agentic workflow for resilient software delivery across Claude, Gemini, and OpenAI Codex.*
+> *A deterministic safety core, scale-adaptive topology routing, and fail-closed consensus gate for multi-model code review and OODA control loops.*
 
 ---
 
@@ -14,34 +14,32 @@
 Triad-Flow replaces prompt-bloated, schema-heavy agent processes with an industrial-grade **Graph + Loop + Harness Engineering Triad**:
 
 1. **🌐 Graph Engineering (拓撲路由)**:
-   - Automatically evaluates Diff complexity and file risk tiers.
+   - Automatically evaluates Diff complexity, lockfile changes, and file risk tiers.
    - Small edits (<50 lines) route to a **Single-Agent Fast Path** (zero token waste).
-   - High-risk security changes or large PRs fan out into **Parallel Subagent Swarms**.
+   - High-risk security changes (including security-sensitive tests) or large PRs fan out into **Parallel Subagent Swarms**.
 2. **🔄 Loop Engineering (控制閉環)**:
-   - Orchestrates multi-model heterogeneous consensus: **Claude (Master Driver)** ➔ **Gemini (Macro Radar)** ➔ **OpenAI Codex (Micro Arbiter)**.
-   - Injects formal counter-examples directly into the prompt to drive **automated self-healing remediation (OODA Loop)** with SHA-256 state-hash livelock prevention.
+   - Heterogeneous review consensus interface: **Claude (Master Driver)** + **Gemini (Macro Radar)** + **OpenAI Codex (Micro Arbiter)** *(Target architecture / pluggable provider adapters)*.
+   - Enforces **Strict Heterogeneous Quorum** (both sentries must be healthy) with Severity Escalation Deduplication.
+   - **OODA Loop Controller Primitive**: Jaccard semantic stagnation & patch cycle circuit breaking *(Remediator synthesis fails closed pending adapter configuration)*.
 3. **🛡️ Harness Engineering (安全夾具)**:
-   - Enforces deterministic security scaffolding: 9-pattern secret redaction, sibling path traversal sandboxing, Quorum-enforced Fail-Closed gates, and OASIS SARIF 2.1.0 compliance.
+   - Enforces deterministic security scaffolding: multi-pattern secret redaction, symlink-aware filesystem traversal sandboxing, Quorum-enforced Fail-Closed gates, and SARIF 2.1.0 report generation.
 
 ---
 
 ## ⚡ Quickstart
 
 ```bash
-# 1. Install dependencies
-npm install
-
-# 2. Run test suite (15 unit tests)
+# 1. Run test suite (including 18+ adversarial regression tests)
 npm test
 
-# 3. Check environment health
+# 2. Check environment & capability health
 npm run doctor
 
-# 4. Run scale-adaptive review
-npm run review
+# 3. Run deterministic local simulation
+npm run demo
 
-# 5. Run end-to-end autonomous software factory pipeline
-node src/cli.mjs factory
+# 4. Run scale-adaptive review on real Git diff
+npm run review
 ```
 
 ---
@@ -61,51 +59,37 @@ node src/cli.mjs factory
    ```bash
    npx triad-flow review
    ```
-3. **(Optional) Install Git Pre-Commit Hook:**
-   ```bash
-   echo "npx triad-flow review" > .git/hooks/pre-commit
-   ```
-
-### B. Brand New Projects (1-Minute Bootstrap)
-
-```bash
-mkdir my-new-project && cd my-new-project
-git init
-# Copy the CLAUDE.md template above and start coding with Claude Code
-claude
-```
 
 ---
 
-## 🤖 Tri-Agent Consensus Matrix
+## 🤖 Tri-Agent Consensus Matrix (Target Architecture)
 
 | Role | Provider / Engine | Superpower | Focus Area |
 |---|---|---|---|
 | **Master Driver** | **Anthropic Claude Code** | Code Generation & OODA Self-Healing | Implementation, Patch synthesis, CLI driver |
-| **Macro Sentry** | **Google Gemini 3.7 / 4** | 2M Context Whole-Repo Radar | Cross-module interface drift, CI/CD skew, call-chain impact |
-| **Micro Arbiter** | **OpenAI Codex / o3-pro** | Deep Test-Time Compute (CoT) | Concurrency race conditions, boundary fuzzing, formal counter-examples |
+| **Macro Sentry** | **Google Gemini** | 2M Context Whole-Repo Radar | Cross-module interface drift, CI/CD skew, call-chain impact |
+| **Micro Arbiter** | **OpenAI Codex / o3** | Deep Test-Time Compute (CoT) | Concurrency race conditions, boundary fuzzing, formal counter-examples |
 
 ---
 
-## 📊 30-Second Engineering ROI Comparison
+## 📊 30-Second Engineering ROI Comparison (Design Matrix)
 
 | Dimension | Single Model (`claude --review`) | Static Linters (Sonar / ESLint) | **Triad-Flow Closed-Loop** |
 |---|---|---|---|
-| **Macro Call-Chain** | Blind to distant caller regressions (>10 files) | AST-only, zero architectural comprehension | **Gemini 2M Context Radar**: Scans 50+ callers and CI/CD drift |
-| **Deep Concurrency** | Glances over complex state-machine races | Cannot simulate multi-thread runtime interleaving | **OpenAI o3/Codex CoT**: Generates executable counter-examples |
-| **Token Efficiency** | Flat high token cost on all diffs | Zero token, but high false alarms & no fixes | **Scale-Adaptive Graph**: 80% small PRs stay single-agent (0 overhead) |
-| **Closed-Loop Fix** | Verbal suggestions requiring human edits | Reports errors only without auto-healing | **OODA Loop Controller**: Generates verified patches & SARIF 2.1.0 |
+| **Macro Call-Chain** | Blind to distant caller regressions (>10 files) | AST-only, zero architectural comprehension | **Gemini 2M Context Radar**: Whole-repo multi-file audit and CI/CD drift analysis *(Planned)* |
+| **Deep Concurrency** | Glances over complex state-machine races | Cannot simulate multi-thread runtime interleaving | **OpenAI o3/Codex CoT**: Deep test-time verification & formal counter-examples *(Planned)* |
+| **Token Efficiency** | Flat high token cost on all diffs | Zero token, but high false alarms & no fixes | **Scale-Adaptive Graph**: Small diffs (<50 lines) route to single-agent fast path (0 overhead) |
+| **Closed-Loop Fix** | Verbal suggestions requiring human edits | Reports errors only without auto-healing | **OODA Loop Controller**: Generates SARIF 2.1.0 & manages remediation stagnation circuit breaking |
 
 ---
 
-## 🛡️ Cybersecurity & AI Safety Compliance
+## 🛡️ Cybersecurity & AI Safety Architecture
 
-- **OASIS SARIF 2.1.0**: Native compliance, seamlessly ingested by GitHub Advanced Security & SonarQube.
-- **OWASP Top 10 for LLM (2025/2026)**:
-  - `LLM01: Prompt Injection` — XML Nonce sandbox isolation & JSON schema constraints.
-  - `LLM02: Sensitive Info Disclosure` — 9-pattern redaction (OpenAI `sk-proj-`, GitHub `github_pat_`, JWT, PEM keys).
-  - `LLM06: Excessive Agency` — `OodaLoopController` 3-iteration livelock circuit breaker.
-- **NIST SSDF (SP 800-218) & OpenSSF**: Zero-trust sibling directory path isolation & Quorum-enforced Fail-Closed gates.
+- **SARIF 2.1.0**: Standardized JSON report generation with deduplicated driver rules and URI-safe artifact locations.
+- **OWASP Top 10 for LLM**:
+  - `LLM02: Sensitive Info Disclosure` — Multi-pattern redaction (Google, OpenAI, Anthropic, GitHub, AWS, JWT, PEM keys).
+  - `LLM06: Excessive Agency` — `OodaLoopController` 3-iteration livelock, Jaccard semantic stagnation detection, and patch cycle circuit breaker.
+- **NIST SSDF (SP 800-218) & OpenSSF**: Physical symlink and sibling path traversal defense with Quorum-enforced Fail-Closed gates.
 - **IEEE 352 / N-Version**: Heterogeneous multi-model consensus defense against Common-Mode Failures.
 
 ---
@@ -114,13 +98,13 @@ claude
 
 | Pillar | Implementation File | Key Mechanism |
 |---|---|---|
-| 🛡️ **1. Guardrail & Harness** | [`src/core/harness.mjs`](src/core/harness.mjs) | 9 Secret patterns, Sibling sandbox, Quorum gate, SARIF 2.1.0 |
-| 🌐 **2. Graph Engineering** | [`src/core/router.mjs`](src/core/router.mjs) | Scale-adaptive routing, test file auto-downgrade (saves 80% tokens) |
-| 🔄 **3. Loop Engineering** | [`src/core/loop.mjs`](src/core/loop.mjs) | Severity Escalation Merge, OODA Controller, SHA-256 state-hash circuit breaker |
-| 🔭 **4. Observability** | [`src/core/telemetry.mjs`](src/core/telemetry.mjs) | Ultra-lean (35 lines) OpenTelemetry distributed trace & span tracking |
-| 🎯 **5. Eval & Benchmark** | [`src/core/eval.mjs`](src/core/eval.mjs) | Mutation score verification & held-out golden CVE recall testing |
-| 🧠 **6. Context Budgeting** | [`src/core/router.mjs`](src/core/router.mjs) | 3-Tier risk allocation (0% truncation on Auth/CI files) |
-| 📦 **7. Sandbox Isolation** | [`src/core/harness.mjs`](src/core/harness.mjs) | Zero-trust workspace root confinement |
+| 🛡️ **1. Guardrail & Harness** | [`src/core/harness.mjs`](src/core/harness.mjs) | Multi-pattern redaction, Symlink sandbox, Quorum gate, SARIF 2.1.0 |
+| 🌐 **2. Graph Engineering** | [`src/core/graph-router.mjs`](src/core/graph-router.mjs) | Scale-adaptive routing, Lockfile tracking, Security test Tier 1 routing |
+| 🔄 **3. Loop Engineering** | [`src/core/loop.mjs`](src/core/loop.mjs) | Severity Escalation Merge, OODA Controller, Jaccard stagnation circuit breaker |
+| 🔭 **4. Observability** | [`src/core/telemetry.mjs`](src/core/telemetry.mjs) | Ultra-lean in-process span tracer and latency profiler |
+| 🎯 **5. Eval & Benchmark** | [`src/core/scoring.mjs`](src/core/scoring.mjs) | Strict mutation score verification & held-out golden CVE recall testing |
+| 🧠 **6. Context Budgeting** | [`src/core/graph-router.mjs`](src/core/graph-router.mjs) | 3-Tier risk allocation (0% truncation on Auth/CI files) |
+| 📦 **7. Sandbox Isolation** | [`src/core/harness.mjs`](src/core/harness.mjs) | Zero-trust physical filesystem and symlink containment |
 | ⚖️ **8. Constitutional** | [`CLAUDE.md`](CLAUDE.md) | Lean, non-negotiable invariant rules (<50 lines) |
 
 ---
