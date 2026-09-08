@@ -57,7 +57,7 @@ npm run review
    ```
 2. **執行基準審查：**
    ```bash
-   npx triad-flow review
+   npx @arcobaleno64/triad-flow review
    ```
 
 ---

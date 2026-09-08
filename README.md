@@ -57,7 +57,7 @@ npm run review
    ```
 2. **Run baseline review:**
    ```bash
-   npx triad-flow review
+   npx @arcobaleno64/triad-flow review
    ```
 
 ---

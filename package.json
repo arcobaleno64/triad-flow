@@ -1,5 +1,5 @@
 {
-  "name": "triad-flow",
+  "name": "@arcobaleno64/triad-flow",
   "version": "2.0.0",
   "description": "Deterministic Multi-Agent Consensus & Adaptive Control Core",
   "type": "module",
@@ -31,6 +31,9 @@
   ],
   "author": "arcobaleno64",
   "license": "Apache-2.0",
+  "publishConfig": {
+    "access": "public"
+  },
   "engines": {
     "node": ">=18.0.0"
   }
