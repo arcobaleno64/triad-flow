@@ -52,17 +52,17 @@ Triad-Flow 要維持 **獨立 npm CLI**，還是改成 **plugin**？
 
 排序＝先做的在上。
 
-| # | 缺口 | 兩基準的做法 | 代價 |
+| # | 缺口 | 兩基準的做法 | 結果 |
 |---|---|---|---|
-| 1 | **`.github/workflows/` 是空目錄** | 兩者皆有 `pull-request-ci.yml` + `release.yml`（security-audit 另有 `semgrep.yml`） | ~30 分 |
-| 2 | 無 `SECURITY.md` | 兩者皆有 | ~15 分 |
-| 3 | `package.json` 缺 `repository` / `homepage` / `bugs` | 兩者皆有 | ~5 分 |
-| 4 | 無版本閘門 | 兩者皆有 `scripts/bump-version.mjs` + `bump-version` / `check-version` npm script | ~30 分 |
-| 5 | 產 SARIF 卻無 schema | 兩者皆有 `schemas/*.schema.json`（security-audit 有 7 份） | ~1 小時 |
+| 1 | **`.github/workflows/` 是空目錄** | 兩者皆有 `pull-request-ci.yml` + `release.yml`（security-audit 另有 `semgrep.yml`） | ✅ `76755ce`；`semgrep.yml` 未做 |
+| 2 | 無 `SECURITY.md` | 兩者皆有 | ✅ `b72c7c7`（依本專案實況重寫，未沿用基準宣稱） |
+| 3 | `package.json` 缺 `repository` / `homepage` / `bugs` | 兩者皆有 | ✅ `b72c7c7` |
+| 4 | 無版本閘門 | 兩者皆有 `scripts/bump-version.mjs` + `bump-version` / `check-version` npm script | ✅ `b72c7c7`（鎖 package.json 版本＋SARIF `tool.driver.version`） |
+| 5 | 產 SARIF 卻無 schema | 兩者皆有 `schemas/*.schema.json`（security-audit 有 7 份） | ❌ **不適用**：那 7 份驗的是外掛自有的內部 JSON（candidate／ballot／manifest），Triad-Flow 只產 SARIF 且已指向上游 SARIF 2.1.0 schema |
 
 **已符合、不必動**：雙語 README 對照、kebab-case `.mjs`、`type: module`、`engines`。
 
-**刻意不對齊**：套件名（Triad-Flow 為 bare `triad-flow`，兩基準為 `@arcobaleno64/…`）與授權（Apache-2.0 vs MIT）——這兩項是發佈決策，不是整理項目，除非指示否則維持。
+**刻意不對齊**：授權維持 Apache-2.0（兩基準為 MIT）。套件名原列為刻意不對齊，後經裁示改為 scoped `@arcobaleno64/triad-flow`（`6d67b6f`）。
 
 ---
 
