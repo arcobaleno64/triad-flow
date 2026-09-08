@@ -1,7 +1,8 @@
 # Triad-Flow 整理提案（架構與命名）
 
 規格基準：`agy-plugin-cc`、`agy-security-audit`（僅取兩者**交集**的慣例；兩者本身形狀不同，不可疊加）。
-狀態：**已裁示並執行**（2026-09-08）。裁示＝維持 CLI、`factory` 升格。§1 命名與 §4 已落地；§3 repo 衛生尚未執行。
+狀態：**已裁示並執行完畢**（2026-09-08）。裁示＝維持 CLI、`factory` 升格、套件名 scoped、分支 `master`→`main`、目錄改 kebab-case。
+§1／§2／§4 已落地。§3 repo 衛生：第 1～4 項已落地（commit `b72c7c7`、`76755ce`），第 5 項（`schemas/*.schema.json`）判定**不適用**——基準的 schema 驗的是其自有內部 JSON，Triad-Flow 只產 SARIF，已用上游 SARIF 2.1.0 schema。
 
 ---
 
