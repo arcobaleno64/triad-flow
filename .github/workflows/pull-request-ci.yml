@@ -1,0 +1,30 @@
+name: Pull Request CI
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  ci:
+    # tests/package-install.test.mjs exercises the npm bin shim, which is
+    # triad-flow.cmd on Windows and a shebang script elsewhere — the two paths
+    # are genuinely different code. macOS is included for parity with the
+    # sibling agy-plugin-cc project.
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: 20
+      # Zero runtime dependencies and no lockfile by design, so there is nothing
+      # for `npm ci` to install.
+      - run: npm test
+      - run: npm run check-version
+      # Catches a CRLF shebang or a files-allowlist regression before publish.
+      - run: npm pack --dry-run

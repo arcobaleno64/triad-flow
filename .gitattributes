@@ -5,3 +5,7 @@
 
 # JSON consumers (npm, SARIF readers) are not uniformly CR-tolerant.
 *.json text eol=lf
+
+# GitHub Actions `run: |` blocks are fed to bash. A CRLF there becomes a stray
+# carriage return in the script and breaks the step.
+*.yml text eol=lf

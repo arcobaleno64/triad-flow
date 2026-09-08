@@ -1,0 +1,92 @@
+name: Release
+on:
+  push:
+    tags:
+      - "v*"
+
+# Read-only by default. The write token goes to one job that checks out no code.
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: 20
+      - name: Assert tag matches package.json version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg="$(node -p "require('./package.json').version")"
+          if [ "$tag" != "$pkg" ]; then
+            echo "::error::Tag v$tag does not match package.json version $pkg. Run 'npm run bump-version $tag' before tagging." >&2
+            exit 1
+          fi
+      - name: Assert the tag is on main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          status="$(gh api "repos/${GITHUB_REPOSITORY}/compare/main...${GITHUB_REF_NAME}" -q .status)"
+          case "$status" in
+            identical|behind) ;;
+            *)
+              echo "::error::$GITHUB_REF_NAME is not reachable from main (compare status: $status)." >&2
+              exit 1
+              ;;
+          esac
+      - run: npm test
+      - run: npm run check-version
+      - run: npm pack --dry-run
+
+  publish:
+    # The only job with a write token, and deliberately the only one with no
+    # checkout: whoever can push a `v*` tag chooses what that tag's scripts run.
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          notes="$(gh api "repos/${GITHUB_REPOSITORY}/releases/generate-notes" -f tag_name="$GITHUB_REF_NAME" -q .body)"
+          released_at="$(TZ='Asia/Taipei' date '+%Y-%m-%d %H:%M:%S')"
+          {
+            printf 'Released: %s (UTC+8 台北)\n\n' "$released_at"
+            printf '%s\n' "$notes"
+          } > release-notes.md
+          gh release create "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$GITHUB_REF_NAME" \
+            --notes-file release-notes.md \
+            --verify-tag
+
+  # Tests what a user actually installs, not the tree the workflow was handed.
+  verify-published:
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: 20
+      - name: Install the published tag from git and run its CLI
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          git clone --quiet --depth 1 --branch "$GITHUB_REF_NAME" \
+            "https://github.com/${GITHUB_REPOSITORY}.git" published
+          cd published
+          reported="$(node -p "require('./package.json').version")"
+          if [ "$reported" != "$tag" ]; then
+            echo "::error::The published $GITHUB_REF_NAME reports package.json version $reported." >&2
+            exit 1
+          fi
+          npm test
+          node bin/triad-flow.mjs doctor
