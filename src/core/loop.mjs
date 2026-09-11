@@ -322,6 +322,7 @@ export class OodaLoopController {
   constructor(options = {}) {
     this.maxIterations = options.maxIterations || 3;
     this.similarityThreshold = options.similarityThreshold || 0.8;
+    this.strict = Boolean(options.strict);
     this.reset();
   }
 
@@ -362,7 +363,7 @@ export class OodaLoopController {
     }
 
     // 4. Success State Transition
-    if (consensusReport.verdict === "approve") {
+    if (consensusReport.verdict === "approve" || (consensusReport.verdict === "warning" && !this.strict)) {
       return { status: "completed", action: "exit_green" };
     }
 

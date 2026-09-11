@@ -421,3 +421,83 @@ export function formatSarifReport(findings = [], metadata = {}) {
     ]
   };
 }
+
+/**
+ * Validates a SARIF report object against the OASIS SARIF 2.1.0 specification structure.
+ */
+export function validateSarifStructure(sarif) {
+  const errors = [];
+
+  if (!sarif || typeof sarif !== "object" || Array.isArray(sarif)) {
+    return { valid: false, errors: ["SARIF document must be a non-null object."] };
+  }
+
+  if (sarif.version !== "2.1.0") {
+    errors.push(`SARIF version must be exactly '2.1.0', received: '${sarif.version}'`);
+  }
+
+  if (typeof sarif.$schema !== "string" || !sarif.$schema.includes("sarif")) {
+    errors.push("SARIF $schema must be a valid schema URI string.");
+  }
+
+  if (!Array.isArray(sarif.runs) || sarif.runs.length === 0) {
+    errors.push("SARIF runs must be a non-empty array.");
+  } else {
+    sarif.runs.forEach((run, runIdx) => {
+      if (!run.tool?.driver?.name) {
+        errors.push(`Run[${runIdx}]: tool.driver.name is required.`);
+      }
+      if (!run.tool?.driver?.version) {
+        errors.push(`Run[${runIdx}]: tool.driver.version is required.`);
+      }
+      if (!Array.isArray(run.tool?.driver?.rules)) {
+        errors.push(`Run[${runIdx}]: tool.driver.rules must be an array.`);
+      }
+
+      const driverRules = run.tool?.driver?.rules || [];
+      const ruleIds = new Set(driverRules.map(r => r.id));
+
+      if (run.invocations) {
+        if (!Array.isArray(run.invocations)) {
+          errors.push(`Run[${runIdx}]: invocations must be an array.`);
+        } else {
+          run.invocations.forEach((inv, invIdx) => {
+            if (typeof inv.executionSuccessful !== "boolean") {
+              errors.push(`Run[${runIdx}].invocations[${invIdx}]: executionSuccessful boolean is required.`);
+            }
+          });
+        }
+      }
+
+      if (!Array.isArray(run.results)) {
+        errors.push(`Run[${runIdx}]: results must be an array.`);
+      } else {
+        run.results.forEach((res, resIdx) => {
+          if (!res.ruleId) {
+            errors.push(`Run[${runIdx}].results[${resIdx}]: ruleId is required.`);
+          } else if (!ruleIds.has(res.ruleId)) {
+            errors.push(`Run[${runIdx}].results[${resIdx}]: ruleId '${res.ruleId}' is not declared in driver.rules.`);
+          }
+          if (typeof res.ruleIndex !== "number" || res.ruleIndex < 0 || res.ruleIndex >= driverRules.length) {
+            errors.push(`Run[${runIdx}].results[${resIdx}]: ruleIndex '${res.ruleIndex}' is out of bounds.`);
+          }
+          if (!["error", "warning", "note", "none"].includes(res.level)) {
+            errors.push(`Run[${runIdx}].results[${resIdx}]: level '${res.level}' is invalid.`);
+          }
+          if (!res.message?.text) {
+            errors.push(`Run[${runIdx}].results[${resIdx}]: message.text is required.`);
+          }
+          if (!Array.isArray(res.locations) || res.locations.length === 0) {
+            errors.push(`Run[${runIdx}].results[${resIdx}]: locations must be a non-empty array.`);
+          }
+        });
+      }
+    });
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors
+  };
+}
+

@@ -2,6 +2,7 @@
  * Triad-Flow CLI: Command Routing, Capability Doctor, Simulation Demo & Real Review
  */
 
+import fs from "node:fs";
 import crypto from "node:crypto";
 import { SpanTracer } from "./core/telemetry.mjs";
 import { evaluateDiffScale } from "./core/graph-router.mjs";
@@ -10,6 +11,7 @@ import { evaluateGateDecision, formatSarifReport } from "./core/harness.mjs";
 import { collectGitWorkingState, buildChangeSet } from "./core/git-collector.mjs";
 import { runFactoryPipeline } from "./core/factory.mjs";
 import { orchestrateReview } from "./adapters/review-orchestrator.mjs";
+import { buildReviewRunReport, REVIEW_RUN_STATUS } from "./core/review-run-report.mjs";
 
 export const EXIT_CODES = {
   SUCCESS: 0,
@@ -52,11 +54,24 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
     }
   }
 
+  let reportArg = null;
+  const reportExplicit = argv.find(a => a.startsWith("--report=") || a.startsWith("--output-run="));
+  if (reportExplicit) {
+    reportArg = reportExplicit.slice(reportExplicit.indexOf("=") + 1);
+  } else {
+    const reportIdx = argv.findIndex(a => a === "--report" || a === "--output-run");
+    if (reportIdx !== -1 && argv[reportIdx + 1] && !argv[reportIdx + 1].startsWith("--")) {
+      reportArg = argv[reportIdx + 1];
+    }
+  }
+
   const isRecognizedArg = (arg) => {
     if (arg.startsWith("--format=")) return true;
     if (arg === "--strict" || arg === "--staged") return true;
     if (arg.startsWith("--base=") || arg === "--base") return true;
     if (arg.startsWith("--head=") || arg === "--head") return true;
+    if (arg.startsWith("--report=") || arg === "--report") return true;
+    if (arg.startsWith("--output-run=") || arg === "--output-run") return true;
     return false;
   };
 
@@ -193,7 +208,27 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
 
       if (files.length === 0) {
         io.stderr.write(`✔ [No Changes] Scope '${scopeLabel}' has no files to review (No-op).\n\n`);
-        if (formatArg === "sarif") {
+        const runReport = buildReviewRunReport({
+          runId: crypto.randomUUID(),
+          status: REVIEW_RUN_STATUS.NO_CHANGES,
+          exitCode: EXIT_CODES.SUCCESS,
+          changeSet,
+          policy: { id: "SINGLE_SENTRY", strict: strictArg },
+          gate: { decision: "approve", reason: "No files changed to review." }
+        });
+
+        if (reportArg) {
+          try {
+            fs.writeFileSync(reportArg, JSON.stringify(runReport, null, 2) + "\n", "utf8");
+            io.stderr.write(`📝 Saved review audit run: ${reportArg}\n`);
+          } catch (err) {
+            io.stderr.write(`⚠️ Failed to write audit run report: ${err.message}\n`);
+          }
+        }
+
+        if (formatArg === "json") {
+          io.stdout.write(JSON.stringify(runReport, null, 2) + "\n");
+        } else if (formatArg === "sarif") {
           io.stdout.write(JSON.stringify(formatSarifReport([], { executionSuccessful: true }), null, 2) + "\n");
         }
         return EXIT_CODES.SUCCESS;
@@ -206,11 +241,22 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
       const reviewAdapters = opts.reviewAdapters || opts.adapters || null;
       let consensus;
       let gate;
+      let orchResult = null;
+      let runStatus;
 
       if (reviewAdapters) {
-        const orchResult = await orchestrateReview(changeSet, reviewAdapters, { strict: strictArg });
+        orchResult = await orchestrateReview(changeSet, reviewAdapters, { strict: strictArg });
         consensus = orchResult.consensus;
         gate = orchResult.gate;
+        if (orchResult.status === "incomplete") {
+          runStatus = REVIEW_RUN_STATUS.INCOMPLETE;
+        } else if (gate.decision === "approve") {
+          runStatus = (consensus.findings && consensus.findings.length > 0)
+            ? REVIEW_RUN_STATUS.REVIEWED_WITH_FINDINGS
+            : REVIEW_RUN_STATUS.REVIEWED_CLEAN;
+        } else {
+          runStatus = REVIEW_RUN_STATUS.REVIEWED_WITH_FINDINGS;
+        }
       } else {
         // In standalone CLI without live provider adapters, fail closed on unconfigured sentries
         consensus = aggregateConsensus(
@@ -218,12 +264,38 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
           { error: "No configured micro sentry provider" }
         );
         gate = evaluateGateDecision(consensus, { strict: strictArg });
+        runStatus = REVIEW_RUN_STATUS.INCOMPLETE;
+      }
+
+      const exitCode = gate.decision === "approve" ? EXIT_CODES.SUCCESS : EXIT_CODES.GATE_BLOCKED;
+
+      const runReport = buildReviewRunReport({
+        runId: orchResult?.runId || crypto.randomUUID(),
+        status: runStatus,
+        exitCode,
+        changeSet,
+        policy: { id: plan.mode === "hierarchical" ? "STRICT_HETEROGENEOUS" : "SINGLE_SENTRY", strict: strictArg },
+        routing: plan,
+        providers: orchResult?.results ? Object.values(orchResult.results) : (orchResult?.result ? [orchResult.result] : []),
+        consensus,
+        gate
+      });
+
+      if (reportArg) {
+        try {
+          fs.writeFileSync(reportArg, JSON.stringify(runReport, null, 2) + "\n", "utf8");
+          io.stderr.write(`📝 Saved review audit run: ${reportArg}\n`);
+        } catch (err) {
+          io.stderr.write(`⚠️ Failed to write audit run report: ${err.message}\n`);
+        }
       }
 
       io.stderr.write(`\n★ Consensus Verdict: ${consensus.verdict.toUpperCase()} (${consensus.consensusProof})\n`);
       io.stderr.write(`🛡️ Gate Decision: ${gate.decision.toUpperCase()} - ${gate.reason}\n\n`);
 
-      if (formatArg === "sarif") {
+      if (formatArg === "json") {
+        io.stdout.write(JSON.stringify(runReport, null, 2) + "\n");
+      } else if (formatArg === "sarif") {
         const isApprove = gate.decision === "approve";
         const sarif = formatSarifReport(consensus.findings, {
           executionSuccessful: isApprove,
@@ -232,7 +304,7 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
         io.stdout.write(JSON.stringify(sarif, null, 2) + "\n");
       }
 
-      return gate.decision === "approve" ? EXIT_CODES.SUCCESS : EXIT_CODES.GATE_BLOCKED;
+      return exitCode;
     }
 
     case "factory": {
@@ -243,7 +315,7 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
     }
 
     default: {
-      io.stderr.write(`Usage: triad-flow [doctor | demo | review | factory] [--format=sarif] [--strict] [--staged] [--base=<ref>] [--head=<ref>]\n`);
+      io.stderr.write(`Usage: triad-flow [doctor | demo | review | factory] [--format=sarif|json] [--strict] [--staged] [--base=<ref>] [--head=<ref>] [--report=<file>]\n`);
       return EXIT_CODES.USAGE_ERROR;
     }
   }
