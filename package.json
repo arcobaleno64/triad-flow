@@ -1,6 +1,6 @@
 {
   "name": "@arcobaleno64/triad-flow",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Deterministic Multi-Agent Consensus & Adaptive Control Core",
   "type": "module",
   "main": "src/cli.mjs",
