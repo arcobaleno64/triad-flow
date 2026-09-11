@@ -15,7 +15,7 @@
     "README.zh-TW.md"
   ],
   "scripts": {
-    "test": "node --test tests/*.test.mjs",
+    "test": "node --test",
     "doctor": "node bin/triad-flow.mjs doctor",
     "demo": "node bin/triad-flow.mjs demo",
     "review": "node bin/triad-flow.mjs review",
