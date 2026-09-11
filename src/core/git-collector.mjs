@@ -7,6 +7,7 @@
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import crypto from "node:crypto";
 import { parseNumstatZ } from "./git-numstat.mjs";
 
 export { parseNumstatZ };
@@ -19,6 +20,14 @@ const EXEC_OPTS = {
   maxBuffer: 10 * 1024 * 1024, // 10MB buffer
   windowsHide: true
 };
+
+function gitExec(repoRoot, args, options = {}) {
+  return execFileSync("git", ["-c", "core.fsmonitor=false", ...args], {
+    cwd: repoRoot,
+    ...EXEC_OPTS,
+    ...options
+  });
+}
 
 /**
  * Checks if buffer contains NUL bytes to determine if it is binary.
@@ -106,15 +115,13 @@ export function inspectUntrackedFile(fullPath) {
 /**
  * Core Git Working State Collector.
  */
-export function collectGitWorkingState(cwd = process.cwd()) {
+export function collectGitWorkingState(cwd = process.cwd(), options = {}) {
   let repoRoot;
   let hasHead = true;
 
   // 1. Verify directory is inside a real working tree (blocks Bare Repo escape)
   try {
-    const isWorkTree = execFileSync("git", ["rev-parse", "--is-inside-work-tree"], {
-      cwd,
-      ...EXEC_OPTS,
+    const isWorkTree = gitExec(cwd, ["rev-parse", "--is-inside-work-tree"], {
       stdio: ["ignore", "pipe", "ignore"]
     }).trim();
 
@@ -128,9 +135,7 @@ export function collectGitWorkingState(cwd = process.cwd()) {
       };
     }
 
-    repoRoot = execFileSync("git", ["rev-parse", "--show-toplevel"], {
-      cwd,
-      ...EXEC_OPTS,
+    repoRoot = gitExec(cwd, ["rev-parse", "--show-toplevel"], {
       stdio: ["ignore", "pipe", "ignore"]
     }).trim().replace(/\\/g, "/");
   } catch (err) {
@@ -145,30 +150,94 @@ export function collectGitWorkingState(cwd = process.cwd()) {
 
   // 2. Check if HEAD exists (Unborn repository support)
   try {
-    execFileSync("git", ["rev-parse", "--verify", "HEAD"], {
-      cwd: repoRoot,
-      ...EXEC_OPTS,
+    gitExec(repoRoot, ["rev-parse", "--verify", "HEAD"], {
       stdio: "ignore"
     });
   } catch (_err) {
     hasHead = false;
   }
 
+  // 3. Revision Range Mode (--base / --head)
+  if (options.base) {
+    let baseSha;
+    try {
+      baseSha = gitExec(repoRoot, ["rev-parse", "--verify", `${options.base}^{commit}`]).trim();
+    } catch (_err) {
+      return {
+        ok: false,
+        error: {
+          code: "INVALID_BASE_REF",
+          message: `Base reference '${options.base}' is invalid or cannot be resolved.`
+        }
+      };
+    }
+
+    const headRef = options.head || "HEAD";
+    let headSha;
+    try {
+      headSha = gitExec(repoRoot, ["rev-parse", "--verify", `${headRef}^{commit}`]).trim();
+    } catch (_err) {
+      return {
+        ok: false,
+        error: {
+          code: "INVALID_HEAD_REF",
+          message: `Head reference '${headRef}' is invalid or cannot be resolved.`
+        }
+      };
+    }
+
+    try {
+      const rangeRaw = gitExec(repoRoot, ["diff", "--numstat", "-z", `${baseSha}...${headSha}`]);
+      const records = parseNumstatZ(rangeRaw);
+      const fileMap = new Map();
+      for (const rec of records) {
+        fileMap.set(rec.path, {
+          path: rec.path,
+          oldPath: rec.oldPath,
+          renamed: rec.renamed,
+          additions: rec.additions,
+          deletions: rec.deletions,
+          binary: rec.binary,
+          staged: false,
+          unstaged: false,
+          untracked: false,
+          committed: true
+        });
+      }
+
+      return {
+        ok: true,
+        scopeMode: "revision-range",
+        repository: {
+          root: repoRoot,
+          hasHead: true,
+          base: options.base,
+          head: headRef,
+          baseSha,
+          headSha
+        },
+        files: Array.from(fileMap.values())
+      };
+    } catch (err) {
+      return {
+        ok: false,
+        error: {
+          code: "GIT_INSPECTION_FAILED",
+          message: err.message || "Failed during revision-range Git diff collection"
+        }
+      };
+    }
+  }
+
   try {
     const fileMap = new Map();
 
-    // 3. Collect Staged Changes
+    // 4. Collect Staged Changes
     let stagedRaw = "";
     if (hasHead) {
-      stagedRaw = execFileSync("git", ["diff", "--cached", "--numstat", "-z"], {
-        cwd: repoRoot,
-        ...EXEC_OPTS
-      });
+      stagedRaw = gitExec(repoRoot, ["diff", "--cached", "--numstat", "-z"]);
     } else {
-      stagedRaw = execFileSync("git", ["diff-index", "--cached", "--numstat", "-z", EMPTY_TREE_SHA], {
-        cwd: repoRoot,
-        ...EXEC_OPTS
-      });
+      stagedRaw = gitExec(repoRoot, ["diff-index", "--cached", "--numstat", "-z", EMPTY_TREE_SHA]);
     }
 
     const stagedRecords = parseNumstatZ(stagedRaw);
@@ -186,11 +255,20 @@ export function collectGitWorkingState(cwd = process.cwd()) {
       });
     }
 
-    // 4. Collect Unstaged Changes (Merge with Staged)
-    const unstagedRaw = execFileSync("git", ["diff", "--numstat", "-z"], {
-      cwd: repoRoot,
-      ...EXEC_OPTS
-    });
+    if (options.stagedOnly) {
+      return {
+        ok: true,
+        scopeMode: "staged",
+        repository: {
+          root: repoRoot,
+          hasHead
+        },
+        files: Array.from(fileMap.values())
+      };
+    }
+
+    // 5. Collect Unstaged Changes (Merge with Staged)
+    const unstagedRaw = gitExec(repoRoot, ["diff", "--numstat", "-z"]);
     const unstagedRecords = parseNumstatZ(unstagedRaw);
 
     for (const rec of unstagedRecords) {
@@ -220,11 +298,8 @@ export function collectGitWorkingState(cwd = process.cwd()) {
       }
     }
 
-    // 5. Collect Untracked files (excluding ignored files)
-    const untrackedRaw = execFileSync("git", ["ls-files", "--others", "--exclude-standard", "-z"], {
-      cwd: repoRoot,
-      ...EXEC_OPTS
-    });
+    // 6. Collect Untracked files (excluding ignored files)
+    const untrackedRaw = gitExec(repoRoot, ["ls-files", "--others", "--exclude-standard", "-z"]);
 
     if (untrackedRaw) {
       const untrackedPaths = untrackedRaw.split("\0").filter(Boolean);
@@ -254,6 +329,7 @@ export function collectGitWorkingState(cwd = process.cwd()) {
 
     return {
       ok: true,
+      scopeMode: "working-tree",
       repository: {
         root: repoRoot,
         hasHead
@@ -269,4 +345,63 @@ export function collectGitWorkingState(cwd = process.cwd()) {
       }
     };
   }
+}
+
+/**
+ * Builds an immutable, canonical ChangeSet context package.
+ */
+export function buildChangeSet(cwd = process.cwd(), options = {}) {
+  const state = collectGitWorkingState(cwd, options);
+  if (!state.ok) return state;
+
+  const repoRoot = state.repository.root;
+  const scopeMode = state.scopeMode || "working-tree";
+
+  let diffText = "";
+  try {
+    if (scopeMode === "revision-range") {
+      diffText = gitExec(repoRoot, ["diff", "-U3", `${state.repository.baseSha}...${state.repository.headSha}`]);
+    } else if (scopeMode === "staged") {
+      diffText = state.repository.hasHead
+        ? gitExec(repoRoot, ["diff", "--cached", "-U3"])
+        : gitExec(repoRoot, ["diff-index", "--cached", "-U3", EMPTY_TREE_SHA]);
+    } else {
+      const stagedPart = state.repository.hasHead
+        ? gitExec(repoRoot, ["diff", "--cached", "-U3"])
+        : gitExec(repoRoot, ["diff-index", "--cached", "-U3", EMPTY_TREE_SHA]);
+      const unstagedPart = gitExec(repoRoot, ["diff", "-U3"]);
+      diffText = `${stagedPart}\n${unstagedPart}`.trim();
+    }
+  } catch (_err) {
+    diffText = "";
+  }
+
+  const contentDigest = crypto.createHash("sha256").update(diffText, "utf8").digest("hex");
+
+  const files = state.files.map(f => ({
+    path: f.path,
+    oldPath: f.oldPath || null,
+    renamed: Boolean(f.renamed),
+    additions: f.additions || 0,
+    deletions: f.deletions || 0,
+    binary: Boolean(f.binary),
+    unreadable: Boolean(f.unreadable || f.inspectionFailed),
+    largeFile: Boolean(f.largeFile)
+  }));
+
+  const totalAdditions = files.reduce((sum, f) => sum + f.additions, 0);
+  const totalDeletions = files.reduce((sum, f) => sum + f.deletions, 0);
+
+  return {
+    ok: true,
+    schemaVersion: "1.0.0",
+    scopeMode,
+    repository: state.repository,
+    contentDigest,
+    totalFiles: files.length,
+    totalAdditions,
+    totalDeletions,
+    files,
+    diffHunks: diffText
+  };
 }

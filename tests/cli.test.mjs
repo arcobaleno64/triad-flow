@@ -122,13 +122,31 @@ test("Repository npm scripts execute real CLI entrypoint and produce output (P0-
   assert.match(factoryRes.stderr + factoryRes.stdout, /Unconfigured Factory Adapters/i);
 });
 
-test("runCli rejects unsupported options like --base with EXIT_CODES.USAGE_ERROR", async () => {
+test("runCli rejects unsupported options like --invalid-flag with EXIT_CODES.USAGE_ERROR", async () => {
   const stdout = new MockStream();
   const stderr = new MockStream();
-  const code = await runCli(["review", "--base=origin/main"], { stdout, stderr });
+  const code = await runCli(["review", "--invalid-flag"], { stdout, stderr });
 
   assert.equal(code, EXIT_CODES.USAGE_ERROR);
   assert.match(stderr.buffer, /Unsupported option/i);
+});
+
+test("runCli rejects --head without --base with EXIT_CODES.USAGE_ERROR", async () => {
+  const stdout = new MockStream();
+  const stderr = new MockStream();
+  const code = await runCli(["review", "--head=HEAD"], { stdout, stderr });
+
+  assert.equal(code, EXIT_CODES.USAGE_ERROR);
+  assert.match(stderr.buffer, /requires '--base <ref>'/i);
+});
+
+test("runCli review rejects unresolvable --base with EXIT_CODES.USAGE_ERROR", async () => {
+  const stdout = new MockStream();
+  const stderr = new MockStream();
+  const code = await runCli(["review", "--base=nonexistent_ref_99999"], { stdout, stderr });
+
+  assert.equal(code, EXIT_CODES.USAGE_ERROR);
+  assert.match(stderr.buffer, /invalid or cannot be resolved/i);
 });
 
 test("runCli review emits SARIF with failed invocations when blocked", async () => {

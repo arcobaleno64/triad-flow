@@ -26,10 +26,46 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
   const command = argv[0] || "doctor";
   const formatArg = argv.find(a => a.startsWith("--format="))?.split("=")[1] || "text";
   const strictArg = argv.includes("--strict") || Boolean(options.strict);
+  const stagedArg = argv.includes("--staged") || Boolean(options.staged);
 
-  const unknownFlags = argv.filter(a => a.startsWith("--") && !a.startsWith("--format=") && a !== "--strict");
+  let baseArg = null;
+  const baseExplicit = argv.find(a => a.startsWith("--base="));
+  if (baseExplicit) {
+    baseArg = baseExplicit.slice("--base=".length);
+  } else {
+    const baseIdx = argv.indexOf("--base");
+    if (baseIdx !== -1 && argv[baseIdx + 1] && !argv[baseIdx + 1].startsWith("--")) {
+      baseArg = argv[baseIdx + 1];
+    }
+  }
+
+  let headArg = null;
+  const headExplicit = argv.find(a => a.startsWith("--head="));
+  if (headExplicit) {
+    headArg = headExplicit.slice("--head=".length);
+  } else {
+    const headIdx = argv.indexOf("--head");
+    if (headIdx !== -1 && argv[headIdx + 1] && !argv[headIdx + 1].startsWith("--")) {
+      headArg = argv[headIdx + 1];
+    }
+  }
+
+  const isRecognizedArg = (arg) => {
+    if (arg.startsWith("--format=")) return true;
+    if (arg === "--strict" || arg === "--staged") return true;
+    if (arg.startsWith("--base=") || arg === "--base") return true;
+    if (arg.startsWith("--head=") || arg === "--head") return true;
+    return false;
+  };
+
+  const unknownFlags = argv.filter(a => a.startsWith("--") && !isRecognizedArg(a));
   if (unknownFlags.length > 0) {
     io.stderr.write(`✖ [USAGE ERROR] Unsupported option(s): ${unknownFlags.join(", ")}\n`);
+    return EXIT_CODES.USAGE_ERROR;
+  }
+
+  if (headArg && !baseArg) {
+    io.stderr.write(`✖ [USAGE ERROR] Option '--head' requires '--base <ref>' to be specified.\n`);
     return EXIT_CODES.USAGE_ERROR;
   }
 
@@ -106,26 +142,38 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
 
     case "review": {
       printBanner(io, "Triad-Flow • Real Scale-Adaptive Review");
-      const gitState = typeof options.getGitState === "function" ? options.getGitState() : collectGitWorkingState(options.cwd || process.cwd());
+      const gitOptions = {
+        base: baseArg,
+        head: headArg,
+        stagedOnly: stagedArg
+      };
+      const gitState = typeof options.getGitState === "function"
+        ? options.getGitState(gitOptions)
+        : collectGitWorkingState(options.cwd || process.cwd(), gitOptions);
 
-      // Invariant (INV-01): Git inspection failure MUST fail closed as SYSTEM_FAILURE (3)
+      // Invariant (INV-01): Git inspection failure MUST fail closed as SYSTEM_FAILURE (3) or USAGE_ERROR (2) on invalid ref
       if (!gitState || !gitState.ok) {
         const errorMsg = gitState?.error?.message || "Failed to inspect Git repository state.";
+        if (gitState?.error?.code === "INVALID_BASE_REF" || gitState?.error?.code === "INVALID_HEAD_REF") {
+          io.stderr.write(`✖ [USAGE ERROR] ${errorMsg}\n\n`);
+          return EXIT_CODES.USAGE_ERROR;
+        }
         io.stderr.write(`✖ [FATAL SYSTEM FAILURE] Git inspection error: ${errorMsg}\n\n`);
         return EXIT_CODES.SYSTEM_FAILURE;
       }
 
       const files = gitState.files || [];
+      const scopeLabel = gitState.scopeMode || "working-tree";
 
       if (files.length === 0) {
-        io.stderr.write("✔ [No Changes] Working tree and staging area are clean. No files to review (No-op).\n\n");
+        io.stderr.write(`✔ [No Changes] Scope '${scopeLabel}' has no files to review (No-op).\n\n`);
         if (formatArg === "sarif") {
           io.stdout.write(JSON.stringify(formatSarifReport([], { executionSuccessful: true }), null, 2) + "\n");
         }
         return EXIT_CODES.SUCCESS;
       }
 
-      io.stderr.write(`✔ Captured Real Git Working State: ${files.length} active file(s)\n`);
+      io.stderr.write(`✔ Captured Git Scope '${scopeLabel}': ${files.length} active file(s)\n`);
       const plan = evaluateDiffScale(files);
       io.stderr.write(`▶ Scale Routing: Mode = ${plan.mode.toUpperCase()} (${plan.reason})\n`);
 
@@ -159,7 +207,7 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
     }
 
     default: {
-      io.stderr.write(`Usage: triad-flow [doctor | demo | review | factory] [--format=sarif]\n`);
+      io.stderr.write(`Usage: triad-flow [doctor | demo | review | factory] [--format=sarif] [--strict] [--staged] [--base=<ref>] [--head=<ref>]\n`);
       return EXIT_CODES.USAGE_ERROR;
     }
   }

@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { execFileSync } from "node:child_process";
-import { collectGitWorkingState, inspectUntrackedFile, isBinaryBuffer } from "../src/core/git-collector.mjs";
+import { collectGitWorkingState, buildChangeSet, inspectUntrackedFile, isBinaryBuffer } from "../src/core/git-collector.mjs";
 
 test("isBinaryBuffer detects NUL bytes in sample", () => {
   assert.equal(isBinaryBuffer(Buffer.from("hello world")), false);
@@ -139,6 +139,71 @@ test("collectGitWorkingState collects clean, staged+unstaged, untracked and spac
   const fullRes = collectGitWorkingState(tmpDir);
   assert.equal(fullRes.files.some(f => f.path === "ignored.log"), false);
   assert.equal(fullRes.files.some(f => f.path === "space file.js"), true);
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+test("collectGitWorkingState with revision-range collects committed diff between two commits with clean working tree", () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "triad-range-test-"));
+  execFileSync("git", ["init"], { cwd: tmpDir, stdio: "ignore" });
+  execFileSync("git", ["config", "user.email", "test@triad.flow"], { cwd: tmpDir, stdio: "ignore" });
+  execFileSync("git", ["config", "user.name", "Triad Tester"], { cwd: tmpDir, stdio: "ignore" });
+
+  fs.writeFileSync(path.join(tmpDir, "file1.txt"), "version 1\n");
+  execFileSync("git", ["add", "file1.txt"], { cwd: tmpDir, stdio: "ignore" });
+  execFileSync("git", ["commit", "-m", "commit 1"], { cwd: tmpDir, stdio: "ignore" });
+  const commit1 = execFileSync("git", ["rev-parse", "HEAD"], { cwd: tmpDir, encoding: "utf-8" }).trim();
+
+  fs.writeFileSync(path.join(tmpDir, "file1.txt"), "version 2\nadded line\n");
+  fs.writeFileSync(path.join(tmpDir, "file2.txt"), "new file\n");
+  execFileSync("git", ["add", "file1.txt", "file2.txt"], { cwd: tmpDir, stdio: "ignore" });
+  execFileSync("git", ["commit", "-m", "commit 2"], { cwd: tmpDir, stdio: "ignore" });
+  const commit2 = execFileSync("git", ["rev-parse", "HEAD"], { cwd: tmpDir, encoding: "utf-8" }).trim();
+
+  // Working tree is completely clean!
+  const statusRes = collectGitWorkingState(tmpDir);
+  assert.equal(statusRes.files.length, 0);
+
+  // But revision-range captures the committed changes between commit1 and commit2
+  const rangeRes = collectGitWorkingState(tmpDir, { base: commit1, head: commit2 });
+  assert.equal(rangeRes.ok, true);
+  assert.equal(rangeRes.scopeMode, "revision-range");
+  assert.equal(rangeRes.files.length, 2);
+  assert.ok(rangeRes.files.some(f => f.path === "file1.txt"));
+  assert.ok(rangeRes.files.some(f => f.path === "file2.txt"));
+
+  // buildChangeSet returns canonical ContextPackage
+  const changeSet = buildChangeSet(tmpDir, { base: commit1, head: commit2 });
+  assert.equal(changeSet.ok, true);
+  assert.equal(changeSet.schemaVersion, "1.0.0");
+  assert.equal(changeSet.scopeMode, "revision-range");
+  assert.match(changeSet.contentDigest, /^[a-f0-9]{64}$/);
+  assert.match(changeSet.diffHunks, /version 2/);
+  assert.equal(changeSet.totalFiles, 2);
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+test("collectGitWorkingState with stagedOnly collects only staged files and ignores unstaged", () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "triad-staged-test-"));
+  execFileSync("git", ["init"], { cwd: tmpDir, stdio: "ignore" });
+  execFileSync("git", ["config", "user.email", "test@triad.flow"], { cwd: tmpDir, stdio: "ignore" });
+  execFileSync("git", ["config", "user.name", "Triad Tester"], { cwd: tmpDir, stdio: "ignore" });
+
+  fs.writeFileSync(path.join(tmpDir, "initial.txt"), "initial\n");
+  execFileSync("git", ["add", "initial.txt"], { cwd: tmpDir, stdio: "ignore" });
+  execFileSync("git", ["commit", "-m", "initial"], { cwd: tmpDir, stdio: "ignore" });
+
+  fs.writeFileSync(path.join(tmpDir, "staged.txt"), "staged\n");
+  execFileSync("git", ["add", "staged.txt"], { cwd: tmpDir, stdio: "ignore" });
+
+  fs.writeFileSync(path.join(tmpDir, "unstaged.txt"), "unstaged\n");
+
+  const stagedRes = collectGitWorkingState(tmpDir, { stagedOnly: true });
+  assert.equal(stagedRes.ok, true);
+  assert.equal(stagedRes.scopeMode, "staged");
+  assert.equal(stagedRes.files.length, 1);
+  assert.equal(stagedRes.files[0].path, "staged.txt");
 
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
