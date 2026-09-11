@@ -137,3 +137,82 @@ test("OodaLoopController enforces In-Process Capability Boundary and anti-livelo
   assert.equal(stepBlocker.status, "remediating");
   assert.equal(stepBlocker.action, "apply_patch");
 });
+
+function createMockConsensus(keys) {
+  const findings = keys.map((k, i) => ({
+    title: `Finding_${k}`,
+    severity: "high",
+    file: `src/${k}.js`,
+    line_start: 10 + i
+  }));
+  return aggregateConsensus(
+    { macro: { findings }, micro: { findings } },
+    { policy: "STRICT_HETEROGENEOUS" }
+  );
+}
+
+test("OodaLoopController: immediate monotonic reduction permits multi-step progress", () => {
+  const ooda = new OodaLoopController({ maxIterations: 5 });
+
+  // Iter 1: {A, B, C, D, E}
+  const s1 = ooda.step(createMockConsensus(["A", "B", "C", "D", "E"]), "diff-1");
+  assert.equal(s1.status, "remediating");
+
+  // Iter 2: {A, B, C, D} (Strict immediate subset of S1)
+  const s2 = ooda.step(createMockConsensus(["A", "B", "C", "D"]), "diff-2");
+  assert.equal(s2.status, "remediating");
+
+  // Iter 3: {A, B, C} (Strict immediate subset of S2)
+  const s3 = ooda.step(createMockConsensus(["A", "B", "C"]), "diff-3");
+  assert.equal(s3.status, "remediating");
+});
+
+test("OodaLoopController: cross-iteration alternating subset without immediate progress is blocked by Jaccard", () => {
+  const ooda = new OodaLoopController({ maxIterations: 5, similarityThreshold: 0.8 });
+
+  // Iter 1: {A, B, C, D, E}
+  const s1 = ooda.step(createMockConsensus(["A", "B", "C", "D", "E"]), "diff-1");
+  assert.equal(s1.status, "remediating");
+
+  // Iter 2: {A, B, C, D} (fixes E)
+  const s2 = ooda.step(createMockConsensus(["A", "B", "C", "D"]), "diff-2");
+  assert.equal(s2.status, "remediating");
+
+  // Iter 3: {A, B, C, E} (fixes D but re-introduces E; NOT a subset of S2, and 80% similar to S1)
+  const s3 = ooda.step(createMockConsensus(["A", "B", "C", "E"]), "diff-3");
+  assert.equal(s3.status, "oscillation_detected");
+  assert.match(s3.reason, /Remediation stagnation\/oscillation detected/i);
+});
+
+test("OodaLoopController: exact cycle in history is unconditionally blocked by Layer 1", () => {
+  const ooda = new OodaLoopController({ maxIterations: 5 });
+
+  // Iter 1: {A, B}
+  const s1 = ooda.step(createMockConsensus(["A", "B"]), "diff-1");
+  assert.equal(s1.status, "remediating");
+
+  // Iter 2: {A, B, C}
+  const s2 = ooda.step(createMockConsensus(["A", "B", "C"]), "diff-2");
+  assert.equal(s2.status, "remediating");
+
+  // Iter 3: {A, B} (Although fewer than S2, it is EXACTLY identical to S1 in history)
+  const s3 = ooda.step(createMockConsensus(["A", "B"]), "diff-3");
+  assert.equal(s3.status, "oscillation_detected");
+  assert.match(s3.reason, /Remediation cycle detected: Exact identical finding set/i);
+});
+
+test("OodaLoopController: exceeds maxIterations hard cap even with monotonic progress", () => {
+  const ooda = new OodaLoopController({ maxIterations: 2 });
+
+  // Iter 1: {A, B, C}
+  assert.equal(ooda.step(createMockConsensus(["A", "B", "C"]), "diff-1").status, "remediating");
+
+  // Iter 2: {A, B}
+  assert.equal(ooda.step(createMockConsensus(["A", "B"]), "diff-2").status, "remediating");
+
+  // Iter 3: {A} -> Exceeds maxIterations=2
+  const s3 = ooda.step(createMockConsensus(["A"]), "diff-3");
+  assert.equal(s3.status, "circuit_broken");
+  assert.match(s3.reason, /Exceeded max self-healing iterations/i);
+});
+

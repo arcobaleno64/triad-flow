@@ -390,16 +390,38 @@ export class OodaLoopController {
       this.patchHashes.add(patchHash);
     }
 
-    // 7. Semantic Stagnation / Jaccard Similarity Detection
+    // 7. Semantic Stagnation & Cycle Detection (OWASP LLM06 Defenses)
     const currentSet = this.getFindingKeySet(consensusReport.findings || []);
+
+    // Layer 1: Absolute Zero-Tolerance for Exact Cycles across all history
     for (const prevSet of this.historyFingerprints) {
-      const sim = this.calculateJaccardSimilarity(currentSet, prevSet);
-      if (sim >= this.similarityThreshold && this.currentIteration > 1) {
+      if (this.areSetsEqual(currentSet, prevSet)) {
         return {
           status: "oscillation_detected",
           action: "escalate_to_human",
-          reason: `Remediation stagnation/oscillation detected (Similarity: ${(sim * 100).toFixed(1)}% >= ${(this.similarityThreshold * 100)}%). Livelock prevented.`
+          reason: "Remediation cycle detected: Exact identical finding set reproduced from previous iteration. Livelock prevented."
         };
+      }
+    }
+
+    // Layer 2: Immediate Monotonic Progress vs Jaccard Stagnation
+    const immediatePrev = this.historyFingerprints[this.historyFingerprints.length - 1];
+    const isImmediateMonotonicProgress = Boolean(
+      immediatePrev &&
+      currentSet.size < immediatePrev.size &&
+      [...currentSet].every(key => immediatePrev.has(key))
+    );
+
+    if (!isImmediateMonotonicProgress) {
+      for (const prevSet of this.historyFingerprints) {
+        const sim = this.calculateJaccardSimilarity(currentSet, prevSet);
+        if (sim >= this.similarityThreshold && this.currentIteration > 1) {
+          return {
+            status: "oscillation_detected",
+            action: "escalate_to_human",
+            reason: `Remediation stagnation/oscillation detected (Similarity: ${(sim * 100).toFixed(1)}% >= ${(this.similarityThreshold * 100)}%). Livelock prevented.`
+          };
+        }
       }
     }
     this.historyFingerprints.push(currentSet);
@@ -414,6 +436,14 @@ export class OodaLoopController {
 
   getFindingKeySet(findings = []) {
     return new Set(findings.map(canonicalFindingKey));
+  }
+
+  areSetsEqual(setA, setB) {
+    if (!setA || !setB || setA.size !== setB.size) return false;
+    for (const item of setA) {
+      if (!setB.has(item)) return false;
+    }
+    return true;
   }
 
   calculateJaccardSimilarity(setA, setB) {

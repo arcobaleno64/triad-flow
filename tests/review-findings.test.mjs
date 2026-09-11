@@ -34,7 +34,7 @@ function reportWith(n) {
   );
 }
 
-test.skip("R4: fixing 1 of 5 blocking findings is progress, not stagnation (PENDING: formal livelock specification)", () => {
+test("R4: fixing 1 of 5 blocking findings is progress, not stagnation", () => {
   const ooda = new OodaLoopController();
   assert.equal(ooda.step(reportWith(5), "patch-1").status, "remediating");
   assert.equal(ooda.step(reportWith(4), "patch-2").status, "remediating");
