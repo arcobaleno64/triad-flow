@@ -11,6 +11,7 @@ import { evaluateGateDecision, formatSarifReport } from "./core/harness.mjs";
 import { collectGitWorkingState, buildChangeSet } from "./core/git-collector.mjs";
 import { runFactoryPipeline } from "./core/factory.mjs";
 import { orchestrateReview } from "./adapters/review-orchestrator.mjs";
+import { CliReviewAdapter } from "./adapters/cli-transport.mjs";
 import { buildReviewRunReport, REVIEW_RUN_STATUS } from "./core/review-run-report.mjs";
 
 export const EXIT_CODES = {
@@ -32,13 +33,33 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
   const strictArg = argv.includes("--strict") || Boolean(options.strict);
   const stagedArg = argv.includes("--staged") || Boolean(options.staged);
 
+  const consumedIndices = new Set();
+  const isTriadFlag = (arg) => {
+    if (!arg || !arg.startsWith("--")) return false;
+    const name = arg.split("=")[0];
+    return [
+      "--format",
+      "--strict",
+      "--staged",
+      "--base",
+      "--head",
+      "--report",
+      "--output-run",
+      "--macro-cmd",
+      "--micro-cmd",
+      "--macro-args",
+      "--micro-args"
+    ].includes(name);
+  };
+
   let baseArg = null;
   const baseExplicit = argv.find(a => a.startsWith("--base="));
   if (baseExplicit) {
     baseArg = baseExplicit.slice("--base=".length);
   } else {
     const baseIdx = argv.indexOf("--base");
-    if (baseIdx !== -1 && argv[baseIdx + 1] && !argv[baseIdx + 1].startsWith("--")) {
+    if (baseIdx !== -1 && argv[baseIdx + 1] && !isTriadFlag(argv[baseIdx + 1])) {
+      consumedIndices.add(baseIdx + 1);
       baseArg = argv[baseIdx + 1];
     }
   }
@@ -49,7 +70,8 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
     headArg = headExplicit.slice("--head=".length);
   } else {
     const headIdx = argv.indexOf("--head");
-    if (headIdx !== -1 && argv[headIdx + 1] && !argv[headIdx + 1].startsWith("--")) {
+    if (headIdx !== -1 && argv[headIdx + 1] && !isTriadFlag(argv[headIdx + 1])) {
+      consumedIndices.add(headIdx + 1);
       headArg = argv[headIdx + 1];
     }
   }
@@ -60,9 +82,72 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
     reportArg = reportExplicit.slice(reportExplicit.indexOf("=") + 1);
   } else {
     const reportIdx = argv.findIndex(a => a === "--report" || a === "--output-run");
-    if (reportIdx !== -1 && argv[reportIdx + 1] && !argv[reportIdx + 1].startsWith("--")) {
+    if (reportIdx !== -1 && argv[reportIdx + 1] && !isTriadFlag(argv[reportIdx + 1])) {
+      consumedIndices.add(reportIdx + 1);
       reportArg = argv[reportIdx + 1];
     }
+  }
+
+  let macroCmd = null;
+  const macroCmdExplicit = argv.find(a => a.startsWith("--macro-cmd="));
+  if (macroCmdExplicit) {
+    macroCmd = macroCmdExplicit.slice("--macro-cmd=".length);
+  } else {
+    const macroCmdIdx = argv.indexOf("--macro-cmd");
+    if (macroCmdIdx !== -1 && argv[macroCmdIdx + 1] && !isTriadFlag(argv[macroCmdIdx + 1])) {
+      consumedIndices.add(macroCmdIdx + 1);
+      macroCmd = argv[macroCmdIdx + 1];
+    }
+  }
+  macroCmd = macroCmd || options.macroCmd || null;
+  if (typeof macroCmd === "string") {
+    macroCmd = macroCmd.trim() || null;
+  }
+
+  let microCmd = null;
+  const microCmdExplicit = argv.find(a => a.startsWith("--micro-cmd="));
+  if (microCmdExplicit) {
+    microCmd = microCmdExplicit.slice("--micro-cmd=".length);
+  } else {
+    const microCmdIdx = argv.indexOf("--micro-cmd");
+    if (microCmdIdx !== -1 && argv[microCmdIdx + 1] && !isTriadFlag(argv[microCmdIdx + 1])) {
+      consumedIndices.add(microCmdIdx + 1);
+      microCmd = argv[microCmdIdx + 1];
+    }
+  }
+  microCmd = microCmd || options.microCmd || null;
+  if (typeof microCmd === "string") {
+    microCmd = microCmd.trim() || null;
+  }
+
+  let macroArgs = null;
+  const macroArgsExplicit = argv.find(a => a.startsWith("--macro-args="));
+  if (macroArgsExplicit) {
+    macroArgs = macroArgsExplicit.slice("--macro-args=".length).split(",").map(s => s.trim()).filter(Boolean);
+  } else {
+    const macroArgsIdx = argv.indexOf("--macro-args");
+    if (macroArgsIdx !== -1 && argv[macroArgsIdx + 1] && !isTriadFlag(argv[macroArgsIdx + 1])) {
+      consumedIndices.add(macroArgsIdx + 1);
+      macroArgs = argv[macroArgsIdx + 1].split(",").map(s => s.trim()).filter(Boolean);
+    }
+  }
+  if (!macroArgs && options.macroArgs) {
+    macroArgs = Array.isArray(options.macroArgs) ? options.macroArgs : String(options.macroArgs).split(",").map(s => s.trim()).filter(Boolean);
+  }
+
+  let microArgs = null;
+  const microArgsExplicit = argv.find(a => a.startsWith("--micro-args="));
+  if (microArgsExplicit) {
+    microArgs = microArgsExplicit.slice("--micro-args=".length).split(",").map(s => s.trim()).filter(Boolean);
+  } else {
+    const microArgsIdx = argv.indexOf("--micro-args");
+    if (microArgsIdx !== -1 && argv[microArgsIdx + 1] && !isTriadFlag(argv[microArgsIdx + 1])) {
+      consumedIndices.add(microArgsIdx + 1);
+      microArgs = argv[microArgsIdx + 1].split(",").map(s => s.trim()).filter(Boolean);
+    }
+  }
+  if (!microArgs && options.microArgs) {
+    microArgs = Array.isArray(options.microArgs) ? options.microArgs : String(options.microArgs).split(",").map(s => s.trim()).filter(Boolean);
   }
 
   const isRecognizedArg = (arg) => {
@@ -72,10 +157,14 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
     if (arg.startsWith("--head=") || arg === "--head") return true;
     if (arg.startsWith("--report=") || arg === "--report") return true;
     if (arg.startsWith("--output-run=") || arg === "--output-run") return true;
+    if (arg.startsWith("--macro-cmd=") || arg === "--macro-cmd") return true;
+    if (arg.startsWith("--micro-cmd=") || arg === "--micro-cmd") return true;
+    if (arg.startsWith("--macro-args=") || arg === "--macro-args") return true;
+    if (arg.startsWith("--micro-args=") || arg === "--micro-args") return true;
     return false;
   };
 
-  const unknownFlags = argv.filter(a => a.startsWith("--") && !isRecognizedArg(a));
+  const unknownFlags = argv.filter((a, idx) => a.startsWith("--") && !consumedIndices.has(idx) && !isRecognizedArg(a));
   if (unknownFlags.length > 0) {
     io.stderr.write(`✖ [USAGE ERROR] Unsupported option(s): ${unknownFlags.join(", ")}\n`);
     return EXIT_CODES.USAGE_ERROR;
@@ -83,6 +172,11 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
 
   if (headArg && !baseArg) {
     io.stderr.write(`✖ [USAGE ERROR] Option '--head' requires '--base <ref>' to be specified.\n`);
+    return EXIT_CODES.USAGE_ERROR;
+  }
+
+  if (macroCmd && microCmd && macroCmd.toLowerCase() === microCmd.toLowerCase()) {
+    io.stderr.write(`✖ [USAGE ERROR] Heterogeneity violation: '--macro-cmd' and '--micro-cmd' cannot be identical ('${macroCmd}').\n`);
     return EXIT_CODES.USAGE_ERROR;
   }
 
@@ -238,7 +332,30 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
       const plan = evaluateDiffScale(files);
       io.stderr.write(`▶ Scale Routing: Mode = ${plan.mode.toUpperCase()} (${plan.reason})\n`);
 
-      const reviewAdapters = opts.reviewAdapters || opts.adapters || null;
+      let cliAdapters = null;
+      if (macroCmd || microCmd) {
+        cliAdapters = {};
+        if (macroCmd) {
+          cliAdapters.macro = new CliReviewAdapter({
+            command: macroCmd,
+            ...(macroArgs ? { args: macroArgs } : {}),
+            providerName: macroCmd,
+            modelName: "cli-default",
+            execFn: options.macroExecFn || options.execFn || null
+          });
+        }
+        if (microCmd) {
+          cliAdapters.micro = new CliReviewAdapter({
+            command: microCmd,
+            ...(microArgs ? { args: microArgs } : {}),
+            providerName: microCmd,
+            modelName: "cli-default",
+            execFn: options.microExecFn || options.execFn || null
+          });
+        }
+      }
+
+      const reviewAdapters = opts.reviewAdapters || opts.adapters || cliAdapters || null;
       let consensus;
       let gate;
       let orchResult = null;
@@ -276,7 +393,13 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
         changeSet,
         policy: { id: plan.mode === "hierarchical" ? "STRICT_HETEROGENEOUS" : "SINGLE_SENTRY", strict: strictArg },
         routing: plan,
-        providers: orchResult?.results ? Object.values(orchResult.results) : (orchResult?.result ? [orchResult.result] : []),
+        providers: orchResult?.results
+          ? Object.entries(orchResult.results).map(([role, res]) => ({ role, ...res }))
+          : (orchResult?.result
+            ? [{ role: (reviewAdapters?.macro ? "macro" : "micro"), ...orchResult.result }]
+            : (orchResult?.activeResult
+              ? [{ role: (reviewAdapters?.macro ? "macro" : "micro"), ...orchResult.activeResult }]
+              : [])),
         consensus,
         gate
       });
@@ -315,7 +438,7 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
     }
 
     default: {
-      io.stderr.write(`Usage: triad-flow [doctor | demo | review | factory] [--format=sarif|json] [--strict] [--staged] [--base=<ref>] [--head=<ref>] [--report=<file>]\n`);
+      io.stderr.write(`Usage: triad-flow [doctor | demo | review | factory] [--format=sarif|json] [--strict] [--staged] [--base=<ref>] [--head=<ref>] [--report=<file>] [--macro-cmd=<cmd>] [--micro-cmd=<cmd>] [--macro-args=<csv>] [--micro-args=<csv>]\n`);
       return EXIT_CODES.USAGE_ERROR;
     }
   }
