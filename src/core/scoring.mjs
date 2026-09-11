@@ -165,34 +165,56 @@ export function verifyHeldOutBaseline(actualFindings = [], goldenVulnerabilities
     };
   }
 
-  const findingsList = Array.isArray(actualFindings) ? actualFindings : [];
+  const findingsList = Array.isArray(actualFindings) ? [...actualFindings] : [];
   const matchedGoldenIndices = new Set();
+  const claimedFindingIndices = new Set();
 
   for (let gIdx = 0; gIdx < goldenVulnerabilities.length; gIdx++) {
     const golden = goldenVulnerabilities[gIdx];
     const gFile = normalizeCanonicalPath(golden.file || golden.path || "", workspaceRoot);
     const gCwe = golden.cwe;
     const gType = golden.type;
+    const gLine = golden.line ?? golden.line_start ?? null;
 
-    const isCaught = findingsList.some(f => {
+    let bestFindingIdx = -1;
+    let bestLineDist = Infinity;
+
+    for (let fIdx = 0; fIdx < findingsList.length; fIdx++) {
+      // Invariant: One finding cannot claim multiple distinct goldens without distinct evidence
+      if (claimedFindingIndices.has(fIdx)) continue;
+
+      const f = findingsList[fIdx];
       const fFile = normalizeCanonicalPath(f.file || f.path || f.location?.file || "", workspaceRoot);
 
       // Exact canonical file identity check
-      if (gFile) {
-        if (fFile !== gFile) return false;
-      }
+      if (gFile && fFile !== gFile) continue;
 
       const cweMatches = Boolean(gCwe && isCweMatched(f, gCwe));
       const typeMatches = Boolean(gType && isTypeMatched(f, gType));
 
+      let matched = false;
       if (gCwe || gType) {
-        return cweMatches || typeMatches;
+        matched = cweMatches || typeMatches;
+      } else {
+        matched = Boolean(gFile);
       }
 
-      return Boolean(gFile);
-    });
+      if (matched) {
+        const fLine = f.line_start ?? f.line ?? null;
+        if (gLine !== null && fLine !== null) {
+          const dist = Math.abs(Number(fLine) - Number(gLine));
+          if (dist < bestLineDist) {
+            bestLineDist = dist;
+            bestFindingIdx = fIdx;
+          }
+        } else if (bestFindingIdx === -1) {
+          bestFindingIdx = fIdx;
+        }
+      }
+    }
 
-    if (isCaught) {
+    if (bestFindingIdx !== -1) {
+      claimedFindingIndices.add(bestFindingIdx);
       matchedGoldenIndices.add(gIdx);
     }
   }
@@ -206,6 +228,7 @@ export function verifyHeldOutBaseline(actualFindings = [], goldenVulnerabilities
     totalGoldens: total,
     caughtGoldens: found,
     recallRate: `${recall.toFixed(1)}%`,
-    passed: recall >= 90.0
+    passed: recall >= 90.0,
+    claimedFindingsCount: claimedFindingIndices.size
   };
 }
