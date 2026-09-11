@@ -401,6 +401,21 @@ export function formatSarifReport(findings = [], metadata = {}) {
             rules: driverRules
           }
         },
+        ...(metadata.executionSuccessful !== undefined || metadata.failureReason ? {
+          invocations: [
+            {
+              executionSuccessful: metadata.executionSuccessful !== false,
+              ...(metadata.failureReason ? {
+                toolExecutionNotifications: [
+                  {
+                    level: metadata.executionSuccessful === false ? "error" : "note",
+                    message: { text: sanitizeText(String(metadata.failureReason)) }
+                  }
+                ]
+              } : {})
+            }
+          ]
+        } : {}),
         results
       }
     ]

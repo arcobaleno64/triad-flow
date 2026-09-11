@@ -141,3 +141,11 @@ test("Deep Immutability: Issued trusted consensus cannot be mutated", () => {
     realTrusted.findings[0].severity = "info";
   }, TypeError);
 });
+
+test("F-02 Policy Immutability: Severity policy sets cannot be mutated via add/delete/clear", () => {
+  assert.equal(BLOCKING_SEVERITIES.has("critical"), true);
+  assert.equal(BLOCKING_SEVERITIES.has("info"), false);
+  assert.throws(() => BLOCKING_SEVERITIES.add("info"), TypeError);
+  assert.throws(() => BLOCKING_SEVERITIES.delete("critical"), TypeError);
+  assert.throws(() => BLOCKING_SEVERITIES.clear(), TypeError);
+});

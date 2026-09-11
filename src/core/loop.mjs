@@ -246,25 +246,38 @@ export function aggregateConsensus(reportsInput, ...rest) {
     }
 
     validSelectedIds.push(id);
-    collectedFindings.push(...reportRec.findings);
+    const sentrySource = reportRec.source || reportRec.role || id;
+    for (const f of reportRec.findings) {
+      collectedFindings.push({ finding: f, source: sentrySource });
+    }
   }
 
-  // 5. Finding Deduplication (Highest severity preservation)
+  // 5. Finding Deduplication (Highest severity preservation & distinct sentry corroboration)
   const findingsMap = new Map();
-  for (const f of collectedFindings) {
+  for (const { finding: f, source } of collectedFindings) {
     const key = `${f.file}:${f.line_start}:${f.title}`.toLowerCase();
     const incomingSev = f.severity;
     const incomingWeight = SEVERITY_WEIGHTS[incomingSev] ?? 0;
 
     if (!findingsMap.has(key)) {
-      findingsMap.set(key, { ...f, sources: ["sentry-node"], corroborations: 1 });
+      findingsMap.set(key, {
+        ...f,
+        sources: [source],
+        corroborations: 1
+      });
     } else {
       const existing = findingsMap.get(key);
-      existing.corroborations += 1;
+      if (!existing.sources.includes(source)) {
+        existing.sources.push(source);
+        existing.corroborations = existing.sources.length;
+      }
       const currentWeight = SEVERITY_WEIGHTS[existing.severity] ?? 0;
       if (incomingWeight > currentWeight) {
         existing.severity = incomingSev;
       }
+      if (!existing.ruleId && f.ruleId) existing.ruleId = f.ruleId;
+      if (!existing.cwe && f.cwe) existing.cwe = f.cwe;
+      if (!existing.type && f.type) existing.type = f.type;
     }
   }
 

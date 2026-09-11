@@ -94,18 +94,24 @@ npm run review
 
 ---
 
-## 🏛️ 八大工程支柱矩陣
+## 🏛️ 核心架構與能力狀態矩陣
 
-| 支柱 | 實作檔案 | 核心機制 |
-|---|---|---|
-| 🛡️ **1. Guardrail & Harness (防護與夾具)** | [`src/core/harness.mjs`](src/core/harness.mjs) | 機密正則遮蔽、Symlink 沙盒、Quorum 門禁、SARIF 2.1.0 |
-| 🌐 **2. Graph Engineering (圖論拓撲)** | [`src/core/graph-router.mjs`](src/core/graph-router.mjs) | 規模自適應路由、Lockfile 規模納入、資安測試 Tier 1 審計 |
-| 🔄 **3. Loop Engineering (閉環控制)** | [`src/core/loop.mjs`](src/core/loop.mjs) | 嚴重度升級合併、OODA 控制器、Jaccard 語意抗振盪熔斷 |
-| 🔭 **4. Observability (可觀察性)** | [`src/core/telemetry.mjs`](src/core/telemetry.mjs) | 極簡進程內 Span 追蹤器與耗時分析 |
-| 🎯 **5. Eval & Benchmark (評估基準)** | [`src/core/scoring.mjs`](src/core/scoring.mjs) | 嚴格變異分數驗證與 Held-Out 黃金 CVE 召回率測試 |
-| 🧠 **6. Context Budgeting (上下文預算)** | [`src/core/graph-router.mjs`](src/core/graph-router.mjs) | 3-Tier 風險分層分配（Auth/CI 檔案 0% 截斷保證） |
-| 📦 **7. Sandbox Isolation (沙盒隔離)** | [`src/core/harness.mjs`](src/core/harness.mjs) | 零信任實體檔案系統與 Symlink 邊界隔離 |
-| ⚖️ **8. Constitutional (憲法邊界)** | [`CLAUDE.md`](CLAUDE.md) | 極簡、不可妥協的確定性規則（<50 行） |
+### 核心支柱 (Active Safety Core)
+
+| 支柱 | 實作檔案 | 核心機制 | 當前狀態 |
+|---|---|---|---|
+| 🛡️ **Harness Engineering (安全夾具)** | [`src/core/harness.mjs`](src/core/harness.mjs) | 嚴格 Fail-closed 門禁、SARIF 2.1.0 失敗狀態記錄、機密遮蔽原語 | **核心運作中** |
+| 🌐 **Graph Engineering (拓撲路由)** | [`src/core/graph-router.mjs`](src/core/graph-router.mjs) | 規模自適應路由、多層級風險分類、二進位變更強制升級 | **核心運作中** |
+| 🔄 **Loop Engineering (閉環控制)** | [`src/core/loop.mjs`](src/core/loop.mjs) | Quorum 驗證、獨立來源 Corroboration 去重、嚴重度升級保留 | **核心運作中** |
+
+### 支援模組 (Supporting Modules)
+
+| 模組 | 實作檔案 | 角色與能力 | 當前狀態 |
+|---|---|---|---|
+| 📁 **Git Collector** | [`src/core/git-collector.mjs`](src/core/git-collector.mjs) | 收集工作區、暫存區與未追蹤檔案狀態 | 已接入 CLI |
+| 🎯 **Eval & Scoring** | [`src/core/scoring.mjs`](src/core/scoring.mjs) | 變異分數與 Held-Out CVE 召回率評估演算法 | 函式庫原語 |
+| 🔭 **Telemetry** | [`src/core/telemetry.mjs`](src/core/telemetry.mjs) | 極簡行程內 Span 追蹤器與延遲分析 | 僅用於 Demo |
+| 🏭 **Autonomous Factory** | [`src/core/factory.mjs`](src/core/factory.mjs) | 自主修復管線前檢與 Fail-closed 閘門 | 執行骨架 (預設停止) |
 
 ---
 

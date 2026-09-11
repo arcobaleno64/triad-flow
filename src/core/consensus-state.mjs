@@ -4,8 +4,24 @@
  */
 
 export const ALLOWED_VERDICTS = Object.freeze(["approve", "warning", "needs-attention", "error"]);
-export const BLOCKING_SEVERITIES = Object.freeze(new Set(["critical", "high"]));
-export const VALID_SEVERITY_SET = Object.freeze(new Set(["critical", "high", "medium", "low", "info"]));
+
+function makeReadOnlySet(elements) {
+  const privateSet = new Set(elements);
+  return Object.freeze({
+    has: (item) => privateSet.has(item),
+    get size() { return privateSet.size; },
+    values: () => privateSet.values(),
+    entries: () => privateSet.entries(),
+    forEach: (cb, thisArg) => privateSet.forEach(cb, thisArg),
+    [Symbol.iterator]: () => privateSet[Symbol.iterator](),
+    add: () => { throw new TypeError("Cannot modify read-only severity policy set."); },
+    delete: () => { throw new TypeError("Cannot modify read-only severity policy set."); },
+    clear: () => { throw new TypeError("Cannot modify read-only severity policy set."); }
+  });
+}
+
+export const BLOCKING_SEVERITIES = makeReadOnlySet(["critical", "high"]);
+export const VALID_SEVERITY_SET = makeReadOnlySet(["critical", "high", "medium", "low", "info"]);
 
 /**
  * Recursively freezes an object and its nested properties.
@@ -102,6 +118,9 @@ export function validateConsensusSemantics(report) {
         file,
         line_start: Number(f.line_start || f.line || 1),
         line_end: Number(f.line_end || f.line_start || f.line || 1),
+        ruleId: typeof f.ruleId === "string" ? f.ruleId.trim() : undefined,
+        cwe: typeof f.cwe === "string" ? f.cwe.trim() : undefined,
+        type: typeof f.type === "string" ? f.type.trim() : undefined,
         recommendation: typeof f.recommendation === "string" ? f.recommendation : (typeof f.body === "string" ? f.body : undefined),
         sources: Array.isArray(f.sources) ? [...f.sources] : ["sentry-node"],
         corroborations: Number(f.corroborations || 1)
@@ -195,6 +214,21 @@ export function issueConsensusFromEvidence({
 
   const cleanFindings = Array.isArray(deduplicatedFindings) ? deduplicatedFindings : [];
   const selectedReportIds = Array.isArray(quorumResult.selectedReportIds) ? [...quorumResult.selectedReportIds] : [];
+
+  // Security Invariant (R1): Every selectedReportId must exist in validatedReportsMap and be healthy
+  for (const id of selectedReportIds) {
+    if (!validatedReportsMap.has(id)) {
+      throw new TypeError(`Cannot issue trusted consensus: Selected report ID '${id}' is not present in validated reports map.`);
+    }
+    const reportRec = validatedReportsMap.get(id);
+    if (!reportRec || reportRec.healthy === false) {
+      throw new TypeError(`Cannot issue trusted consensus: Selected report ID '${id}' is not healthy.`);
+    }
+  }
+
+  if (quorumResult.quorumReached && selectedReportIds.length === 0) {
+    throw new TypeError("Cannot issue trusted consensus: Quorum reached cannot have empty selectedReportIds.");
+  }
 
   const rawConsensus = {
     verdict: String(verdict),

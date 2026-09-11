@@ -121,3 +121,28 @@ test("Repository npm scripts execute real CLI entrypoint and produce output (P0-
   assert.equal(factoryRes.status, 1);
   assert.match(factoryRes.stderr + factoryRes.stdout, /Unconfigured Factory Adapters/i);
 });
+
+test("runCli rejects unsupported options like --base with EXIT_CODES.USAGE_ERROR", async () => {
+  const stdout = new MockStream();
+  const stderr = new MockStream();
+  const code = await runCli(["review", "--base=origin/main"], { stdout, stderr });
+
+  assert.equal(code, EXIT_CODES.USAGE_ERROR);
+  assert.match(stderr.buffer, /Unsupported option/i);
+});
+
+test("runCli review emits SARIF with failed invocations when blocked", async () => {
+  const stdout = new MockStream();
+  const stderr = new MockStream();
+  const mockChangedGitState = {
+    ok: true,
+    files: [{ path: "src/auth/jwt.ts", additions: 10, deletions: 2 }]
+  };
+
+  const code = await runCli(["review", "--format=sarif"], { stdout, stderr }, { getGitState: () => mockChangedGitState });
+  assert.equal(code, EXIT_CODES.GATE_BLOCKED);
+  const sarif = JSON.parse(stdout.buffer);
+  assert.equal(sarif.runs[0].results.length, 0);
+  assert.ok(sarif.runs[0].invocations);
+  assert.equal(sarif.runs[0].invocations[0].executionSuccessful, false);
+});

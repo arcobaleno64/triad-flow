@@ -19,7 +19,7 @@ A block maps to exit code `1` (`GATE_BLOCKED`, `src/cli.mjs:14`). There is no
 flag that converts a block into a pass.
 
 ### 1.2 Quorum cannot be forged
-`assertSemanticIntegrity` (`src/core/consensus-state.mjs`) rejects a report
+`validateConsensusSemantics` (`src/core/consensus-state.mjs`) rejects a report
 whose `verdict` is `approve` while `quorumReached` is `false` (C-07), and one
 whose `verdict` is `error` while claiming a clean quorum with no error reason
 (C-08). `quorumReached` must be a boolean; a truthy string will not pass (C-01).

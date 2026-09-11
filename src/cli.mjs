@@ -25,6 +25,13 @@ function printBanner(io, title) {
 export async function runCli(argv = process.argv.slice(2), io = { stdout: process.stdout, stderr: process.stderr }, options = {}) {
   const command = argv[0] || "doctor";
   const formatArg = argv.find(a => a.startsWith("--format="))?.split("=")[1] || "text";
+  const strictArg = argv.includes("--strict") || Boolean(options.strict);
+
+  const unknownFlags = argv.filter(a => a.startsWith("--") && !a.startsWith("--format=") && a !== "--strict");
+  if (unknownFlags.length > 0) {
+    io.stderr.write(`✖ [USAGE ERROR] Unsupported option(s): ${unknownFlags.join(", ")}\n`);
+    return EXIT_CODES.USAGE_ERROR;
+  }
 
   switch (command) {
     case "doctor": {
@@ -113,7 +120,7 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
       if (files.length === 0) {
         io.stderr.write("✔ [No Changes] Working tree and staging area are clean. No files to review (No-op).\n\n");
         if (formatArg === "sarif") {
-          io.stdout.write(JSON.stringify(formatSarifReport([]), null, 2) + "\n");
+          io.stdout.write(JSON.stringify(formatSarifReport([], { executionSuccessful: true }), null, 2) + "\n");
         }
         return EXIT_CODES.SUCCESS;
       }
@@ -127,13 +134,18 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
         { error: "No configured macro sentry provider" },
         { error: "No configured micro sentry provider" }
       );
-      const gate = evaluateGateDecision(consensus);
+      const gate = evaluateGateDecision(consensus, { strict: strictArg });
 
       io.stderr.write(`\n★ Consensus Verdict: ${consensus.verdict.toUpperCase()} (${consensus.consensusProof})\n`);
       io.stderr.write(`🛡️ Gate Decision: ${gate.decision.toUpperCase()} - ${gate.reason}\n\n`);
 
       if (formatArg === "sarif") {
-        io.stdout.write(JSON.stringify(formatSarifReport(consensus.findings), null, 2) + "\n");
+        const isApprove = gate.decision === "approve";
+        const sarif = formatSarifReport(consensus.findings, {
+          executionSuccessful: isApprove,
+          failureReason: isApprove ? undefined : (consensus.consensusProof || gate.reason || "Review unconfigured or quorum failed")
+        });
+        io.stdout.write(JSON.stringify(sarif, null, 2) + "\n");
       }
 
       return gate.decision === "approve" ? EXIT_CODES.SUCCESS : EXIT_CODES.GATE_BLOCKED;

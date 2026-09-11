@@ -94,18 +94,24 @@ npm run review
 
 ---
 
-## 🏛️ The 8 Engineering Pillars Matrix
+## 🏛️ Core Architecture & Capability Matrix
 
-| Pillar | Implementation File | Key Mechanism |
-|---|---|---|
-| 🛡️ **1. Guardrail & Harness** | [`src/core/harness.mjs`](src/core/harness.mjs) | Multi-pattern redaction, Symlink sandbox, Quorum gate, SARIF 2.1.0 |
-| 🌐 **2. Graph Engineering** | [`src/core/graph-router.mjs`](src/core/graph-router.mjs) | Scale-adaptive routing, Lockfile tracking, Security test Tier 1 routing |
-| 🔄 **3. Loop Engineering** | [`src/core/loop.mjs`](src/core/loop.mjs) | Severity Escalation Merge, OODA Controller, Jaccard stagnation circuit breaker |
-| 🔭 **4. Observability** | [`src/core/telemetry.mjs`](src/core/telemetry.mjs) | Ultra-lean in-process span tracer and latency profiler |
-| 🎯 **5. Eval & Benchmark** | [`src/core/scoring.mjs`](src/core/scoring.mjs) | Strict mutation score verification & held-out golden CVE recall testing |
-| 🧠 **6. Context Budgeting** | [`src/core/graph-router.mjs`](src/core/graph-router.mjs) | 3-Tier risk allocation (0% truncation on Auth/CI files) |
-| 📦 **7. Sandbox Isolation** | [`src/core/harness.mjs`](src/core/harness.mjs) | Zero-trust physical filesystem and symlink containment |
-| ⚖️ **8. Constitutional** | [`CLAUDE.md`](CLAUDE.md) | Lean, non-negotiable invariant rules (<50 lines) |
+### Core Pillars (Active Safety Core)
+
+| Pillar | Implementation File | Key Mechanism | Status |
+|---|---|---|---|
+| 🛡️ **Harness Engineering** | [`src/core/harness.mjs`](src/core/harness.mjs) | Fail-closed gate, SARIF 2.1.0 with failure invocations, secret redaction primitives | **Active Core** |
+| 🌐 **Graph Engineering** | [`src/core/graph-router.mjs`](src/core/graph-router.mjs) | Scale-adaptive routing, multi-tier risk classification, binary change escalation | **Active Core** |
+| 🔄 **Loop Engineering** | [`src/core/loop.mjs`](src/core/loop.mjs) | Quorum verification, distinct-source corroboration, severity escalation deduplication | **Active Core** |
+
+### Supporting Modules
+
+| Module | Implementation File | Role | Status |
+|---|---|---|---|
+| 📁 **Git Collector** | [`src/core/git-collector.mjs`](src/core/git-collector.mjs) | Working tree, staged, and untracked file state capture | Wired to CLI |
+| 🎯 **Eval & Scoring** | [`src/core/scoring.mjs`](src/core/scoring.mjs) | Mutation score & golden baseline recall verification algorithms | Library Primitive |
+| 🔭 **Telemetry** | [`src/core/telemetry.mjs`](src/core/telemetry.mjs) | Lean in-process span tracer and latency profiler | Demo / Simulation |
+| 🏭 **Autonomous Factory** | [`src/core/factory.mjs`](src/core/factory.mjs) | Autonomous remediation pipeline pre-flight & fail-closed gate | Execution Skeleton |
 
 ---
 

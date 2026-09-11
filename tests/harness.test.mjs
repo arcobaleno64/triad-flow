@@ -171,3 +171,16 @@ test("formatSarifReport deduplicates driver rules and associates correct ruleInd
   const driverRules = sarif.runs[0].tool.driver.rules;
   assert.equal(driverRules.length, 2, "Duplicate rule titles must be deduplicated in driver.rules");
 });
+
+test("F-09: formatSarifReport records executionSuccessful: false and failure notifications", () => {
+  const failedSarif = formatSarifReport([], {
+    executionSuccessful: false,
+    failureReason: "Quorum failure: sentries unreachable"
+  });
+
+  assert.equal(failedSarif.runs[0].results.length, 0);
+  assert.ok(failedSarif.runs[0].invocations);
+  assert.equal(failedSarif.runs[0].invocations[0].executionSuccessful, false);
+  assert.equal(failedSarif.runs[0].invocations[0].toolExecutionNotifications[0].level, "error");
+  assert.match(failedSarif.runs[0].invocations[0].toolExecutionNotifications[0].message.text, /Quorum failure/);
+});

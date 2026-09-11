@@ -25,8 +25,9 @@ const LOCKFILE_PATTERNS = [
   /(?:^|[\\/])bun\.lockb$/i
 ];
 
-const TIER_3_PATTERNS = [
-  /\.(md|markdown|txt|rst)$/i,
+const DOC_EXTENSIONS = /\.(md|markdown|txt|rst)$/i;
+
+const TIER_3_DIRS = [
   /(?:^|[\\/])docs[\\/]/i,
   /(?:^|[\\/])examples[\\/]/i
 ];
@@ -63,9 +64,9 @@ export function classifyFileRisk(filePath = "") {
     if (pattern.test(normalized)) return RISK_TIERS.TIER_2_SOURCE;
   }
 
-  // 3. Documentation (Tier 3 - Evaluated before security keyword matching to prevent docs/auth/guide.md misclassification)
-  for (const pattern of TIER_3_PATTERNS) {
-    if (pattern.test(normalized)) return RISK_TIERS.TIER_3_DOCS;
+  // 3. True documentation files (Tier 3)
+  if (DOC_EXTENSIONS.test(normalized)) {
+    return RISK_TIERS.TIER_3_DOCS;
   }
 
   const isTest = TEST_FILE_PATTERNS.some(p => p.test(normalized));
@@ -75,6 +76,11 @@ export function classifyFileRisk(filePath = "") {
   // 4. Critical Security & CI/CD Files (including tests in security directories)
   if (isSecurityDir || isSecurityFile) {
     return RISK_TIERS.TIER_1_CRITICAL;
+  }
+
+  // 5. Non-security assets in doc or example folders
+  for (const pattern of TIER_3_DIRS) {
+    if (pattern.test(normalized)) return RISK_TIERS.TIER_3_DOCS;
   }
 
   if (isTest) {
@@ -103,7 +109,7 @@ export function evaluateDiffScale(files = [], options = {}) {
       continue;
     }
 
-    if (file.largeFile || file.unreadable || file.inspectionFailed) {
+    if (file.largeFile || file.unreadable || file.inspectionFailed || file.binary) {
       hasLargeOrUnreadable = true;
     }
 
@@ -132,7 +138,7 @@ export function evaluateDiffScale(files = [], options = {}) {
         : categorized.tier1.join(", ");
       reason = `Modified high-risk security files (${fileSummary})`;
     } else if (hasLargeOrUnreadable) {
-      reason = `Diff contains large (>2MB) or uninspected files requiring swarm consensus`;
+      reason = `Diff contains binary, large (>2MB) or uninspected files requiring swarm consensus`;
     } else {
       reason = `Diff exceeds threshold (${activeCount} active files, ${totalLines} lines)`;
     }
