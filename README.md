@@ -40,6 +40,12 @@ npm run demo
 
 # 4. Run scale-adaptive review on real Git diff
 npm run review
+
+# 5. Advanced review options
+triad-flow review --base=origin/main --head=HEAD   # Review committed PR range
+triad-flow review --staged                         # Review staged changes only
+triad-flow review --format=sarif                   # Emit OASIS SARIF 2.1.0
+triad-flow review --format=json --report=run.json  # Emit auditable review-run.json
 ```
 
 ---
@@ -100,18 +106,20 @@ npm run review
 
 | Pillar | Implementation File | Key Mechanism | Status |
 |---|---|---|---|
-| 🛡️ **Harness Engineering** | [`src/core/harness.mjs`](src/core/harness.mjs) | Fail-closed gate, SARIF 2.1.0 with failure invocations, secret redaction primitives | **Active Core** |
+| 🛡️ **Harness Engineering** | [`src/core/harness.mjs`](src/core/harness.mjs) | Fail-closed gate, SARIF 2.1.0 validation, secret redaction primitives | **Active Core** |
 | 🌐 **Graph Engineering** | [`src/core/graph-router.mjs`](src/core/graph-router.mjs) | Scale-adaptive routing, multi-tier risk classification, binary change escalation | **Active Core** |
-| 🔄 **Loop Engineering** | [`src/core/loop.mjs`](src/core/loop.mjs) | Quorum verification, distinct-source corroboration, severity escalation deduplication | **Active Core** |
+| 🔄 **Loop Engineering** | [`src/core/loop.mjs`](src/core/loop.mjs) | Quorum verification, distinct-source corroboration, monotonic reduction progress tracking | **Active Core** |
 
 ### Supporting Modules
 
 | Module | Implementation File | Role | Status |
 |---|---|---|---|
-| 📁 **Git Collector** | [`src/core/git-collector.mjs`](src/core/git-collector.mjs) | Working tree, staged, and untracked file state capture | Wired to CLI |
-| 🎯 **Eval & Scoring** | [`src/core/scoring.mjs`](src/core/scoring.mjs) | Mutation score & golden baseline recall verification algorithms | Library Primitive |
+| 📁 **Git Collector** | [`src/core/git-collector.mjs`](src/core/git-collector.mjs) | Canonical ChangeSet, sha256 digest, revision-range (`--base`/`--head`) & staged capture | Wired to CLI |
+| 🔌 **Review Adapters** | [`src/adapters/cli-transport.mjs`](src/adapters/cli-transport.mjs), [`src/adapters/provider-contract.mjs`](src/adapters/provider-contract.mjs) | Read-only CLI transport (`CliReviewAdapter`), offline replay, Default-Deny & high-risk dual sentry gate | Wired to CLI |
+| 📝 **Run Auditing** | [`src/core/review-run-report.mjs`](src/core/review-run-report.mjs) | Canonical `review-run.json` audit schema, 6 unambiguous run statuses, CI exit code preservation | Wired to CLI |
+| 🎯 **Eval & Benchmark** | [`src/core/scoring.mjs`](src/core/scoring.mjs), [`src/core/benchmark-pilot.mjs`](src/core/benchmark-pilot.mjs) | 1-to-1 instance matching, 24-case empirical benchmark pilot, 3-way evaluation & vendor family diversity | Active Framework |
 | 🔭 **Telemetry** | [`src/core/telemetry.mjs`](src/core/telemetry.mjs) | Lean in-process span tracer and latency profiler | Demo / Simulation |
-| 🏭 **Autonomous Factory** | [`src/core/factory.mjs`](src/core/factory.mjs) | Autonomous remediation pipeline pre-flight & fail-closed gate | Execution Skeleton |
+| 🏭 **Autonomous Factory** | [`src/core/factory.mjs`](src/core/factory.mjs) | Autonomous remediation pipeline pre-flight & fail-closed gate | Execution Skeleton (Frozen) |
 
 ---
 

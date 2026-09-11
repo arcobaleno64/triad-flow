@@ -40,6 +40,12 @@ npm run demo
 
 # 4. 針對真實 Git Diff 執行自適應審查
 npm run review
+
+# 5. 進階審查選項
+triad-flow review --base=origin/main --head=HEAD   # 審查已提交的 PR 範圍（適合 CI checkout）
+triad-flow review --staged                         # 僅審查暫存區變更
+triad-flow review --format=sarif                   # 輸出 OASIS SARIF 2.1.0 報表
+triad-flow review --format=json --report=run.json  # 輸出標準 review-run.json 稽核檔案
 ```
 
 ---
@@ -100,18 +106,20 @@ npm run review
 
 | 支柱 | 實作檔案 | 核心機制 | 當前狀態 |
 |---|---|---|---|
-| 🛡️ **Harness Engineering (安全夾具)** | [`src/core/harness.mjs`](src/core/harness.mjs) | 嚴格 Fail-closed 門禁、SARIF 2.1.0 失敗狀態記錄、機密遮蔽原語 | **核心運作中** |
+| 🛡️ **Harness Engineering (安全夾具)** | [`src/core/harness.mjs`](src/core/harness.mjs) | 嚴格 Fail-closed 門禁、SARIF 2.1.0 規格驗證、機密遮蔽原語 | **核心運作中** |
 | 🌐 **Graph Engineering (拓撲路由)** | [`src/core/graph-router.mjs`](src/core/graph-router.mjs) | 規模自適應路由、多層級風險分類、二進位變更強制升級 | **核心運作中** |
-| 🔄 **Loop Engineering (閉環控制)** | [`src/core/loop.mjs`](src/core/loop.mjs) | Quorum 驗證、獨立來源 Corroboration 去重、嚴重度升級保留 | **核心運作中** |
+| 🔄 **Loop Engineering (閉環控制)** | [`src/core/loop.mjs`](src/core/loop.mjs) | Quorum 驗證、獨立來源 Corroboration 去重、單調進展持續修復判定 | **核心運作中** |
 
 ### 支援模組 (Supporting Modules)
 
 | 模組 | 實作檔案 | 角色與能力 | 當前狀態 |
 |---|---|---|---|
-| 📁 **Git Collector** | [`src/core/git-collector.mjs`](src/core/git-collector.mjs) | 收集工作區、暫存區與未追蹤檔案狀態 | 已接入 CLI |
-| 🎯 **Eval & Scoring** | [`src/core/scoring.mjs`](src/core/scoring.mjs) | 變異分數與 Held-Out CVE 召回率評估演算法 | 函式庫原語 |
+| 📁 **Git Collector** | [`src/core/git-collector.mjs`](src/core/git-collector.mjs) | ChangeSet 規範封裝、sha256 摘要、版本範圍 (`--base`/`--head`) 與暫存收集 | 已接入 CLI |
+| 🔌 **Review Adapters** | [`src/adapters/cli-transport.mjs`](src/adapters/cli-transport.mjs), [`src/adapters/provider-contract.mjs`](src/adapters/provider-contract.mjs) | 唯讀受控 CLI 傳輸 (`CliReviewAdapter`)、離線回放、Default-Deny 與高風險雙哨兵門禁 | 已接入 CLI |
+| 📝 **Run Auditing** | [`src/core/review-run-report.mjs`](src/core/review-run-report.mjs) | 標準 `review-run.json` 稽核架構、6 大非重疊執行狀態、保留 CI 退出代碼 | 已接入 CLI |
+| 🎯 **Eval & Benchmark** | [`src/core/scoring.mjs`](src/core/scoring.mjs), [`src/core/benchmark-pilot.mjs`](src/core/benchmark-pilot.mjs) | 1-to-1 Instance 匹配修正、24 案實證 Benchmark Pilot、3 軌帕雷托評估與供應商家族檢查 | 作用中框架 |
 | 🔭 **Telemetry** | [`src/core/telemetry.mjs`](src/core/telemetry.mjs) | 極簡行程內 Span 追蹤器與延遲分析 | 僅用於 Demo |
-| 🏭 **Autonomous Factory** | [`src/core/factory.mjs`](src/core/factory.mjs) | 自主修復管線前檢與 Fail-closed 閘門 | 執行骨架 (預設停止) |
+| 🏭 **Autonomous Factory** | [`src/core/factory.mjs`](src/core/factory.mjs) | 自主修復管線前檢與 Fail-closed 閘門 | 執行骨架 (凍結) |
 
 ---
 
