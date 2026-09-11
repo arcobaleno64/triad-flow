@@ -18,6 +18,7 @@ export async function orchestrateReview(changeSet, adapters = {}, options = {}) 
   const strict = Boolean(options.strict);
   const timeoutMs = options.timeoutMs || 60000;
   const signal = options.signal || null;
+  const limits = options.limits || null;
 
   if (!changeSet || !changeSet.ok) {
     return {
@@ -77,7 +78,8 @@ export async function orchestrateReview(changeSet, adapters = {}, options = {}) 
         changeSet,
         policyId: "STRICT_HETEROGENEOUS",
         timeoutMs,
-        signal
+        signal,
+        ...(limits ? { limits } : {})
       });
 
       const rawReports = {
@@ -112,7 +114,8 @@ export async function orchestrateReview(changeSet, adapters = {}, options = {}) 
         changeSet,
         policyId: "STRICT_HETEROGENEOUS",
         timeoutMs,
-        signal
+        signal,
+        ...(limits ? { limits } : {})
       }),
       adapters.micro.executeReview({
         runId,
@@ -120,7 +123,8 @@ export async function orchestrateReview(changeSet, adapters = {}, options = {}) 
         changeSet,
         policyId: "STRICT_HETEROGENEOUS",
         timeoutMs,
-        signal
+        signal,
+        ...(limits ? { limits } : {})
       })
     ]);
 
@@ -163,7 +167,8 @@ export async function orchestrateReview(changeSet, adapters = {}, options = {}) 
     changeSet,
     policyId: "SINGLE_SENTRY",
     timeoutMs,
-    signal
+    signal,
+    ...(limits ? { limits } : {})
   });
 
   const singleReport = convertProviderResultToSentryReport(singleResult, singleRole);

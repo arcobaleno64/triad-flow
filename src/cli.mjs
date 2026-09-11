@@ -393,7 +393,12 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
       let runStatus;
 
       if (reviewAdapters) {
-        orchResult = await orchestrateReview(changeSet, reviewAdapters, { strict: strictArg });
+        orchResult = await orchestrateReview(changeSet, reviewAdapters, {
+          strict: strictArg,
+          timeoutMs: options.timeoutMs,
+          signal: options.signal,
+          limits: options.limits
+        });
         consensus = orchResult.consensus;
         gate = orchResult.gate;
         if (orchResult.status === "incomplete") {
