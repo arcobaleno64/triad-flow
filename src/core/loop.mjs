@@ -393,19 +393,13 @@ export class OodaLoopController {
     // 7. Semantic Stagnation / Jaccard Similarity Detection
     const currentSet = this.getFindingKeySet(consensusReport.findings || []);
     for (const prevSet of this.historyFingerprints) {
-      // Monotonic progress check: reducing findings with zero new regressions is valid progress, not stagnation
-      const isStrictSubsetProgress = currentSet.size < prevSet.size &&
-        [...currentSet].every(key => prevSet.has(key));
-
-      if (!isStrictSubsetProgress) {
-        const sim = this.calculateJaccardSimilarity(currentSet, prevSet);
-        if (sim >= this.similarityThreshold && this.currentIteration > 1) {
-          return {
-            status: "oscillation_detected",
-            action: "escalate_to_human",
-            reason: `Remediation stagnation/oscillation detected (Similarity: ${(sim * 100).toFixed(1)}% >= ${(this.similarityThreshold * 100)}%). Livelock prevented.`
-          };
-        }
+      const sim = this.calculateJaccardSimilarity(currentSet, prevSet);
+      if (sim >= this.similarityThreshold && this.currentIteration > 1) {
+        return {
+          status: "oscillation_detected",
+          action: "escalate_to_human",
+          reason: `Remediation stagnation/oscillation detected (Similarity: ${(sim * 100).toFixed(1)}% >= ${(this.similarityThreshold * 100)}%). Livelock prevented.`
+        };
       }
     }
     this.historyFingerprints.push(currentSet);

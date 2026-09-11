@@ -164,3 +164,37 @@ test("runCli review emits SARIF with failed invocations when blocked", async () 
   assert.ok(sarif.runs[0].invocations);
   assert.equal(sarif.runs[0].invocations[0].executionSuccessful, false);
 });
+
+test("runCli rejects --base followed by unknown flag like --bogus with EXIT_CODES.USAGE_ERROR without invoking git", async () => {
+  const stdout = new MockStream();
+  const stderr = new MockStream();
+  let getGitCalled = false;
+  const code = await runCli(["review", "--base", "--bogus"], { stdout, stderr }, {
+    getGitState: () => {
+      getGitCalled = true;
+      return { ok: true, files: [] };
+    }
+  });
+
+  assert.equal(code, EXIT_CODES.USAGE_ERROR);
+  assert.equal(getGitCalled, false);
+  assert.match(stderr.buffer, /Unsupported option\(s\): --bogus/i);
+});
+
+test("runCli rejects bare --base without ref argument with EXIT_CODES.USAGE_ERROR", async () => {
+  const stdout = new MockStream();
+  const stderr = new MockStream();
+  const code = await runCli(["review", "--base"], { stdout, stderr });
+
+  assert.equal(code, EXIT_CODES.USAGE_ERROR);
+  assert.match(stderr.buffer, /Option '--base' requires a <ref> argument/i);
+});
+
+test("runCli rejects --report followed by unknown flag with EXIT_CODES.USAGE_ERROR without creating file", async () => {
+  const stdout = new MockStream();
+  const stderr = new MockStream();
+  const code = await runCli(["review", "--report", "--bogus"], { stdout, stderr });
+
+  assert.equal(code, EXIT_CODES.USAGE_ERROR);
+  assert.match(stderr.buffer, /Unsupported option\(s\): --bogus/i);
+});

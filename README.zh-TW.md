@@ -108,7 +108,7 @@ triad-flow review --format=json --report=run.json  # 輸出標準 review-run.jso
 |---|---|---|---|
 | 🛡️ **Harness Engineering (安全夾具)** | [`src/core/harness.mjs`](src/core/harness.mjs) | 嚴格 Fail-closed 門禁、SARIF 2.1.0 規格驗證、機密遮蔽原語 | **核心運作中** |
 | 🌐 **Graph Engineering (拓撲路由)** | [`src/core/graph-router.mjs`](src/core/graph-router.mjs) | 規模自適應路由、多層級風險分類、二進位變更強制升級 | **核心運作中** |
-| 🔄 **Loop Engineering (閉環控制)** | [`src/core/loop.mjs`](src/core/loop.mjs) | Quorum 驗證、獨立來源 Corroboration 去重、單調進展持續修復判定 | **核心運作中** |
+| 🔄 **Loop Engineering (閉環控制)** | [`src/core/loop.mjs`](src/core/loop.mjs) | Quorum 驗證、獨立來源 Corroboration 去重、嚴重度升級保留 | **核心運作中** |
 
 ### 支援模組 (Supporting Modules)
 

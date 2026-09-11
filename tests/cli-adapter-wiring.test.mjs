@@ -314,6 +314,18 @@ test("V5: macro 與 micro 帶相同指令以 USAGE ERROR 拒絕且不執行審�
   assert.equal(code3, EXIT_CODES.USAGE_ERROR);
   assert.match(stderr3.buffer, /Heterogeneity violation/i);
   assert.equal(changeSetCalled, false);
+
+  // Format 4: Path and extension normalization (e.g. ./agy vs agy.cmd)
+  const stdout4 = new MockStream();
+  const stderr4 = new MockStream();
+  const code4 = await runCli(
+    ["review", "--macro-cmd=./agy", "--micro-cmd=agy.cmd"],
+    { stdout: stdout4, stderr: stderr4 },
+    { getChangeSet }
+  );
+  assert.equal(code4, EXIT_CODES.USAGE_ERROR);
+  assert.match(stderr4.buffer, /Heterogeneity violation/i);
+  assert.equal(changeSetCalled, false);
 });
 
 // V6: 帶一個拼錯或不存在的旗標 -> 既有的 unknown-flag 拒絕行為照常生效

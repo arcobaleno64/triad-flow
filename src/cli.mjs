@@ -3,6 +3,7 @@
  */
 
 import fs from "node:fs";
+import path from "node:path";
 import crypto from "node:crypto";
 import { SpanTracer } from "./core/telemetry.mjs";
 import { evaluateDiffScale } from "./core/graph-router.mjs";
@@ -27,15 +28,21 @@ function printBanner(io, title) {
   io.stderr.write("=======================================================\n\n");
 }
 
+export function normalizeCommandName(cmd) {
+  if (!cmd || typeof cmd !== "string") return "";
+  const base = path.basename(cmd.trim()).toLowerCase();
+  return base.replace(/\.(exe|cmd|bat|ps1|js|mjs)$/i, "");
+}
+
 export async function runCli(argv = process.argv.slice(2), io = { stdout: process.stdout, stderr: process.stderr }, options = {}) {
   const command = argv[0] || "doctor";
   const formatArg = argv.find(a => a.startsWith("--format="))?.split("=")[1] || "text";
   const strictArg = argv.includes("--strict") || Boolean(options.strict);
   const stagedArg = argv.includes("--staged") || Boolean(options.staged);
 
-  const consumedIndices = new Set();
+  const consumedArgsIndices = new Set();
   const isTriadFlag = (arg) => {
-    if (!arg || !arg.startsWith("--")) return false;
+    if (!arg || typeof arg !== "string" || !arg.startsWith("--")) return false;
     const name = arg.split("=")[0];
     return [
       "--format",
@@ -58,8 +65,7 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
     baseArg = baseExplicit.slice("--base=".length);
   } else {
     const baseIdx = argv.indexOf("--base");
-    if (baseIdx !== -1 && argv[baseIdx + 1] && !isTriadFlag(argv[baseIdx + 1])) {
-      consumedIndices.add(baseIdx + 1);
+    if (baseIdx !== -1 && argv[baseIdx + 1] && !argv[baseIdx + 1].startsWith("--")) {
       baseArg = argv[baseIdx + 1];
     }
   }
@@ -70,8 +76,7 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
     headArg = headExplicit.slice("--head=".length);
   } else {
     const headIdx = argv.indexOf("--head");
-    if (headIdx !== -1 && argv[headIdx + 1] && !isTriadFlag(argv[headIdx + 1])) {
-      consumedIndices.add(headIdx + 1);
+    if (headIdx !== -1 && argv[headIdx + 1] && !argv[headIdx + 1].startsWith("--")) {
       headArg = argv[headIdx + 1];
     }
   }
@@ -82,8 +87,7 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
     reportArg = reportExplicit.slice(reportExplicit.indexOf("=") + 1);
   } else {
     const reportIdx = argv.findIndex(a => a === "--report" || a === "--output-run");
-    if (reportIdx !== -1 && argv[reportIdx + 1] && !isTriadFlag(argv[reportIdx + 1])) {
-      consumedIndices.add(reportIdx + 1);
+    if (reportIdx !== -1 && argv[reportIdx + 1] && !argv[reportIdx + 1].startsWith("--")) {
       reportArg = argv[reportIdx + 1];
     }
   }
@@ -94,8 +98,7 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
     macroCmd = macroCmdExplicit.slice("--macro-cmd=".length);
   } else {
     const macroCmdIdx = argv.indexOf("--macro-cmd");
-    if (macroCmdIdx !== -1 && argv[macroCmdIdx + 1] && !isTriadFlag(argv[macroCmdIdx + 1])) {
-      consumedIndices.add(macroCmdIdx + 1);
+    if (macroCmdIdx !== -1 && argv[macroCmdIdx + 1] && !argv[macroCmdIdx + 1].startsWith("--")) {
       macroCmd = argv[macroCmdIdx + 1];
     }
   }
@@ -110,8 +113,7 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
     microCmd = microCmdExplicit.slice("--micro-cmd=".length);
   } else {
     const microCmdIdx = argv.indexOf("--micro-cmd");
-    if (microCmdIdx !== -1 && argv[microCmdIdx + 1] && !isTriadFlag(argv[microCmdIdx + 1])) {
-      consumedIndices.add(microCmdIdx + 1);
+    if (microCmdIdx !== -1 && argv[microCmdIdx + 1] && !argv[microCmdIdx + 1].startsWith("--")) {
       microCmd = argv[microCmdIdx + 1];
     }
   }
@@ -127,7 +129,7 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
   } else {
     const macroArgsIdx = argv.indexOf("--macro-args");
     if (macroArgsIdx !== -1 && argv[macroArgsIdx + 1] && !isTriadFlag(argv[macroArgsIdx + 1])) {
-      consumedIndices.add(macroArgsIdx + 1);
+      consumedArgsIndices.add(macroArgsIdx + 1);
       macroArgs = argv[macroArgsIdx + 1].split(",").map(s => s.trim()).filter(Boolean);
     }
   }
@@ -142,7 +144,7 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
   } else {
     const microArgsIdx = argv.indexOf("--micro-args");
     if (microArgsIdx !== -1 && argv[microArgsIdx + 1] && !isTriadFlag(argv[microArgsIdx + 1])) {
-      consumedIndices.add(microArgsIdx + 1);
+      consumedArgsIndices.add(microArgsIdx + 1);
       microArgs = argv[microArgsIdx + 1].split(",").map(s => s.trim()).filter(Boolean);
     }
   }
@@ -164,9 +166,34 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
     return false;
   };
 
-  const unknownFlags = argv.filter((a, idx) => a.startsWith("--") && !consumedIndices.has(idx) && !isRecognizedArg(a));
+  const unknownFlags = argv.filter((a, idx) => a.startsWith("--") && !consumedArgsIndices.has(idx) && !isRecognizedArg(a));
   if (unknownFlags.length > 0) {
     io.stderr.write(`✖ [USAGE ERROR] Unsupported option(s): ${unknownFlags.join(", ")}\n`);
+    return EXIT_CODES.USAGE_ERROR;
+  }
+
+  if (argv.some(a => a === "--base" || a === "--base=") && !baseArg) {
+    io.stderr.write(`✖ [USAGE ERROR] Option '--base' requires a <ref> argument.\n`);
+    return EXIT_CODES.USAGE_ERROR;
+  }
+
+  if (argv.some(a => a === "--head" || a === "--head=") && !headArg) {
+    io.stderr.write(`✖ [USAGE ERROR] Option '--head' requires a <ref> argument.\n`);
+    return EXIT_CODES.USAGE_ERROR;
+  }
+
+  if (argv.some(a => a === "--report" || a === "--report=" || a === "--output-run" || a === "--output-run=") && !reportArg) {
+    io.stderr.write(`✖ [USAGE ERROR] Option '--report' requires a <file> argument.\n`);
+    return EXIT_CODES.USAGE_ERROR;
+  }
+
+  if (argv.some(a => a === "--macro-cmd" || a === "--macro-cmd=") && !macroCmd) {
+    io.stderr.write(`✖ [USAGE ERROR] Option '--macro-cmd' requires a <cmd> argument.\n`);
+    return EXIT_CODES.USAGE_ERROR;
+  }
+
+  if (argv.some(a => a === "--micro-cmd" || a === "--micro-cmd=") && !microCmd) {
+    io.stderr.write(`✖ [USAGE ERROR] Option '--micro-cmd' requires a <cmd> argument.\n`);
     return EXIT_CODES.USAGE_ERROR;
   }
 
@@ -175,9 +202,13 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
     return EXIT_CODES.USAGE_ERROR;
   }
 
-  if (macroCmd && microCmd && macroCmd.toLowerCase() === microCmd.toLowerCase()) {
-    io.stderr.write(`✖ [USAGE ERROR] Heterogeneity violation: '--macro-cmd' and '--micro-cmd' cannot be identical ('${macroCmd}').\n`);
-    return EXIT_CODES.USAGE_ERROR;
+  if (macroCmd && microCmd) {
+    const normMacro = normalizeCommandName(macroCmd);
+    const normMicro = normalizeCommandName(microCmd);
+    if (normMacro && normMicro && normMacro === normMicro) {
+      io.stderr.write(`✖ [USAGE ERROR] Heterogeneity violation: '--macro-cmd' and '--micro-cmd' cannot be identical ('${macroCmd}' vs '${microCmd}').\n`);
+      return EXIT_CODES.USAGE_ERROR;
+    }
   }
 
   switch (command) {

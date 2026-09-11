@@ -108,7 +108,7 @@ triad-flow review --format=json --report=run.json  # Emit auditable review-run.j
 |---|---|---|---|
 | 🛡️ **Harness Engineering** | [`src/core/harness.mjs`](src/core/harness.mjs) | Fail-closed gate, SARIF 2.1.0 validation, secret redaction primitives | **Active Core** |
 | 🌐 **Graph Engineering** | [`src/core/graph-router.mjs`](src/core/graph-router.mjs) | Scale-adaptive routing, multi-tier risk classification, binary change escalation | **Active Core** |
-| 🔄 **Loop Engineering** | [`src/core/loop.mjs`](src/core/loop.mjs) | Quorum verification, distinct-source corroboration, monotonic reduction progress tracking | **Active Core** |
+| 🔄 **Loop Engineering** | [`src/core/loop.mjs`](src/core/loop.mjs) | Quorum verification, distinct-source corroboration, severity escalation deduplication | **Active Core** |
 
 ### Supporting Modules
 
