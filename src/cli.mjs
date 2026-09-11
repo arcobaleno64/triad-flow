@@ -2,12 +2,14 @@
  * Triad-Flow CLI: Command Routing, Capability Doctor, Simulation Demo & Real Review
  */
 
+import crypto from "node:crypto";
 import { SpanTracer } from "./core/telemetry.mjs";
 import { evaluateDiffScale } from "./core/graph-router.mjs";
 import { aggregateConsensus } from "./core/loop.mjs";
 import { evaluateGateDecision, formatSarifReport } from "./core/harness.mjs";
-import { collectGitWorkingState } from "./core/git-collector.mjs";
+import { collectGitWorkingState, buildChangeSet } from "./core/git-collector.mjs";
 import { runFactoryPipeline } from "./core/factory.mjs";
+import { orchestrateReview } from "./adapters/review-orchestrator.mjs";
 
 export const EXIT_CODES = {
   SUCCESS: 0,
@@ -147,14 +149,38 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
         head: headArg,
         stagedOnly: stagedArg
       };
-      const gitState = typeof options.getGitState === "function"
-        ? options.getGitState(gitOptions)
-        : collectGitWorkingState(options.cwd || process.cwd(), gitOptions);
+
+      const opts = { ...io, ...options };
+      let changeSet;
+
+      if (typeof opts.getChangeSet === "function") {
+        changeSet = opts.getChangeSet(gitOptions);
+      } else if (typeof opts.getGitState === "function") {
+        const state = opts.getGitState(gitOptions);
+        if (!state || !state.ok) {
+          changeSet = state;
+        } else {
+          changeSet = {
+            ok: true,
+            schemaVersion: "1.0.0",
+            scopeMode: state.scopeMode || "working-tree",
+            repository: state.repository,
+            contentDigest: crypto.createHash("sha256").update(JSON.stringify(state.files || []), "utf8").digest("hex"),
+            totalFiles: (state.files || []).length,
+            totalAdditions: (state.files || []).reduce((sum, f) => sum + (f.additions || 0), 0),
+            totalDeletions: (state.files || []).reduce((sum, f) => sum + (f.deletions || 0), 0),
+            files: state.files || [],
+            diffHunks: ""
+          };
+        }
+      } else {
+        changeSet = buildChangeSet(opts.cwd || process.cwd(), gitOptions);
+      }
 
       // Invariant (INV-01): Git inspection failure MUST fail closed as SYSTEM_FAILURE (3) or USAGE_ERROR (2) on invalid ref
-      if (!gitState || !gitState.ok) {
-        const errorMsg = gitState?.error?.message || "Failed to inspect Git repository state.";
-        if (gitState?.error?.code === "INVALID_BASE_REF" || gitState?.error?.code === "INVALID_HEAD_REF") {
+      if (!changeSet || !changeSet.ok) {
+        const errorMsg = changeSet?.error?.message || "Failed to inspect Git repository state.";
+        if (changeSet?.error?.code === "INVALID_BASE_REF" || changeSet?.error?.code === "INVALID_HEAD_REF") {
           io.stderr.write(`✖ [USAGE ERROR] ${errorMsg}\n\n`);
           return EXIT_CODES.USAGE_ERROR;
         }
@@ -162,8 +188,8 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
         return EXIT_CODES.SYSTEM_FAILURE;
       }
 
-      const files = gitState.files || [];
-      const scopeLabel = gitState.scopeMode || "working-tree";
+      const files = changeSet.files || [];
+      const scopeLabel = changeSet.scopeMode || "working-tree";
 
       if (files.length === 0) {
         io.stderr.write(`✔ [No Changes] Scope '${scopeLabel}' has no files to review (No-op).\n\n`);
@@ -177,12 +203,22 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
       const plan = evaluateDiffScale(files);
       io.stderr.write(`▶ Scale Routing: Mode = ${plan.mode.toUpperCase()} (${plan.reason})\n`);
 
-      // In standalone CLI without live provider adapters, fail closed on unconfigured sentries
-      const consensus = aggregateConsensus(
-        { error: "No configured macro sentry provider" },
-        { error: "No configured micro sentry provider" }
-      );
-      const gate = evaluateGateDecision(consensus, { strict: strictArg });
+      const reviewAdapters = opts.reviewAdapters || opts.adapters || null;
+      let consensus;
+      let gate;
+
+      if (reviewAdapters) {
+        const orchResult = await orchestrateReview(changeSet, reviewAdapters, { strict: strictArg });
+        consensus = orchResult.consensus;
+        gate = orchResult.gate;
+      } else {
+        // In standalone CLI without live provider adapters, fail closed on unconfigured sentries
+        consensus = aggregateConsensus(
+          { error: "No configured macro sentry provider" },
+          { error: "No configured micro sentry provider" }
+        );
+        gate = evaluateGateDecision(consensus, { strict: strictArg });
+      }
 
       io.stderr.write(`\n★ Consensus Verdict: ${consensus.verdict.toUpperCase()} (${consensus.consensusProof})\n`);
       io.stderr.write(`🛡️ Gate Decision: ${gate.decision.toUpperCase()} - ${gate.reason}\n\n`);
