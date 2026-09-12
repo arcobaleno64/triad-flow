@@ -12,6 +12,33 @@ import { evaluateDiffScale } from "../core/graph-router.mjs";
 import { aggregateConsensus } from "../core/loop.mjs";
 import { evaluateGateDecision } from "../core/harness.mjs";
 import { convertProviderResultToSentryReport } from "./provider-contract.mjs";
+import { normalizeCanonicalPath } from "../core/scoring.mjs";
+
+function isCoverageComplete(changeSet, providerResult) {
+  if (!providerResult || !providerResult.ok) return false;
+  if (!changeSet || !Array.isArray(changeSet.files)) return false;
+
+  const coverage = providerResult.coverage;
+  if (!coverage) return false;
+
+  if (Array.isArray(coverage.omittedFiles) && coverage.omittedFiles.length > 0) {
+    return false;
+  }
+
+  const coveredList = Array.isArray(coverage.coveredFiles)
+    ? coverage.coveredFiles.map(f => normalizeCanonicalPath(f))
+    : [];
+  const coveredSet = new Set(coveredList);
+
+  for (const f of changeSet.files) {
+    const normPath = normalizeCanonicalPath(f.path);
+    if (!coveredSet.has(normPath)) {
+      return false;
+    }
+  }
+
+  return true;
+}
 
 export async function orchestrateReview(changeSet, adapters = {}, options = {}) {
   const runId = options.runId || crypto.randomUUID();
@@ -40,7 +67,7 @@ export async function orchestrateReview(changeSet, adapters = {}, options = {}) 
     };
   }
 
-  const plan = evaluateDiffScale(changeSet.files);
+  const plan = options.plan || evaluateDiffScale(changeSet.files);
   const hasMacro = Boolean(adapters.macro && typeof adapters.macro.executeReview === "function");
   const hasMicro = Boolean(adapters.micro && typeof adapters.micro.executeReview === "function");
 
@@ -134,16 +161,25 @@ export async function orchestrateReview(changeSet, adapters = {}, options = {}) 
     };
 
     const consensus = aggregateConsensus(rawReports, { policy: "STRICT_HETEROGENEOUS" });
-    const gate = evaluateGateDecision(consensus, { strict });
+    let gate = evaluateGateDecision(consensus, { strict });
 
     const isApprove = gate.decision === "approve";
     const hasFindings = consensus.findings && consensus.findings.length > 0;
 
     let status = "incomplete";
-    if (isApprove) {
-      status = hasFindings ? "reviewed-with-findings" : "reviewed-clean";
-    } else if (hasFindings) {
-      status = "reviewed-with-findings";
+    if (consensus.quorumReached) {
+      if (isApprove) {
+        status = hasFindings ? "reviewed-with-findings" : "reviewed-clean";
+      } else if (hasFindings) {
+        status = "reviewed-with-findings";
+      }
+    }
+
+    const macroCoverageOk = isCoverageComplete(changeSet, macroResult);
+    const microCoverageOk = isCoverageComplete(changeSet, microResult);
+    if (!macroCoverageOk || !microCoverageOk) {
+      status = "incomplete";
+      gate = { decision: "block", reason: "Coverage Incomplete: Sentry omitted file(s) from review." };
     }
 
     return {
@@ -175,18 +211,27 @@ export async function orchestrateReview(changeSet, adapters = {}, options = {}) 
   const rawReports = { [singleRole]: singleReport };
 
   const consensus = aggregateConsensus(rawReports, {
-    policy: "SINGLE_SENTRY"
+    policy: "SINGLE_SENTRY",
+    designatedRole: singleRole
   });
-  const gate = evaluateGateDecision(consensus, { strict });
+  let gate = evaluateGateDecision(consensus, { strict });
 
   const isApprove = gate.decision === "approve";
   const hasFindings = consensus.findings && consensus.findings.length > 0;
 
   let status = "incomplete";
-  if (isApprove) {
-    status = hasFindings ? "reviewed-with-findings" : "reviewed-clean";
-  } else if (hasFindings) {
-    status = "reviewed-with-findings";
+  if (consensus.quorumReached) {
+    if (isApprove) {
+      status = hasFindings ? "reviewed-with-findings" : "reviewed-clean";
+    } else if (hasFindings) {
+      status = "reviewed-with-findings";
+    }
+  }
+
+  const singleCoverageOk = isCoverageComplete(changeSet, singleResult);
+  if (!singleCoverageOk) {
+    status = "incomplete";
+    gate = { decision: "block", reason: "Coverage Incomplete: Sentry omitted file(s) from review." };
   }
 
   return {

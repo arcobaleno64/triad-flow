@@ -130,6 +130,7 @@ export class CliReviewAdapter {
     this.providerName = options.providerName || "cli-reviewer";
     this.modelName = options.modelName || "cli-default";
     this.execFn = typeof options.execFn === "function" ? options.execFn : null;
+    this.useStdin = Boolean(options.useStdin);
   }
 
   async executeReview(rawInput) {
@@ -186,12 +187,30 @@ export class CliReviewAdapter {
       let timedOut = false;
       let aborted = false;
 
-      const childArgs = [...this.args, prompt];
-      const child = spawn(this.command, childArgs, {
-        shell: false,
-        windowsHide: true,
-        stdio: ["ignore", "pipe", "pipe"]
-      });
+      const useStdin = Boolean(this.useStdin || Buffer.byteLength(prompt, "utf8") > 8192);
+      const childArgs = useStdin ? [...this.args] : [...this.args, prompt];
+
+      let child;
+      try {
+        child = spawn(this.command, childArgs, {
+          shell: false,
+          windowsHide: true,
+          stdio: [useStdin ? "pipe" : "ignore", "pipe", "pipe"]
+        });
+      } catch (spawnErr) {
+        resolve(validateProviderOutput({
+          executionStatus: EXECUTION_STATUS.ERROR,
+          error: `CLI transport spawn error: ${spawnErr.message}`
+        }, context));
+        return;
+      }
+
+      if (useStdin && child.stdin) {
+        child.stdin.on("error", () => {});
+        child.stdin.write(prompt, "utf8", () => {
+          child.stdin.end();
+        });
+      }
 
       const timer = setTimeout(() => {
         timedOut = true;
@@ -219,13 +238,16 @@ export class CliReviewAdapter {
 
       child.stderr.on("data", (chunk) => {
         stderr += chunk.toString();
+        if (Buffer.byteLength(stderr, "utf8") > input.limits.maxOutputBytes) {
+          killedReason = EXECUTION_STATUS.PAYLOAD_TOO_LARGE;
+          child.kill();
+        }
       });
 
       child.on("error", (err) => {
         clearTimeout(timer);
         if (input.signal) input.signal.removeEventListener("abort", abortHandler);
 
-        // Check if command not found
         resolve(validateProviderOutput({
           executionStatus: EXECUTION_STATUS.ERROR,
           error: `CLI transport spawn error: ${err.message}`
@@ -244,27 +266,38 @@ export class CliReviewAdapter {
           return;
         }
 
-        // Check for authentication failure
-        const fullOutput = `${stdout}\n${stderr}`;
-        const isAuthError = AUTH_ERROR_PATTERNS.some(p => p.test(fullOutput));
-        if (isAuthError) {
+        // 1. Non-zero exit code priority: always fails closed
+        if (code !== 0) {
+          const fullErr = `${stderr}\n${stdout}`;
+          const isAuthError = AUTH_ERROR_PATTERNS.some(p => p.test(fullErr));
+          resolve(validateProviderOutput({
+            executionStatus: isAuthError ? EXECUTION_STATUS.AUTH_FAILURE : EXECUTION_STATUS.ERROR,
+            error: isAuthError
+              ? `Authentication failure detected in CLI reviewer output: ${(stderr || stdout).trim()}`
+              : `CLI reviewer exited with code ${code}: ${stderr.trim() || stdout.trim()}`
+          }, context));
+          return;
+        }
+
+        // 2. Process exited with 0: check stderr for auth error
+        if (stderr && AUTH_ERROR_PATTERNS.some(p => p.test(stderr))) {
           resolve(validateProviderOutput({
             executionStatus: EXECUTION_STATUS.AUTH_FAILURE,
-            error: `Authentication failure detected in CLI reviewer output: ${stderr.trim() || stdout.trim()}`
+            error: `Authentication failure detected in CLI reviewer output: ${stderr.trim()}`
           }, context));
           return;
         }
 
-        if (code !== 0 && !stdout.trim()) {
-          resolve(validateProviderOutput({
-            executionStatus: EXECUTION_STATUS.ERROR,
-            error: `CLI reviewer exited with code ${code}: ${stderr.trim()}`
-          }, context));
-          return;
-        }
-
+        // 3. Try to extract JSON from stdout
         const parsed = extractJsonFromText(stdout);
         if (!parsed) {
+          if (AUTH_ERROR_PATTERNS.some(p => p.test(stdout))) {
+            resolve(validateProviderOutput({
+              executionStatus: EXECUTION_STATUS.AUTH_FAILURE,
+              error: `Authentication failure detected in CLI reviewer output: ${stdout.trim()}`
+            }, context));
+            return;
+          }
           resolve(validateProviderOutput({
             executionStatus: EXECUTION_STATUS.MALFORMED_OUTPUT,
             rawOutput: stdout.slice(0, 1000),
@@ -283,6 +316,18 @@ export class CliReviewAdapter {
       return validateProviderOutput(res, context);
     }
 
+    const exitCode = res?.code ?? res?.exitCode;
+    if (exitCode !== undefined && exitCode !== 0) {
+      const fullErr = `${res.stderr || ""}\n${res.stdout || ""}`;
+      const isAuthError = AUTH_ERROR_PATTERNS.some(p => p.test(fullErr));
+      return validateProviderOutput({
+        executionStatus: isAuthError ? EXECUTION_STATUS.AUTH_FAILURE : EXECUTION_STATUS.ERROR,
+        error: isAuthError
+          ? `Authentication failure detected in CLI reviewer output: ${(res.stderr || res.stdout || "").trim()}`
+          : `CLI reviewer exited with code ${exitCode}: ${(res.stderr || "").trim() || (res.stdout || "").trim()}`
+      }, context);
+    }
+
     if (res && typeof res.stdout === "string") {
       if (Buffer.byteLength(res.stdout, "utf8") > limits.maxOutputBytes) {
         return validateProviderOutput({
@@ -291,16 +336,28 @@ export class CliReviewAdapter {
         }, context);
       }
 
-      const fullOutput = `${res.stdout}\n${res.stderr || ""}`;
-      if (AUTH_ERROR_PATTERNS.some(p => p.test(fullOutput))) {
+      if (res.stderr && Buffer.byteLength(res.stderr, "utf8") > limits.maxOutputBytes) {
+        return validateProviderOutput({
+          executionStatus: EXECUTION_STATUS.PAYLOAD_TOO_LARGE,
+          error: `Stderr exceeded maxOutputBytes (${limits.maxOutputBytes})`
+        }, context);
+      }
+
+      if (res.stderr && AUTH_ERROR_PATTERNS.some(p => p.test(res.stderr))) {
         return validateProviderOutput({
           executionStatus: EXECUTION_STATUS.AUTH_FAILURE,
-          error: "Authentication failure detected in CLI reviewer output."
+          error: `Authentication failure detected in CLI reviewer output: ${res.stderr.trim()}`
         }, context);
       }
 
       const parsed = extractJsonFromText(res.stdout);
       if (!parsed) {
+        if (AUTH_ERROR_PATTERNS.some(p => p.test(res.stdout))) {
+          return validateProviderOutput({
+            executionStatus: EXECUTION_STATUS.AUTH_FAILURE,
+            error: `Authentication failure detected in CLI reviewer output: ${res.stdout.trim()}`
+          }, context);
+        }
         return validateProviderOutput({
           executionStatus: EXECUTION_STATUS.MALFORMED_OUTPUT,
           error: "Failed to parse JSON from CLI stdout."
@@ -338,6 +395,17 @@ export class OfflineReviewAdapter {
       transport: "offline"
     };
 
-    return validateProviderOutput(this.fixture, context);
+    const fixtureObj = (this.fixture && typeof this.fixture === "object" && !Array.isArray(this.fixture))
+      ? { ...this.fixture }
+      : this.fixture;
+
+    if (fixtureObj && typeof fixtureObj === "object" && !fixtureObj.coverage && inputValidation.input.changeSet?.files) {
+      fixtureObj.coverage = {
+        coveredFiles: inputValidation.input.changeSet.files.map(f => f.path),
+        omittedFiles: []
+      };
+    }
+
+    return validateProviderOutput(fixtureObj, context);
   }
 }

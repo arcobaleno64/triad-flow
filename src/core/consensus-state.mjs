@@ -7,17 +7,22 @@ export const ALLOWED_VERDICTS = Object.freeze(["approve", "warning", "needs-atte
 
 function makeReadOnlySet(elements) {
   const privateSet = new Set(elements);
-  return Object.freeze({
+  const wrapper = Object.freeze({
     has: (item) => privateSet.has(item),
     get size() { return privateSet.size; },
     values: () => privateSet.values(),
     entries: () => privateSet.entries(),
-    forEach: (cb, thisArg) => privateSet.forEach(cb, thisArg),
+    forEach: (cb, thisArg) => {
+      privateSet.forEach((value, key) => {
+        cb.call(thisArg, value, key, wrapper);
+      });
+    },
     [Symbol.iterator]: () => privateSet[Symbol.iterator](),
     add: () => { throw new TypeError("Cannot modify read-only severity policy set."); },
     delete: () => { throw new TypeError("Cannot modify read-only severity policy set."); },
     clear: () => { throw new TypeError("Cannot modify read-only severity policy set."); }
   });
+  return wrapper;
 }
 
 export const BLOCKING_SEVERITIES = makeReadOnlySet(["critical", "high"]);

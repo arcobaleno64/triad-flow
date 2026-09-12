@@ -7,6 +7,7 @@
  */
 
 import { normalizeFinding } from "../core/harness.mjs";
+import { getProviderFamily } from "../core/benchmark-pilot.mjs";
 
 export const EXECUTION_STATUS = Object.freeze({
   SUCCESS: "success",
@@ -95,10 +96,12 @@ export function validateProviderInput(input = {}) {
  * Strips all capability forgery attempts and ensures safe, canonical data.
  */
 export function validateProviderOutput(rawOutput, inputContext = {}) {
+  const providerName = String(inputContext.providerName || rawOutput?.providerIdentity?.provider || "unknown-provider");
   const providerIdentity = {
-    provider: String(rawOutput?.providerIdentity?.provider || inputContext.providerName || "unknown-provider"),
-    model: String(rawOutput?.providerIdentity?.model || inputContext.modelName || "unknown-model"),
-    transport: String(rawOutput?.providerIdentity?.transport || inputContext.transport || "cli"),
+    provider: providerName,
+    family: getProviderFamily(inputContext.family || rawOutput?.providerIdentity?.family || providerName),
+    model: String(inputContext.modelName || rawOutput?.providerIdentity?.model || "unknown-model"),
+    transport: String(inputContext.transport || rawOutput?.providerIdentity?.transport || "cli"),
     runId: String(inputContext.runId || rawOutput?.providerIdentity?.runId || "unassigned-run")
   };
 
@@ -131,8 +134,59 @@ export function validateProviderOutput(rawOutput, inputContext = {}) {
     });
   }
 
+  // Enforce required findings array (Fail-Closed: cannot be missing or non-array)
+  if (!Array.isArray(rawOutput.findings)) {
+    return Object.freeze({
+      ok: false,
+      executionStatus: EXECUTION_STATUS.MALFORMED_OUTPUT,
+      findings: Object.freeze([]),
+      coverage: Object.freeze({ coveredFiles: Object.freeze([]), omittedFiles: Object.freeze([]) }),
+      usage: null,
+      providerIdentity: Object.freeze(providerIdentity),
+      error: "Provider output requires a 'findings' array."
+    });
+  }
+
+  // Coverage validation: MUST be a non-null plain object with coveredFiles (array) and omittedFiles (array)
+  if (!rawOutput.coverage || typeof rawOutput.coverage !== "object" || Array.isArray(rawOutput.coverage)) {
+    return Object.freeze({
+      ok: false,
+      executionStatus: EXECUTION_STATUS.MALFORMED_OUTPUT,
+      findings: Object.freeze([]),
+      coverage: Object.freeze({ coveredFiles: Object.freeze([]), omittedFiles: Object.freeze([]) }),
+      usage: null,
+      providerIdentity: Object.freeze(providerIdentity),
+      error: "Provider output requires a 'coverage' plain object."
+    });
+  }
+
+  if (!Array.isArray(rawOutput.coverage.coveredFiles)) {
+    return Object.freeze({
+      ok: false,
+      executionStatus: EXECUTION_STATUS.MALFORMED_OUTPUT,
+      findings: Object.freeze([]),
+      coverage: Object.freeze({ coveredFiles: Object.freeze([]), omittedFiles: Object.freeze([]) }),
+      usage: null,
+      providerIdentity: Object.freeze(providerIdentity),
+      error: "Provider coverage requires a 'coveredFiles' array."
+    });
+  }
+
+  if (!Array.isArray(rawOutput.coverage.omittedFiles)) {
+    return Object.freeze({
+      ok: false,
+      executionStatus: EXECUTION_STATUS.MALFORMED_OUTPUT,
+      findings: Object.freeze([]),
+      coverage: Object.freeze({ coveredFiles: Object.freeze([]), omittedFiles: Object.freeze([]) }),
+      usage: null,
+      providerIdentity: Object.freeze(providerIdentity),
+      error: "Provider coverage requires an 'omittedFiles' array."
+    });
+  }
+
   // Treat input findings under Default-Deny: normalize each finding
-  const rawFindings = Array.isArray(rawOutput.findings) ? rawOutput.findings : [];
+  // Fail-Closed: any candidate finding that fails normalization triggers MALFORMED_OUTPUT
+  const rawFindings = rawOutput.findings;
   const normalizedFindings = [];
 
   for (let i = 0; i < rawFindings.length; i++) {
@@ -147,20 +201,29 @@ export function validateProviderOutput(rawOutput, inputContext = {}) {
     }
 
     const norm = normalizeFinding(candidate);
-    if (norm.valid) {
-      normalizedFindings.push(norm.finding);
+    if (!norm.valid) {
+      return Object.freeze({
+        ok: false,
+        executionStatus: EXECUTION_STATUS.MALFORMED_OUTPUT,
+        findings: Object.freeze([]),
+        coverage: Object.freeze({ coveredFiles: Object.freeze([]), omittedFiles: Object.freeze([]) }),
+        usage: null,
+        providerIdentity: Object.freeze(providerIdentity),
+        error: `Malformed finding at index ${i}: ${norm.reason || "invalid finding format"}`
+      });
     }
+    normalizedFindings.push(norm.finding);
   }
 
-  // Coverage validation
+  // Coverage normalization
   const validFiles = new Set((inputContext.changeSet?.files || []).map(f => f.path));
-  const rawCovered = Array.isArray(rawOutput.coverage?.coveredFiles) ? rawOutput.coverage.coveredFiles : [];
-  const coveredFiles = rawCovered.filter(p => typeof p === "string" && validFiles.has(p));
+  const rawCovered = rawOutput.coverage.coveredFiles;
+  const coveredFiles = rawCovered.filter(p => typeof p === "string" && (validFiles.size === 0 || validFiles.has(p)));
 
-  const rawOmitted = Array.isArray(rawOutput.coverage?.omittedFiles) ? rawOutput.coverage.omittedFiles : [];
+  const rawOmitted = rawOutput.coverage.omittedFiles;
   const omittedFiles = rawOmitted.map(o => ({
-    path: String(o.path || "unknown"),
-    reason: String(o.reason || "unspecified")
+    path: String(o?.path || "unknown"),
+    reason: String(o?.reason || "unspecified")
   }));
 
   // Usage validation
@@ -200,6 +263,8 @@ export function convertProviderResultToSentryReport(result, roleName = "macro") 
       name: result?.providerIdentity?.provider || roleName,
       source: result?.providerIdentity?.provider || roleName,
       role: roleName,
+      providerIdentity: result?.providerIdentity,
+      coverage: result?.coverage,
       error: result?.error || `Provider execution failed (${result?.executionStatus || "unknown"})`
     };
   }
@@ -208,6 +273,8 @@ export function convertProviderResultToSentryReport(result, roleName = "macro") 
     name: result.providerIdentity.provider,
     source: result.providerIdentity.provider,
     role: roleName,
+    providerIdentity: result.providerIdentity,
+    coverage: result.coverage,
     findings: result.findings
   };
 }

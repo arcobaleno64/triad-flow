@@ -11,6 +11,7 @@ import {
   VALID_SEVERITY_SET
 } from "./consensus-state.mjs";
 import { validateSentryReport } from "./harness.mjs";
+import { getProviderFamily } from "./benchmark-pilot.mjs";
 
 export const SEVERITY_WEIGHTS = {
   critical: 4,
@@ -31,17 +32,39 @@ export const QuorumPolicies = {
     }
 
     const reached = Boolean(macroRec?.healthy && microRec?.healthy);
+    if (!reached) {
+      return {
+        quorumReached: false,
+        selectedReportIds: [],
+        reason: "Quorum Failure: Both macro and micro sentries must be healthy."
+      };
+    }
+
+    const macroSource = macroRec.provider || macroRec.source || "macro";
+    const microSource = microRec.provider || microRec.source || "micro";
+    const macroFamily = macroRec.family || getProviderFamily(macroSource);
+    const microFamily = microRec.family || getProviderFamily(microSource);
+
+    if (macroFamily !== "unknown" && microFamily !== "unknown" && macroFamily === microFamily) {
+      return {
+        quorumReached: false,
+        selectedReportIds: [],
+        reason: `Quorum Failure: Sentries lack provider-family diversity (both belong to '${macroFamily}').`
+      };
+    }
+
     return {
-      quorumReached: reached,
-      selectedReportIds: reached ? [macroRec.id, microRec.id] : [],
-      reason: reached ? null : "Quorum Failure: Both macro and micro sentries must be healthy."
+      quorumReached: true,
+      selectedReportIds: [macroRec.id, microRec.id],
+      reason: null
     };
   },
 
-  SINGLE_SENTRY: (metadataMap = {}, requiredRole = "macro") => {
+  SINGLE_SENTRY: (metadataMap = {}, policyOptions = "macro") => {
+    const designatedRole = (typeof policyOptions === "string" ? policyOptions : (policyOptions?.designatedRole || policyOptions?.requiredRole)) || "macro";
     let target = null;
     for (const [id, rec] of Object.entries(metadataMap)) {
-      if (rec.role === requiredRole || rec.source === requiredRole) {
+      if (rec.role === designatedRole || rec.source === designatedRole) {
         target = rec;
         break;
       }
@@ -50,7 +73,7 @@ export const QuorumPolicies = {
     return {
       quorumReached: reached,
       selectedReportIds: reached ? [target.id] : [],
-      reason: reached ? null : `Quorum Failure: Designated sentry '${requiredRole}' is unhealthy or missing.`
+      reason: reached ? null : `Quorum Failure: Designated sentry '${designatedRole}' is unhealthy or missing.`
     };
   },
 
@@ -145,7 +168,9 @@ export function aggregateConsensus(reportsInput, ...rest) {
         role: key,
         healthy: false,
         error: validated.reason,
-        source: raw?.name || raw?.source || key
+        source: raw?.name || raw?.source || key,
+        provider: raw?.providerIdentity?.provider || raw?.name || raw?.source || key,
+        family: raw?.providerIdentity?.family || getProviderFamily(raw?.providerIdentity?.provider || raw?.name || raw?.source || key)
       };
     } else {
       const canonicalFindings = deepFreeze(validated.report.findings.map(f => ({ ...f })));
@@ -154,14 +179,18 @@ export function aggregateConsensus(reportsInput, ...rest) {
         role: key,
         healthy: true,
         findings: canonicalFindings,
-        source: validated.report.name || validated.report.source || key
+        source: validated.report.name || validated.report.source || key,
+        provider: raw?.providerIdentity?.provider || validated.report.name || validated.report.source || key,
+        family: raw?.providerIdentity?.family || getProviderFamily(raw?.providerIdentity?.provider || validated.report.name || validated.report.source || key)
       });
       metadataMap[reportId] = {
         id: reportId,
         role: key,
         healthy: true,
         count: canonicalFindings.length,
-        source: validated.report.name || validated.report.source || key
+        source: validated.report.name || validated.report.source || key,
+        provider: raw?.providerIdentity?.provider || validated.report.name || validated.report.source || key,
+        family: raw?.providerIdentity?.family || getProviderFamily(raw?.providerIdentity?.provider || validated.report.name || validated.report.source || key)
       };
     }
   }
@@ -171,9 +200,11 @@ export function aggregateConsensus(reportsInput, ...rest) {
     ? options.policy
     : (QuorumPolicies[options.policy] || QuorumPolicies.STRICT_HETEROGENEOUS);
 
+  const policyOptions = options.policyOptions || options;
+
   let quorumResult;
   try {
-    quorumResult = policyFn(deepFreeze({ ...metadataMap }));
+    quorumResult = policyFn(deepFreeze({ ...metadataMap }), policyOptions);
     if (!quorumResult || typeof quorumResult.quorumReached !== "boolean") {
       throw new TypeError("Quorum policy returned malformed result (missing boolean quorumReached).");
     }

@@ -108,7 +108,10 @@ test("V2: 帶 macro 與 micro 不同指令於小改動時走單哨兵路徑且�
   const mockExec2 = async ({ command, args, prompt, input }) => {
     execCalls2.push({ command, args, role: input.role });
     return {
-      stdout: JSON.stringify({ findings: [] })
+      stdout: JSON.stringify({
+        findings: [],
+        coverage: { coveredFiles: ["src/calc.js"], omittedFiles: [] }
+      })
     };
   };
 

@@ -151,6 +151,8 @@ export function isTypeMatched(finding, goldenType) {
   return false;
 }
 
+export const MAX_LINE_DISTANCE = 50;
+
 /**
  * Verifies Held-Out benchmark cases with index-qualified matching to prevent duplicate ID collapse.
  */
@@ -203,7 +205,7 @@ export function verifyHeldOutBaseline(actualFindings = [], goldenVulnerabilities
         const fLine = f.line_start ?? f.line ?? null;
         if (gLine !== null && fLine !== null) {
           const dist = Math.abs(Number(fLine) - Number(gLine));
-          if (dist < bestLineDist) {
+          if (dist <= MAX_LINE_DISTANCE && dist < bestLineDist) {
             bestLineDist = dist;
             bestFindingIdx = fIdx;
           }

@@ -284,6 +284,7 @@ test("CliReviewAdapter (Acceptance 10: 不跑模型提供的任意命令 No Comm
           recommendation: "Safe fix"
         }
       ],
+      coverage: { coveredFiles: ["src/sample.js"], omittedFiles: [] },
       command: "rm -rf /",
       shell: "calc.exe",
       execute: "curl https://malicious.site"

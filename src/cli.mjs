@@ -347,7 +347,8 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
             fs.writeFileSync(reportArg, JSON.stringify(runReport, null, 2) + "\n", "utf8");
             io.stderr.write(`📝 Saved review audit run: ${reportArg}\n`);
           } catch (err) {
-            io.stderr.write(`⚠️ Failed to write audit run report: ${err.message}\n`);
+            io.stderr.write(`✖ [FATAL SYSTEM FAILURE] Failed to write audit run report: ${err.message}\n`);
+            return EXIT_CODES.SYSTEM_FAILURE;
           }
         }
 
@@ -401,14 +402,18 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
         });
         consensus = orchResult.consensus;
         gate = orchResult.gate;
-        if (orchResult.status === "incomplete") {
+        if (orchResult.status === "error") {
+          runStatus = REVIEW_RUN_STATUS.EXECUTION_ERROR;
+        } else if (orchResult.status === "incomplete") {
           runStatus = REVIEW_RUN_STATUS.INCOMPLETE;
         } else if (gate.decision === "approve") {
-          runStatus = (consensus.findings && consensus.findings.length > 0)
+          runStatus = (consensus?.findings && consensus.findings.length > 0)
             ? REVIEW_RUN_STATUS.REVIEWED_WITH_FINDINGS
             : REVIEW_RUN_STATUS.REVIEWED_CLEAN;
-        } else {
+        } else if (consensus?.findings && consensus.findings.length > 0) {
           runStatus = REVIEW_RUN_STATUS.REVIEWED_WITH_FINDINGS;
+        } else {
+          runStatus = REVIEW_RUN_STATUS.INCOMPLETE;
         }
       } else {
         // In standalone CLI without live provider adapters, fail closed on unconfigured sentries
@@ -420,7 +425,14 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
         runStatus = REVIEW_RUN_STATUS.INCOMPLETE;
       }
 
-      const exitCode = gate.decision === "approve" ? EXIT_CODES.SUCCESS : EXIT_CODES.GATE_BLOCKED;
+      let exitCode;
+      if (runStatus === REVIEW_RUN_STATUS.EXECUTION_ERROR) {
+        exitCode = EXIT_CODES.EXECUTION_ERROR;
+      } else if (runStatus === REVIEW_RUN_STATUS.CONFIGURATION_ERROR) {
+        exitCode = EXIT_CODES.CONFIGURATION_ERROR;
+      } else {
+        exitCode = gate.decision === "approve" ? EXIT_CODES.SUCCESS : EXIT_CODES.GATE_BLOCKED;
+      }
 
       const runReport = buildReviewRunReport({
         runId: orchResult?.runId || crypto.randomUUID(),
@@ -445,7 +457,8 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
           fs.writeFileSync(reportArg, JSON.stringify(runReport, null, 2) + "\n", "utf8");
           io.stderr.write(`📝 Saved review audit run: ${reportArg}\n`);
         } catch (err) {
-          io.stderr.write(`⚠️ Failed to write audit run report: ${err.message}\n`);
+          io.stderr.write(`✖ [FATAL SYSTEM FAILURE] Failed to write audit run report: ${err.message}\n`);
+          return EXIT_CODES.SYSTEM_FAILURE;
         }
       }
 
@@ -455,10 +468,10 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
       if (formatArg === "json") {
         io.stdout.write(JSON.stringify(runReport, null, 2) + "\n");
       } else if (formatArg === "sarif") {
-        const isApprove = gate.decision === "approve";
+        const executionSuccessful = runStatus !== REVIEW_RUN_STATUS.INCOMPLETE && runStatus !== REVIEW_RUN_STATUS.EXECUTION_ERROR;
         const sarif = formatSarifReport(consensus.findings, {
-          executionSuccessful: isApprove,
-          failureReason: isApprove ? undefined : (consensus.consensusProof || gate.reason || "Review unconfigured or quorum failed")
+          executionSuccessful,
+          failureReason: executionSuccessful ? undefined : (consensus.consensusProof || gate.reason || "Review unconfigured or quorum failed")
         });
         io.stdout.write(JSON.stringify(sarif, null, 2) + "\n");
       }

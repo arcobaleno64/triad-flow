@@ -1,8 +1,11 @@
 # Security Policy & Trust Model
 
 Triad-Flow is a local, dependency-free CLI. It reads a repository's git working
-state, runs a consensus gate over sentry reports, and emits SARIF. It performs
-no network egress, no remote scanning, and no code mutation.
+state, runs a consensus gate over sentry reports, and emits SARIF. The core engine
+performs no direct network egress, no remote scanning, and no code mutation. However,
+external CLI child processes invoked via adapters (e.g. `CliReviewAdapter`) execute with the caller's
+OS privileges and may egress to their respective provider APIs. Triad-Flow enforces a strict read-only
+protocol and prompt constraints, but does not provide an OS-level sandbox.
 
 ## 1. What this tool guarantees
 
@@ -35,13 +38,14 @@ halts in every case. It reports the halt rather than reporting a successful run.
 
 ## 2. What this tool does NOT guarantee
 
-- **No sandboxing.** Triad-Flow does not isolate the repository it inspects. It
-  runs git commands against the working tree with the caller's own environment;
-  a hostile `.git/config` (`diff.external`, textconv, hooks) is not neutralised.
-  Do not point it at an untrusted repository.
-- **No secret redaction.** Findings, SARIF output and console output are not
-  scanned for credentials. Anything a sentry puts in a finding is emitted
-  verbatim.
+- **No OS-level sandbox.** Triad-Flow does not isolate the repository or child processes
+  with OS containerization. It runs git commands and external CLI tools against the working
+  tree with the caller's own OS privileges and environment; a hostile `.git/config`
+  (`diff.external`, textconv, hooks) is not neutralised. Do not point it at an untrusted repository.
+- **Tested redaction and path-safety primitives.** Triad-Flow provides tested redaction
+  and path-safety primitives in its harness, but findings, SARIF output and console output
+  are emitted based on sentry responses. Sentry child processes inspect diff content under
+  caller permissions.
 - **No supply-chain attestation.** There is no signed release artifact and no
   integrity manifest.
 - **Sentry quality is out of scope.** The gate decides on the reports it is

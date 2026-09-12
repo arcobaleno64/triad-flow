@@ -12,6 +12,9 @@
 
 import { verifyHeldOutBaseline } from "./scoring.mjs";
 import { evaluateDiffScale, RISK_TIERS } from "./graph-router.mjs";
+import { SEVERITY_WEIGHTS } from "./loop.mjs";
+
+export const BENCHMARK_FRAMEWORK_TYPE = "Simulation / Synthetic Benchmark Framework";
 
 export const PROVIDER_FAMILIES = Object.freeze({
   "claude": "anthropic",
@@ -48,6 +51,39 @@ export function validateProviderDiversity(macroProvider = "", microProvider = ""
   }
 
   return { valid: true, families: [fam1, fam2] };
+}
+
+/**
+ * Deduplicates findings in dual mode using canonical identity and highest severity preservation.
+ */
+export function deduplicateBenchmarkFindings(findings = []) {
+  const map = new Map();
+  for (const f of findings) {
+    if (!f) continue;
+    const file = (f.file || f.path || "root").toLowerCase().replace(/\\/g, "/");
+    const lineStart = Math.max(1, Number(f.line_start || f.line) || 1);
+    const lineBucket = Math.floor(lineStart / 15) * 15;
+    const rawTitle = (f.title || f.message || "issue").toLowerCase();
+    const cweMatch = rawTitle.match(/cwe-\d+/i) || (f.cwe ? [f.cwe] : null);
+    const cwe = cweMatch ? cweMatch[0].toUpperCase() : "";
+    const token = cwe || rawTitle.replace(/[^a-z0-9]/g, "").slice(0, 16);
+    const key = `${file}:${lineBucket}:${token}`;
+
+    if (!map.has(key)) {
+      map.set(key, { ...f });
+    } else {
+      const existing = map.get(key);
+      const incomingWeight = SEVERITY_WEIGHTS[f.severity] ?? 0;
+      const currentWeight = SEVERITY_WEIGHTS[existing.severity] ?? 0;
+      if (incomingWeight > currentWeight) {
+        existing.severity = f.severity;
+      }
+      if (!existing.ruleId && f.ruleId) existing.ruleId = f.ruleId;
+      if (!existing.cwe && f.cwe) existing.cwe = f.cwe;
+      if (!existing.type && f.type) existing.type = f.type;
+    }
+  }
+  return Array.from(map.values());
 }
 
 /**
@@ -215,21 +251,23 @@ export function evaluateBenchmarkConfiguration(dataset = [], options = {}) {
       caseTokens = c.outputs.macro?.usage?.totalTokens || 0;
       caseLatency = c.outputs.macro?.latencyMs || 0;
     } else if (mode === "dual") {
-      // Both macro + micro run
-      combinedFindings = [
+      // Both macro + micro run with consensus deduplication before scoring
+      const rawCombined = [
         ...(c.outputs.macro?.findings || []),
         ...(c.outputs.micro?.findings || [])
       ];
+      combinedFindings = deduplicateBenchmarkFindings(rawCombined);
       caseTokens = (c.outputs.macro?.usage?.totalTokens || 0) + (c.outputs.micro?.usage?.totalTokens || 0);
       caseLatency = Math.max(c.outputs.macro?.latencyMs || 0, c.outputs.micro?.latencyMs || 0);
     } else if (mode === "risk-routed") {
       // Use GraphRouter: Tier 1 -> Dual, Tier 2/3 -> Single
       const scale = evaluateDiffScale(c.files);
       if (scale.mode === "hierarchical") {
-        combinedFindings = [
+        const rawCombined = [
           ...(c.outputs.macro?.findings || []),
           ...(c.outputs.micro?.findings || [])
         ];
+        combinedFindings = deduplicateBenchmarkFindings(rawCombined);
         caseTokens = (c.outputs.macro?.usage?.totalTokens || 0) + (c.outputs.micro?.usage?.totalTokens || 0);
         caseLatency = Math.max(c.outputs.macro?.latencyMs || 0, c.outputs.micro?.latencyMs || 0);
       } else {
@@ -265,6 +303,7 @@ export function evaluateBenchmarkConfiguration(dataset = [], options = {}) {
   const avgLatencyMs = totalCases > 0 ? Math.round(totalLatencyMs / totalCases) : 0;
 
   return {
+    framework: BENCHMARK_FRAMEWORK_TYPE,
     mode,
     totalCases,
     totalGoldens,
@@ -300,6 +339,7 @@ export function runThreeWayComparison(dataset = [], options = {}) {
   }
 
   return {
+    framework: BENCHMARK_FRAMEWORK_TYPE,
     configurations: {
       single,
       dual,

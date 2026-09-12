@@ -15,9 +15,11 @@ const VERSION_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z
 
 const PACKAGE_FILE = "package.json";
 const HARNESS_FILE = "src/core/harness.mjs";
+const REPORT_FILE = "src/core/review-run-report.mjs";
 // Anchored to the SARIF driver block so an unrelated "2.0.0" elsewhere in the
 // file can never be rewritten by accident.
 const HARNESS_PATTERN = /(name: "Triad-Flow Sentry",\s*\n\s*version: ")([^"]*)(")/;
+const REPORT_PATTERN = /(export const TOOL_VERSION = ")([^"]*)(")/;
 
 function usage() {
   return [
@@ -64,13 +66,19 @@ function readText(root, file) {
 function currentVersions(root) {
   const pkg = JSON.parse(readText(root, PACKAGE_FILE));
   const harness = readText(root, HARNESS_FILE);
-  const match = HARNESS_PATTERN.exec(harness);
-  if (!match) {
+  const matchHarness = HARNESS_PATTERN.exec(harness);
+  if (!matchHarness) {
     throw new Error(`Could not locate the SARIF driver version block in ${HARNESS_FILE}.`);
+  }
+  const report = readText(root, REPORT_FILE);
+  const matchReport = REPORT_PATTERN.exec(report);
+  if (!matchReport) {
+    throw new Error(`Could not locate the TOOL_VERSION block in ${REPORT_FILE}.`);
   }
   return [
     { file: PACKAGE_FILE, label: "version", value: pkg.version },
-    { file: HARNESS_FILE, label: "tool.driver.version", value: match[2] }
+    { file: HARNESS_FILE, label: "tool.driver.version", value: matchHarness[2] },
+    { file: REPORT_FILE, label: "tool.version", value: matchReport[2] }
   ];
 }
 
@@ -85,6 +93,10 @@ function write(root, version) {
   const harnessPath = path.join(root, HARNESS_FILE);
   const harness = readText(root, HARNESS_FILE);
   fs.writeFileSync(harnessPath, harness.replace(HARNESS_PATTERN, `$1${version}$3`), "utf8");
+
+  const reportPath = path.join(root, REPORT_FILE);
+  const report = readText(root, REPORT_FILE);
+  fs.writeFileSync(reportPath, report.replace(REPORT_PATTERN, `$1${version}$3`), "utf8");
 }
 
 function main(argv) {

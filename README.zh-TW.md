@@ -22,7 +22,7 @@ Triad-Flow 用工業級的 **Graph + Loop + Harness（圖論 + 閉環 + 夾具�
    - 實施 **嚴格異質雙哨兵 Quorum 門禁**（雙哨兵皆需健康）與最高嚴重度合併去重。
    - **OODA 閉環控制器原語**：內建 Jaccard 語意停滯檢測與補丁循環雜湊熔斷 *(Remediator 補丁合成在未配置 Adapter 時維持 Fail-Closed 門禁)*。
 3. **🛡️ Harness Engineering (安全夾具工程)**：
-   - 實施確定性安全邊界：多重機密遮蔽、符號連結 (Symlink) 與路徑穿越沙盒防禦、Quorum 嚴格 Fail-Closed 門禁、以及 SARIF 2.1.0 報表生成。
+   - 提供經過驗證的遮蔽與路徑安全原語：多重機密正則遮蔽、符號連結與路徑穿越邊界防禦、Quorum 嚴格 Fail-Closed 門禁、以及 SARIF 2.1.0 報表生成。
 
 ---
 
@@ -91,6 +91,7 @@ triad-flow review --format=json --report=run.json  # 輸出標準 review-run.jso
 
 ## 🛡️ 資安與 AI 安全架構
 
+- **網路連線與 OS 權限界定**：Triad-Flow 核心本身不發起對外網路連線，亦不修改程式碼倉庫。呼叫之外部 CLI 子進程（`CliReviewAdapter`）以呼叫端 OS 權限執行（採提示詞與程序約束之唯讀協定，非 OS 核心容器沙盒），並依提供商設定連網。
 - **SARIF 2.1.0**：標準化 JSON 報表生成，支援 Driver Rules 去重與 URI 安全路徑編碼。
 - **OWASP Top 10 for LLM**：
   - `LLM02: Sensitive Info Disclosure` — 多重機密正則遮蔽（Google、OpenAI、Anthropic、GitHub、AWS、JWT、PEM 金鑰）。

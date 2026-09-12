@@ -119,6 +119,17 @@ export function collectGitWorkingState(cwd = process.cwd(), options = {}) {
   let repoRoot;
   let hasHead = true;
 
+  // Reject conflicting options (--staged with revision-range)
+  if ((options.stagedOnly || options.staged) && (options.base || options.head)) {
+    return {
+      ok: false,
+      error: {
+        code: "CONFLICTING_OPTIONS",
+        message: "Cannot specify both staged and revision-range options."
+      }
+    };
+  }
+
   // 1. Verify directory is inside a real working tree (blocks Bare Repo escape)
   try {
     const isWorkTree = gitExec(cwd, ["rev-parse", "--is-inside-work-tree"], {
@@ -372,11 +383,43 @@ export function buildChangeSet(cwd = process.cwd(), options = {}) {
       const unstagedPart = gitExec(repoRoot, ["diff", "-U3"]);
       diffText = `${stagedPart}\n${unstagedPart}`.trim();
     }
-  } catch (_err) {
-    diffText = "";
+  } catch (err) {
+    return {
+      ok: false,
+      error: {
+        code: "DIFF_EXTRACTION_FAILED",
+        message: err.message || "Failed to extract Git diff"
+      }
+    };
   }
 
-  const contentDigest = crypto.createHash("sha256").update(diffText, "utf8").digest("hex");
+  // Include safe readable text untracked files in diffHunks and contentDigest
+  const diffHunksList = diffText ? [diffText] : [];
+  if (scopeMode === "working-tree") {
+    for (const f of state.files) {
+      if (f.untracked && !f.binary && !f.largeFile && !f.unreadable && !f.inspectionFailed && !f.symlink) {
+        const fullPath = path.join(repoRoot, f.path);
+        try {
+          const content = fs.readFileSync(fullPath, "utf8");
+          const cleanContent = content.replace(/\r?\n$/, "");
+          const lines = cleanContent.length > 0 ? cleanContent.split(/\r?\n/) : [];
+          const normPath = f.path.replace(/\\/g, "/");
+          const synthesized = [
+            `--- /dev/null`,
+            `+++ b/${normPath}`,
+            `@@ -0,0 +1,${lines.length} @@`,
+            ...lines.map(l => `+${l}`)
+          ].join("\n");
+          diffHunksList.push(synthesized);
+        } catch (_err) {
+          f.unreadable = true;
+        }
+      }
+    }
+  }
+
+  const finalDiffHunks = diffHunksList.filter(Boolean).join("\n").trim();
+  const contentDigest = crypto.createHash("sha256").update(finalDiffHunks, "utf8").digest("hex");
 
   const files = state.files.map(f => ({
     path: f.path,
@@ -402,6 +445,6 @@ export function buildChangeSet(cwd = process.cwd(), options = {}) {
     totalAdditions,
     totalDeletions,
     files,
-    diffHunks: diffText
+    diffHunks: finalDiffHunks
   };
 }

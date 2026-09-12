@@ -30,6 +30,8 @@ export const STATUS_EXIT_CODES = Object.freeze({
  * Builds an auditable, canonical review-run.json report.
  * Notice: This artifact is strictly an audit log and cannot be reused as an in-process capability.
  */
+export const TOOL_VERSION = "2.0.2";
+
 export function buildReviewRunReport(params = {}) {
   const {
     runId = "unassigned-run",
@@ -98,7 +100,7 @@ export function buildReviewRunReport(params = {}) {
     timestamp: String(timestamp),
     tool: {
       name: "@arcobaleno64/triad-flow",
-      version: "2.0.0"
+      version: TOOL_VERSION
     },
     status: validStatus,
     exitCode: Number(exitCode),

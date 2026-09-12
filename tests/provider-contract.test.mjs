@@ -86,7 +86,8 @@ test("validateProviderOutput enforces Default-Deny and strips capability forgery
       }
     ],
     coverage: {
-      coveredFiles: ["src/calc.js", "unrelated/secret.env"]
+      coveredFiles: ["src/calc.js", "unrelated/secret.env"],
+      omittedFiles: []
     }
   };
 
@@ -122,7 +123,22 @@ test("validateProviderOutput handles malformed, empty and error statuses", () =>
   assert.equal(malformed.ok, false);
   assert.equal(malformed.executionStatus, EXECUTION_STATUS.MALFORMED_OUTPUT);
 
-  const empty = validateProviderOutput({ findings: [] }, { changeSet });
+  const missingCoverage = validateProviderOutput({ findings: [] }, { changeSet });
+  assert.equal(missingCoverage.ok, false);
+  assert.equal(missingCoverage.executionStatus, EXECUTION_STATUS.MALFORMED_OUTPUT);
+
+  const missingCoveredFiles = validateProviderOutput({ findings: [], coverage: { omittedFiles: [] } }, { changeSet });
+  assert.equal(missingCoveredFiles.ok, false);
+  assert.equal(missingCoveredFiles.executionStatus, EXECUTION_STATUS.MALFORMED_OUTPUT);
+
+  const missingOmittedFiles = validateProviderOutput({ findings: [], coverage: { coveredFiles: [] } }, { changeSet });
+  assert.equal(missingOmittedFiles.ok, false);
+  assert.equal(missingOmittedFiles.executionStatus, EXECUTION_STATUS.MALFORMED_OUTPUT);
+
+  const empty = validateProviderOutput({
+    findings: [],
+    coverage: { coveredFiles: ["src/calc.js"], omittedFiles: [] }
+  }, { changeSet });
   assert.equal(empty.ok, true);
   assert.equal(empty.executionStatus, EXECUTION_STATUS.EMPTY);
   assert.equal(empty.findings.length, 0);

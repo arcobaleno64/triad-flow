@@ -22,7 +22,7 @@ Triad-Flow replaces prompt-bloated, schema-heavy agent processes with an industr
    - Enforces **Strict Heterogeneous Quorum** (both sentries must be healthy) with Severity Escalation Deduplication.
    - **OODA Loop Controller Primitive**: Jaccard semantic stagnation & patch cycle circuit breaking *(Remediator synthesis fails closed pending adapter configuration)*.
 3. **🛡️ Harness Engineering (安全夾具)**:
-   - Enforces deterministic security scaffolding: multi-pattern secret redaction, symlink-aware filesystem traversal sandboxing, Quorum-enforced Fail-Closed gates, and SARIF 2.1.0 report generation.
+   - Provides tested redaction and path-safety primitives: multi-pattern secret redaction, symlink-aware filesystem traversal boundary checks, Quorum-enforced Fail-Closed gates, and SARIF 2.1.0 report generation.
 
 ---
 
@@ -91,6 +91,7 @@ triad-flow review --format=json --report=run.json  # Emit auditable review-run.j
 
 ## 🛡️ Cybersecurity & AI Safety Architecture
 
+- **Network Egress & OS Privileges**: Triad-Flow core performs no direct network egress and no repository code mutation. External CLI child processes (`CliReviewAdapter`) run under caller OS privileges (read-only protocol via prompts and flags, not an OS-level kernel sandbox) and may contact their configured provider endpoints.
 - **SARIF 2.1.0**: Standardized JSON report generation with deduplicated driver rules and URI-safe artifact locations.
 - **OWASP Top 10 for LLM**:
   - `LLM02: Sensitive Info Disclosure` — Multi-pattern redaction (Google, OpenAI, Anthropic, GitHub, AWS, JWT, PEM keys).
