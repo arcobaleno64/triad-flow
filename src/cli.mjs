@@ -14,6 +14,7 @@ import { runFactoryPipeline } from "./core/factory.mjs";
 import { orchestrateReview } from "./adapters/review-orchestrator.mjs";
 import { CliReviewAdapter } from "./adapters/cli-transport.mjs";
 import { buildReviewRunReport, REVIEW_RUN_STATUS } from "./core/review-run-report.mjs";
+import { collectDoctorReport, formatDoctorReport } from "./core/doctor.mjs";
 
 export const EXIT_CODES = {
   SUCCESS: 0,
@@ -35,8 +36,6 @@ export function normalizeCommandName(cmd) {
 }
 
 export async function runCli(argv = process.argv.slice(2), io = { stdout: process.stdout, stderr: process.stderr }, options = {}) {
-  const command = argv[0] || "doctor";
-  const formatArg = argv.find(a => a.startsWith("--format="))?.split("=")[1] || "text";
   const strictArg = argv.includes("--strict") || Boolean(options.strict);
   const stagedArg = argv.includes("--staged") || Boolean(options.staged);
 
@@ -58,6 +57,41 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
       "--micro-args"
     ].includes(name);
   };
+
+  const VALUE_FLAGS = new Set([
+    "--format",
+    "--base",
+    "--head",
+    "--report",
+    "--output-run",
+    "--macro-cmd",
+    "--micro-cmd",
+    "--macro-args",
+    "--micro-args"
+  ]);
+
+  for (let i = 0; i < argv.length; i++) {
+    if (VALUE_FLAGS.has(argv[i]) && argv[i + 1] && !argv[i + 1].startsWith("--")) {
+      consumedArgsIndices.add(i + 1);
+    }
+  }
+
+  const positionalArgs = argv.filter((a, idx) => !a.startsWith("--") && !consumedArgsIndices.has(idx));
+  const command = positionalArgs[0] || "doctor";
+
+  let formatArg = "text";
+  const formatExplicit = argv.find(a => a.startsWith("--format="));
+  if (formatExplicit) {
+    formatArg = formatExplicit.slice("--format=".length);
+  } else {
+    const formatIdx = argv.indexOf("--format");
+    if (formatIdx !== -1 && argv[formatIdx + 1] && !argv[formatIdx + 1].startsWith("--")) {
+      formatArg = argv[formatIdx + 1];
+    }
+  }
+  if (options.format) {
+    formatArg = options.format;
+  }
 
   let baseArg = null;
   const baseExplicit = argv.find(a => a.startsWith("--base="));
@@ -153,7 +187,7 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
   }
 
   const isRecognizedArg = (arg) => {
-    if (arg.startsWith("--format=")) return true;
+    if (arg.startsWith("--format=") || arg === "--format") return true;
     if (arg === "--strict" || arg === "--staged") return true;
     if (arg.startsWith("--base=") || arg === "--base") return true;
     if (arg.startsWith("--head=") || arg === "--head") return true;
@@ -169,6 +203,11 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
   const unknownFlags = argv.filter((a, idx) => a.startsWith("--") && !consumedArgsIndices.has(idx) && !isRecognizedArg(a));
   if (unknownFlags.length > 0) {
     io.stderr.write(`✖ [USAGE ERROR] Unsupported option(s): ${unknownFlags.join(", ")}\n`);
+    return EXIT_CODES.USAGE_ERROR;
+  }
+
+  if (argv.some(a => a === "--format" || a === "--format=") && (!formatArg || (argv.includes("--format") && (!argv[argv.indexOf("--format") + 1] || argv[argv.indexOf("--format") + 1].startsWith("--"))))) {
+    io.stderr.write(`✖ [USAGE ERROR] Option '--format' requires a <format> argument.\n`);
     return EXIT_CODES.USAGE_ERROR;
   }
 
@@ -213,27 +252,21 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
 
   switch (command) {
     case "doctor": {
-      printBanner(io, "Triad-Flow • Environment & Capability Doctor");
-      io.stderr.write("🩺 Probing Environment Capabilities:\n");
-      io.stderr.write(`  ✔ Node.js Runtime: ${process.version}\n`);
+      const report = collectDoctorReport({
+        cwd: options.cwd || process.cwd(),
+        getGitState: options.getGitState,
+        execFn: options.execFn,
+        timeoutMs: options.timeoutMs,
+        env: options.env || process.env,
+        reviewers: options.reviewers
+      });
 
-      const gitState = typeof options.getGitState === "function" ? options.getGitState() : collectGitWorkingState(options.cwd || process.cwd());
-      if (gitState.ok) {
-        io.stderr.write("  ✔ Git Repository: Detected and active\n");
+      const formatted = formatDoctorReport(report, formatArg);
+      if (formatArg === "json") {
+        io.stdout.write(formatted);
       } else {
-        io.stderr.write(`  ⚠️ Git Repository: Not detected or unreadable (${gitState.error?.message || "none"})\n`);
+        io.stderr.write(formatted);
       }
-
-      io.stderr.write("  ✔ Deterministic Safety Core: Loaded (Harness + Loop + Graph)\n");
-
-      const hasAnthropic = Boolean(process.env.ANTHROPIC_API_KEY);
-      const hasGemini = Boolean(process.env.GEMINI_API_KEY);
-      const hasOpenAI = Boolean(process.env.OPENAI_API_KEY);
-
-      io.stderr.write(`  ℹ Anthropic Key: ${hasAnthropic ? "Configured" : "Unset (Real provider execution requires adapter)"}\n`);
-      io.stderr.write(`  ℹ Google Gemini Key: ${hasGemini ? "Configured" : "Unset (Real provider execution requires adapter)"}\n`);
-      io.stderr.write(`  ℹ OpenAI Codex Key: ${hasOpenAI ? "Configured" : "Unset (Real provider execution requires adapter)"}\n`);
-      io.stderr.write(`  ℹ Provider Integration Status: Standalone Core Ready (External adapters require explicit configuration)\n\n`);
 
       return EXIT_CODES.SUCCESS;
     }

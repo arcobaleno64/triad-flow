@@ -29,6 +29,76 @@ test("runCli 'doctor' succeeds with EXIT_CODES.SUCCESS and accurate capabilities
   assert.match(stderr.buffer, /Deterministic Safety Core: Loaded/i);
 });
 
+test("runCli 'doctor --format=json' produces valid structured JSON on stdout", async () => {
+  const stdout = new MockStream();
+  const stderr = new MockStream();
+  const mockExec = (cmd) => {
+    if (cmd === "agy") return { status: 0, stdout: "1.2.2\n" };
+    if (cmd === "claude") return { status: 0, stdout: "2.1.270\n" };
+    return { status: null, error: new Error("ENOENT") };
+  };
+
+  const code = await runCli(["doctor", "--format=json"], { stdout, stderr }, { execFn: mockExec });
+
+  assert.equal(code, EXIT_CODES.SUCCESS);
+  assert.equal(stderr.buffer, "");
+  const report = JSON.parse(stdout.buffer);
+  assert.equal(report.schemaVersion, "1.0.0");
+  assert.equal(report.quorum.status, "READY");
+  assert.equal(report.quorum.ready, true);
+  assert.deepEqual(report.quorum.families, ["google", "anthropic"]);
+  assert.equal(report.safetyCore.loaded, true);
+});
+
+test("runCli 'doctor --format json' (space-delimited) produces valid structured JSON on stdout", async () => {
+  const stdout = new MockStream();
+  const stderr = new MockStream();
+  const mockExec = () => ({ status: 0, stdout: "1.0.0" });
+
+  const code = await runCli(["doctor", "--format", "json"], { stdout, stderr }, { execFn: mockExec });
+
+  assert.equal(code, EXIT_CODES.SUCCESS);
+  assert.equal(stderr.buffer, "");
+  const report = JSON.parse(stdout.buffer);
+  assert.equal(report.schemaVersion, "1.0.0");
+});
+
+test("runCli '--format json' (default doctor, space-delimited) produces valid structured JSON on stdout", async () => {
+  const stdout = new MockStream();
+  const stderr = new MockStream();
+  const mockExec = () => ({ status: 0, stdout: "1.0.0" });
+
+  const code = await runCli(["--format", "json"], { stdout, stderr }, { execFn: mockExec });
+
+  assert.equal(code, EXIT_CODES.SUCCESS);
+  assert.equal(stderr.buffer, "");
+  const report = JSON.parse(stdout.buffer);
+  assert.equal(report.schemaVersion, "1.0.0");
+});
+
+test("runCli '--format=json' (default doctor) produces valid structured JSON on stdout", async () => {
+  const stdout = new MockStream();
+  const stderr = new MockStream();
+  const mockExec = () => ({ status: 0, stdout: "1.0.0" });
+
+  const code = await runCli(["--format=json"], { stdout, stderr }, { execFn: mockExec });
+
+  assert.equal(code, EXIT_CODES.SUCCESS);
+  assert.equal(stderr.buffer, "");
+  const report = JSON.parse(stdout.buffer);
+  assert.equal(report.schemaVersion, "1.0.0");
+});
+
+test("runCli '--base main review' correctly resolves command when flags precede command", async () => {
+  const stdout = new MockStream();
+  const stderr = new MockStream();
+  const mockCleanGitState = { ok: true, files: [] };
+
+  const code = await runCli(["--base", "main", "review"], { stdout, stderr }, { getGitState: () => mockCleanGitState });
+  assert.equal(code, EXIT_CODES.SUCCESS);
+  assert.match(stderr.buffer, /\[No Changes\].*No files to review/i);
+});
+
 test("runCli 'demo' runs simulated cycle with EXIT_CODES.SUCCESS", async () => {
   const stdout = new MockStream();
   const stderr = new MockStream();
