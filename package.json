@@ -10,6 +10,7 @@
   "files": [
     "bin",
     "src",
+    "tests/fixtures",
     "LICENSE",
     "README.md",
     "README.zh-TW.md"
@@ -17,6 +18,8 @@
   "scripts": {
     "test": "node --test",
     "test:real-pilot": "node --test tests/real-provider-pilot.test.mjs",
+    "bench:real": "node scripts/run-real-benchmark.mjs",
+    "bench:real:live": "node scripts/run-real-benchmark.mjs --live",
     "doctor": "node bin/triad-flow.mjs doctor",
     "demo": "node bin/triad-flow.mjs demo",
     "review": "node bin/triad-flow.mjs review",

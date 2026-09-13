@@ -6,3 +6,5 @@ coverage/
 .env
 .env.local
 .env.*.local
+benchmark-results.json
+benchmark-*.json
