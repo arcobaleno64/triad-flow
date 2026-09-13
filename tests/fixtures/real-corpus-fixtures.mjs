@@ -53,7 +53,7 @@ export const TF_RBC_V0_CASES = Object.freeze([
         "  }",
         "",
         "  async findUserById(id) {",
-        "    // Safe parameterized query",
+        "    // Parameterized query execution",
         "    const query = \"SELECT id, username, email FROM users WHERE id = ?\";",
         "    return this.db.query(query, [id]);",
         "  }",
@@ -69,7 +69,7 @@ export const TF_RBC_V0_CASES = Object.freeze([
         "  }",
         "",
         "  async findUserById(id) {",
-        "    // Vulnerable raw string concatenation",
+        "    // Construct query for user record",
         "    const query = \"SELECT id, username, email FROM users WHERE id = '\" + id + \"'\";",
         "    return this.db.query(query);",
         "  }",
@@ -116,7 +116,7 @@ export const TF_RBC_V0_CASES = Object.freeze([
         "const JWT_SECRET = \"super_secret_jwt_token_key_123456789_triad_pilot\";",
         "",
         "export function verifySessionToken(token) {",
-        "  // CWE-798 / CWE-347: Hardcoded cryptographic key and unverified token decode",
+        "  // Parse token parts and decode payload",
         "  const parts = token.split(\".\");",
         "  if (parts.length !== 3) throw new Error(\"Invalid token format\");",
         "  return JSON.parse(Buffer.from(parts[1], \"base64\").toString(\"utf8\"));",
@@ -155,7 +155,7 @@ export const TF_RBC_V0_CASES = Object.freeze([
         "  const safeName = path.basename(userInputFilename);",
         "  const target = path.resolve(baseDir, safeName);",
         "  if (!target.startsWith(path.resolve(baseDir))) {",
-        "    throw new Error(\"Access denied: path traversal detected\");",
+        "    throw new Error(\"Access denied: invalid file path\");",
         "  }",
         "  return fs.readFile(target, \"utf8\");",
         "}",
@@ -168,7 +168,7 @@ export const TF_RBC_V0_CASES = Object.freeze([
         "import path from \"node:path\";",
         "",
         "export async function readStorageFile(baseDir, userInputFilename) {",
-        "  // CWE-22: Unchecked path.join allows directory traversal via ../",
+        "  // Resolve target file path within base directory",
         "  const target = path.join(baseDir, userInputFilename);",
         "  return fs.readFile(target, \"utf8\");",
         "}",
@@ -211,7 +211,7 @@ export const TF_RBC_V0_CASES = Object.freeze([
     headFiles: {
       "src/views/profile-render.js": [
         "export function renderUserProfile(container, user) {",
-        "  // CWE-79: Cross-site scripting via unescaped innerHTML insertion",
+        "  // Render formatted bio markup directly into profile container",
         "  container.innerHTML = `<div class=\"user-bio\">${user.bio || \"\"}</div>`;",
         "}",
         ""
@@ -258,7 +258,7 @@ export const TF_RBC_V0_CASES = Object.freeze([
       "src/api/invoice-handler.js": [
         "export async function getInvoice(req, res, db) {",
         "  const { invoiceId } = req.params;",
-        "  // CWE-639: Removed tenant check, allowing any user to view any invoice",
+        "  // Retrieve invoice details by identifier",
         "  const invoice = await db.invoices.findById(invoiceId);",
         "  if (!invoice) return res.status(404).json({ error: \"Not found\" });",
         "  return res.json(invoice);",
@@ -304,7 +304,7 @@ export const TF_RBC_V0_CASES = Object.freeze([
     headFiles: {
       "src/webhook/dispatcher.js": [
         "export async function dispatchWebhook(targetUrl, payload) {",
-        "  // CWE-918: Unrestricted outbound fetch to arbitrary user-supplied target URL",
+        "  // Dispatch event payload to configured webhook destination",
         "  return fetch(targetUrl, {",
         "    method: \"POST\",",
         "    headers: { \"Content-Type\": \"application/json\" },",
@@ -357,7 +357,7 @@ export const TF_RBC_V0_CASES = Object.freeze([
         "const execAsync = promisify(exec);",
         "",
         "export async function generatePdf(inputFile, outputFile) {",
-        "  // CWE-78: Unescaped string passed to shell execution",
+        "  // Invoke pandoc command for format conversion",
         "  const command = `pandoc ${inputFile} -o ${outputFile}`;",
         "  return execAsync(command);",
         "}",
@@ -399,7 +399,7 @@ export const TF_RBC_V0_CASES = Object.freeze([
       "src/cache/session-store.js": [
         "export function deserializeSession(serializedData) {",
         "  if (!serializedData) return null;",
-        "  // CWE-502: Unsafe deserialization using eval on serialized payload",
+        "  // Unpack serialized session data from cache",
         "  return eval(`(${serializedData})`);",
         "}",
         ""
@@ -453,7 +453,7 @@ export const TF_RBC_V0_CASES = Object.freeze([
         "  }",
         "",
         "  async checkLimit(ip, username) {",
-        "    // CWE-307: Rate limit check disabled, permitting unlimited password guessing",
+        "    // Skip throttle check when maintenance flag is active",
         "    if (false) {",
         "      const attempts = await this.cache.get(`login:${ip}:${username}`) || 0;",
         "      if (attempts >= 5) throw new Error(\"Too many attempts\");",
@@ -491,7 +491,7 @@ export const TF_RBC_V0_CASES = Object.freeze([
         "export function deepMerge(target, source) {",
         "  for (const key of Object.keys(source)) {",
         "    if (key === \"__proto__\" || key === \"constructor\" || key === \"prototype\") {",
-        "      continue; // Prevent prototype pollution",
+        "      continue; // Skip restricted object keys",
         "    }",
         "    if (source[key] && typeof source[key] === \"object\") {",
         "      target[key] = deepMerge(target[key] || {}, source[key]);",
@@ -508,7 +508,7 @@ export const TF_RBC_V0_CASES = Object.freeze([
       "src/utils/deep-assign.js": [
         "export function deepMerge(target, source) {",
         "  for (const key of Object.keys(source)) {",
-        "    // CWE-1321: Removed prototype protection guard",
+        "    // Merge source properties directly into target object",
         "    if (source[key] && typeof source[key] === \"object\") {",
         "      target[key] = deepMerge(target[key] || {}, source[key]);",
         "    } else {",
@@ -561,12 +561,12 @@ export const TF_RBC_V0_CASES = Object.freeze([
     headFiles: {
       "src/finance/transfer.js": [
         "export async function debitAccount(db, accountId, amount) {",
-        "  // CWE-362: Non-atomic TOCTOU balance check",
+        "  // Verify sufficient account funds prior to transfer deduction",
         "  const account = await db.query(\"SELECT balance FROM accounts WHERE id = ?\", [accountId]);",
         "  if (account.balance < amount) {",
         "    throw new Error(\"Insufficient funds\");",
         "  }",
-        "  // Artificial async delay window opens concurrency race condition",
+        "  // Simulate asynchronous payment service latency",
         "  await new Promise((resolve) => setTimeout(resolve, 50));",
         "  await db.query(\"UPDATE accounts SET balance = balance - ? WHERE id = ?\", [amount, accountId]);",
         "  return true;",
@@ -612,7 +612,7 @@ export const TF_RBC_V0_CASES = Object.freeze([
     headFiles: {
       "src/crypto/hmac-verify.js": [
         "export function verifyHmacSignature(signature, expectedSignature) {",
-        "  // CWE-208: Early return string comparison leaks timing side-channel",
+        "  // Compare signature hashes character by character",
         "  if (signature.length !== expectedSignature.length) return false;",
         "  return signature === expectedSignature;",
         "}",
@@ -646,7 +646,7 @@ export const TF_RBC_V0_CASES = Object.freeze([
       "src/math/vector-calc.js": [
         "export function dotProduct(a, b) {",
         "  if (a.length !== b.length) throw new Error(\"Vectors must have same length\");",
-        "  // Clean algorithmic optimization: zero allocation loop",
+        "  // Inlined loop to avoid array allocations",
         "  let sum = 0;",
         "  for (let i = 0; i < a.length; i++) {",
         "    sum += a[i] * b[i];",

@@ -83,7 +83,7 @@ export function createDisposableRepo(type = "clean", options = {}) {
   fs.mkdirSync(srcDir, { recursive: true });
 
   fs.writeFileSync(path.join(tmpDir, "package.json"), JSON.stringify({
-    name: `pilot-${type}-fixture`,
+    name: "pilot-fixture",
     version: "1.0.0",
     type: "module"
   }, null, 2) + "\n", "utf8");
@@ -137,12 +137,12 @@ export function createDisposableRepo(type = "clean", options = {}) {
       ""
     ].join("\n"), "utf8");
   } else if (type === "vulnerable") {
-    // OWASP Top 10 vulnerabilities: Hardcoded JWT Secret (CWE-798) & SQLi (CWE-89)
+    // Multi-defect sample files: authentication and database operations
     fs.writeFileSync(path.join(srcDir, "auth.js"), [
       "const JWT_SECRET = \"super_secret_jwt_token_key_123456789_triad_pilot\";",
       "",
       "export function verifyToken(token) {",
-      "  // CWE-798 / CWE-259: Hardcoded cryptographic key and unverified token decode",
+      "  // Parse token parts and decode payload",
       "  const payload = JSON.parse(Buffer.from(token.split(\".\")[1], \"base64\").toString());",
       "  return payload;",
       "}",
@@ -151,7 +151,7 @@ export function createDisposableRepo(type = "clean", options = {}) {
 
     fs.writeFileSync(path.join(srcDir, "db.js"), [
       "export function getUser(db, id) {",
-      "  // CWE-89: SQL Injection via string concatenation",
+      "  // Fetch user record by ID",
       "  return db.query(\"SELECT * FROM users WHERE id = '\" + id + \"'\");",
       "}",
       ""
@@ -163,7 +163,7 @@ export function createDisposableRepo(type = "clean", options = {}) {
   let headSha = null;
   if (commit) {
     gitExec(["add", "."]);
-    gitExec(["commit", "-m", `feat: pilot modifications (${type})`]);
+    gitExec(["commit", "-m", "feat: pilot modifications"]);
     headSha = gitExec(["rev-parse", "HEAD"]).trim();
   }
 
