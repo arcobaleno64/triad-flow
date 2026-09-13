@@ -176,10 +176,10 @@ test("Test 4 (Case Filtering & Limits): --case and --limit selectively execute t
 });
 
 test("Test 5 (Three-Way Comparison): Single vs Dual vs Risk-Adaptive Pareto calculations", async () => {
-  // Simulate macro sentry missing 1 vulnerability (BENCH-REAL-011)
+  // Simulate macro sentry missing 1 vulnerability on Tier 1 critical file (BENCH-REAL-012: crypto)
   // Dual sentry catches all 12 vulnerabilities
   const mockAdapters = createMockCorpusAdapters({
-    macroMisses: ["BENCH-REAL-011"]
+    macroMisses: ["BENCH-REAL-012"]
   });
 
   const threeWayReport = await runThreeWayRealComparison(TF_RBC_V0_CASES, mockAdapters, { virtual: true });
@@ -200,7 +200,7 @@ test("Test 5 (Three-Way Comparison): Single vs Dual vs Risk-Adaptive Pareto calc
   assert.equal(dual.metrics.caughtGoldens, 12);
   assert.equal(dual.metrics.recall, 1.0);
 
-  // Risk-Adaptive routes Tier 1 (including case 11) to Dual -> 12/12 = 1.0 recall
+  // Risk-Adaptive routes Tier 1 (BENCH-REAL-012) to Dual via production evaluateDiffScale -> 12/12 = 1.0 recall
   assert.equal(riskRouted.metrics.caughtGoldens, 12);
   assert.equal(riskRouted.metrics.recall, 1.0);
 
@@ -271,10 +271,18 @@ test("Test 9 (Precision Edge Case): Zero findings verified on vulnerable code re
   });
 
   assert.equal(report.metrics.vulnerableCasesCount, 1);
+  assert.equal(report.metrics.cleanCasesCount, 0);
   assert.equal(report.metrics.caughtGoldens, 0);
   assert.equal(report.metrics.totalReportedFindings, 0);
   assert.equal(report.metrics.recall, 0.0, "Recall must be 0% when defect missed");
   assert.equal(report.metrics.precision, 0.0, "Precision must be 0.0% when 0 findings verified on vulnerable code");
+  assert.equal(report.metrics.falseBlockRate, null, "FBR must be null when cleanCasesCount is 0");
+  assert.equal(report.executionMode, "mock");
+  assert.equal(report.workspaceMode, "virtual");
+
+  const formatted = formatBenchmarkSummary(report);
+  assert.ok(formatted.includes("not-applicable (0/0 Clean cases in evaluation set)"));
+  assert.ok(formatted.includes("Execution: mock | Workspace: virtual"));
 });
 
 test("Test 10 (Clean-Only Cases Metric Format): Formatter displays N/A recall without fake 100%", async () => {
@@ -327,5 +335,125 @@ test("Test 11 (CLI Execution Integration): scripts/run-real-benchmark.mjs suppor
     } catch {}
   }
 });
+
+test("Test 12 (3-Point Passed Check): Requires detectionPass, gatePolicyPass, and executionComplete", async () => {
+  const caseDef = getCorpusCaseById("BENCH-REAL-001");
+  assert.ok(caseDef);
+
+  // Scenario A: Reviewer catches golden defect but tags it as 'info' severity -> Gate approves -> gatePolicyPass is false -> passed is false
+  const infoAdapter = new CliReviewAdapter({
+    execFn: async () => ({
+      stdout: JSON.stringify({
+        findings: [
+          {
+            title: "Detected SQL injection (CWE-89)",
+            severity: "info",
+            file: caseDef.targetFile,
+            line_start: 3,
+            line_end: 3,
+            cwe: "CWE-89",
+            type: "sql-injection"
+          }
+        ],
+        coverage: { coveredFiles: [caseDef.targetFile], omittedFiles: [] },
+        usage: { promptTokens: 100, completionTokens: 20, totalTokens: 120 }
+      })
+    })
+  });
+
+  const resInfo = await evaluateCorpusCase(caseDef, { macro: infoAdapter }, { mode: "single", virtual: true });
+  assert.equal(resInfo.detectionPass, true, "Golden CWE was detected");
+  assert.equal(resInfo.actualGateDecision, "approve", "Info severity findings do not block default gate");
+  assert.equal(resInfo.gatePolicyPass, false, "Actual gate decision 'approve' differs from expected 'block'");
+  assert.equal(resInfo.passed, false, "Case must NOT pass when gate policy failed to block defect");
+
+  // Scenario B: Incomplete review status fails executionComplete
+  const incompleteAdapter = new CliReviewAdapter({
+    execFn: async () => ({
+      stdout: JSON.stringify({
+        findings: [
+          {
+            title: "Detected SQL injection (CWE-89)",
+            severity: "critical",
+            file: caseDef.targetFile,
+            line_start: 3,
+            line_end: 3,
+            cwe: "CWE-89",
+            type: "sql-injection"
+          }
+        ],
+        coverage: { coveredFiles: [], omittedFiles: [{ path: caseDef.targetFile, reason: "omitted" }] }
+      })
+    })
+  });
+
+  const resIncomplete = await evaluateCorpusCase(caseDef, { macro: incompleteAdapter }, { mode: "single", virtual: true });
+  assert.equal(resIncomplete.status, "incomplete");
+  assert.equal(resIncomplete.executionComplete, false);
+  assert.equal(resIncomplete.passed, false);
+});
+
+test("Test 13 (Token Metadata Preservation): Preserves null/unavailable without fake zero-sum", async () => {
+  const caseDef = getCorpusCaseById("BENCH-REAL-001");
+
+  // Adapter that returns null usage
+  const nullUsageAdapter = new CliReviewAdapter({
+    execFn: async () => ({
+      stdout: JSON.stringify({
+        findings: [
+          {
+            title: "Detected SQL injection (CWE-89)",
+            severity: "high",
+            file: caseDef.targetFile,
+            line_start: 3,
+            line_end: 3,
+            cwe: "CWE-89"
+          }
+        ],
+        coverage: { coveredFiles: [caseDef.targetFile], omittedFiles: [] },
+        usage: { promptTokens: null, completionTokens: null, totalTokens: null }
+      })
+    })
+  });
+
+  const singleRes = await evaluateCorpusCase(caseDef, { macro: nullUsageAdapter }, { mode: "single", virtual: true });
+  assert.equal(singleRes.usage.available, false);
+  assert.equal(singleRes.usage.promptTokens, null);
+  assert.equal(singleRes.usage.totalTokens, null);
+
+  const suiteRes = await evaluateCorpusSuite([caseDef], { macro: nullUsageAdapter }, { mode: "single", virtual: true });
+  assert.equal(suiteRes.metrics.tokens.available, false);
+  assert.equal(suiteRes.metrics.tokens.totalTokens, null);
+  assert.equal(suiteRes.metrics.costRatio, null);
+
+  const summary = formatBenchmarkSummary(suiteRes);
+  assert.match(summary, /unavailable \(provider did not report usage metadata\)/);
+
+  // In 3-way comparison with missing usage, recommendation must downgrade to insufficient data
+  const threeWay = await runThreeWayRealComparison([caseDef], { macro: nullUsageAdapter, micro: nullUsageAdapter }, { virtual: true });
+  assert.equal(threeWay.metrics.dualTokenMultiplier, null);
+  assert.equal(threeWay.metrics.routedTokenMultiplier, null);
+  assert.match(threeWay.recommendation, /Token usage data unavailable; insufficient data to support configuration cost-efficiency conclusion/);
+});
+
+test("Test 14 (Live & Virtual Rejection): scripts/run-real-benchmark.mjs rejects --live with --virtual", () => {
+  const liveVirtual = spawnSync(process.execPath, ["scripts/run-real-benchmark.mjs", "--live", "--virtual"], {
+    cwd: process.cwd(),
+    encoding: "utf8"
+  });
+  assert.equal(liveVirtual.status, 1, "Must exit with code 1 when --live and --virtual combined");
+  assert.match(liveVirtual.stderr, /Live evaluation requires physical repository workspace/);
+});
+
+test("Test 15 (Metadata & Non-Optimal Baseline): Reports expose executionMode and workspaceMode, and recommendation avoids prohibited optimal claim", async () => {
+  const mockAdapters = createMockCorpusAdapters();
+  // With no misses, single recall equals dual recall (0 observed gap)
+  const threeWay = await runThreeWayRealComparison(TF_RBC_V0_CASES, mockAdapters, { virtual: true });
+  assert.equal(threeWay.executionMode, "mock");
+  assert.equal(threeWay.workspaceMode, "virtual");
+  assert.ok(!threeWay.recommendation.includes("optimal"), "Recommendation must not claim baseline is optimal");
+  assert.match(threeWay.recommendation, /no observed recall gap/);
+});
+
 
 

@@ -58,9 +58,9 @@ test("Path 1 (Clean Pass): Real agy review on benign change approves cleanly", {
 
   const repo = createDisposableRepo("clean");
   try {
-    assertRepoImmutability(repo.dir);
+    assertRepoImmutability(repo.dir, repo.headSha);
     const start = Date.now();
-    const adapter = new CliReviewAdapter({ command: "agy" });
+    const adapter = new CliReviewAdapter({ command: "agy", cwd: repo.dir });
     const orchResult = await orchestrateReview(repo.changeSet, { macro: adapter }, {
       timeoutMs: 90000,
       plan: { mode: "single", reason: "clean-benign-math" }
@@ -72,7 +72,7 @@ test("Path 1 (Clean Pass): Real agy review on benign change approves cleanly", {
     assert.equal(orchResult.gate.decision, "approve");
     assert.equal(orchResult.result.findings.length, 0);
     assert.equal(orchResult.result.coverage.omittedFiles.length, 0);
-    assertRepoImmutability(repo.dir);
+    assertRepoImmutability(repo.dir, repo.headSha);
   } finally {
     repo.cleanup();
   }
@@ -86,9 +86,9 @@ test("Path 2 (Vulnerability Catch & Gate Block): Real agy catches OWASP defects 
 
   const repo = createDisposableRepo("vulnerable");
   try {
-    assertRepoImmutability(repo.dir);
+    assertRepoImmutability(repo.dir, repo.headSha);
     const start = Date.now();
-    const adapter = new CliReviewAdapter({ command: "agy" });
+    const adapter = new CliReviewAdapter({ command: "agy", cwd: repo.dir });
     const orchResult = await orchestrateReview(repo.changeSet, { macro: adapter }, {
       timeoutMs: 90000,
       plan: { mode: "single", reason: "vuln-owasp-pilot" }
@@ -99,7 +99,7 @@ test("Path 2 (Vulnerability Catch & Gate Block): Real agy catches OWASP defects 
     assert.equal(orchResult.status, "reviewed-with-findings");
     assert.equal(orchResult.gate.decision, "block");
     assert.ok(orchResult.result.findings.length > 0, "Expected provider to discover vulnerabilities");
-    assertRepoImmutability(repo.dir);
+    assertRepoImmutability(repo.dir, repo.headSha);
   } finally {
     repo.cleanup();
   }
@@ -113,9 +113,9 @@ test("Path 3 (Timeout Kill & Fail-Closed): Short deadline kills real child proce
 
   const repo = createDisposableRepo("clean");
   try {
-    assertRepoImmutability(repo.dir);
+    assertRepoImmutability(repo.dir, repo.headSha);
     const start = Date.now();
-    const adapter = new CliReviewAdapter({ command: "agy" });
+    const adapter = new CliReviewAdapter({ command: "agy", cwd: repo.dir });
     const orchResult = await orchestrateReview(repo.changeSet, { macro: adapter }, {
       timeoutMs: 200, // 200ms ultra-short timeout
       plan: { mode: "single", reason: "timeout-probe" }
@@ -126,7 +126,7 @@ test("Path 3 (Timeout Kill & Fail-Closed): Short deadline kills real child proce
     assert.equal(orchResult.status, "incomplete");
     assert.equal(orchResult.gate.decision, "block");
     assert.equal(orchResult.result.executionStatus, EXECUTION_STATUS.TIMEOUT);
-    assertRepoImmutability(repo.dir);
+    assertRepoImmutability(repo.dir, repo.headSha);
   } finally {
     repo.cleanup();
   }
@@ -135,12 +135,13 @@ test("Path 3 (Timeout Kill & Fail-Closed): Short deadline kills real child proce
 test("Path 4 (Auth Failure Graceful Degradation): Invalid credentials identify AUTH_FAILURE and block Gate", { timeout: 30000 }, async () => {
   const repo = createDisposableRepo("clean");
   try {
-    assertRepoImmutability(repo.dir);
+    assertRepoImmutability(repo.dir, repo.headSha);
     let adapter;
     if (isClaudeAvailable()) {
       // Induce real CLI auth failure via invalid token
       adapter = new CliReviewAdapter({
         command: "claude",
+        cwd: repo.dir,
         env: { ...process.env, ANTHROPIC_API_KEY: "invalid-key-for-test" }
       });
     } else {
@@ -148,6 +149,7 @@ test("Path 4 (Auth Failure Graceful Degradation): Invalid credentials identify A
       const mockSentry = path.resolve("tests", "fixtures", "mock-cli-sentry.mjs");
       adapter = new CliReviewAdapter({
         command: process.execPath,
+        cwd: repo.dir,
         args: [mockSentry, "--auth-fail"]
       });
     }
@@ -164,7 +166,7 @@ test("Path 4 (Auth Failure Graceful Degradation): Invalid credentials identify A
     assert.equal(orchResult.gate.decision, "block");
     assert.equal(orchResult.result.executionStatus, EXECUTION_STATUS.AUTH_FAILURE);
     assert.match(orchResult.result.error, /auth/i);
-    assertRepoImmutability(repo.dir);
+    assertRepoImmutability(repo.dir, repo.headSha);
   } finally {
     repo.cleanup();
   }
@@ -173,9 +175,10 @@ test("Path 4 (Auth Failure Graceful Degradation): Invalid credentials identify A
 test("Path 5 (Coverage Incompleteness): Multi-file changeset with omitted files triggers Gate BLOCK", async () => {
   const repo = createDisposableRepo("vulnerable"); // contains src/auth.js and src/db.js
   try {
-    assertRepoImmutability(repo.dir);
+    assertRepoImmutability(repo.dir, repo.headSha);
     // Reviewer only covers one of the two files
     const partialCoverageAdapter = new CliReviewAdapter({
+      cwd: repo.dir,
       execFn: async () => ({
         stdout: JSON.stringify({
           findings: [],
@@ -194,7 +197,7 @@ test("Path 5 (Coverage Incompleteness): Multi-file changeset with omitted files 
     assert.equal(orchResult.status, "incomplete");
     assert.equal(orchResult.gate.decision, "block");
     assert.match(orchResult.gate.reason, /coverage incomplete/i);
-    assertRepoImmutability(repo.dir);
+    assertRepoImmutability(repo.dir, repo.headSha);
   } finally {
     repo.cleanup();
   }
@@ -203,20 +206,26 @@ test("Path 5 (Coverage Incompleteness): Multi-file changeset with omitted files 
 test("Path 6 (Repo Immutability Guarantee): Repository remains 100% clean and dirty states are rejected", async () => {
   const repo = createDisposableRepo("clean");
   try {
-    assert.equal(assertRepoImmutability(repo.dir), true);
+    assert.equal(assertRepoImmutability(repo.dir, repo.headSha), true);
 
     // Verify assertion catches unauthorized rogue files
     const rogueFile = path.join(repo.dir, "rogue-agent-leak.tmp");
     fs.writeFileSync(rogueFile, "unauthorized mutation\n", "utf8");
 
     assert.throws(
-      () => assertRepoImmutability(repo.dir),
-      /Repo immutability violated/
+      () => assertRepoImmutability(repo.dir, repo.headSha),
+      /Repo immutability violated: working tree contains uncommitted or dirty changes/
     );
 
     // Clean rogue file and verify immutability restored
     fs.unlinkSync(rogueFile);
-    assert.equal(assertRepoImmutability(repo.dir), true);
+    assert.equal(assertRepoImmutability(repo.dir, repo.headSha), true);
+
+    // Verify assertion catches unauthorized HEAD commit drift
+    assert.throws(
+      () => assertRepoImmutability(repo.dir, "0000000000000000000000000000000000000000"),
+      /HEAD commit drift detected/
+    );
   } finally {
     repo.cleanup();
   }

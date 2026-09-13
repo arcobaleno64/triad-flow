@@ -70,5 +70,5 @@ Only the current MINOR line is supported. Update this table on every MINOR bump.
 
 | Version | Supported |
 |---|---|
-| 2.0.x | :white_check_mark: |
-| < 2.0.0 | :x: |
+| 2.1.x | :white_check_mark: |
+| < 2.1.0 | :x: |

@@ -20,7 +20,7 @@ import { buildChangeSet } from "../../src/core/git-collector.mjs";
  * @returns {boolean} True if repository working tree is strictly unmodified.
  * @throws {AssertionError} If working tree is dirty or contains untracked changes.
  */
-export function assertRepoImmutability(repoDir) {
+export function assertRepoImmutability(repoDir, expectedHeadSha = null) {
   if (!repoDir || !fs.existsSync(repoDir)) {
     throw new Error(`Invalid repo directory for immutability check: ${repoDir}`);
   }
@@ -36,6 +36,20 @@ export function assertRepoImmutability(repoDir) {
     "",
     `Repo immutability violated: working tree contains uncommitted or dirty changes:\n${status}`
   );
+
+  if (expectedHeadSha) {
+    const currentHead = execFileSync("git", ["rev-parse", "HEAD"], {
+      cwd: repoDir,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"]
+    }).trim();
+
+    assert.equal(
+      currentHead,
+      expectedHeadSha,
+      `Repo immutability violated: HEAD commit drift detected (expected ${expectedHeadSha}, got ${currentHead})`
+    );
+  }
 
   return true;
 }
@@ -173,6 +187,6 @@ export function createDisposableRepo(type = "clean", options = {}) {
     headSha,
     changeSet,
     cleanup,
-    assertImmutability: () => assertRepoImmutability(tmpDir)
+    assertImmutability: () => assertRepoImmutability(tmpDir, headSha)
   };
 }

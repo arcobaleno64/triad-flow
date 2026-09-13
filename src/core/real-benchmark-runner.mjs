@@ -19,6 +19,7 @@ import {
 import { orchestrateReview } from "../adapters/review-orchestrator.mjs";
 import { verifyHeldOutBaseline } from "./scoring.mjs";
 import { deduplicateBenchmarkFindings } from "./benchmark-pilot.mjs";
+import { evaluateDiffScale } from "./graph-router.mjs";
 
 export const BENCHMARK_FRAMEWORK_NAME = "Triad-Flow Real Benchmark Corpus v0 (TF-RBC-v0)";
 
@@ -55,10 +56,11 @@ export async function evaluateCorpusCase(caseDef, adapters = {}, options = {}) {
     } else if (mode === "dual") {
       plan = { mode: "hierarchical", reason: "benchmark-dual-heterogeneous" };
     } else if (mode === "risk-routed") {
-      const isTier1 = caseDef.riskTier === 1;
-      plan = isTier1
-        ? { mode: "hierarchical", reason: "benchmark-risk-routed-tier1" }
-        : { mode: "single", reason: "benchmark-risk-routed-low-risk" };
+      const scale = evaluateDiffScale(workspace.changeSet?.files || []);
+      plan = {
+        mode: scale.mode,
+        reason: `benchmark-risk-routed:${scale.reason}`
+      };
     } else {
       plan = { mode: "single", reason: "benchmark-default-plan" };
     }
@@ -75,21 +77,46 @@ export async function evaluateCorpusCase(caseDef, adapters = {}, options = {}) {
     // 5. Post-execution immutability check (guarantee zero file mutations or leaks)
     workspace.assertImmutability();
 
-    // 6. Aggregate token usage
-    const usage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+    // 6. Aggregate token usage (preserving null/unavailable without fake zero sum)
+    let hasUsage = false;
+    let promptTokens = null;
+    let completionTokens = null;
+    let totalTokens = null;
+
+    const collectUsage = (u) => {
+      if (!u) return;
+      if (typeof u.promptTokens === "number") {
+        promptTokens = (promptTokens ?? 0) + u.promptTokens;
+        hasUsage = true;
+      }
+      if (typeof u.completionTokens === "number") {
+        completionTokens = (completionTokens ?? 0) + u.completionTokens;
+        hasUsage = true;
+      }
+      if (typeof u.totalTokens === "number") {
+        totalTokens = (totalTokens ?? 0) + u.totalTokens;
+        hasUsage = true;
+      }
+    };
+
     if (orchResult.results) {
       for (const res of Object.values(orchResult.results)) {
-        if (res?.usage) {
-          usage.promptTokens += Number(res.usage.promptTokens) || 0;
-          usage.completionTokens += Number(res.usage.completionTokens) || 0;
-          usage.totalTokens += Number(res.usage.totalTokens) || 0;
-        }
+        collectUsage(res?.usage);
       }
     } else if (orchResult.result?.usage) {
-      usage.promptTokens += Number(orchResult.result.usage.promptTokens) || 0;
-      usage.completionTokens += Number(orchResult.result.usage.completionTokens) || 0;
-      usage.totalTokens += Number(orchResult.result.usage.totalTokens) || 0;
+      collectUsage(orchResult.result.usage);
     }
+
+    if (totalTokens === null && promptTokens !== null && completionTokens !== null) {
+      totalTokens = promptTokens + completionTokens;
+    }
+
+    const usage = {
+      available: hasUsage,
+      promptTokens,
+      completionTokens,
+      totalTokens
+    };
 
     // 7. Extract combined findings
     let actualFindings = [];
@@ -108,13 +135,25 @@ export async function evaluateCorpusCase(caseDef, adapters = {}, options = {}) {
     const goldenFindings = caseDef.goldenFindings || [];
     const evalResult = verifyHeldOutBaseline(actualFindings, goldenFindings, workspace.dir);
 
-    // 9. Negative controls & gate decision assertions
+    // 9. 3-Point Passed Check & Negative Controls
+    // Point 1 (detectionPass): Golden CWEs caught (or Clean case has no blocking findings)
     const isClean = caseDef.category === "clean";
+    const detectionPass = isClean
+      ? !actualFindings.some(f => /critical|high/i.test(f.severity || ""))
+      : (goldenFindings.length > 0 && evalResult.caughtGoldens === goldenFindings.length);
+
+    // Point 2 (gatePolicyPass): Actual gate decision strictly matches expected gate decision
     const actualGateDecision = orchResult.gate?.decision || "block";
+    const gatePolicyPass = actualGateDecision === caseDef.expectedGateDecision;
+
+    // Point 3 (executionComplete): Reviewer completed execution without incomplete coverage or runtime error
+    const executionComplete = orchResult.status !== "incomplete" && orchResult.status !== "error";
+
     const isFalseBlock = isClean && actualGateDecision === "block";
     const isRecallCaught = !isClean && evalResult.caughtGoldens === goldenFindings.length;
 
-    const passed = isClean ? !isFalseBlock : isRecallCaught;
+    // Passed requires all 3 points to hold simultaneously
+    const passed = Boolean(detectionPass && gatePolicyPass && executionComplete);
 
     return {
       caseId: caseDef.id,
@@ -132,6 +171,9 @@ export async function evaluateCorpusCase(caseDef, adapters = {}, options = {}) {
       evalResult,
       isFalseBlock,
       isRecallCaught,
+      detectionPass,
+      gatePolicyPass,
+      executionComplete,
       passed
     };
   } finally {
@@ -199,11 +241,15 @@ export async function evaluateCorpusSuite(corpus = TF_RBC_V0_CASES, adapters = n
   let totalPromptTokens = 0;
   let totalCompletionTokens = 0;
   let totalTokens = 0;
+  let hasValidTokens = false;
 
   for (const r of caseResults) {
-    totalPromptTokens += r.usage.promptTokens;
-    totalCompletionTokens += r.usage.completionTokens;
-    totalTokens += r.usage.totalTokens;
+    if (r.usage?.available && typeof r.usage.totalTokens === "number") {
+      hasValidTokens = true;
+      totalPromptTokens += r.usage.promptTokens ?? 0;
+      totalCompletionTokens += r.usage.completionTokens ?? 0;
+      totalTokens += r.usage.totalTokens;
+    }
     totalReportedFindings += r.actualFindings.length;
 
     if (r.category === "clean") {
@@ -227,7 +273,7 @@ export async function evaluateCorpusSuite(corpus = TF_RBC_V0_CASES, adapters = n
   const precision = precisionDenominator > 0
     ? parseFloat((truePositives / precisionDenominator).toFixed(3))
     : (vulnerableCasesCount > 0 ? 0.0 : 1.0);
-  const falseBlockRate = cleanCasesCount > 0 ? parseFloat((falseBlocks / cleanCasesCount).toFixed(3)) : 0.0;
+  const falseBlockRate = cleanCasesCount > 0 ? parseFloat((falseBlocks / cleanCasesCount).toFixed(3)) : null;
 
   const latencies = caseResults.map(r => r.latencyMs).sort((a, b) => a - b);
   const p50Ms = latencies.length > 0 ? latencies[Math.floor(latencies.length * 0.5)] : 0;
@@ -237,11 +283,16 @@ export async function evaluateCorpusSuite(corpus = TF_RBC_V0_CASES, adapters = n
   const minMs = latencies.length > 0 ? latencies[0] : 0;
   const maxMs = latencies.length > 0 ? latencies[latencies.length - 1] : 0;
 
-  const avgTokensPerCase = cases.length > 0 ? Math.round(totalTokens / cases.length) : 0;
+  const avgTokensPerCase = (cases.length > 0 && hasValidTokens) ? Math.round(totalTokens / cases.length) : null;
+
+  const executionMode = options.executionMode || (options.live ? "live" : "mock");
+  const workspaceMode = Boolean(options.virtual) ? "virtual" : "physical";
 
   return {
     framework: BENCHMARK_FRAMEWORK_NAME,
     mode,
+    executionMode,
+    workspaceMode,
     timestamp: new Date().toISOString(),
     totalCases: cases.length,
     caseResults,
@@ -265,13 +316,20 @@ export async function evaluateCorpusSuite(corpus = TF_RBC_V0_CASES, adapters = n
         minMs,
         maxMs
       },
-      tokens: {
+      tokens: hasValidTokens ? {
+        available: true,
         totalPromptTokens,
         totalCompletionTokens,
         totalTokens,
         avgTokensPerCase
+      } : {
+        available: false,
+        totalPromptTokens: null,
+        totalCompletionTokens: null,
+        totalTokens: null,
+        avgTokensPerCase: null
       },
-      costRatio: options.costRatio ?? 1.0
+      costRatio: hasValidTokens ? (options.costRatio ?? 1.0) : null
     }
   };
 }
@@ -289,28 +347,51 @@ export async function runThreeWayRealComparison(corpus = TF_RBC_V0_CASES, adapte
   const dual = await evaluateCorpusSuite(corpus, adapters, { ...options, mode: "dual" });
   const riskRouted = await evaluateCorpusSuite(corpus, adapters, { ...options, mode: "risk-routed" });
 
-  const baselineTokens = single.metrics.tokens.totalTokens || 1;
-  const dualTokenMultiplier = parseFloat((dual.metrics.tokens.totalTokens / baselineTokens).toFixed(2));
-  const routedTokenMultiplier = parseFloat((riskRouted.metrics.tokens.totalTokens / baselineTokens).toFixed(2));
+  const tokensAvailable = Boolean(
+    single.metrics.tokens?.available &&
+    dual.metrics.tokens?.available &&
+    riskRouted.metrics.tokens?.available &&
+    single.metrics.tokens?.totalTokens > 0
+  );
+
+  let dualTokenMultiplier = null;
+  let routedTokenMultiplier = null;
+
+  if (tokensAvailable) {
+    const baselineTokens = single.metrics.tokens.totalTokens;
+    dualTokenMultiplier = parseFloat((dual.metrics.tokens.totalTokens / baselineTokens).toFixed(2));
+    routedTokenMultiplier = parseFloat((riskRouted.metrics.tokens.totalTokens / baselineTokens).toFixed(2));
+    single.metrics.costRatio = 1.0;
+    dual.metrics.costRatio = dualTokenMultiplier;
+    riskRouted.metrics.costRatio = routedTokenMultiplier;
+  } else {
+    single.metrics.costRatio = null;
+    dual.metrics.costRatio = null;
+    riskRouted.metrics.costRatio = null;
+  }
+
   const marginalRecallGain = parseFloat((dual.metrics.recall - single.metrics.recall).toFixed(3));
 
-  single.metrics.costRatio = 1.0;
-  dual.metrics.costRatio = dualTokenMultiplier;
-  riskRouted.metrics.costRatio = routedTokenMultiplier;
-
   let recommendation = "";
-  if (marginalRecallGain > 0 && riskRouted.metrics.recall >= dual.metrics.recall * 0.95 && routedTokenMultiplier < dualTokenMultiplier) {
+  if (!tokensAvailable) {
+    recommendation = "Token usage data unavailable; insufficient data to support configuration cost-efficiency conclusion.";
+  } else if (marginalRecallGain > 0 && riskRouted.metrics.recall >= dual.metrics.recall * 0.95 && routedTokenMultiplier < dualTokenMultiplier) {
     const savingsPct = dualTokenMultiplier > 0 ? Math.round((1 - routedTokenMultiplier / dualTokenMultiplier) * 100) : 0;
     recommendation = `Risk-Adaptive Routing is empirically justified: captures ${(riskRouted.metrics.recall * 100).toFixed(1)}% recall while saving ${savingsPct}% of multi-agent token overhead.`;
   } else if (dual.metrics.recall > single.metrics.recall) {
     recommendation = `Dual Heterogeneous sentries provide highest safety with +${(marginalRecallGain * 100).toFixed(1)}% marginal recall gain.`;
   } else {
-    recommendation = "Single Sentry baseline is optimal for current workload with zero observed recall gap.";
+    recommendation = "Single Sentry baseline showed no observed recall gap in current workload; no marginal gain observed for dual reviewers.";
   }
+
+  const executionMode = options.executionMode || (options.live ? "live" : "mock");
+  const workspaceMode = Boolean(options.virtual) ? "virtual" : "physical";
 
   return {
     framework: BENCHMARK_FRAMEWORK_NAME,
     mode: "all",
+    executionMode,
+    workspaceMode,
     timestamp: new Date().toISOString(),
     configurations: {
       single,
@@ -341,17 +422,26 @@ export function formatBenchmarkSummary(runResult) {
     const { single, dual, riskRouted } = runResult.configurations;
     const { marginalRecallGain, dualTokenMultiplier, routedTokenMultiplier } = runResult.metrics || {};
 
+    const formatTokenCol = (m) => m.tokens?.available ? String(m.tokens.totalTokens).padStart(6) : "  null";
+    const formatRatioCol = (m) => m.costRatio !== null && m.costRatio !== undefined ? m.costRatio.toFixed(2).padStart(10) : "       N/A";
+    const formatFbrCol = (m) => (m.cleanCasesCount > 0 && m.falseBlockRate !== null && m.falseBlockRate !== undefined)
+      ? `${(m.falseBlockRate * 100).toFixed(1)}%`.padStart(16)
+      : "             N/A";
+
     lines.push("==================================================================================");
     lines.push(` ${BENCHMARK_FRAMEWORK_NAME} Three-Way Comparison Matrix`);
     lines.push("==================================================================================");
     lines.push(" Configuration    | Recall  | Precision | False Block Rate | P50 (ms) | Tokens | Cost Ratio");
     lines.push("------------------+---------+-----------+------------------+----------+--------+-----------");
-    lines.push(` 1. Single        | ${(single.metrics.recall * 100).toFixed(1).padStart(6)}% | ${(single.metrics.precision * 100).toFixed(1).padStart(8)}% | ${(single.metrics.falseBlockRate * 100).toFixed(1).padStart(15)}% | ${String(single.metrics.latency.p50Ms).padStart(7)}ms | ${String(single.metrics.tokens.totalTokens).padStart(6)} | ${single.metrics.costRatio.toFixed(2).padStart(10)}`);
-    lines.push(` 2. Dual (Hetero) | ${(dual.metrics.recall * 100).toFixed(1).padStart(6)}% | ${(dual.metrics.precision * 100).toFixed(1).padStart(8)}% | ${(dual.metrics.falseBlockRate * 100).toFixed(1).padStart(15)}% | ${String(dual.metrics.latency.p50Ms).padStart(7)}ms | ${String(dual.metrics.tokens.totalTokens).padStart(6)} | ${dual.metrics.costRatio.toFixed(2).padStart(10)}`);
-    lines.push(` 3. Risk-Adaptive | ${(riskRouted.metrics.recall * 100).toFixed(1).padStart(6)}% | ${(riskRouted.metrics.precision * 100).toFixed(1).padStart(8)}% | ${(riskRouted.metrics.falseBlockRate * 100).toFixed(1).padStart(15)}% | ${String(riskRouted.metrics.latency.p50Ms).padStart(7)}ms | ${String(riskRouted.metrics.tokens.totalTokens).padStart(6)} | ${riskRouted.metrics.costRatio.toFixed(2).padStart(10)}`);
+    lines.push(` 1. Single        | ${(single.metrics.recall * 100).toFixed(1).padStart(6)}% | ${(single.metrics.precision * 100).toFixed(1).padStart(8)}% | ${formatFbrCol(single.metrics)} | ${String(single.metrics.latency.p50Ms).padStart(7)}ms | ${formatTokenCol(single.metrics)} | ${formatRatioCol(single.metrics)}`);
+    lines.push(` 2. Dual (Hetero) | ${(dual.metrics.recall * 100).toFixed(1).padStart(6)}% | ${(dual.metrics.precision * 100).toFixed(1).padStart(8)}% | ${formatFbrCol(dual.metrics)} | ${String(dual.metrics.latency.p50Ms).padStart(7)}ms | ${formatTokenCol(dual.metrics)} | ${formatRatioCol(dual.metrics)}`);
+    lines.push(` 3. Risk-Adaptive | ${(riskRouted.metrics.recall * 100).toFixed(1).padStart(6)}% | ${(riskRouted.metrics.precision * 100).toFixed(1).padStart(8)}% | ${formatFbrCol(riskRouted.metrics)} | ${String(riskRouted.metrics.latency.p50Ms).padStart(7)}ms | ${formatTokenCol(riskRouted.metrics)} | ${formatRatioCol(riskRouted.metrics)}`);
     lines.push("------------------+---------+-----------+------------------+----------+--------+-----------");
     lines.push(` Marginal Recall Gain (Dual - Single):   +${(marginalRecallGain * 100).toFixed(1)}%`);
-    lines.push(` Multi-Agent Token Multipliers:          Dual: ${dualTokenMultiplier}x | Risk-Adaptive: ${routedTokenMultiplier}x`);
+    const tokenMultText = (dualTokenMultiplier !== null && routedTokenMultiplier !== null)
+      ? `Dual: ${dualTokenMultiplier}x | Risk-Adaptive: ${routedTokenMultiplier}x`
+      : "unavailable (insufficient token metadata)";
+    lines.push(` Multi-Agent Token Multipliers:          ${tokenMultText}`);
     lines.push(` Recommendation: ${runResult.recommendation}`);
     lines.push("==================================================================================");
     return lines.join("\n");
@@ -360,7 +450,7 @@ export function formatBenchmarkSummary(runResult) {
   const { mode, totalCases, metrics, caseResults } = runResult;
   lines.push("==================================================================================");
   lines.push(` ${BENCHMARK_FRAMEWORK_NAME}`);
-  lines.push(` Mode: ${mode.toUpperCase()} | Timestamp: ${runResult.timestamp} | Total Cases: ${totalCases}`);
+  lines.push(` Mode: ${mode.toUpperCase()} | Execution: ${runResult.executionMode || "mock"} | Workspace: ${runResult.workspaceMode || "virtual"} | Total Cases: ${totalCases}`);
   lines.push("==================================================================================");
   lines.push(" Case ID        | Risk   | Expected | Actual   | Status                 | Latency | Result");
   lines.push("----------------+--------+----------+----------+------------------------+---------+-------");
@@ -387,9 +477,15 @@ export function formatBenchmarkSummary(runResult) {
     : (metrics.vulnerableCasesCount > 0 ? "0.0% (0/0 Findings reported)" : "100.0% (0 False Alarms on Clean Cases)");
   lines.push(`  • Recall Rate (R):         ${recallText}`);
   lines.push(`  • Precision (P):           ${precText}`);
-  lines.push(`  • False Block Rate (FBR):  ${(metrics.falseBlockRate * 100).toFixed(1)}% (${metrics.falseBlocks}/${metrics.cleanCasesCount} Clean cases blocked)`);
+  const fbrText = (metrics.cleanCasesCount > 0 && metrics.falseBlockRate !== null && metrics.falseBlockRate !== undefined)
+    ? `${(metrics.falseBlockRate * 100).toFixed(1)}% (${metrics.falseBlocks}/${metrics.cleanCasesCount} Clean cases blocked)`
+    : "not-applicable (0/0 Clean cases in evaluation set)";
+  lines.push(`  • False Block Rate (FBR):  ${fbrText}`);
   lines.push(`  • Latency Profile:         P50: ${metrics.latency.p50Ms}ms | P95: ${metrics.latency.p95Ms}ms | Avg: ${metrics.latency.avgMs}ms`);
-  lines.push(`  • Token Expenditure:       ${metrics.tokens.totalTokens.toLocaleString()} tokens total (Avg: ${metrics.tokens.avgTokensPerCase} tokens/case)`);
+  const tokenText = metrics.tokens?.available
+    ? `${metrics.tokens.totalTokens.toLocaleString()} tokens total (Avg: ${metrics.tokens.avgTokensPerCase} tokens/case)`
+    : "unavailable (provider did not report usage metadata)";
+  lines.push(`  • Token Expenditure:       ${tokenText}`);
   lines.push("==================================================================================");
 
   return lines.join("\n");

@@ -13,7 +13,8 @@ export const DEFAULT_PROBE_TARGETS = Object.freeze(["agy", "claude", "codex"]);
 export const DEFAULT_PROBE_TIMEOUT_MS = 1500;
 
 export const QUORUM_STATUS = Object.freeze({
-  READY: "READY",
+  BINARY_QUORUM_READY: "BINARY_QUORUM_READY",
+  READY: "BINARY_QUORUM_READY",
   PARTIAL: "PARTIAL",
   STANDALONE: "STANDALONE"
 });
@@ -120,6 +121,7 @@ export function probeInstalledReviewers(options = {}) {
         family: profile.family,
         installed: false,
         available: false,
+        stage: "UNAVAILABLE",
         version: null,
         rawVersion: null,
         readOnlyFlags: [...profile.readOnlyFlags],
@@ -137,6 +139,7 @@ export function probeInstalledReviewers(options = {}) {
         family: profile.family,
         installed: true,
         available: true,
+        stage: "PROFILED",
         version,
         rawVersion: rawOut,
         readOnlyFlags: [...profile.readOnlyFlags],
@@ -151,7 +154,7 @@ export function probeInstalledReviewers(options = {}) {
 /**
  * Evaluates whether installed reviewers satisfy Heterogeneous Quorum requirements.
  *
- * - READY: >= 2 distinct vendor families (e.g. Google + Anthropic). High-risk dual sentry enabled.
+ * - BINARY_QUORUM_READY: >= 2 distinct vendor families (e.g. Google + Anthropic). High-risk dual sentry enabled.
  * - PARTIAL: Exactly 1 vendor family. Single sentry enabled; dual sentry requires 2nd vendor.
  * - STANDALONE: 0 external reviewers. Operates in zero-dependency offline deterministic mode.
  *
@@ -174,12 +177,14 @@ export function evaluateQuorumReadiness(reviewers = []) {
   if (activeFamilies.length >= 2) {
     const names = activeFamilies.map(getFamilyDisplayName);
     return {
-      status: QUORUM_STATUS.READY,
+      status: QUORUM_STATUS.BINARY_QUORUM_READY,
       ready: true,
+      stage: "PROFILED",
       families: activeFamilies,
       familyNames: names,
       activeReviewers: activeReviewers.map(r => r.id || r.command || "unknown"),
-      summary: `READY (${names.join(" + ")})`,
+      summary: `BINARY_QUORUM_READY (${names.join(" + ")})`,
+      note: "version check only; operational review readiness requires authenticated probe",
       canRunDualQuorum: true,
       canRunSingle: true
     };
@@ -190,10 +195,12 @@ export function evaluateQuorumReadiness(reviewers = []) {
     return {
       status: QUORUM_STATUS.PARTIAL,
       ready: false,
+      stage: "PROFILED",
       families: activeFamilies,
       familyNames: names,
       activeReviewers: activeReviewers.map(r => r.id || r.command || "unknown"),
       summary: `PARTIAL (${names[0]})`,
+      note: "version check only; operational review readiness requires authenticated probe",
       canRunDualQuorum: false,
       canRunSingle: true
     };
@@ -202,6 +209,7 @@ export function evaluateQuorumReadiness(reviewers = []) {
   return {
     status: QUORUM_STATUS.STANDALONE,
     ready: false,
+    stage: "INSTALLED",
     families: [],
     familyNames: [],
     activeReviewers: [],
@@ -320,10 +328,14 @@ export function formatDoctorReport(report, format = "text") {
 
   lines.push("⚖️ Quorum Readiness Evaluation:");
   const quorum = report?.quorum || evaluateQuorumReadiness(report?.reviewers || []);
-  if (quorum.status === QUORUM_STATUS.READY) {
+  if (quorum.status === QUORUM_STATUS.BINARY_QUORUM_READY || quorum.status === "READY" || quorum.status === "BINARY_QUORUM_READY") {
     lines.push(`  ✔ Heterogeneous Quorum: ${quorum.summary}`);
+    lines.push(`    [Note: ${quorum.note || "version check only; operational review readiness requires authenticated probe"}]`);
   } else if (quorum.status === QUORUM_STATUS.PARTIAL) {
     lines.push(`  ⚠️ Heterogeneous Quorum: ${quorum.summary}`);
+    if (quorum.note) {
+      lines.push(`    [Note: ${quorum.note}]`);
+    }
   } else {
     lines.push(`  ℹ Heterogeneous Quorum: ${quorum.summary}`);
   }

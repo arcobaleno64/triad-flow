@@ -44,7 +44,7 @@ test("runCli 'doctor --format=json' produces valid structured JSON on stdout", a
   assert.equal(stderr.buffer, "");
   const report = JSON.parse(stdout.buffer);
   assert.equal(report.schemaVersion, "1.0.0");
-  assert.equal(report.quorum.status, "READY");
+  assert.equal(report.quorum.status, "BINARY_QUORUM_READY");
   assert.equal(report.quorum.ready, true);
   assert.deepEqual(report.quorum.families, ["google", "anthropic"]);
   assert.equal(report.safetyCore.loaded, true);

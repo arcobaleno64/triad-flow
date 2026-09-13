@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import {
   PROVIDER_PROFILES,
   SAFE_ARGV_THRESHOLD_BYTES,
-  resolveProviderProfile
+  resolveProviderProfile,
+  assembleProviderArgs
 } from "../src/adapters/provider-profiles.mjs";
 import { CliReviewAdapter } from "../src/adapters/cli-transport.mjs";
 import { EXECUTION_STATUS } from "../src/adapters/provider-contract.mjs";
@@ -130,4 +131,77 @@ test("CliReviewAdapter fails closed when stdin requested for argv-only provider"
   assert.equal(res.ok, false);
   assert.equal(res.executionStatus, EXECUTION_STATUS.ERROR);
   assert.match(res.error, /operates strictly via argv/i);
+});
+
+test("assembleProviderArgs enforces mandatory safety flags and blocks override attempts", () => {
+  const agyProfile = resolveProviderProfile("agy");
+  const claudeProfile = resolveProviderProfile("claude");
+
+  // 1. Default without user args
+  assert.deepEqual(assembleProviderArgs(agyProfile), ["--mode=plan", "--disable-slash-commands", "--print"]);
+  assert.deepEqual(assembleProviderArgs(claudeProfile), ["-p", "--tools="]);
+
+  // 2. Empty user args cannot strip mandatory flags
+  assert.deepEqual(assembleProviderArgs(agyProfile, []), ["--mode=plan", "--disable-slash-commands", "--print"]);
+  assert.deepEqual(assembleProviderArgs(claudeProfile, []), ["-p", "--tools="]);
+
+  // 3. Augmenting with safe user args preserves mandatory flags
+  const augmentedAgy = assembleProviderArgs(agyProfile, ["--verbose", "--custom=123"]);
+  assert.ok(augmentedAgy.includes("--mode=plan"));
+  assert.ok(augmentedAgy.includes("--disable-slash-commands"));
+  assert.ok(augmentedAgy.includes("--print"));
+  assert.ok(augmentedAgy.includes("--verbose"));
+  assert.ok(augmentedAgy.includes("--custom=123"));
+
+  // 4. Hostile override attempts (e.g. --mode=accept-edits or --tools=bash) are neutralized
+  const hostileAgy = assembleProviderArgs(agyProfile, ["--mode=accept-edits", "--danger"]);
+  assert.ok(hostileAgy.includes("--mode=plan"));
+  assert.ok(!hostileAgy.includes("--mode=accept-edits"));
+  assert.ok(hostileAgy.includes("--danger"));
+
+  const hostileClaude = assembleProviderArgs(claudeProfile, ["--tools=bash,write_file"]);
+  assert.ok(hostileClaude.includes("--tools="));
+  assert.ok(!hostileClaude.includes("--tools=bash,write_file"));
+
+  // 5. Space-separated token override attempts (e.g. --mode code, --tools bash) are neutralized
+  const tokenHostileAgy = assembleProviderArgs(agyProfile, ["--mode", "code", "--other-safe"]);
+  assert.ok(tokenHostileAgy.includes("--mode=plan"));
+  assert.ok(!tokenHostileAgy.includes("--mode"));
+  assert.ok(!tokenHostileAgy.includes("code"));
+  assert.ok(tokenHostileAgy.includes("--other-safe"));
+
+  const tokenHostileClaude = assembleProviderArgs(claudeProfile, ["--tools", "bash", "--safe-arg"]);
+  assert.ok(tokenHostileClaude.includes("--tools="));
+  assert.ok(!tokenHostileClaude.includes("--tools"));
+  assert.ok(!tokenHostileClaude.includes("bash"));
+  assert.ok(tokenHostileClaude.includes("--safe-arg"));
+
+  // 6. CliReviewAdapter applies assembleProviderArgs automatically
+  const safeAdapter = new CliReviewAdapter({ command: "agy", args: ["--custom-arg"] });
+  assert.ok(safeAdapter.args.includes("--mode=plan"));
+  assert.ok(safeAdapter.args.includes("--disable-slash-commands"));
+  assert.ok(safeAdapter.args.includes("--custom-arg"));
+});
+
+test("CliReviewAdapter fails closed when configured with non-existent working directory (cwd)", async () => {
+  const adapter = new CliReviewAdapter({
+    command: "agy",
+    cwd: "C:\\nonexistent_workspace_path_triad_test"
+  });
+
+  const res = await adapter.executeReview({
+    runId: "test-cwd-fail",
+    role: "macro",
+    policyId: "SINGLE_SENTRY",
+    changeSet: {
+      ok: true,
+      schemaVersion: "1.0.0",
+      contentDigest: "b".repeat(64),
+      files: [{ path: "sample.js", additions: 1, deletions: 0 }]
+    }
+  });
+
+  assert.equal(res.ok, false);
+  assert.equal(res.executionStatus, EXECUTION_STATUS.ERROR);
+  assert.match(res.error, /Configured working directory \(cwd\) does not exist/);
 });

@@ -14,7 +14,8 @@ import {
 test("DEFAULT_PROBE_TARGETS and constants are frozen and specify canonical defaults", () => {
   assert.deepEqual(DEFAULT_PROBE_TARGETS, ["agy", "claude", "codex"]);
   assert.equal(DEFAULT_PROBE_TIMEOUT_MS, 1500);
-  assert.equal(QUORUM_STATUS.READY, "READY");
+  assert.equal(QUORUM_STATUS.BINARY_QUORUM_READY, "BINARY_QUORUM_READY");
+  assert.equal(QUORUM_STATUS.READY, "BINARY_QUORUM_READY");
   assert.equal(QUORUM_STATUS.PARTIAL, "PARTIAL");
   assert.equal(QUORUM_STATUS.STANDALONE, "STANDALONE");
   assert.throws(() => {
@@ -109,6 +110,7 @@ test("Test 2: evaluateQuorumReadiness accurately classifies STANDALONE, PARTIAL,
   assert.deepEqual(resSingle.families, ["google"]);
   assert.deepEqual(resSingle.familyNames, ["Google"]);
   assert.equal(resSingle.summary, "PARTIAL (Google)");
+  assert.ok(resSingle.note, "PARTIAL status must include version check note");
 
   // Same-family collision (e.g. two tools belonging to Google) must NOT satisfy Heterogeneous Quorum
   const resSameFamily = evaluateQuorumReadiness([
@@ -126,13 +128,14 @@ test("Test 2: evaluateQuorumReadiness accurately classifies STANDALONE, PARTIAL,
     { id: "claude", family: "anthropic", installed: true, available: true },
     { id: "codex", family: "openai", installed: false, available: false }
   ]);
-  assert.equal(resDual.status, QUORUM_STATUS.READY);
+  assert.equal(resDual.status, QUORUM_STATUS.BINARY_QUORUM_READY);
   assert.equal(resDual.ready, true);
+  assert.equal(resDual.stage, "PROFILED");
   assert.equal(resDual.canRunDualQuorum, true);
   assert.equal(resDual.canRunSingle, true);
   assert.deepEqual(resDual.families, ["google", "anthropic"]);
   assert.deepEqual(resDual.familyNames, ["Google", "Anthropic"]);
-  assert.equal(resDual.summary, "READY (Google + Anthropic)");
+  assert.equal(resDual.summary, "BINARY_QUORUM_READY (Google + Anthropic)");
 
   // 4. READY with 3 distinct families
   const resTriple = evaluateQuorumReadiness([
@@ -140,10 +143,11 @@ test("Test 2: evaluateQuorumReadiness accurately classifies STANDALONE, PARTIAL,
     { id: "claude", family: "anthropic", installed: true, available: true },
     { id: "codex", family: "openai", installed: true, available: true }
   ]);
-  assert.equal(resTriple.status, QUORUM_STATUS.READY);
+  assert.equal(resTriple.status, QUORUM_STATUS.BINARY_QUORUM_READY);
   assert.equal(resTriple.ready, true);
+  assert.equal(resTriple.stage, "PROFILED");
   assert.deepEqual(resTriple.families, ["google", "anthropic", "openai"]);
-  assert.equal(resTriple.summary, "READY (Google + Anthropic + OpenAI)");
+  assert.equal(resTriple.summary, "BINARY_QUORUM_READY (Google + Anthropic + OpenAI)");
 });
 
 test("Test 3: collectDoctorReport gathers all required capability fields deterministically offline", () => {
@@ -234,11 +238,12 @@ test("Test 4: formatDoctorReport formats clean JSON and text reports with checkm
       }
     ],
     quorum: {
-      status: "READY",
+      status: "BINARY_QUORUM_READY",
       ready: true,
+      stage: "PROFILED",
       families: ["google", "anthropic"],
       familyNames: ["Google", "Anthropic"],
-      summary: "READY (Google + Anthropic)"
+      summary: "BINARY_QUORUM_READY (Google + Anthropic)"
     },
     envKeys: {
       anthropic: true,
@@ -251,7 +256,7 @@ test("Test 4: formatDoctorReport formats clean JSON and text reports with checkm
   const jsonStr = formatDoctorReport(sampleReport, "json");
   const parsed = JSON.parse(jsonStr);
   assert.equal(parsed.schemaVersion, "1.0.0");
-  assert.equal(parsed.quorum.status, "READY");
+  assert.equal(parsed.quorum.status, "BINARY_QUORUM_READY");
   assert.equal(parsed.reviewers.length, 3);
 
   // 2. Text format
@@ -263,7 +268,8 @@ test("Test 4: formatDoctorReport formats clean JSON and text reports with checkm
   assert.match(textStr, /✔ Google agy: v1\.2\.2 \(Profile: read-only \[--mode=plan, --disable-slash-commands\]\)/);
   assert.match(textStr, /✔ Anthropic claude: v2\.1\.270 \(Profile: read-only \[--tools=\]\)/);
   assert.match(textStr, /⚠️ OpenAI codex: Not detected \/ Inactive/);
-  assert.match(textStr, /✔ Heterogeneous Quorum: READY \(Google \+ Anthropic\)/);
+  assert.match(textStr, /✔ Heterogeneous Quorum: BINARY_QUORUM_READY \(Google \+ Anthropic\)/);
+  assert.match(textStr, /version check only; operational review readiness requires authenticated probe/);
   assert.match(textStr, /ℹ Anthropic Key: Configured/);
   assert.match(textStr, /ℹ Google Gemini Key: Unset/);
 });

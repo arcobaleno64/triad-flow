@@ -78,6 +78,27 @@ test("PR-05: Provider family diversity validation prevents single-vendor monocul
 
   const diffFam2 = validateProviderDiversity("agy-cli", "codex-transport");
   assert.equal(diffFam2.valid, true);
+
+  // Unknown provider family fails closed (Default-Deny)
+  assert.equal(getProviderFamily("foo"), "unknown");
+  assert.equal(getProviderFamily("custom-sentry"), "unknown");
+  assert.equal(getProviderFamily("pedagogy"), "unknown", "Substring agy within pedagogy must not match Google");
+  assert.equal(getProviderFamily("C:\\Users\\anthropic\\bin\\custom.exe"), "unknown", "Directory path containing vendor name must not spoof binary identity");
+  assert.equal(getProviderFamily(""), "unknown");
+  assert.equal(getProviderFamily(null), "unknown");
+
+  const unknownFam1 = validateProviderDiversity("foo", "bar");
+  assert.equal(unknownFam1.valid, false);
+  assert.match(unknownFam1.reason, /Default-Deny/i);
+
+  const unknownFam2 = validateProviderDiversity("claude", "unknown-tool");
+  assert.equal(unknownFam2.valid, false);
+  assert.match(unknownFam2.reason, /Default-Deny/i);
+
+  // Path spoofing fails closed
+  const spoofedPaths = validateProviderDiversity("C:\\Users\\google\\bad1.exe", "C:\\Users\\anthropic\\bad2.exe");
+  assert.equal(spoofedPaths.valid, false);
+  assert.match(spoofedPaths.reason, /Default-Deny/i);
 });
 
 test("PR-05: 3-way empirical comparison demonstrates efficiency of Risk-Adaptive Routing", () => {

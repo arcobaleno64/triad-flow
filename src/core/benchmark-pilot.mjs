@@ -28,21 +28,34 @@ export const PROVIDER_FAMILIES = Object.freeze({
 });
 
 export function getProviderFamily(providerName = "") {
-  const norm = String(providerName).toLowerCase();
+  if (!providerName || typeof providerName !== "string") return "unknown";
+  // Extract basename to prevent directory paths (e.g. C:\Users\anthropic\bin\tool.exe) from false-matching
+  const baseName = providerName.split(/[/\\]/).pop().toLowerCase().replace(/\.(exe|cmd|bat|sh)$/i, "").trim();
+  if (!baseName) return "unknown";
+
   for (const [key, family] of Object.entries(PROVIDER_FAMILIES)) {
-    if (norm.includes(key)) return family;
+    if (baseName === key) return family;
+    const regex = new RegExp(`(^|[-_.])(${key})([-_.0-9]|$)`, "i");
+    if (regex.test(baseName)) return family;
   }
-  return norm || "unknown";
+  return "unknown";
 }
 
 /**
- * Validates provider family diversity between two sentries.
+ * Validates provider family diversity between two sentries under Default-Deny policy.
  */
 export function validateProviderDiversity(macroProvider = "", microProvider = "") {
   const fam1 = getProviderFamily(macroProvider);
   const fam2 = getProviderFamily(microProvider);
 
-  if (fam1 !== "unknown" && fam2 !== "unknown" && fam1 === fam2) {
+  if (fam1 === "unknown" || fam2 === "unknown") {
+    return {
+      valid: false,
+      reason: `Quorum Failure: Cannot verify provider diversity under Default-Deny policy (macro='${fam1}', micro='${fam2}').`
+    };
+  }
+
+  if (fam1 === fam2) {
     return {
       valid: false,
       family: fam1,

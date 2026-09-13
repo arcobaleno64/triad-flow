@@ -878,7 +878,7 @@ export function createCorpusCaseWorkspace(caseDef, options = {}) {
     headSha,
     changeSet,
     cleanup,
-    assertImmutability: () => assertRepoImmutability(tmpDir)
+    assertImmutability: () => assertRepoImmutability(tmpDir, headSha)
   };
 }
 

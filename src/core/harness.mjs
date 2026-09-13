@@ -396,7 +396,7 @@ export function formatSarifReport(findings = [], metadata = {}) {
         tool: {
           driver: {
             name: "Triad-Flow Sentry",
-            version: "2.1.0",
+            version: "2.1.1",
             informationUri: "https://github.com/arcobaleno64/triad-flow",
             rules: driverRules
           }

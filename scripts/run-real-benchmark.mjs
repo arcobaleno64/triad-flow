@@ -96,6 +96,10 @@ if (values.timeout !== undefined) {
 
 async function main() {
   const isLive = Boolean(values.live);
+  if (isLive && values.virtual) {
+    console.error("Error: Live evaluation requires physical repository workspace (--live and --virtual cannot be combined).");
+    process.exit(1);
+  }
   const mode = values.mode || "single";
   const macroCmd = values["macro-cmd"] || "agy";
   const microCmd = values["micro-cmd"] || "claude";
@@ -119,7 +123,10 @@ async function main() {
 
   const suiteOptions = {
     mode,
+    live: isLive,
+    executionMode: isLive ? "live" : "mock",
     virtual: isVirtual,
+    workspaceMode: isVirtual ? "virtual" : "physical",
     timeoutMs,
     strict: values.strict,
     ...(values.case ? { case: values.case } : {}),

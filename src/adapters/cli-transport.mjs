@@ -6,6 +6,7 @@
  * Never executes arbitrary commands returned by models and never mutates the repository.
  */
 
+import fs from "node:fs";
 import { spawn } from "node:child_process";
 import {
   EXECUTION_STATUS,
@@ -15,10 +16,11 @@ import {
 } from "./provider-contract.mjs";
 import {
   resolveProviderProfile,
+  assembleProviderArgs,
   SAFE_ARGV_THRESHOLD_BYTES
 } from "./provider-profiles.mjs";
 
-export { resolveProviderProfile, SAFE_ARGV_THRESHOLD_BYTES } from "./provider-profiles.mjs";
+export { resolveProviderProfile, assembleProviderArgs, SAFE_ARGV_THRESHOLD_BYTES } from "./provider-profiles.mjs";
 
 const AUTH_ERROR_PATTERNS = [
   /not logged in/i,
@@ -144,14 +146,8 @@ export class CliReviewAdapter {
     this.execFn = typeof options.execFn === "function" ? options.execFn : null;
     this.useStdin = options.useStdin !== undefined ? Boolean(options.useStdin) : null;
     this.env = options.env || null;
-
-    if (Array.isArray(options.args)) {
-      this.args = [...options.args];
-    } else if (profile && Array.isArray(profile.args)) {
-      this.args = [...profile.args];
-    } else {
-      this.args = ["--print"];
-    }
+    this.cwd = options.cwd || null;
+    this.args = assembleProviderArgs(profile, options.args);
   }
 
   async executeReview(rawInput) {
@@ -175,6 +171,16 @@ export class CliReviewAdapter {
       transport: "cli"
     };
 
+    if (this.cwd && !fs.existsSync(this.cwd)) {
+      return validateProviderOutput({
+        executionStatus: EXECUTION_STATUS.ERROR,
+        error: `Configured working directory (cwd) does not exist: ${this.cwd}`
+      }, context);
+    }
+
+    const rawCwd = this.cwd || input.changeSet?.repository?.root;
+    const effectiveCwd = (rawCwd && fs.existsSync(rawCwd)) ? rawCwd : undefined;
+
     // Check if signal was already aborted
     if (input.signal && input.signal.aborted) {
       return validateProviderOutput({
@@ -190,7 +196,8 @@ export class CliReviewAdapter {
           command: this.command,
           args: [...this.args, prompt],
           prompt,
-          input
+          input,
+          cwd: effectiveCwd
         });
         return this._processResult(res, context, input.limits);
       } catch (err) {
@@ -242,6 +249,7 @@ export class CliReviewAdapter {
       let child;
       try {
         child = spawn(this.command, childArgs, {
+          cwd: effectiveCwd,
           shell: false,
           windowsHide: true,
           stdio: [useStdin ? "pipe" : "ignore", "pipe", "pipe"],
