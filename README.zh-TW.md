@@ -46,6 +46,11 @@ triad-flow review --base=origin/main --head=HEAD   # 審查已提交的 PR 範�
 triad-flow review --staged                         # 僅審查暫存區變更
 triad-flow review --format=sarif                   # 輸出 OASIS SARIF 2.1.0 報表
 triad-flow review --format=json --report=run.json  # 輸出標準 review-run.json 稽核檔案
+
+# 6. 真實基準評估 (TF-RBC-v0)
+npm run bench:real                                 # 執行 15 案離線基準度量評估
+npm run bench:real -- --limit=3                    # 評估部分案例
+npm run bench:real -- --live                       # 調用本機真實 AI CLI（如 agy）執行實測
 ```
 
 ---
@@ -117,8 +122,9 @@ triad-flow review --format=json --report=run.json  # 輸出標準 review-run.jso
 |---|---|---|---|
 | 📁 **Git Collector** | [`src/core/git-collector.mjs`](src/core/git-collector.mjs) | ChangeSet 規範封裝、sha256 摘要、版本範圍 (`--base`/`--head`) 與暫存收集 | 已接入 CLI |
 | 🔌 **Review Adapters** | [`src/adapters/cli-transport.mjs`](src/adapters/cli-transport.mjs), [`src/adapters/provider-profiles.mjs`](src/adapters/provider-profiles.mjs), [`src/adapters/provider-contract.mjs`](src/adapters/provider-contract.mjs) | 唯讀受控 CLI 傳輸 (`CliReviewAdapter`)、標準提供商配置 (agy, claude)、Default-Deny 與高風險雙哨兵門禁 | 已接入 CLI |
+| 🩺 **能力診斷 (Doctor)** | [`src/core/doctor.mjs`](src/core/doctor.mjs) | 探測本機 AI CLI（agy, claude, codex）、評估異質法定人數（Quorum Readiness）、輸出文字或 JSON | 已接入 CLI |
 | 📝 **Run Auditing** | [`src/core/review-run-report.mjs`](src/core/review-run-report.mjs) | 標準 `review-run.json` 稽核架構、6 大非重疊執行狀態、保留 CI 退出代碼 | 已接入 CLI |
-| 🎯 **Eval & Benchmark** | [`src/core/scoring.mjs`](src/core/scoring.mjs), [`src/core/benchmark-pilot.mjs`](src/core/benchmark-pilot.mjs) | 1-to-1 Instance 匹配修正、24 案實證 Benchmark Pilot、3 軌帕雷托評估與供應商家族檢查 | 作用中框架 |
+| 🎯 **Eval & Benchmark** | [`src/core/scoring.mjs`](src/core/scoring.mjs), [`src/core/benchmark-pilot.mjs`](src/core/benchmark-pilot.mjs), [`src/core/real-benchmark-runner.mjs`](src/core/real-benchmark-runner.mjs) | 1-to-1 Instance 匹配修正、TF-RBC-v0 15 案真實基準評估與執行器、3 軌帕雷托評估與供應商家族檢查 | 作用中框架 |
 | 🔭 **Telemetry** | [`src/core/telemetry.mjs`](src/core/telemetry.mjs) | 極簡行程內 Span 追蹤器與延遲分析 | 僅用於 Demo |
 | 🏭 **Autonomous Factory** | [`src/core/factory.mjs`](src/core/factory.mjs) | 自主修復管線前檢與 Fail-closed 閘門 | 執行骨架 (凍結) |
 
