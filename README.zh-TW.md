@@ -116,7 +116,7 @@ triad-flow review --format=json --report=run.json  # 輸出標準 review-run.jso
 | 模組 | 實作檔案 | 角色與能力 | 當前狀態 |
 |---|---|---|---|
 | 📁 **Git Collector** | [`src/core/git-collector.mjs`](src/core/git-collector.mjs) | ChangeSet 規範封裝、sha256 摘要、版本範圍 (`--base`/`--head`) 與暫存收集 | 已接入 CLI |
-| 🔌 **Review Adapters** | [`src/adapters/cli-transport.mjs`](src/adapters/cli-transport.mjs), [`src/adapters/provider-contract.mjs`](src/adapters/provider-contract.mjs) | 唯讀受控 CLI 傳輸 (`CliReviewAdapter`)、離線回放、Default-Deny 與高風險雙哨兵門禁 | 已接入 CLI |
+| 🔌 **Review Adapters** | [`src/adapters/cli-transport.mjs`](src/adapters/cli-transport.mjs), [`src/adapters/provider-profiles.mjs`](src/adapters/provider-profiles.mjs), [`src/adapters/provider-contract.mjs`](src/adapters/provider-contract.mjs) | 唯讀受控 CLI 傳輸 (`CliReviewAdapter`)、標準提供商配置 (agy, claude)、Default-Deny 與高風險雙哨兵門禁 | 已接入 CLI |
 | 📝 **Run Auditing** | [`src/core/review-run-report.mjs`](src/core/review-run-report.mjs) | 標準 `review-run.json` 稽核架構、6 大非重疊執行狀態、保留 CI 退出代碼 | 已接入 CLI |
 | 🎯 **Eval & Benchmark** | [`src/core/scoring.mjs`](src/core/scoring.mjs), [`src/core/benchmark-pilot.mjs`](src/core/benchmark-pilot.mjs) | 1-to-1 Instance 匹配修正、24 案實證 Benchmark Pilot、3 軌帕雷托評估與供應商家族檢查 | 作用中框架 |
 | 🔭 **Telemetry** | [`src/core/telemetry.mjs`](src/core/telemetry.mjs) | 極簡行程內 Span 追蹤器與延遲分析 | 僅用於 Demo |

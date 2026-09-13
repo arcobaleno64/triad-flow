@@ -116,7 +116,7 @@ triad-flow review --format=json --report=run.json  # Emit auditable review-run.j
 | Module | Implementation File | Role | Status |
 |---|---|---|---|
 | 📁 **Git Collector** | [`src/core/git-collector.mjs`](src/core/git-collector.mjs) | Canonical ChangeSet, sha256 digest, revision-range (`--base`/`--head`) & staged capture | Wired to CLI |
-| 🔌 **Review Adapters** | [`src/adapters/cli-transport.mjs`](src/adapters/cli-transport.mjs), [`src/adapters/provider-contract.mjs`](src/adapters/provider-contract.mjs) | Read-only CLI transport (`CliReviewAdapter`), offline replay, Default-Deny & high-risk dual sentry gate | Wired to CLI |
+| 🔌 **Review Adapters** | [`src/adapters/cli-transport.mjs`](src/adapters/cli-transport.mjs), [`src/adapters/provider-profiles.mjs`](src/adapters/provider-profiles.mjs), [`src/adapters/provider-contract.mjs`](src/adapters/provider-contract.mjs) | Read-only CLI transport (`CliReviewAdapter`), canonical provider profiles (agy, claude), Default-Deny & high-risk dual sentry gate | Wired to CLI |
 | 📝 **Run Auditing** | [`src/core/review-run-report.mjs`](src/core/review-run-report.mjs) | Canonical `review-run.json` audit schema, 6 unambiguous run statuses, CI exit code preservation | Wired to CLI |
 | 🎯 **Eval & Benchmark** | [`src/core/scoring.mjs`](src/core/scoring.mjs), [`src/core/benchmark-pilot.mjs`](src/core/benchmark-pilot.mjs) | 1-to-1 instance matching, 24-case empirical benchmark pilot, 3-way evaluation & vendor family diversity | Active Framework |
 | 🔭 **Telemetry** | [`src/core/telemetry.mjs`](src/core/telemetry.mjs) | Lean in-process span tracer and latency profiler | Demo / Simulation |

@@ -13,6 +13,12 @@ import {
   validateProviderInput,
   validateProviderOutput
 } from "./provider-contract.mjs";
+import {
+  resolveProviderProfile,
+  SAFE_ARGV_THRESHOLD_BYTES
+} from "./provider-profiles.mjs";
+
+export { resolveProviderProfile, SAFE_ARGV_THRESHOLD_BYTES } from "./provider-profiles.mjs";
 
 const AUTH_ERROR_PATTERNS = [
   /not logged in/i,
@@ -126,11 +132,26 @@ export function buildReviewPrompt(changeSet, role = "macro", limits = DEFAULT_LI
 export class CliReviewAdapter {
   constructor(options = {}) {
     this.command = options.command || "agy";
-    this.args = Array.isArray(options.args) ? options.args : ["--print"];
-    this.providerName = options.providerName || "cli-reviewer";
+    const profile = resolveProviderProfile(this.command);
+    this.profile = profile;
+    this.providerName = options.providerName || profile.id || "cli-reviewer";
     this.modelName = options.modelName || "cli-default";
+    this.family = options.family || profile.family;
+    this.inputChannel = options.inputChannel || profile.inputChannel || "argv";
+    this.supportsStdin = options.supportsStdin !== undefined
+      ? Boolean(options.supportsStdin)
+      : (profile.supportsStdin ?? true);
     this.execFn = typeof options.execFn === "function" ? options.execFn : null;
-    this.useStdin = Boolean(options.useStdin);
+    this.useStdin = options.useStdin !== undefined ? Boolean(options.useStdin) : null;
+    this.env = options.env || null;
+
+    if (Array.isArray(options.args)) {
+      this.args = [...options.args];
+    } else if (profile && Array.isArray(profile.args)) {
+      this.args = [...profile.args];
+    } else {
+      this.args = ["--print"];
+    }
   }
 
   async executeReview(rawInput) {
@@ -149,6 +170,7 @@ export class CliReviewAdapter {
       role: input.role,
       changeSet: input.changeSet,
       providerName: this.providerName,
+      family: this.family,
       modelName: this.modelName,
       transport: "cli"
     };
@@ -187,7 +209,34 @@ export class CliReviewAdapter {
       let timedOut = false;
       let aborted = false;
 
-      const useStdin = Boolean(this.useStdin || Buffer.byteLength(prompt, "utf8") > 8192);
+      const promptBytes = Buffer.byteLength(prompt, "utf8");
+      let useStdin = false;
+      if (this.useStdin !== null) {
+        useStdin = this.useStdin;
+      } else if (this.inputChannel === "stdin") {
+        useStdin = true;
+      } else if (this.supportsStdin && promptBytes > SAFE_ARGV_THRESHOLD_BYTES) {
+        useStdin = true;
+      }
+
+      // If stdin requested for argv-only provider, fail-closed
+      if (useStdin && !this.supportsStdin) {
+        resolve(validateProviderOutput({
+          executionStatus: EXECUTION_STATUS.ERROR,
+          error: `Provider '${this.providerName}' operates strictly via argv and does not support stdin streaming.`
+        }, context));
+        return;
+      }
+
+      // If argv is used and prompt exceeds Windows command line limit (32,767 chars), fail closed
+      if (!useStdin && process.platform === "win32" && promptBytes > 30000) {
+        resolve(validateProviderOutput({
+          executionStatus: EXECUTION_STATUS.PAYLOAD_TOO_LARGE,
+          error: `Prompt size (${promptBytes} bytes) exceeds safe Windows command line length limit for argv provider '${this.providerName}'.`
+        }, context));
+        return;
+      }
+
       const childArgs = useStdin ? [...this.args] : [...this.args, prompt];
 
       let child;
@@ -195,7 +244,8 @@ export class CliReviewAdapter {
         child = spawn(this.command, childArgs, {
           shell: false,
           windowsHide: true,
-          stdio: [useStdin ? "pipe" : "ignore", "pipe", "pipe"]
+          stdio: [useStdin ? "pipe" : "ignore", "pipe", "pipe"],
+          ...(this.env ? { env: this.env } : {})
         });
       } catch (spawnErr) {
         resolve(validateProviderOutput({
