@@ -15,6 +15,8 @@ import { orchestrateReview } from "./adapters/review-orchestrator.mjs";
 import { CliReviewAdapter } from "./adapters/cli-transport.mjs";
 import { buildReviewRunReport, REVIEW_RUN_STATUS } from "./core/review-run-report.mjs";
 import { collectDoctorReport, formatDoctorReport } from "./core/doctor.mjs";
+import { evaluateCorpusSuite, formatBenchmarkSummary } from "./core/real-benchmark-runner.mjs";
+import { createMockCorpusAdapters } from "../tests/fixtures/real-corpus-fixtures.mjs";
 
 export const EXIT_CODES = {
   SUCCESS: 0,
@@ -54,7 +56,13 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
       "--macro-cmd",
       "--micro-cmd",
       "--macro-args",
-      "--micro-args"
+      "--micro-args",
+      "--mode",
+      "--case",
+      "--limit",
+      "--timeout",
+      "--live",
+      "--virtual"
     ].includes(name);
   };
 
@@ -67,7 +75,11 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
     "--macro-cmd",
     "--micro-cmd",
     "--macro-args",
-    "--micro-args"
+    "--micro-args",
+    "--mode",
+    "--case",
+    "--limit",
+    "--timeout"
   ]);
 
   for (let i = 0; i < argv.length; i++) {
@@ -186,6 +198,61 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
     microArgs = Array.isArray(options.microArgs) ? options.microArgs : String(options.microArgs).split(",").map(s => s.trim()).filter(Boolean);
   }
 
+  let modeArg = null;
+  const modeExplicit = argv.find(a => a.startsWith("--mode="));
+  if (modeExplicit) {
+    modeArg = modeExplicit.slice("--mode=".length);
+  } else {
+    const modeIdx = argv.indexOf("--mode");
+    if (modeIdx !== -1 && argv[modeIdx + 1] && !argv[modeIdx + 1].startsWith("--")) {
+      modeArg = argv[modeIdx + 1];
+    }
+  }
+  modeArg = modeArg || options.mode || "single";
+
+  let caseArg = null;
+  const caseExplicit = argv.find(a => a.startsWith("--case="));
+  if (caseExplicit) {
+    caseArg = caseExplicit.slice("--case=".length);
+  } else {
+    const caseIdx = argv.indexOf("--case");
+    if (caseIdx !== -1 && argv[caseIdx + 1] && !argv[caseIdx + 1].startsWith("--")) {
+      caseArg = argv[caseIdx + 1];
+    }
+  }
+  caseArg = caseArg || options.case || null;
+
+  let limitArg = null;
+  const limitExplicit = argv.find(a => a.startsWith("--limit="));
+  if (limitExplicit) {
+    limitArg = limitExplicit.slice("--limit=".length);
+  } else {
+    const limitIdx = argv.indexOf("--limit");
+    if (limitIdx !== -1 && argv[limitIdx + 1] && !argv[limitIdx + 1].startsWith("--")) {
+      limitArg = argv[limitIdx + 1];
+    }
+  }
+  if (limitArg === null && options.limit !== undefined) {
+    limitArg = String(options.limit);
+  }
+
+  let timeoutArg = null;
+  const timeoutExplicit = argv.find(a => a.startsWith("--timeout="));
+  if (timeoutExplicit) {
+    timeoutArg = timeoutExplicit.slice("--timeout=".length);
+  } else {
+    const timeoutIdx = argv.indexOf("--timeout");
+    if (timeoutIdx !== -1 && argv[timeoutIdx + 1] && !argv[timeoutIdx + 1].startsWith("--")) {
+      timeoutArg = argv[timeoutIdx + 1];
+    }
+  }
+  if (timeoutArg === null && options.timeout !== undefined) {
+    timeoutArg = String(options.timeout);
+  }
+
+  const liveArg = argv.includes("--live") || Boolean(options.live);
+  const virtualArg = argv.includes("--virtual") ? true : (options.virtual !== undefined ? Boolean(options.virtual) : undefined);
+
   const isRecognizedArg = (arg) => {
     if (arg.startsWith("--format=") || arg === "--format") return true;
     if (arg === "--strict" || arg === "--staged") return true;
@@ -197,6 +264,11 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
     if (arg.startsWith("--micro-cmd=") || arg === "--micro-cmd") return true;
     if (arg.startsWith("--macro-args=") || arg === "--macro-args") return true;
     if (arg.startsWith("--micro-args=") || arg === "--micro-args") return true;
+    if (arg.startsWith("--mode=") || arg === "--mode") return true;
+    if (arg.startsWith("--case=") || arg === "--case") return true;
+    if (arg.startsWith("--limit=") || arg === "--limit") return true;
+    if (arg.startsWith("--timeout=") || arg === "--timeout") return true;
+    if (arg === "--live" || arg === "--virtual") return true;
     return false;
   };
 
@@ -233,6 +305,26 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
 
   if (argv.some(a => a === "--micro-cmd" || a === "--micro-cmd=") && !microCmd) {
     io.stderr.write(`✖ [USAGE ERROR] Option '--micro-cmd' requires a <cmd> argument.\n`);
+    return EXIT_CODES.USAGE_ERROR;
+  }
+
+  if (argv.some(a => a === "--mode" || a === "--mode=") && (!modeArg || (argv.includes("--mode") && (!argv[argv.indexOf("--mode") + 1] || argv[argv.indexOf("--mode") + 1].startsWith("--"))))) {
+    io.stderr.write(`✖ [USAGE ERROR] Option '--mode' requires a <mode> argument.\n`);
+    return EXIT_CODES.USAGE_ERROR;
+  }
+
+  if (argv.some(a => a === "--case" || a === "--case=") && (!caseArg || (argv.includes("--case") && (!argv[argv.indexOf("--case") + 1] || argv[argv.indexOf("--case") + 1].startsWith("--"))))) {
+    io.stderr.write(`✖ [USAGE ERROR] Option '--case' requires a <case-id> argument.\n`);
+    return EXIT_CODES.USAGE_ERROR;
+  }
+
+  if (argv.some(a => a === "--limit" || a === "--limit=") && (!limitArg || (argv.includes("--limit") && (!argv[argv.indexOf("--limit") + 1] || argv[argv.indexOf("--limit") + 1].startsWith("--"))))) {
+    io.stderr.write(`✖ [USAGE ERROR] Option '--limit' requires a <number> argument.\n`);
+    return EXIT_CODES.USAGE_ERROR;
+  }
+
+  if (argv.some(a => a === "--timeout" || a === "--timeout=") && (!timeoutArg || (argv.includes("--timeout") && (!argv[argv.indexOf("--timeout") + 1] || argv[argv.indexOf("--timeout") + 1].startsWith("--"))))) {
+    io.stderr.write(`✖ [USAGE ERROR] Option '--timeout' requires a <ms> argument.\n`);
     return EXIT_CODES.USAGE_ERROR;
   }
 
@@ -519,8 +611,133 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
       return factoryResult.halted ? EXIT_CODES.GATE_BLOCKED : EXIT_CODES.SUCCESS;
     }
 
+    case "bench":
+    case "benchmark": {
+      if (liveArg && virtualArg === true) {
+        io.stderr.write("✖ [USAGE ERROR] Live evaluation requires physical repository workspace (--live and --virtual cannot be combined).\n");
+        return EXIT_CODES.USAGE_ERROR;
+      }
+
+      if (formatArg && formatArg !== "text" && formatArg !== "json") {
+        io.stderr.write(`✖ [USAGE ERROR] Invalid format '${formatArg}' for benchmark. Supported formats: text, json\n`);
+        return EXIT_CODES.USAGE_ERROR;
+      }
+
+      const VALID_MODES = new Set(["single", "dual", "risk-routed", "all"]);
+      if (modeArg && !VALID_MODES.has(modeArg)) {
+        io.stderr.write(`✖ [USAGE ERROR] Invalid --mode='${modeArg}'. Must be one of: ${Array.from(VALID_MODES).join(", ")}\n`);
+        return EXIT_CODES.USAGE_ERROR;
+      }
+
+      let parsedLimit;
+      if (limitArg !== null && limitArg !== undefined) {
+        parsedLimit = parseInt(limitArg, 10);
+        if (!Number.isFinite(parsedLimit) || parsedLimit <= 0) {
+          io.stderr.write(`✖ [USAGE ERROR] Invalid --limit='${limitArg}'. Must be a positive integer.\n`);
+          return EXIT_CODES.USAGE_ERROR;
+        }
+      }
+
+      let parsedTimeout;
+      if (timeoutArg !== null && timeoutArg !== undefined) {
+        parsedTimeout = parseInt(timeoutArg, 10);
+        if (!Number.isFinite(parsedTimeout) || parsedTimeout <= 0) {
+          io.stderr.write(`✖ [USAGE ERROR] Invalid --timeout='${timeoutArg}'. Must be a positive integer in milliseconds.\n`);
+          return EXIT_CODES.USAGE_ERROR;
+        }
+      }
+
+      const isLive = liveArg;
+      const isVirtual = virtualArg !== undefined ? virtualArg : !isLive;
+      const timeoutMs = parsedTimeout || (isLive ? 90000 : 30000);
+
+      let adapters = options.adapters || options.reviewAdapters || null;
+      if (!adapters) {
+        if (isLive) {
+          adapters = {
+            macro: new CliReviewAdapter({
+              command: macroCmd || "agy",
+              ...(macroArgs ? { args: macroArgs } : {}),
+              providerName: macroCmd || "agy",
+              modelName: "cli-default",
+              execFn: options.macroExecFn || options.execFn || null
+            }),
+            micro: new CliReviewAdapter({
+              command: microCmd || "claude",
+              ...(microArgs ? { args: microArgs } : {}),
+              providerName: microCmd || "claude",
+              modelName: "cli-default",
+              execFn: options.microExecFn || options.execFn || null
+            })
+          };
+        } else {
+          adapters = createMockCorpusAdapters();
+        }
+      }
+
+      const suiteOptions = {
+        mode: modeArg,
+        live: isLive,
+        executionMode: isLive ? "live" : "mock",
+        virtual: isVirtual,
+        workspaceMode: isVirtual ? "virtual" : "physical",
+        timeoutMs,
+        strict: strictArg,
+        ...(caseArg ? { case: caseArg } : {}),
+        ...(parsedLimit ? { limit: parsedLimit } : {})
+      };
+
+      let runResult;
+      try {
+        runResult = await evaluateCorpusSuite(undefined, adapters, suiteOptions);
+      } catch (err) {
+        if (/Corpus case .* not found/i.test(err.message)) {
+          io.stderr.write(`✖ [USAGE ERROR] ${err.message}\n`);
+          return EXIT_CODES.USAGE_ERROR;
+        }
+        io.stderr.write(`✖ [FATAL SYSTEM FAILURE] Benchmark evaluation failed: ${err.message}\n`);
+        return EXIT_CODES.SYSTEM_FAILURE;
+      }
+
+      if (reportArg) {
+        try {
+          const reportFullPath = path.resolve(reportArg);
+          fs.mkdirSync(path.dirname(reportFullPath), { recursive: true });
+          fs.writeFileSync(reportFullPath, JSON.stringify(runResult, null, 2) + "\n", "utf8");
+          io.stderr.write(`📝 Benchmark audit report saved to: ${reportFullPath}\n`);
+        } catch (err) {
+          io.stderr.write(`✖ [FATAL SYSTEM FAILURE] Failed to write report to '${reportArg}': ${err.message}\n`);
+          return EXIT_CODES.SYSTEM_FAILURE;
+        }
+      }
+
+      if (formatArg === "json") {
+        io.stdout.write(JSON.stringify(runResult, null, 2) + "\n");
+      } else {
+        io.stdout.write("\n" + formatBenchmarkSummary(runResult) + "\n");
+      }
+
+      if (strictArg) {
+        let hasFailures = false;
+        if (runResult.mode === "all" && runResult.configurations) {
+          hasFailures = Object.values(runResult.configurations).some(cfg =>
+            (cfg.caseResults || []).some(c => !c.passed)
+          );
+        } else if (runResult.caseResults) {
+          hasFailures = runResult.caseResults.some(c => !c.passed);
+        }
+
+        if (hasFailures) {
+          io.stderr.write("\n[TF-RBC-v0] Strict Mode Failure: Benchmark run contains failed cases or false blocks.\n");
+          return EXIT_CODES.GATE_BLOCKED;
+        }
+      }
+
+      return EXIT_CODES.SUCCESS;
+    }
+
     default: {
-      io.stderr.write(`Usage: triad-flow [doctor | demo | review | factory] [--format=sarif|json] [--strict] [--staged] [--base=<ref>] [--head=<ref>] [--report=<file>] [--macro-cmd=<cmd>] [--micro-cmd=<cmd>] [--macro-args=<csv>] [--micro-args=<csv>]\n`);
+      io.stderr.write(`Usage: triad-flow [doctor | demo | review | factory | benchmark] [--format=sarif|json] [--strict] [--staged] [--base=<ref>] [--head=<ref>] [--report=<file>] [--macro-cmd=<cmd>] [--micro-cmd=<cmd>] [--macro-args=<csv>] [--micro-args=<csv>] [--mode=<mode>] [--case=<id>] [--limit=<n>] [--live] [--virtual]\n`);
       return EXIT_CODES.USAGE_ERROR;
     }
   }

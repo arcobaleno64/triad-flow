@@ -30,7 +30,7 @@ export const STATUS_EXIT_CODES = Object.freeze({
  * Builds an auditable, canonical review-run.json report.
  * Notice: This artifact is strictly an audit log and cannot be reused as an in-process capability.
  */
-export const TOOL_VERSION = "2.1.1";
+export const TOOL_VERSION = "2.1.2";
 
 export function buildReviewRunReport(params = {}) {
   const {

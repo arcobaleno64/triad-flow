@@ -71,8 +71,8 @@ test("validateConsensusSemantics validates schema, types, counts and invariants 
 });
 
 test("Capability Forgery Matrix (CF-01..CF-08): Plain objects, clones, and fake flags are untrusted", () => {
-  const validMacro = { name: "macro", findings: [] };
-  const validMicro = { name: "micro", findings: [] };
+  const validMacro = { name: "macro", provider: "agy", findings: [] };
+  const validMicro = { name: "micro", provider: "claude", findings: [] };
   const realTrusted = aggregateConsensus(validMacro, validMicro);
 
   assert.equal(isTrustedConsensus(realTrusted), true, "Real aggregation output must possess trusted capability");
@@ -125,8 +125,8 @@ test("Capability Forgery Matrix (CF-01..CF-08): Plain objects, clones, and fake 
 
 test("Deep Immutability: Issued trusted consensus cannot be mutated", () => {
   const realTrusted = aggregateConsensus({
-    macro: { findings: [{ title: "XSS", severity: "high", file: "a.js" }] },
-    micro: { findings: [{ title: "XSS", severity: "high", file: "a.js" }] }
+    macro: { provider: "agy", findings: [{ title: "XSS", severity: "high", file: "a.js" }] },
+    micro: { provider: "claude", findings: [{ title: "XSS", severity: "high", file: "a.js" }] }
   });
 
   assert.throws(() => {

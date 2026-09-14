@@ -9,7 +9,10 @@ import { aggregateConsensus, OodaLoopController } from "../src/core/loop.mjs";
 import { evaluateGateDecision } from "../src/core/harness.mjs";
 
 test("Round 5 Probe 1 (Proxy Trap Probe): Proxy object wrapping trusted consensus loses capability", () => {
-  const realTrusted = aggregateConsensus({ macro: { findings: [] }, micro: { findings: [] } });
+  const realTrusted = aggregateConsensus({
+    macro: { provider: "agy", findings: [] },
+    micro: { provider: "claude", findings: [] }
+  });
   assert.equal(isTrustedConsensus(realTrusted), true);
 
   const proxyTrap = new Proxy(realTrusted, {
@@ -24,7 +27,10 @@ test("Round 5 Probe 1 (Proxy Trap Probe): Proxy object wrapping trusted consensu
 });
 
 test("Round 5 Probe 2 (Prototype Inheritance Probe): Object.create(trusted) does not inherit authority", () => {
-  const realTrusted = aggregateConsensus({ macro: { findings: [] }, micro: { findings: [] } });
+  const realTrusted = aggregateConsensus({
+    macro: { provider: "agy", findings: [] },
+    micro: { provider: "claude", findings: [] }
+  });
   const protoInherited = Object.create(realTrusted);
 
   assert.equal(protoInherited.verdict, "approve", "Prototype chain delegates properties");
@@ -83,8 +89,8 @@ test("Round 5 Probe 5 (Controller Oscillation Reset Probe): OODA controller life
 
   // Simulate first task oscillation
   const blocker = aggregateConsensus({
-    macro: { findings: [{ title: "Flaw", severity: "high", file: "a.js" }] },
-    micro: { findings: [{ title: "Flaw", severity: "high", file: "a.js" }] }
+    macro: { provider: "agy", findings: [{ title: "Flaw", severity: "high", file: "a.js" }] },
+    micro: { provider: "claude", findings: [{ title: "Flaw", severity: "high", file: "a.js" }] }
   });
 
   ooda.step(blocker, "diff 1");
@@ -129,7 +135,10 @@ test("Round 5 Probe 6 (Deep Import Mint Probe): issueConsensusFromEvidence rejec
 });
 
 test("Round 5 Probe 7 (Corrupted Audit JSON Probe): Serialized JSON reloaded as consensus fails closed in Gate and OODA", () => {
-  const realTrusted = aggregateConsensus({ macro: { findings: [] }, micro: { findings: [] } });
+  const realTrusted = aggregateConsensus({
+    macro: { provider: "agy", findings: [] },
+    micro: { provider: "claude", findings: [] }
+  });
   const auditJsonString = JSON.stringify(realTrusted);
   const auditRecord = JSON.parse(auditJsonString);
 

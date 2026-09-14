@@ -126,6 +126,8 @@ export function probeInstalledReviewers(options = {}) {
         rawVersion: null,
         readOnlyFlags: [...profile.readOnlyFlags],
         profile,
+        reviewProfileReady: profile.reviewProfileReady ?? false,
+        profileStatus: profile.profileStatus ?? "generic",
         error: errMsg
       });
     } else {
@@ -143,7 +145,9 @@ export function probeInstalledReviewers(options = {}) {
         version,
         rawVersion: rawOut,
         readOnlyFlags: [...profile.readOnlyFlags],
-        profile
+        profile,
+        reviewProfileReady: profile.reviewProfileReady ?? false,
+        profileStatus: profile.profileStatus ?? "generic"
       });
     }
   }
@@ -152,11 +156,27 @@ export function probeInstalledReviewers(options = {}) {
 }
 
 /**
+ * Checks whether a probed reviewer has a verified canonical review profile.
+ *
+ * @param {object} reviewer - Probed reviewer object
+ * @returns {boolean} True if reviewer profile has reviewProfileReady === true
+ */
+export function isReviewerProfileReady(reviewer) {
+  if (!reviewer || typeof reviewer !== "object") return false;
+  if (typeof reviewer.reviewProfileReady === "boolean") return reviewer.reviewProfileReady;
+  if (reviewer.profile && typeof reviewer.profile.reviewProfileReady === "boolean") return reviewer.profile.reviewProfileReady;
+  const resolved = resolveProviderProfile(reviewer.id || reviewer.command);
+  return Boolean(resolved?.reviewProfileReady);
+}
+
+/**
  * Evaluates whether installed reviewers satisfy Heterogeneous Quorum requirements.
  *
- * - BINARY_QUORUM_READY: >= 2 distinct vendor families (e.g. Google + Anthropic). High-risk dual sentry enabled.
- * - PARTIAL: Exactly 1 vendor family. Single sentry enabled; dual sentry requires 2nd vendor.
+ * - BINARY_QUORUM_READY: >= 2 distinct vendor families with canonical review profiles (reviewProfileReady: true).
+ * - PARTIAL: Exactly 1 trusted vendor family. Single sentry enabled; dual sentry requires 2nd vendor.
  * - STANDALONE: 0 external reviewers. Operates in zero-dependency offline deterministic mode.
+ *
+ * Generic fallback profiles (like generic Codex) are displayed as detected without granting dual quorum.
  *
  * @param {Array<object>} [reviewers=[]] - List of probed reviewers
  * @returns {object} Quorum readiness verdict
@@ -166,21 +186,25 @@ export function evaluateQuorumReadiness(reviewers = []) {
     r => r && (r.available === true || (r.available === undefined && r.installed === true))
   );
 
-  const activeFamilies = Array.from(
+  const trustedReviewers = activeReviewers.filter(
+    r => r.family && r.family !== "unknown" && isReviewerProfileReady(r)
+  );
+
+  const trustedFamilies = Array.from(
     new Set(
-      activeReviewers
+      trustedReviewers
         .map(r => (r.family ? String(r.family).toLowerCase().trim() : ""))
         .filter(Boolean)
     )
   );
 
-  if (activeFamilies.length >= 2) {
-    const names = activeFamilies.map(getFamilyDisplayName);
+  if (trustedFamilies.length >= 2) {
+    const names = trustedFamilies.map(getFamilyDisplayName);
     return {
       status: QUORUM_STATUS.BINARY_QUORUM_READY,
       ready: true,
       stage: "PROFILED",
-      families: activeFamilies,
+      families: trustedFamilies,
       familyNames: names,
       activeReviewers: activeReviewers.map(r => r.id || r.command || "unknown"),
       summary: `BINARY_QUORUM_READY (${names.join(" + ")})`,
@@ -190,13 +214,13 @@ export function evaluateQuorumReadiness(reviewers = []) {
     };
   }
 
-  if (activeFamilies.length === 1) {
-    const names = activeFamilies.map(getFamilyDisplayName);
+  if (trustedFamilies.length === 1) {
+    const names = trustedFamilies.map(getFamilyDisplayName);
     return {
       status: QUORUM_STATUS.PARTIAL,
       ready: false,
       stage: "PROFILED",
-      families: activeFamilies,
+      families: trustedFamilies,
       familyNames: names,
       activeReviewers: activeReviewers.map(r => r.id || r.command || "unknown"),
       summary: `PARTIAL (${names[0]})`,
@@ -212,7 +236,7 @@ export function evaluateQuorumReadiness(reviewers = []) {
     stage: "INSTALLED",
     families: [],
     familyNames: [],
-    activeReviewers: [],
+    activeReviewers: activeReviewers.map(r => r.id || r.command || "unknown"),
     summary: "STANDALONE (Offline simulation / replay mode)",
     canRunDualQuorum: false,
     canRunSingle: false
@@ -313,9 +337,12 @@ export function formatDoctorReport(report, format = "text") {
         const verStr = r.version
           ? (r.version.startsWith("v") ? r.version : `v${r.version}`)
           : "unknown";
-        const flagsDesc = Array.isArray(r.readOnlyFlags) && r.readOnlyFlags.length > 0
-          ? `read-only [${r.readOnlyFlags.join(", ")}]`
-          : "default";
+        const ready = isReviewerProfileReady(r);
+        const flagsDesc = !ready
+          ? "generic launcher; reviewProfileReady: false"
+          : (Array.isArray(r.readOnlyFlags) && r.readOnlyFlags.length > 0
+            ? `read-only [${r.readOnlyFlags.join(", ")}]`
+            : "default");
         lines.push(`  ✔ ${name}: ${verStr} (Profile: ${flagsDesc})`);
       } else {
         lines.push(`  ⚠️ ${name}: Not detected / Inactive`);

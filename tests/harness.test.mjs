@@ -136,15 +136,18 @@ test("evaluateGateDecision enforces Trusted Capability requirement and rejects d
   assert.match(gateLegacy.reason, /UNTRUSTED_CONSENSUS/i);
 
   // 3. Real trusted clean consensus approves
-  const trustedClean = aggregateConsensus({ macro: { findings: [] }, micro: { findings: [] } });
+  const trustedClean = aggregateConsensus({
+    macro: { provider: "agy", findings: [] },
+    micro: { provider: "claude", findings: [] }
+  });
   assert.equal(isTrustedConsensus(trustedClean), true);
   const gateApproved = evaluateGateDecision(trustedClean);
   assert.equal(gateApproved.decision, "approve");
 
   // 4. Real trusted blocking consensus blocks
   const trustedBlocker = aggregateConsensus({
-    macro: { findings: [{ title: "RCE", severity: "critical", file: "src/auth.js" }] },
-    micro: { findings: [{ title: "RCE", severity: "critical", file: "src/auth.js" }] }
+    macro: { provider: "agy", findings: [{ title: "RCE", severity: "critical", file: "src/auth.js" }] },
+    micro: { provider: "claude", findings: [{ title: "RCE", severity: "critical", file: "src/auth.js" }] }
   });
   const gateBlocked = evaluateGateDecision(trustedBlocker);
   assert.equal(gateBlocked.decision, "block");

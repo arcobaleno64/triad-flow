@@ -155,8 +155,8 @@ test("validateSarifStructure rejects malformed SARIF structures", () => {
 test("Gate and OODA warning/strict policy alignment: advisories exit green unless strict is set", () => {
   // Sentry report with only medium findings (non-blocking advisories)
   const advisoryReport = aggregateConsensus({
-    macro: { findings: [{ title: "Naming style advisory", severity: "medium", file: "src/calc.js" }] },
-    micro: { findings: [{ title: "Naming style advisory", severity: "medium", file: "src/calc.js" }] }
+    macro: { provider: "agy", findings: [{ title: "Naming style advisory", severity: "medium", file: "src/calc.js" }] },
+    micro: { provider: "claude", findings: [{ title: "Naming style advisory", severity: "medium", file: "src/calc.js" }] }
   });
 
   assert.equal(advisoryReport.verdict, "warning");

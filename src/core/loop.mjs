@@ -21,6 +21,23 @@ export const SEVERITY_WEIGHTS = {
   info: 0
 };
 
+/**
+ * Resolves and normalizes a raw provider family string or fallback source to its verified canonical family.
+ *
+ * @param {string} [rawFamily=""] - Explicit family name if provided
+ * @param {string} [fallbackSource=""] - Provider command/binary/name to infer family from
+ * @returns {string} Normalized canonical provider family, or "unknown" under Default-Deny
+ */
+export function resolveCanonicalProviderFamily(rawFamily = "", fallbackSource = "") {
+  if (typeof rawFamily === "string" && rawFamily.trim()) {
+    const norm = rawFamily.trim().toLowerCase();
+    if (norm === "unknown") return "unknown";
+    const verified = getProviderFamily(norm);
+    if (verified !== "unknown") return verified;
+  }
+  return getProviderFamily(fallbackSource);
+}
+
 export const QuorumPolicies = {
   STRICT_HETEROGENEOUS: (metadataMap = {}) => {
     let macroRec = null;
@@ -42,10 +59,20 @@ export const QuorumPolicies = {
 
     const macroSource = macroRec.provider || macroRec.source || "macro";
     const microSource = microRec.provider || microRec.source || "micro";
-    const macroFamily = macroRec.family || getProviderFamily(macroSource);
-    const microFamily = microRec.family || getProviderFamily(microSource);
+    const macroFamily = resolveCanonicalProviderFamily(macroRec.family, macroSource);
+    const microFamily = resolveCanonicalProviderFamily(microRec.family, microSource);
 
-    if (macroFamily !== "unknown" && microFamily !== "unknown" && macroFamily === microFamily) {
+    // Default-Deny: fail closed if either provider family cannot be verified
+    if (macroFamily === "unknown" || microFamily === "unknown") {
+      return {
+        quorumReached: false,
+        selectedReportIds: [],
+        reason: `Quorum Failure: Provider family cannot be verified under Default-Deny policy (macro='${macroFamily}', micro='${microFamily}').`
+      };
+    }
+
+    // Fail closed if both sentries belong to the same vendor family
+    if (macroFamily === microFamily) {
       return {
         quorumReached: false,
         selectedReportIds: [],
@@ -169,19 +196,21 @@ export function aggregateConsensus(reportsInput, ...rest) {
         healthy: false,
         error: validated.reason,
         source: raw?.name || raw?.source || key,
-        provider: raw?.providerIdentity?.provider || raw?.name || raw?.source || key,
-        family: raw?.providerIdentity?.family || getProviderFamily(raw?.providerIdentity?.provider || raw?.name || raw?.source || key)
+        provider: raw?.providerIdentity?.provider || raw?.provider || raw?.name || raw?.source || key,
+        family: resolveCanonicalProviderFamily(raw?.providerIdentity?.family || raw?.family, raw?.providerIdentity?.provider || raw?.provider || raw?.name || raw?.source || key)
       };
     } else {
       const canonicalFindings = deepFreeze(validated.report.findings.map(f => ({ ...f })));
+      const provider = raw?.providerIdentity?.provider || raw?.provider || validated.report.provider || validated.report.name || validated.report.source || key;
+      const family = resolveCanonicalProviderFamily(raw?.providerIdentity?.family || raw?.family || validated.report.family, provider);
       validatedReportsMap.set(reportId, {
         id: reportId,
         role: key,
         healthy: true,
         findings: canonicalFindings,
         source: validated.report.name || validated.report.source || key,
-        provider: raw?.providerIdentity?.provider || validated.report.name || validated.report.source || key,
-        family: raw?.providerIdentity?.family || getProviderFamily(raw?.providerIdentity?.provider || validated.report.name || validated.report.source || key)
+        provider,
+        family
       });
       metadataMap[reportId] = {
         id: reportId,
@@ -189,8 +218,8 @@ export function aggregateConsensus(reportsInput, ...rest) {
         healthy: true,
         count: canonicalFindings.length,
         source: validated.report.name || validated.report.source || key,
-        provider: raw?.providerIdentity?.provider || validated.report.name || validated.report.source || key,
-        family: raw?.providerIdentity?.family || getProviderFamily(raw?.providerIdentity?.provider || validated.report.name || validated.report.source || key)
+        provider,
+        family
       };
     }
   }

@@ -455,5 +455,86 @@ test("Test 15 (Metadata & Non-Optimal Baseline): Reports expose executionMode an
   assert.match(threeWay.recommendation, /no observed recall gap/);
 });
 
+test("Test 16 (Deterministic Commit SHA & Content Digests): Spawning physical workspace twice produces identical commit SHAs and digests", () => {
+  const caseDef = getCorpusCaseById("BENCH-REAL-001");
+  assert.ok(caseDef);
+
+  const wsA = createCorpusCaseWorkspace(caseDef);
+  let wsB = null;
+  try {
+    assert.ok(wsA.baseTreeDigest && typeof wsA.baseTreeDigest === "string");
+    assert.ok(wsA.headTreeDigest && typeof wsA.headTreeDigest === "string");
+    assert.ok(wsA.caseDigest && typeof wsA.caseDigest === "string");
+
+    // Sleep a tiny bit to ensure wall-clock drift would change timestamps if not pinned
+    const start = Date.now();
+    while (Date.now() - start < 50) {}
+
+    wsB = createCorpusCaseWorkspace(caseDef);
+
+    assert.equal(wsA.baseSha, wsB.baseSha, "Base commit SHAs must be byte-for-byte identical across runs");
+    assert.equal(wsA.headSha, wsB.headSha, "Head commit SHAs must be byte-for-byte identical across runs");
+    assert.equal(wsA.baseTreeDigest, wsB.baseTreeDigest, "baseTreeDigest must match");
+    assert.equal(wsA.headTreeDigest, wsB.headTreeDigest, "headTreeDigest must match");
+    assert.equal(wsA.caseDigest, wsB.caseDigest, "caseDigest must match");
+  } finally {
+    wsA.cleanup();
+    if (wsB) wsB.cleanup();
+  }
+});
+
+test("Test 17 (CLI Benchmark Subcommand): bin/triad-flow.mjs benchmark executes offline with --limit", () => {
+  const benchRes = spawnSync(process.execPath, ["bin/triad-flow.mjs", "benchmark", "--limit=1"], {
+    cwd: process.cwd(),
+    encoding: "utf8"
+  });
+  assert.equal(benchRes.status, 0, `CLI benchmark failed: ${benchRes.stderr}`);
+  assert.match(benchRes.stdout, /Triad-Flow Real Benchmark Corpus v0/);
+
+  // Test --format=json
+  const jsonRes = spawnSync(process.execPath, ["bin/triad-flow.mjs", "bench", "--limit=1", "--format=json"], {
+    cwd: process.cwd(),
+    encoding: "utf8"
+  });
+  assert.equal(jsonRes.status, 0);
+  const parsed = JSON.parse(jsonRes.stdout);
+  assert.equal(parsed.totalCases, 1);
+
+  // Test specific --case filter
+  const caseRes = spawnSync(process.execPath, ["bin/triad-flow.mjs", "benchmark", "--case=BENCH-REAL-001", "--format=json"], {
+    cwd: process.cwd(),
+    encoding: "utf8"
+  });
+  assert.equal(caseRes.status, 0);
+  const parsedCase = JSON.parse(caseRes.stdout);
+  assert.equal(parsedCase.totalCases, 1);
+  assert.equal(parsedCase.caseResults[0].caseId, "BENCH-REAL-001");
+
+  // Test invalid --case returns exit code 2 (USAGE_ERROR)
+  const badCaseRes = spawnSync(process.execPath, ["bin/triad-flow.mjs", "benchmark", "--case=BENCH-NONEXISTENT"], {
+    cwd: process.cwd(),
+    encoding: "utf8"
+  });
+  assert.equal(badCaseRes.status, 2);
+  assert.match(badCaseRes.stderr, /USAGE ERROR/);
+  assert.match(badCaseRes.stderr, /Corpus case 'BENCH-NONEXISTENT' not found/);
+
+  // Test invalid --format returns exit code 2 (USAGE_ERROR)
+  const badFormatRes = spawnSync(process.execPath, ["bin/triad-flow.mjs", "benchmark", "--format=invalid"], {
+    cwd: process.cwd(),
+    encoding: "utf8"
+  });
+  assert.equal(badFormatRes.status, 2);
+  assert.match(badFormatRes.stderr, /USAGE ERROR/);
+
+  // Test conflicting --live and --virtual returns exit code 2 (USAGE_ERROR)
+  const conflictRes = spawnSync(process.execPath, ["bin/triad-flow.mjs", "benchmark", "--live", "--virtual"], {
+    cwd: process.cwd(),
+    encoding: "utf8"
+  });
+  assert.equal(conflictRes.status, 2);
+  assert.match(conflictRes.stderr, /USAGE ERROR/);
+});
+
 
 

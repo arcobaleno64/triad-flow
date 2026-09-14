@@ -106,8 +106,8 @@ let microBin;
 
 before(() => {
   tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "triad-flow-e2e-transport-"));
-  macroBin = createExecutableAlias(tempDir, "mock-macro-sentry");
-  microBin = createExecutableAlias(tempDir, "mock-micro-sentry");
+  macroBin = createExecutableAlias(tempDir, "mock-agy-sentry");
+  microBin = createExecutableAlias(tempDir, "mock-claude-sentry");
 
   // Verify fallback tiers of executable alias helper
   const fbHardlink = createExecutableAlias(tempDir, "mock-fb-hardlink", {

@@ -11,10 +11,12 @@ import { isTrustedConsensus } from "../src/core/consensus-state.mjs";
 test("aggregateConsensus enforces strict heterogeneous Quorum (Macro + Micro required)", () => {
   const mockMacroOk = {
     name: "macro-sentry",
+    provider: "agy",
     findings: [{ severity: "critical", title: "Unvalidated JWT", file: "src/auth.ts", line_start: 12 }]
   };
   const mockMicroOk = {
     name: "micro-arbiter",
+    provider: "claude",
     findings: [{ severity: "critical", title: "Unvalidated JWT", file: "src/auth.ts", line_start: 12 }]
   };
 
@@ -26,12 +28,76 @@ test("aggregateConsensus enforces strict heterogeneous Quorum (Macro + Micro req
 
   // Single sentry failure triggers Quorum failure & Fail-Closed
   const brokenConsensus = aggregateConsensus(
-    { name: "macro-sentry", error: "Connection timeout to Claude provider" },
+    { name: "macro-sentry", provider: "agy", error: "Connection timeout to Claude provider" },
     mockMicroOk
   );
   assert.equal(isTrustedConsensus(brokenConsensus), true);
   assert.equal(brokenConsensus.quorumReached, false);
   assert.equal(brokenConsensus.verdict, "error");
+});
+
+test("QuorumPolicies.STRICT_HETEROGENEOUS enforces Default-Deny on unknown families and lack of diversity", () => {
+  const mk = (macroProv, microProv) => aggregateConsensus(
+    { macro: { provider: macroProv, findings: [] }, micro: { provider: microProv, findings: [] } },
+    { policy: "STRICT_HETEROGENEOUS" }
+  );
+
+  // 1. google + anthropic -> quorumReached: true
+  const res1 = mk("agy", "claude");
+  assert.equal(res1.quorumReached, true);
+  assert.equal(res1.verdict, "approve");
+
+  // 2. google + google -> quorumReached: false (lack diversity)
+  const res2 = mk("agy", "gemini");
+  assert.equal(res2.quorumReached, false);
+  assert.equal(res2.verdict, "error");
+  assert.match(res2.consensusProof, /lack provider-family diversity.*google/i);
+
+  // 3. google + unknown -> quorumReached: false (Default-Deny)
+  const res3 = mk("agy", "custom-unregistered-tool");
+  assert.equal(res3.quorumReached, false);
+  assert.equal(res3.verdict, "error");
+  assert.match(res3.consensusProof, /cannot be verified under Default-Deny/i);
+
+  // 4. unknown + unknown -> quorumReached: false (Default-Deny)
+  const res4 = mk("tool-a", "tool-b");
+  assert.equal(res4.quorumReached, false);
+  assert.equal(res4.verdict, "error");
+  assert.match(res4.consensusProof, /cannot be verified under Default-Deny/i);
+
+  // 5. Explicit family with case difference ('Google' vs 'google') fails closed for lack of diversity
+  const resCaseDiff = aggregateConsensus(
+    { macro: { family: "Google", findings: [] }, micro: { family: "google", findings: [] } },
+    { policy: "STRICT_HETEROGENEOUS" }
+  );
+  assert.equal(resCaseDiff.quorumReached, false);
+  assert.equal(resCaseDiff.verdict, "error");
+  assert.match(resCaseDiff.consensusProof, /lack provider-family diversity.*google/i);
+
+  // 6. Explicit family with uppercase 'UNKNOWN' fails closed under Default-Deny
+  const resUnknownUpper = aggregateConsensus(
+    { macro: { family: "UNKNOWN", findings: [] }, micro: { family: "anthropic", findings: [] } },
+    { policy: "STRICT_HETEROGENEOUS" }
+  );
+  assert.equal(resUnknownUpper.quorumReached, false);
+  assert.equal(resUnknownUpper.verdict, "error");
+  assert.match(resUnknownUpper.consensusProof, /cannot be verified under Default-Deny/i);
+
+  // 7. Whitespace or unverified fake family string fails closed under Default-Deny
+  const resWhitespace = aggregateConsensus(
+    { macro: { family: "   ", findings: [] }, micro: { family: "anthropic", findings: [] } },
+    { policy: "STRICT_HETEROGENEOUS" }
+  );
+  assert.equal(resWhitespace.quorumReached, false);
+  assert.equal(resWhitespace.verdict, "error");
+
+  const resFakeFamily = aggregateConsensus(
+    { macro: { family: "fake_unregistered_vendor", findings: [] }, micro: { family: "anthropic", findings: [] } },
+    { policy: "STRICT_HETEROGENEOUS" }
+  );
+  assert.equal(resFakeFamily.quorumReached, false);
+  assert.equal(resFakeFamily.verdict, "error");
+  assert.match(resFakeFamily.consensusProof, /cannot be verified under Default-Deny/i);
 });
 
 test("aggregateConsensus blocks identical object aliased in both macro and micro roles (PR-05, Probe 1)", () => {
@@ -89,10 +155,12 @@ test("PR-01 & PR-02: Custom policy cannot fabricate active evidence or select un
 test("aggregateConsensus preserves highest severity during deduplication (prevents Downgrade attack)", () => {
   const mockMacro = {
     name: "macro",
+    provider: "agy",
     findings: [{ severity: "critical", title: "Auth bypass", file: "src/auth.ts", line_start: 10 }]
   };
   const mockMicro = {
     name: "micro",
+    provider: "claude",
     findings: [{ severity: "low", title: "Auth bypass", file: "src/auth.ts", line_start: 10 }]
   };
 
@@ -122,7 +190,10 @@ test("OodaLoopController enforces In-Process Capability Boundary and anti-livelo
   assert.match(stepUntrusted.reason, /UNTRUSTED_CONSENSUS/i);
 
   // 2. Real trusted approve exits green
-  const realTrusted = aggregateConsensus({ macro: { findings: [] }, micro: { findings: [] } });
+  const realTrusted = aggregateConsensus({
+    macro: { provider: "agy", findings: [] },
+    micro: { provider: "claude", findings: [] }
+  });
   const stepGreen = ooda.step(realTrusted);
   assert.equal(stepGreen.status, "completed");
   assert.equal(stepGreen.action, "exit_green");
@@ -130,8 +201,8 @@ test("OodaLoopController enforces In-Process Capability Boundary and anti-livelo
   // 3. Real trusted blocker triggers remediation
   ooda.reset();
   const realBlocker = aggregateConsensus({
-    macro: { findings: [{ title: "RCE", severity: "critical", file: "src/app.js" }] },
-    micro: { findings: [{ title: "RCE", severity: "critical", file: "src/app.js" }] }
+    macro: { provider: "agy", findings: [{ title: "RCE", severity: "critical", file: "src/app.js" }] },
+    micro: { provider: "claude", findings: [{ title: "RCE", severity: "critical", file: "src/app.js" }] }
   });
   const stepBlocker = ooda.step(realBlocker);
   assert.equal(stepBlocker.status, "remediating");
@@ -146,7 +217,10 @@ function createMockConsensus(keys) {
     line_start: 10 + i
   }));
   return aggregateConsensus(
-    { macro: { findings }, micro: { findings } },
+    {
+      macro: { provider: "agy", findings },
+      micro: { provider: "claude", findings }
+    },
     { policy: "STRICT_HETEROGENEOUS" }
   );
 }

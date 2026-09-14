@@ -29,8 +29,8 @@ test("R3b: a binary swap (0 counted lines) must not take the single fast path", 
 
 function reportWith(n) {
   return aggregateConsensus(
-    { findings: Array.from({ length: n }, (_, i) => ({ severity: "high", title: `bug${i}`, file: `f${i}.js`, line_start: 1 })) },
-    { findings: [] }
+    { provider: "agy", findings: Array.from({ length: n }, (_, i) => ({ severity: "high", title: `bug${i}`, file: `f${i}.js`, line_start: 1 })) },
+    { provider: "claude", findings: [] }
   );
 }
 
@@ -42,15 +42,15 @@ test("R4: fixing 1 of 5 blocking findings is progress, not stagnation", () => {
 
 test("R5: one sentry repeating itself is not corroboration", () => {
   const dup = { severity: "high", title: "SQL injection", file: "a.js", line_start: 10 };
-  const c = aggregateConsensus({ findings: [dup, { ...dup }] }, { findings: [] });
+  const c = aggregateConsensus({ provider: "agy", findings: [dup, { ...dup }] }, { provider: "claude", findings: [] });
   assert.equal(c.findings.length, 1);
   assert.equal(c.findings[0].corroborations, 1);
 });
 
 test("R6: cwe and ruleId survive consensus minting", () => {
   const c = aggregateConsensus(
-    { findings: [{ severity: "medium", title: "x", file: "a.js", line_start: 3, ruleId: "R1", cwe: "CWE-79" }] },
-    { findings: [] }
+    { provider: "agy", findings: [{ severity: "medium", title: "x", file: "a.js", line_start: 3, ruleId: "R1", cwe: "CWE-79" }] },
+    { provider: "claude", findings: [] }
   );
   assert.equal(c.findings[0].cwe, "CWE-79");
   assert.equal(c.findings[0].ruleId, "R1");

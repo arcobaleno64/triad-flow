@@ -15,6 +15,8 @@ test("PROVIDER_PROFILES specifies frozen canonical profiles for agy and claude",
   assert.equal(PROVIDER_PROFILES.agy.family, "google");
   assert.equal(PROVIDER_PROFILES.agy.inputChannel, "argv");
   assert.equal(PROVIDER_PROFILES.agy.supportsStdin, false);
+  assert.equal(PROVIDER_PROFILES.agy.reviewProfileReady, true);
+  assert.equal(PROVIDER_PROFILES.agy.profileStatus, "canonical");
   assert.deepEqual(PROVIDER_PROFILES.agy.readOnlyFlags, ["--mode=plan", "--disable-slash-commands"]);
   assert.deepEqual(PROVIDER_PROFILES.agy.args, ["--mode=plan", "--disable-slash-commands", "--print"]);
 
@@ -22,6 +24,8 @@ test("PROVIDER_PROFILES specifies frozen canonical profiles for agy and claude",
   assert.equal(PROVIDER_PROFILES.claude.id, "claude");
   assert.equal(PROVIDER_PROFILES.claude.family, "anthropic");
   assert.equal(PROVIDER_PROFILES.claude.supportsStdin, true);
+  assert.equal(PROVIDER_PROFILES.claude.reviewProfileReady, true);
+  assert.equal(PROVIDER_PROFILES.claude.profileStatus, "canonical");
   assert.deepEqual(PROVIDER_PROFILES.claude.readOnlyFlags, ["--tools="]);
   assert.deepEqual(PROVIDER_PROFILES.claude.args, ["-p", "--tools="]);
 
@@ -84,6 +88,12 @@ test("resolveProviderProfile handles null, undefined, empty, and exact binary na
   const legacyScan = resolveProviderProfile("legacy-scan");
   assert.notEqual(legacyScan.id, "agy", "legacy-scan must NOT match agy profile");
   assert.equal(legacyScan.id, "legacy-scan");
+  assert.equal(legacyScan.reviewProfileReady, false);
+  assert.equal(legacyScan.profileStatus, "generic");
+
+  const codexProfile = resolveProviderProfile("codex");
+  assert.equal(codexProfile.reviewProfileReady, false);
+  assert.equal(codexProfile.profileStatus, "generic");
 
   // 5. Array cloning ensures profile cannot be corrupted by mutations
   const p1 = resolveProviderProfile("agy");

@@ -1,7 +1,7 @@
 /**
  * Triad-Flow Real Benchmark Evaluation Engine & Metric Aggregator (TF-RBC-v0)
  *
- * Implements the empirical evaluation engine for the 15 frozen real corpus cases:
+ * Implements the empirical evaluation engine for the 20 frozen real corpus cases:
  * - Executes controlled reviews across Single, Dual (Heterogeneous), and Risk-Adaptive modes.
  * - Asserts repository immutability before and after every execution.
  * - Measures Recall (R), Precision (P), False Block Rate (FBR), Token Cost Ratio (CR),

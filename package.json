@@ -1,6 +1,6 @@
 {
   "name": "@arcobaleno64/triad-flow",
-  "version": "2.1.1",
+  "version": "2.1.2",
   "description": "Deterministic Multi-Agent Consensus & Adaptive Control Core",
   "type": "module",
   "main": "src/cli.mjs",
@@ -10,6 +10,7 @@
   "files": [
     "bin",
     "src",
+    "scripts",
     "tests/fixtures",
     "LICENSE",
     "README.md",
@@ -18,8 +19,8 @@
   "scripts": {
     "test": "node --test",
     "test:real-pilot": "node --test tests/real-provider-pilot.test.mjs",
-    "bench:real": "node scripts/run-real-benchmark.mjs",
-    "bench:real:live": "node scripts/run-real-benchmark.mjs --live",
+    "bench:real": "node bin/triad-flow.mjs benchmark",
+    "bench:real:live": "node bin/triad-flow.mjs benchmark --live",
     "doctor": "node bin/triad-flow.mjs doctor",
     "demo": "node bin/triad-flow.mjs demo",
     "review": "node bin/triad-flow.mjs review",

@@ -1088,18 +1088,63 @@ export function buildSynthesizedChangeSet(caseDef, repoRoot = "") {
 }
 
 /**
+ * Computes deterministic content tree digests for base, head, and complete case identity.
+ *
+ * @param {object} caseDef
+ * @returns {{ baseTreeDigest: string, headTreeDigest: string, caseDigest: string }}
+ */
+export function computeCaseContentDigests(caseDef) {
+  const baseFiles = {
+    "package.json": JSON.stringify({
+      name: `corpus-${caseDef.id.toLowerCase()}`,
+      version: "1.0.0",
+      type: "module"
+    }, null, 2) + "\n",
+    ...(caseDef.baseFiles || {})
+  };
+
+  const headFiles = {
+    ...baseFiles,
+    ...(caseDef.headFiles || {})
+  };
+
+  const computeFilesDigest = (filesMap) => {
+    const sortedKeys = Object.keys(filesMap).sort();
+    const hash = crypto.createHash("sha256");
+    for (const key of sortedKeys) {
+      hash.update(key, "utf8");
+      hash.update("\0", "utf8");
+      hash.update(filesMap[key], "utf8");
+      hash.update("\0", "utf8");
+    }
+    return hash.digest("hex");
+  };
+
+  const baseTreeDigest = computeFilesDigest(baseFiles);
+  const headTreeDigest = computeFilesDigest(headFiles);
+  const goldenFindingsJson = JSON.stringify(caseDef.goldenFindings || []);
+  const caseDigest = crypto.createHash("sha256")
+    .update(`${caseDef.id}:${baseTreeDigest}:${headTreeDigest}:${goldenFindingsJson}`, "utf8")
+    .digest("hex");
+
+  return { baseTreeDigest, headTreeDigest, caseDigest };
+}
+
+/**
  * Creates an isolated disposable Git repository workspace with base and head commits.
  *
  * @param {object} caseDef - Benchmark case definition object.
  * @param {object} [options] - Workspace options.
  * @param {boolean} [options.commit=true] - Whether to commit changes as head commit.
  * @param {boolean} [options.virtual=false] - If true, returns an in-memory virtual workspace without git spawn.
- * @returns {{ dir: string, caseId: string, caseDef: object, baseSha: string, headSha: string|null, changeSet: object, cleanup: Function, assertImmutability: Function }}
+ * @returns {{ dir: string, caseId: string, caseDef: object, baseSha: string, headSha: string|null, baseTreeDigest: string, headTreeDigest: string, caseDigest: string, changeSet: object, cleanup: Function, assertImmutability: Function }}
  */
 export function createCorpusCaseWorkspace(caseDef, options = {}) {
   if (!caseDef || typeof caseDef !== "object" || !caseDef.id) {
     throw new Error("Invalid caseDef: must be a valid corpus case definition with an 'id'.");
   }
+
+  const { baseTreeDigest, headTreeDigest, caseDigest } = computeCaseContentDigests(caseDef);
 
   // Fast virtual workspace (zero git spawn overhead for ultra-fast offline test suites)
   if (options.virtual) {
@@ -1110,6 +1155,9 @@ export function createCorpusCaseWorkspace(caseDef, options = {}) {
       caseDef,
       baseSha: changeSet.repository.baseSha,
       headSha: changeSet.repository.headSha,
+      baseTreeDigest,
+      headTreeDigest,
+      caseDigest,
       changeSet,
       cleanup: () => {},
       assertImmutability: () => true
@@ -1119,10 +1167,21 @@ export function createCorpusCaseWorkspace(caseDef, options = {}) {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), `triad-corpus-${caseDef.id.toLowerCase()}-`));
   const commit = options.commit !== false;
 
+  const gitEnv = {
+    ...process.env,
+    GIT_AUTHOR_NAME: "Corpus Generator",
+    GIT_AUTHOR_EMAIL: "corpus@triad.flow",
+    GIT_AUTHOR_DATE: "2026-09-01T00:00:00Z",
+    GIT_COMMITTER_NAME: "Corpus Generator",
+    GIT_COMMITTER_EMAIL: "corpus@triad.flow",
+    GIT_COMMITTER_DATE: "2026-09-01T00:00:00Z"
+  };
+
   const gitExec = (args) => execFileSync("git", args, {
     cwd: tmpDir,
     encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"]
+    stdio: ["ignore", "pipe", "pipe"],
+    env: gitEnv
   });
 
   // 1. Initialize git repository
@@ -1182,6 +1241,9 @@ export function createCorpusCaseWorkspace(caseDef, options = {}) {
     caseDef,
     baseSha,
     headSha,
+    baseTreeDigest,
+    headTreeDigest,
+    caseDigest,
     changeSet,
     cleanup,
     assertImmutability: () => assertRepoImmutability(tmpDir, headSha)
