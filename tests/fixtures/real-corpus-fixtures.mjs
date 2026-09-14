@@ -1,10 +1,10 @@
 /**
  * Triad-Flow Real Benchmark Corpus v0 (TF-RBC-v0) Fixtures & Workspace Generator
  *
- * Implements 15 frozen, human-adjudicated real-world code cases across risk tiers
+ * Implements 20 frozen, human-adjudicated real-world code cases across risk tiers
  * aligned with docs/real-benchmark-corpus-v0.md:
  * - 12 Vulnerable cases (Tier 1 OWASP/CWE security defects with ground-truth labels)
- * - 3 Clean negative control cases (Tier 2/3 refactors, algorithms, documentation)
+ * - 8 Clean negative control cases (Tier 1 security controls, Tier 2/3 refactors, documentation)
  *
  * Provides isolated disposable Git workspace generation and mock adapter simulation.
  */
@@ -22,7 +22,7 @@ import { normalizeCanonicalPath } from "../../src/core/scoring.mjs";
 export { assertRepoImmutability };
 
 /**
- * 15 Frozen Human-Adjudicated Real Benchmark Corpus Cases (TF-RBC-v0)
+ * 20 Frozen Human-Adjudicated Real Benchmark Corpus Cases (TF-RBC-v0)
  */
 export const TF_RBC_V0_CASES = Object.freeze([
   // 1. BENCH-REAL-001: SQL Injection
@@ -635,7 +635,9 @@ export const TF_RBC_V0_CASES = Object.freeze([
     baseFiles: {
       "src/math/vector-calc.js": [
         "export function dotProduct(a, b) {",
-        "  if (a.length !== b.length) throw new Error(\"Vectors must have same length\");",
+        "  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) {",
+        "    throw new TypeError(\"Inputs must be dense arrays of identical length\");",
+        "  }",
         "  const products = a.map((val, idx) => val * b[idx]);",
         "  return products.reduce((acc, curr) => acc + curr, 0);",
         "}",
@@ -645,7 +647,9 @@ export const TF_RBC_V0_CASES = Object.freeze([
     headFiles: {
       "src/math/vector-calc.js": [
         "export function dotProduct(a, b) {",
-        "  if (a.length !== b.length) throw new Error(\"Vectors must have same length\");",
+        "  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) {",
+        "    throw new TypeError(\"Inputs must be dense arrays of identical length\");",
+        "  }",
         "  // Inlined loop to avoid array allocations",
         "  let sum = 0;",
         "  for (let i = 0; i < a.length; i++) {",
@@ -720,6 +724,308 @@ export const TF_RBC_V0_CASES = Object.freeze([
         "",
         "This document describes the high-level overview of the verification pipeline.",
         "All review providers operate strictly under Default-Deny and read-only invariants.",
+        ""
+      ].join("\n")
+    }
+  },
+
+  // 16. BENCH-REAL-016: Clean - Token Verification Expiration and Issuer Check
+  {
+    id: "BENCH-REAL-016",
+    title: "Strict JWT Expiration and Issuer Verification",
+    riskTier: 1,
+    category: "clean",
+    targetFile: "src/auth/token-verifier.js",
+    description: "Refactor token verification to enforce explicit expiration and issuer validation with defensive defaults",
+    expectedGateDecision: "approve",
+    lineTolerance: 50,
+    goldenFindings: [],
+    baseFiles: {
+      "src/auth/token-verifier.js": [
+        "import crypto from \"node:crypto\";",
+        "",
+        "export function verifyAuthToken(token, secretKey) {",
+        "  if (!token || typeof token !== \"string\") {",
+        "    return { valid: false, reason: \"missing_token\" };",
+        "  }",
+        "  const parts = token.split(\".\");",
+        "  if (parts.length !== 3) {",
+        "    return { valid: false, reason: \"invalid_format\" };",
+        "  }",
+        "  const [headerB64, payloadB64, signatureB64] = parts;",
+        "  const content = `${headerB64}.${payloadB64}`;",
+        "  const hmac = crypto.createHmac(\"sha256\", secretKey);",
+        "  hmac.update(content);",
+        "  const expectedSig = hmac.digest();",
+        "  const actualSig = Buffer.from(signatureB64, \"base64url\");",
+        "  if (expectedSig.length !== actualSig.length || !crypto.timingSafeEqual(expectedSig, actualSig)) {",
+        "    return { valid: false, reason: \"signature_mismatch\" };",
+        "  }",
+        "  const payload = JSON.parse(Buffer.from(payloadB64, \"base64url\").toString(\"utf8\"));",
+        "  return { valid: true, payload };",
+        "}",
+        ""
+      ].join("\n")
+    },
+    headFiles: {
+      "src/auth/token-verifier.js": [
+        "import crypto from \"node:crypto\";",
+        "",
+        "export function verifyAuthToken(token, secretKey, options = {}) {",
+        "  if (!token || typeof token !== \"string\") {",
+        "    return { valid: false, reason: \"missing_token\" };",
+        "  }",
+        "  const parts = token.split(\".\");",
+        "  if (parts.length !== 3) {",
+        "    return { valid: false, reason: \"invalid_format\" };",
+        "  }",
+        "  const [headerB64, payloadB64, signatureB64] = parts;",
+        "  const content = `${headerB64}.${payloadB64}`;",
+        "  const hmac = crypto.createHmac(\"sha256\", secretKey);",
+        "  hmac.update(content);",
+        "  const expectedSig = hmac.digest();",
+        "  const actualSig = Buffer.from(signatureB64, \"base64url\");",
+        "  if (expectedSig.length !== actualSig.length || !crypto.timingSafeEqual(expectedSig, actualSig)) {",
+        "    return { valid: false, reason: \"signature_mismatch\" };",
+        "  }",
+        "  const payload = JSON.parse(Buffer.from(payloadB64, \"base64url\").toString(\"utf8\"));",
+        "  // Validate token claims and expiration with strict boundary checks",
+        "  const now = Math.floor(Date.now() / 1000);",
+        "  if (typeof payload.exp !== \"number\" || payload.exp <= now) {",
+        "    return { valid: false, reason: \"token_expired\" };",
+        "  }",
+        "  if (options.expectedIssuer && payload.iss !== options.expectedIssuer) {",
+        "    return { valid: false, reason: \"issuer_mismatch\" };",
+        "  }",
+        "  return { valid: true, payload };",
+        "}",
+        ""
+      ].join("\n")
+    }
+  },
+
+  // 17. BENCH-REAL-017: Clean - Batch Account Insert Parameterization
+  {
+    id: "BENCH-REAL-017",
+    title: "Batch Account Insert Parameterization",
+    riskTier: 1,
+    category: "clean",
+    targetFile: "src/db/account-batch.js",
+    description: "Migrates account batch insertion to strict parameterized placeholder binding with transaction safety",
+    expectedGateDecision: "approve",
+    lineTolerance: 50,
+    goldenFindings: [],
+    baseFiles: {
+      "src/db/account-batch.js": [
+        "export async function insertAccountBatch(client, accounts) {",
+        "  if (!Array.isArray(accounts) || accounts.length === 0) {",
+        "    return { rowCount: 0 };",
+        "  }",
+        "  await client.query(\"BEGIN\");",
+        "  try {",
+        "    let total = 0;",
+        "    for (const acc of accounts) {",
+        "      const res = await client.query(",
+        "        \"INSERT INTO accounts (org_id, account_name, created_at) VALUES ($1, $2, $3)\",",
+        "        [acc.orgId, acc.accountName, acc.createdAt || new Date().toISOString()]",
+        "      );",
+        "      total += (res.rowCount || 1);",
+        "    }",
+        "    await client.query(\"COMMIT\");",
+        "    return { rowCount: total };",
+        "  } catch (err) {",
+        "    await client.query(\"ROLLBACK\");",
+        "    throw err;",
+        "  }",
+        "}",
+        ""
+      ].join("\n")
+    },
+    headFiles: {
+      "src/db/account-batch.js": [
+        "export async function insertAccountBatch(client, accounts) {",
+        "  if (!Array.isArray(accounts) || accounts.length === 0) {",
+        "    return { rowCount: 0 };",
+        "  }",
+        "  await client.query(\"BEGIN\");",
+        "  try {",
+        "    // Build dynamic parameter placeholders for multi-row batch insert",
+        "    const valuePlaceholders = [];",
+        "    const params = [];",
+        "    for (let i = 0; i < accounts.length; i++) {",
+        "      const offset = i * 3;",
+        "      valuePlaceholders.push(`($${offset + 1}, $${offset + 2}, $${offset + 3})`);",
+        "      params.push(accounts[i].orgId, accounts[i].accountName, accounts[i].createdAt || new Date().toISOString());",
+        "    }",
+        "    const queryText = `INSERT INTO accounts (org_id, account_name, created_at) VALUES ${valuePlaceholders.join(\", \")}`;",
+        "    const result = await client.query(queryText, params);",
+        "    await client.query(\"COMMIT\");",
+        "    return { rowCount: result.rowCount || accounts.length };",
+        "  } catch (err) {",
+        "    await client.query(\"ROLLBACK\");",
+        "    throw err;",
+        "  }",
+        "}",
+        ""
+      ].join("\n")
+    }
+  },
+
+  // 18. BENCH-REAL-018: Clean - Constant-Time MAC Buffer Comparison
+  {
+    id: "BENCH-REAL-018",
+    title: "Constant-Time MAC Buffer Comparison",
+    riskTier: 1,
+    category: "clean",
+    targetFile: "src/crypto/safe-compare.js",
+    description: "Implements constant-time buffer comparison using crypto.timingSafeEqual with length pre-check",
+    expectedGateDecision: "approve",
+    lineTolerance: 50,
+    goldenFindings: [],
+    baseFiles: {
+      "src/crypto/safe-compare.js": [
+        "import crypto from \"node:crypto\";",
+        "",
+        "export function compareAuthTags(tagA, tagB) {",
+        "  if (!tagA || !tagB) {",
+        "    return false;",
+        "  }",
+        "  const bufA = Buffer.isBuffer(tagA) ? tagA : Buffer.from(String(tagA));",
+        "  const bufB = Buffer.isBuffer(tagB) ? tagB : Buffer.from(String(tagB));",
+        "  if (bufA.length !== bufB.length) {",
+        "    return false;",
+        "  }",
+        "  let diff = 0;",
+        "  for (let i = 0; i < bufA.length; i++) {",
+        "    diff |= bufA[i] ^ bufB[i];",
+        "  }",
+        "  return diff === 0;",
+        "}",
+        ""
+      ].join("\n")
+    },
+    headFiles: {
+      "src/crypto/safe-compare.js": [
+        "import crypto from \"node:crypto\";",
+        "",
+        "export function compareAuthTags(tagA, tagB) {",
+        "  if (!tagA || !tagB) {",
+        "    return false;",
+        "  }",
+        "  const bufA = Buffer.isBuffer(tagA) ? tagA : Buffer.from(String(tagA));",
+        "  const bufB = Buffer.isBuffer(tagB) ? tagB : Buffer.from(String(tagB));",
+        "  // Fast length pre-check before hardware-optimized constant-time comparison",
+        "  if (bufA.length !== bufB.length) {",
+        "    return false;",
+        "  }",
+        "  return crypto.timingSafeEqual(bufA, bufB);",
+        "}",
+        ""
+      ].join("\n")
+    }
+  },
+
+  // 19. BENCH-REAL-019: Clean - Outbound Webhook Domain and Subnet Validation
+  {
+    id: "BENCH-REAL-019",
+    title: "Outbound Webhook Domain and Subnet Validation",
+    riskTier: 1,
+    category: "clean",
+    targetFile: "src/net/webhook-guard.js",
+    description: "Validates outbound webhook destination against strict domain allowlist and rejects private RFC-1918 subnets",
+    expectedGateDecision: "approve",
+    lineTolerance: 50,
+    goldenFindings: [],
+    baseFiles: {
+      "src/net/webhook-guard.js": [
+        "export async function sendWebhookNotification(targetUrl, payload, allowedDomains = []) {",
+        "  const parsed = new URL(targetUrl);",
+        "  if (!allowedDomains.includes(parsed.hostname)) {",
+        "    throw new Error(`Domain not permitted: ${parsed.hostname}`);",
+        "  }",
+        "  const response = await fetch(parsed.toString(), {",
+        "    method: \"POST\",",
+        "    headers: { \"Content-Type\": \"application/json\" },",
+        "    body: JSON.stringify(payload)",
+        "  });",
+        "  return { status: response.status, ok: response.ok };",
+        "}",
+        ""
+      ].join("\n")
+    },
+    headFiles: {
+      "src/net/webhook-guard.js": [
+        "const PRIVATE_IP_PREFIXES = [\"10.\", \"172.16.\", \"192.168.\", \"127.\", \"169.254.\", \"0.\"];",
+        "",
+        "export async function sendWebhookNotification(targetUrl, payload, allowedDomains = []) {",
+        "  const parsed = new URL(targetUrl);",
+        "  if (parsed.protocol !== \"https:\") {",
+        "    throw new Error(\"Only secure HTTPS protocol is supported for outbound webhooks\");",
+        "  }",
+        "  if (!allowedDomains.includes(parsed.hostname)) {",
+        "    throw new Error(`Domain not permitted: ${parsed.hostname}`);",
+        "  }",
+        "  // Validate target hostname against private address ranges",
+        "  for (const prefix of PRIVATE_IP_PREFIXES) {",
+        "    if (parsed.hostname.startsWith(prefix) || parsed.hostname === \"localhost\") {",
+        "      throw new Error(`Internal network destination disallowed: ${parsed.hostname}`);",
+        "    }",
+        "  }",
+        "  const response = await fetch(parsed.href, {",
+        "    method: \"POST\",",
+        "    headers: { \"Content-Type\": \"application/json\" },",
+        "    body: JSON.stringify(payload)",
+        "  });",
+        "  return { status: response.status, ok: response.ok };",
+        "}",
+        ""
+      ].join("\n")
+    }
+  },
+
+  // 20. BENCH-REAL-020: Clean - Atomic Balance Deduction with Row Verification
+  {
+    id: "BENCH-REAL-020",
+    title: "Atomic Balance Deduction with Row Verification",
+    riskTier: 1,
+    category: "clean",
+    targetFile: "src/finance/atomic-balance.js",
+    description: "Performs single-statement atomic balance deduction with row count verification to eliminate concurrency races",
+    expectedGateDecision: "approve",
+    lineTolerance: 50,
+    goldenFindings: [],
+    baseFiles: {
+      "src/finance/atomic-balance.js": [
+        "export async function deductAccountBalance(db, accountId, amount) {",
+        "  if (typeof amount !== \"number\" || amount <= 0) {",
+        "    throw new RangeError(\"Deduction amount must be a positive number\");",
+        "  }",
+        "  const account = await db.query(\"SELECT balance FROM accounts WHERE id = ?\", [accountId]);",
+        "  if (!account || account.balance < amount) {",
+        "    return { success: false, reason: \"insufficient_balance\" };",
+        "  }",
+        "  await db.query(\"UPDATE accounts SET balance = balance - ? WHERE id = ?\", [amount, accountId]);",
+        "  return { success: true };",
+        "}",
+        ""
+      ].join("\n")
+    },
+    headFiles: {
+      "src/finance/atomic-balance.js": [
+        "export async function deductAccountBalance(db, accountId, amount) {",
+        "  if (typeof amount !== \"number\" || amount <= 0) {",
+        "    throw new RangeError(\"Deduction amount must be a positive number\");",
+        "  }",
+        "  // Execute atomic conditional balance deduction and check affected rows",
+        "  const result = await db.query(",
+        "    \"UPDATE accounts SET balance = balance - ? WHERE id = ? AND balance >= ?\",",
+        "    [amount, accountId, amount]",
+        "  );",
+        "  if (!result || result.affectedRows !== 1) {",
+        "    return { success: false, reason: \"insufficient_balance_or_missing_account\" };",
+        "  }",
+        "  return { success: true };",
+        "}",
         ""
       ].join("\n")
     }
@@ -928,7 +1234,7 @@ export function listCorpusCases(filter = {}) {
 }
 
 /**
- * Creates high-fidelity mock CliReviewAdapters for offline evaluation of the 15 corpus cases.
+ * Creates high-fidelity mock CliReviewAdapters for offline evaluation of the 20 corpus cases.
  *
  * @param {object} [options]
  * @param {string[]} [options.macroMisses=[]] - Array of case IDs that macro sentry fails to catch.

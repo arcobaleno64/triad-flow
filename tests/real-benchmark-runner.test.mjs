@@ -2,7 +2,7 @@
  * Comprehensive Offline Test Suite for Real Benchmark Runner (TF-RBC-v0)
  *
  * Enforces:
- * - Test 1: 15-case corpus schema and ground-truth label completeness.
+ * - Test 1: 20-case corpus schema and ground-truth label completeness.
  * - Test 2: Disposable workspace lifecycle and strict repository immutability assertion.
  * - Test 3: Metric aggregation mathematics (Recall, Precision, FBR, Latency, Tokens).
  * - Test 4: Case filtering (--case=<id>) and evaluation limits (--limit=<n>).
@@ -36,14 +36,14 @@ import {
 } from "../src/core/real-benchmark-runner.mjs";
 import { CliReviewAdapter } from "../src/adapters/cli-transport.mjs";
 
-test("Test 1 (Corpus Schema & Ground-Truth Completeness): 15 cases adhere strictly to TF-RBC-v0 specification", () => {
-  assert.equal(TF_RBC_V0_CASES.length, 15, "Corpus must contain exactly 15 frozen cases");
+test("Test 1 (Corpus Schema & Ground-Truth Completeness): 20 cases adhere strictly to TF-RBC-v0 specification", () => {
+  assert.equal(TF_RBC_V0_CASES.length, 20, "Corpus must contain exactly 20 frozen cases");
 
   const vulnerableCases = TF_RBC_V0_CASES.filter(c => c.category === "vulnerable");
   const cleanCases = TF_RBC_V0_CASES.filter(c => c.category === "clean");
 
   assert.equal(vulnerableCases.length, 12, "Must contain exactly 12 vulnerable cases");
-  assert.equal(cleanCases.length, 3, "Must contain exactly 3 clean negative controls");
+  assert.equal(cleanCases.length, 8, "Must contain exactly 8 clean negative controls");
 
   const idSet = new Set();
   const validTiers = new Set([1, 2, 3]);
@@ -117,21 +117,21 @@ test("Test 2 (Workspace Lifecycle & Read-Only Immutability): Repositories remain
   assert.ok(!fs.existsSync(workspace.dir), "Workspace directory must be removed after cleanup");
 });
 
-test("Test 3 (Metric Aggregation Mathematics): Evaluates 15 cases and verifies Recall, Precision, and FBR", async () => {
-  // Use mock adapters that catch all 12 vulnerabilities and approve all 3 clean cases
+test("Test 3 (Metric Aggregation Mathematics): Evaluates 20 cases and verifies Recall, Precision, and FBR", async () => {
+  // Use mock adapters that catch all 12 vulnerabilities and approve all 8 clean cases
   const mockAdapters = createMockCorpusAdapters();
 
   const report = await evaluateCorpusSuite(TF_RBC_V0_CASES, mockAdapters, { mode: "single", virtual: true });
 
   assert.equal(report.framework, BENCHMARK_FRAMEWORK_NAME);
   assert.equal(report.mode, "single");
-  assert.equal(report.totalCases, 15);
-  assert.equal(report.caseResults.length, 15);
+  assert.equal(report.totalCases, 20);
+  assert.equal(report.caseResults.length, 20);
 
   const m = report.metrics;
-  assert.equal(m.totalCases, 15);
+  assert.equal(m.totalCases, 20);
   assert.equal(m.vulnerableCasesCount, 12);
-  assert.equal(m.cleanCasesCount, 3);
+  assert.equal(m.cleanCasesCount, 8);
   assert.equal(m.totalGoldens, 12);
   assert.equal(m.caughtGoldens, 12);
   assert.equal(m.falseBlocks, 0);
@@ -221,9 +221,9 @@ test("Test 6 (False Block & Miss Simulation): Accurately records FBR when clean 
   const report = await evaluateCorpusSuite(TF_RBC_V0_CASES, mockAdapters, { mode: "single", virtual: true });
   const m = report.metrics;
 
-  assert.equal(m.cleanCasesCount, 3);
+  assert.equal(m.cleanCasesCount, 8);
   assert.equal(m.falseBlocks, 1);
-  assert.equal(m.falseBlockRate, 0.333); // 1/3 = 33.3%
+  assert.equal(m.falseBlockRate, 0.125); // 1/8 = 12.5%
 
   const blockedCase = report.caseResults.find(r => r.caseId === "BENCH-REAL-014");
   assert.equal(blockedCase.isFalseBlock, true);

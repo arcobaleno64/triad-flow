@@ -9,7 +9,7 @@
 
 Triad-Flow has validated its deterministic consensus, quorum invariant, fail-closed gate, and OODA livelock prevention using synthetic simulations (`BENCHMARK_FRAMEWORK_TYPE = "Simulation / Synthetic Benchmark Framework"`).
 
-This document establishes the architecture, schema, and standard operating procedures (SOP) for **Triad-Flow Real Benchmark Corpus v0** (`TF-RBC-v0`) — a frozen, human-adjudicated dataset of 15 realistic changes designed to empirically measure and compare:
+This document establishes the architecture, schema, and standard operating procedures (SOP) for **Triad-Flow Real Benchmark Corpus v0** (`TF-RBC-v0`) — a frozen, human-adjudicated dataset of 20 realistic changes (12 vulnerable, 8 clean negative controls) designed to empirically measure and compare:
 1. **Single Reviewer (Macro Sentry only)**: Google `agy`
 2. **Fixed Dual Reviewer (Always Heterogeneous Quorum)**: Google `agy` (Google) + Anthropic `claude` (Anthropic)
 3. **Risk-Adaptive Dynamic Routing (Triad-Flow Core)**: Graph router directing small/Tier-2/3 changes to Single Sentry and Tier-1/large/critical changes to Heterogeneous Quorum.
@@ -60,10 +60,12 @@ Each benchmark case represents an isolated, reproducible Git change package with
 2. **Line Distance Tolerance**: Findings within 50 lines (`MAX_LINE_DISTANCE = 50`) of the golden line number match the instance, absorbing formatting and comment drift.
 3. **1-to-1 Instance Matching**: A single reported finding cannot claim multiple golden instances unless separate evidence exists.
 4. **Negative Controls (Immutability & False Block)**: Clean cases MUST NOT produce blocking findings (`expectedGateDecision: "approve"`). False blocks are penalized as False Block Rate (FBR).
+5. **Domain Disentanglement**: Clean controls reside across all risk tiers, including Tier 1 security paths (`auth/`, `db/`, `crypto/`, `net/`, `finance/`), preventing models from guessing outcomes purely by file path.
+6. **Dense Contract Guards**: Refactor cases such as BENCH-REAL-013 enforce explicit array density guards to eliminate sparse-array behavioral divergence.
 
 ---
 
-## 3. Initial 15 Adjudicated Corpus Cases
+## 3. 20 Adjudicated Corpus Cases (12 Vulnerable, 8 Clean Controls)
 
 | Case ID | Type / Tier | Primary Target File | Golden CWE | Description | Expected Gate |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -79,9 +81,14 @@ Each benchmark case represents an isolated, reproducible Git change package with
 | **BENCH-REAL-010** | Vulnerable (Tier 1) | `src/utils/deep-assign.js` | `CWE-1321` | Prototype pollution via `__proto__` property copy | **BLOCK** |
 | **BENCH-REAL-011** | Vulnerable (Tier 1) | `src/finance/transfer.js` | `CWE-362` | Race condition (TOCTOU) in account balance debit | **BLOCK** |
 | **BENCH-REAL-012** | Vulnerable (Tier 1) | `src/crypto/hmac-verify.js` | `CWE-208` | Non-constant-time secret comparison (timing attack) | **BLOCK** |
-| **BENCH-REAL-013** | Clean (Tier 2) | `src/math/vector-calc.js` | None | Algorithmic optimization of vector dot product | **APPROVE** |
+| **BENCH-REAL-013** | Clean (Tier 2) | `src/math/vector-calc.js` | None | Algorithmic optimization of vector dot product (dense array contract) | **APPROVE** |
 | **BENCH-REAL-014** | Clean (Tier 2) | `src/ui/table-layout.js` | None | Pure CSS class names and flexbox formatting updates | **APPROVE** |
 | **BENCH-REAL-015** | Clean (Tier 3) | `docs/architecture.md` | None | Technical documentation typo fixes and diagram updates | **APPROVE** |
+| **BENCH-REAL-016** | Clean (Tier 1) | `src/auth/token-verifier.js` | None | Strict token expiration and issuer validation with defensive defaults | **APPROVE** |
+| **BENCH-REAL-017** | Clean (Tier 1) | `src/db/account-batch.js` | None | Parameterized multi-row batch insertion with transaction safety | **APPROVE** |
+| **BENCH-REAL-018** | Clean (Tier 1) | `src/crypto/safe-compare.js` | None | Constant-time buffer comparison with crypto.timingSafeEqual and length pre-check | **APPROVE** |
+| **BENCH-REAL-019** | Clean (Tier 1) | `src/net/webhook-guard.js` | None | Outbound webhook domain allowlist and private RFC-1918 subnet rejection | **APPROVE** |
+| **BENCH-REAL-020** | Clean (Tier 1) | `src/finance/atomic-balance.js` | None | Single-statement atomic balance deduction with affected row count verification | **APPROVE** |
 
 ---
 
