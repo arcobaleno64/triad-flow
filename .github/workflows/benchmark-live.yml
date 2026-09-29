@@ -1,0 +1,81 @@
+name: Benchmark Live (Protected RC)
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Evaluation configuration mode (single, dual, risk-routed, all)'
+        required: false
+        default: 'single'
+        type: choice
+        options:
+          - single
+          - dual
+          - risk-routed
+          - all
+      live:
+        description: 'Run live benchmark against real reviewer CLIs (default: true)'
+        required: false
+        default: true
+        type: boolean
+      strict:
+        description: 'Enforce strict gate mode (fail on any benchmark case failure)'
+        required: false
+        default: false
+        type: boolean
+  # Optional protected schedule for recurring live benchmark baselines on main
+  schedule:
+    - cron: '0 3 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark-live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install --no-package-lock
+
+      - name: Verify clean environment & run fast test suite
+        run: npm test
+
+      - name: Run Real Benchmark & Generate Manifest Bundle
+        env:
+          TRIAD_LIVE_BENCHMARK: '1'
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          MODE="${{ github.event.inputs.mode || 'single' }}"
+          STRICT_FLAG=""
+          if [ "${{ github.event.inputs.strict }}" = "true" ]; then
+            STRICT_FLAG="--strict"
+          fi
+          LIVE_FLAG="--live"
+          if [ "${{ github.event.inputs.live }}" = "false" ]; then
+            LIVE_FLAG=""
+          fi
+          node scripts/run-real-benchmark.mjs --mode="$MODE" $STRICT_FLAG $LIVE_FLAG --manifest
+
+      - name: Verify Artifact Manifest Cryptographic Integrity
+        run: |
+          node scripts/verify-artifact-manifest.mjs .
+
+      - name: Upload Manifest Bundle Artifacts
+        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
+        with:
+          name: benchmark-live-manifest-bundle
+          path: |
+            benchmark-results.json
+            audit-receipt.json
+            summary.md
+            artifact-manifest.json
+          if-no-files-found: error

@@ -537,3 +537,9 @@ export function validateArtifactManifest(manifest) {
     valid: errors.length === 0
   };
 }
+
+export {
+  formatSummaryMarkdown,
+  generateManifestBundle,
+  verifyManifestBundle
+} from "./manifest-bundle.mjs";

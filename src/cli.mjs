@@ -16,6 +16,7 @@ import { CliReviewAdapter } from "./adapters/cli-transport.mjs";
 import { buildReviewRunReport, REVIEW_RUN_STATUS } from "./core/review-run-report.mjs";
 import { collectDoctorReport, formatDoctorReport } from "./core/doctor.mjs";
 import { evaluateCorpusSuite, formatBenchmarkSummary } from "./core/real-benchmark-runner.mjs";
+import { generateManifestBundle } from "./core/manifest-bundle.mjs";
 import { createMockCorpusAdapters } from "../tests/fixtures/real-corpus-fixtures.mjs";
 
 export const EXIT_CODES = {
@@ -147,8 +148,25 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
     if (receiptIdx !== -1) {
       if (argv[receiptIdx + 1] && !argv[receiptIdx + 1].startsWith("--")) {
         receiptArg = argv[receiptIdx + 1];
+        consumedArgsIndices.add(receiptIdx + 1);
       } else {
         receiptArg = "audit-receipt.json";
+      }
+    }
+  }
+
+  let manifestArg = null;
+  const manifestExplicit = argv.find(a => a.startsWith("--manifest="));
+  if (manifestExplicit) {
+    manifestArg = manifestExplicit.slice("--manifest=".length);
+  } else {
+    const manifestIdx = argv.indexOf("--manifest");
+    if (manifestIdx !== -1) {
+      if (argv[manifestIdx + 1] && !argv[manifestIdx + 1].startsWith("--")) {
+        manifestArg = argv[manifestIdx + 1];
+        consumedArgsIndices.add(manifestIdx + 1);
+      } else {
+        manifestArg = "artifact-manifest.json";
       }
     }
   }
@@ -275,6 +293,7 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
     if (arg.startsWith("--head=") || arg === "--head") return true;
     if (arg.startsWith("--report=") || arg === "--report") return true;
     if (arg.startsWith("--receipt=") || arg === "--receipt") return true;
+    if (arg.startsWith("--manifest=") || arg === "--manifest") return true;
     if (arg.startsWith("--output-run=") || arg === "--output-run") return true;
     if (arg.startsWith("--macro-cmd=") || arg === "--macro-cmd") return true;
     if (arg.startsWith("--micro-cmd=") || arg === "--micro-cmd") return true;
@@ -745,6 +764,29 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
         }
       }
 
+      if (manifestArg) {
+        try {
+          const reportFullPath = reportArg ? path.resolve(reportArg) : path.resolve("benchmark-results.json");
+          const receiptFullPath = receiptArg ? path.resolve(receiptArg) : path.join(path.dirname(reportFullPath), "audit-receipt.json");
+          const isManifestDefault = !manifestArg || manifestArg === "true" || manifestArg === "artifact-manifest.json";
+          const manifestFullPath = isManifestDefault
+            ? path.join(path.dirname(reportFullPath), "artifact-manifest.json")
+            : path.resolve(manifestArg);
+          const bundle = generateManifestBundle({
+            manifestPath: manifestFullPath,
+            receiptData: runResult.receipt,
+            receiptPath: receiptFullPath,
+            resultsData: runResult,
+            resultsPath: reportFullPath,
+            targetDir: path.dirname(manifestFullPath)
+          });
+          io.stderr.write(`📝 Benchmark artifact manifest saved to: ${bundle.manifestPath}\n`);
+        } catch (err) {
+          io.stderr.write(`✖ [FATAL SYSTEM FAILURE] Failed to generate artifact manifest bundle: ${err.message}\n`);
+          return EXIT_CODES.SYSTEM_FAILURE;
+        }
+      }
+
       if (formatArg === "json") {
         io.stdout.write(JSON.stringify(runResult, null, 2) + "\n");
       } else {
@@ -771,7 +813,7 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
     }
 
     default: {
-      io.stderr.write(`Usage: triad-flow [doctor | demo | review | factory | benchmark] [--format=sarif|json] [--strict] [--staged] [--base=<ref>] [--head=<ref>] [--report=<file>] [--macro-cmd=<cmd>] [--micro-cmd=<cmd>] [--macro-args=<csv>] [--micro-args=<csv>] [--mode=<mode>] [--case=<id>] [--limit=<n>] [--live] [--virtual]\n`);
+      io.stderr.write(`Usage: triad-flow [doctor | demo | review | factory | benchmark] [--format=sarif|json] [--strict] [--staged] [--base=<ref>] [--head=<ref>] [--report=<file>] [--receipt=<file>] [--manifest[=<file>]] [--macro-cmd=<cmd>] [--micro-cmd=<cmd>] [--macro-args=<csv>] [--micro-args=<csv>] [--mode=<mode>] [--case=<id>] [--limit=<n>] [--live] [--virtual]\n`);
       return EXIT_CODES.USAGE_ERROR;
     }
   }

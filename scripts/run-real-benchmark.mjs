@@ -25,6 +25,7 @@ import {
   evaluateCorpusSuite,
   formatBenchmarkSummary
 } from "../src/core/real-benchmark-runner.mjs";
+import { generateManifestBundle } from "../src/core/manifest-bundle.mjs";
 import { createMockCorpusAdapters } from "../tests/fixtures/real-corpus-fixtures.mjs";
 
 const optionsConfig = {
@@ -38,6 +39,7 @@ const optionsConfig = {
   limit: { type: "string" },
   report: { type: "string", default: "benchmark-results.json" },
   receipt: { type: "string" },
+  manifest: { type: "string" },
   strict: { type: "boolean", default: false },
   help: { type: "boolean", short: "h", default: false }
 };
@@ -53,6 +55,14 @@ for (let i = 0; i < rawArgs.length; i++) {
       i++;
     } else {
       normalizedArgs.push("--receipt=audit-receipt.json");
+    }
+  } else if (arg === "--manifest") {
+    const next = rawArgs[i + 1];
+    if (next && !next.startsWith("-")) {
+      normalizedArgs.push(`--manifest=${next}`);
+      i++;
+    } else {
+      normalizedArgs.push("--manifest=artifact-manifest.json");
     }
   } else {
     normalizedArgs.push(arg);
@@ -83,6 +93,7 @@ Options:
   --limit=<n>                           Limit number of cases evaluated
   --report=<path>                       Path to write JSON benchmark report (default: benchmark-results.json)
   --receipt[=<path>]                    Path to write JSON audit receipt (default: audit-receipt.json)
+  --manifest[=<path>]                   Generate baseline artifact manifest bundle (default: artifact-manifest.json)
   --strict                              Enable strict gate mode (exits non-zero on case failure)
   -h, --help                            Show help and usage information
   `);
@@ -114,7 +125,7 @@ if (values.timeout !== undefined) {
 }
 
 async function main() {
-  const isLive = Boolean(values.live);
+  const isLive = Boolean(values.live) || process.env.TRIAD_LIVE_BENCHMARK === "1";
   if (isLive && values.virtual) {
     console.error("Error: Live evaluation requires physical repository workspace (--live and --virtual cannot be combined).");
     process.exit(1);
@@ -176,6 +187,24 @@ async function main() {
     fs.mkdirSync(path.dirname(receiptTarget), { recursive: true });
     fs.writeFileSync(receiptTarget, JSON.stringify(runResult.receipt, null, 2) + "\n", "utf8");
     console.log(`Benchmark audit receipt saved to: ${receiptTarget}`);
+  }
+
+  // Generate baseline artifact manifest bundle when --manifest is specified
+  if (values.manifest) {
+    const isManifestDefault = !values.manifest || values.manifest === "true" || values.manifest === "artifact-manifest.json";
+    const manifestTarget = isManifestDefault
+      ? (reportPath ? path.join(path.dirname(reportPath), "artifact-manifest.json") : path.resolve("artifact-manifest.json"))
+      : path.resolve(values.manifest.trim());
+
+    const bundle = generateManifestBundle({
+      targetDir: path.dirname(manifestTarget),
+      resultsPath: reportPath || path.join(path.dirname(manifestTarget), "benchmark-results.json"),
+      receiptPath: receiptTarget || path.join(path.dirname(manifestTarget), "audit-receipt.json"),
+      manifestPath: manifestTarget,
+      resultsData: runResult,
+      receiptData: runResult.receipt
+    });
+    console.log(`Baseline artifact manifest bundle generated: ${bundle.manifestPath}`);
   }
 
   // If strict mode is requested, enforce non-zero exit on failures
