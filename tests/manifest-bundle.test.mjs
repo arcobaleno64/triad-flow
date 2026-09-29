@@ -406,8 +406,9 @@ test("Protected Live Workflow Contract: .github/workflows/benchmark-live.yml adh
 
   const workflowContent = fs.readFileSync(workflowPath, "utf8");
 
-  // Invariant 1: Trigger must strictly include workflow_dispatch and optional schedule
+  // Invariant 1: Trigger must strictly be manual workflow_dispatch only
   assert.ok(workflowContent.includes("workflow_dispatch:"), "Workflow must trigger on workflow_dispatch");
+  assert.ok(!workflowContent.includes("schedule:"), "Workflow MUST NOT trigger on schedule (manual workflow_dispatch only)");
 
   // Invariant 2: Strictly MUST NOT trigger on pull_request or normal push
   assert.ok(!workflowContent.includes("pull_request:"), "Workflow MUST NOT trigger on pull_request");
