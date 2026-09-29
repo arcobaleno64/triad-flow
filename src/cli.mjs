@@ -138,6 +138,21 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
     }
   }
 
+  let receiptArg = null;
+  const receiptExplicit = argv.find(a => a.startsWith("--receipt="));
+  if (receiptExplicit) {
+    receiptArg = receiptExplicit.slice("--receipt=".length);
+  } else {
+    const receiptIdx = argv.indexOf("--receipt");
+    if (receiptIdx !== -1) {
+      if (argv[receiptIdx + 1] && !argv[receiptIdx + 1].startsWith("--")) {
+        receiptArg = argv[receiptIdx + 1];
+      } else {
+        receiptArg = "audit-receipt.json";
+      }
+    }
+  }
+
   let macroCmd = null;
   const macroCmdExplicit = argv.find(a => a.startsWith("--macro-cmd="));
   if (macroCmdExplicit) {
@@ -259,6 +274,7 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
     if (arg.startsWith("--base=") || arg === "--base") return true;
     if (arg.startsWith("--head=") || arg === "--head") return true;
     if (arg.startsWith("--report=") || arg === "--report") return true;
+    if (arg.startsWith("--receipt=") || arg === "--receipt") return true;
     if (arg.startsWith("--output-run=") || arg === "--output-run") return true;
     if (arg.startsWith("--macro-cmd=") || arg === "--macro-cmd") return true;
     if (arg.startsWith("--micro-cmd=") || arg === "--micro-cmd") return true;
@@ -705,8 +721,26 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
           fs.mkdirSync(path.dirname(reportFullPath), { recursive: true });
           fs.writeFileSync(reportFullPath, JSON.stringify(runResult, null, 2) + "\n", "utf8");
           io.stderr.write(`📝 Benchmark audit report saved to: ${reportFullPath}\n`);
+
+          const defaultReceiptPath = path.join(path.dirname(reportFullPath), "audit-receipt.json");
+          const receiptFullPath = receiptArg ? path.resolve(receiptArg) : defaultReceiptPath;
+          if (runResult.receipt) {
+            fs.mkdirSync(path.dirname(receiptFullPath), { recursive: true });
+            fs.writeFileSync(receiptFullPath, JSON.stringify(runResult.receipt, null, 2) + "\n", "utf8");
+            io.stderr.write(`📝 Benchmark audit receipt saved to: ${receiptFullPath}\n`);
+          }
         } catch (err) {
           io.stderr.write(`✖ [FATAL SYSTEM FAILURE] Failed to write report to '${reportArg}': ${err.message}\n`);
+          return EXIT_CODES.SYSTEM_FAILURE;
+        }
+      } else if (receiptArg && runResult.receipt) {
+        try {
+          const receiptFullPath = path.resolve(receiptArg);
+          fs.mkdirSync(path.dirname(receiptFullPath), { recursive: true });
+          fs.writeFileSync(receiptFullPath, JSON.stringify(runResult.receipt, null, 2) + "\n", "utf8");
+          io.stderr.write(`📝 Benchmark audit receipt saved to: ${receiptFullPath}\n`);
+        } catch (err) {
+          io.stderr.write(`✖ [FATAL SYSTEM FAILURE] Failed to write receipt to '${receiptArg}': ${err.message}\n`);
           return EXIT_CODES.SYSTEM_FAILURE;
         }
       }

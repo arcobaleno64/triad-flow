@@ -9,6 +9,7 @@
  * - Generates formatted ASCII summaries and structured JSON audit reports.
  */
 
+import { spawnSync } from "node:child_process";
 import {
   TF_RBC_V0_CASES,
   createCorpusCaseWorkspace,
@@ -20,6 +21,8 @@ import { orchestrateReview } from "../adapters/review-orchestrator.mjs";
 import { verifyHeldOutBaseline } from "./scoring.mjs";
 import { deduplicateBenchmarkFindings } from "./benchmark-pilot.mjs";
 import { evaluateDiffScale } from "./graph-router.mjs";
+import { buildAuditReceipt, normalizeActualModel } from "./audit-receipt.mjs";
+import { createCorpusIdentity } from "./canonical-digest.mjs";
 
 export const BENCHMARK_FRAMEWORK_NAME = "Triad-Flow Real Benchmark Corpus v0 (TF-RBC-v0)";
 
@@ -118,6 +121,11 @@ export async function evaluateCorpusCase(caseDef, adapters = {}, options = {}) {
       totalTokens
     };
 
+    const adapterUsage = {
+      macro: orchResult.results?.macro?.usage || (orchResult.result?.usage ? orchResult.result.usage : null),
+      micro: orchResult.results?.micro?.usage || null
+    };
+
     // 7. Extract combined findings
     let actualFindings = [];
     if (orchResult.consensus?.findings) {
@@ -166,6 +174,7 @@ export async function evaluateCorpusCase(caseDef, adapters = {}, options = {}) {
       status: orchResult.status,
       latencyMs,
       usage,
+      adapterUsage,
       actualFindings,
       goldenFindings,
       evalResult,
@@ -243,6 +252,11 @@ export async function evaluateCorpusSuite(corpus = TF_RBC_V0_CASES, adapters = n
   let totalTokens = 0;
   let hasValidTokens = false;
 
+  const roleUsage = {
+    macro: { completionTokens: 0, hasUsage: false, promptTokens: 0, totalTokens: 0 },
+    micro: { completionTokens: 0, hasUsage: false, promptTokens: 0, totalTokens: 0 }
+  };
+
   for (const r of caseResults) {
     if (r.usage?.available && typeof r.usage.totalTokens === "number") {
       hasValidTokens = true;
@@ -250,6 +264,19 @@ export async function evaluateCorpusSuite(corpus = TF_RBC_V0_CASES, adapters = n
       totalCompletionTokens += r.usage.completionTokens ?? 0;
       totalTokens += r.usage.totalTokens;
     }
+
+    if (r.adapterUsage) {
+      for (const roleKey of ["macro", "micro"]) {
+        const u = r.adapterUsage[roleKey];
+        if (u && typeof u.totalTokens === "number") {
+          roleUsage[roleKey].hasUsage = true;
+          roleUsage[roleKey].promptTokens += u.promptTokens ?? 0;
+          roleUsage[roleKey].completionTokens += u.completionTokens ?? 0;
+          roleUsage[roleKey].totalTokens += u.totalTokens;
+        }
+      }
+    }
+
     totalReportedFindings += r.actualFindings.length;
 
     if (r.category === "clean") {
@@ -287,6 +314,108 @@ export async function evaluateCorpusSuite(corpus = TF_RBC_V0_CASES, adapters = n
 
   const executionMode = options.executionMode || (options.live ? "live" : "mock");
   const workspaceMode = Boolean(options.virtual) ? "virtual" : "physical";
+
+  const identity = createCorpusIdentity(corpus);
+
+  let commitSha = "unknown";
+  let branch = "unknown";
+  try {
+    const gitHead = spawnSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" });
+    if (gitHead.status === 0 && gitHead.stdout) commitSha = gitHead.stdout.trim();
+    const gitBranch = spawnSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], { encoding: "utf8" });
+    if (gitBranch.status === 0 && gitBranch.stdout) branch = gitBranch.stdout.trim();
+  } catch {}
+
+  const systemProvenance = {
+    branch: options.branch || branch,
+    commitSha: options.commitSha || commitSha,
+    triadFlowVersion: "2.2.0",
+    ...(options.systemProvenance || {})
+  };
+
+  const runSection = {
+    environment: {
+      arch: process.arch,
+      nodeVersion: process.version,
+      platform: process.platform,
+      ...(options.environment || {})
+    },
+    finishedAt: new Date().toISOString(),
+    runId: options.runId || `run-bench-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`,
+    startedAt: options.startedAt || new Date().toISOString()
+  };
+
+  const buildAdapterProvenance = (roleKey, adapter) => {
+    if (!adapter) return null;
+    const providerName = adapter.providerName || (roleKey === "macro" ? "agy" : "claude");
+    const configuredModel = adapter.modelName || adapter.configuredModel || "unknown";
+
+    let actualModel = { source: "unavailable", value: null };
+    if (adapter.actualModel && typeof adapter.actualModel === "object") {
+      actualModel = normalizeActualModel(adapter.actualModel);
+    } else if (adapter.verifiedModel && typeof adapter.verifiedModel === "string") {
+      actualModel = normalizeActualModel({ source: adapter.modelSource || "runtime", value: adapter.verifiedModel });
+    }
+
+    const u = roleUsage[roleKey];
+    const roleHasTokens = Boolean(u?.hasUsage);
+    const usageSource = (roleHasTokens || (mode === "single" && hasValidTokens)) ? "authoritative" : "unavailable";
+
+    const promptTokens = roleHasTokens
+      ? u.promptTokens
+      : (mode === "single" && hasValidTokens ? totalPromptTokens : null);
+    const completionTokens = roleHasTokens
+      ? u.completionTokens
+      : (mode === "single" && hasValidTokens ? totalCompletionTokens : null);
+    const roleTotalTokens = roleHasTokens
+      ? u.totalTokens
+      : (mode === "single" && hasValidTokens ? totalTokens : null);
+
+    const prov = {
+      actualModel,
+      completionTokens,
+      modelName: configuredModel,
+      promptTokens,
+      providerName,
+      totalTokens: roleTotalTokens,
+      usageSource,
+      version: adapter.version || null
+    };
+
+    if (adapter.reviewProfileReady !== undefined) {
+      prov.reviewProfileReady = Boolean(adapter.reviewProfileReady);
+    }
+
+    return prov;
+  };
+
+  const providerProvenance = {};
+  if (activeAdapters.macro) {
+    providerProvenance.macro = buildAdapterProvenance("macro", activeAdapters.macro);
+  }
+  if (activeAdapters.micro && mode !== "single") {
+    providerProvenance.micro = buildAdapterProvenance("micro", activeAdapters.micro);
+  }
+  if (options.providerProvenance) {
+    Object.assign(providerProvenance, options.providerProvenance);
+  }
+
+  const receipt = buildAuditReceipt({
+    identity,
+    providerProvenance,
+    results: {
+      cleanCasesCount,
+      falseBlockRate,
+      latency: { avgMs, p50Ms, p95Ms },
+      mode,
+      precision,
+      recall,
+      totalCases: cases.length,
+      vulnerableCasesCount
+    },
+    run: runSection,
+    systemProvenance
+  });
 
   return {
     framework: BENCHMARK_FRAMEWORK_NAME,
@@ -330,7 +459,8 @@ export async function evaluateCorpusSuite(corpus = TF_RBC_V0_CASES, adapters = n
         avgTokensPerCase: null
       },
       costRatio: hasValidTokens ? (options.costRatio ?? 1.0) : null
-    }
+    },
+    receipt
   };
 }
 
@@ -387,6 +517,28 @@ export async function runThreeWayRealComparison(corpus = TF_RBC_V0_CASES, adapte
   const executionMode = options.executionMode || (options.live ? "live" : "mock");
   const workspaceMode = Boolean(options.virtual) ? "virtual" : "physical";
 
+  const comparisonIdentity = createCorpusIdentity(corpus);
+  const comparisonReceipt = buildAuditReceipt({
+    identity: comparisonIdentity,
+    providerProvenance: dual.receipt?.providerProvenance || single.receipt?.providerProvenance || {},
+    results: {
+      metrics: {
+        dualTokenMultiplier,
+        marginalRecallGain,
+        routedTokenMultiplier
+      },
+      mode: "all",
+      recommendation
+    },
+    run: {
+      environment: { arch: process.arch, nodeVersion: process.version, platform: process.platform },
+      finishedAt: new Date().toISOString(),
+      runId: options.runId || `run-compare-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`,
+      startedAt: new Date().toISOString()
+    },
+    systemProvenance: single.receipt?.systemProvenance || {}
+  });
+
   return {
     framework: BENCHMARK_FRAMEWORK_NAME,
     mode: "all",
@@ -403,6 +555,7 @@ export async function runThreeWayRealComparison(corpus = TF_RBC_V0_CASES, adapte
       dualTokenMultiplier,
       routedTokenMultiplier
     },
+    receipt: comparisonReceipt,
     recommendation
   };
 }

@@ -6,7 +6,7 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { resolveProviderProfile } from "../adapters/provider-profiles.mjs";
+import { resolveProviderProfile, verifyProviderReadiness } from "../adapters/provider-profiles.mjs";
 import { collectGitWorkingState } from "./git-collector.mjs";
 
 export const DEFAULT_PROBE_TARGETS = Object.freeze(["agy", "claude", "codex"]);
@@ -59,95 +59,60 @@ export function probeInstalledReviewers(options = {}) {
   const timeoutMs = typeof options.timeoutMs === "number" && options.timeoutMs > 0
     ? options.timeoutMs
     : DEFAULT_PROBE_TIMEOUT_MS;
-  const execFn = options.execFn || null;
 
   const results = [];
 
   for (const target of targets) {
     const profile = resolveProviderProfile(target);
-    let execResult = null;
+    const readiness = verifyProviderReadiness(target, {
+      cwd: options.cwd,
+      execFn: options.execFn,
+      getGitState: options.getGitState,
+      live: Boolean(options.live),
+      liveProbe: Boolean(options.liveProbe),
+      timeoutMs
+    });
 
-    try {
-      if (typeof execFn === "function") {
-        execResult = execFn(target, ["--version"], { timeout: timeoutMs });
-      } else {
-        // Safe process invocation: reject shell metacharacters to prevent injection
-        const hasUnsafeChars = /[;&|`$<>()"'\r\n]/.test(target);
-        if (hasUnsafeChars) {
-          execResult = {
-            error: new Error(`Reviewer command contains unsafe characters: '${target}'`),
-            status: -1
-          };
-        } else if (process.platform === "win32") {
-          // On Windows, executables may be .cmd or .bat (e.g. npm-installed CLI wrappers like codex).
-          // Executing via shell with quoted executable name ensures .cmd/.bat resolution without DEP0190 warnings.
-          execResult = spawnSync(`"${target}" --version`, {
-            timeout: timeoutMs,
-            encoding: "utf8",
-            windowsHide: true,
-            shell: true
-          });
-        } else {
-          execResult = spawnSync(target, ["--version"], {
-            timeout: timeoutMs,
-            encoding: "utf8",
-            windowsHide: true
-          });
-        }
-      }
-    } catch (err) {
-      execResult = { error: err, status: -1 };
-    }
+    const isDetected = Boolean(readiness.points.point1_binaryDetected?.pass);
 
-    const hasError = Boolean(
-      !execResult ||
-      execResult.error ||
-      execResult.signal ||
-      (execResult.status !== null && execResult.status !== undefined && execResult.status !== 0)
-    );
-
-    if (hasError) {
-      const errMsg = execResult?.error
-        ? (execResult.error.message || String(execResult.error))
-        : (execResult?.signal
-          ? `Process terminated with signal ${execResult.signal}`
-          : (execResult?.status !== null && execResult?.status !== undefined
-            ? `Process exited with code ${execResult.status}`
-            : "Process execution failed"));
-
+    if (!isDetected) {
+      const errMsg = readiness.points.point1_binaryDetected?.error || readiness.errors[0] || "Process execution failed";
       results.push({
-        id: profile.id,
-        command: target,
-        family: profile.family,
-        installed: false,
         available: false,
+        command: target,
+        error: errMsg,
+        family: profile.family,
+        id: profile.id,
+        installed: false,
+        operationalReady: false,
+        profile,
+        profileStatus: profile.profileStatus ?? "generic",
+        readOnlyFlags: [...profile.readOnlyFlags],
+        readiness,
+        reviewProfileReady: profile.reviewProfileReady ?? false,
         stage: "UNAVAILABLE",
         version: null,
-        rawVersion: null,
-        readOnlyFlags: [...profile.readOnlyFlags],
-        profile,
-        reviewProfileReady: profile.reviewProfileReady ?? false,
-        profileStatus: profile.profileStatus ?? "generic",
-        error: errMsg
+        rawVersion: null
       });
     } else {
-      const rawOut = (execResult.stdout || "").toString().trim() || (execResult.stderr || "").toString().trim();
-      const versionMatch = rawOut.match(/(\d+\.\d+(?:\.\d+)?(?:-[0-9A-Za-z.-]+)?)/);
-      const version = versionMatch ? versionMatch[1] : (rawOut.split("\n")[0].trim() || "unknown");
+      const version = readiness.points.point2_versionParsed?.version || "unknown";
+      const rawVersion = readiness.points.point2_versionParsed?.rawVersion || version;
 
       results.push({
-        id: profile.id,
+        available: true,
         command: target,
         family: profile.family,
+        id: profile.id,
         installed: true,
-        available: true,
-        stage: "PROFILED",
-        version,
-        rawVersion: rawOut,
-        readOnlyFlags: [...profile.readOnlyFlags],
+        operationalReady: readiness.ready,
         profile,
+        profileStatus: profile.profileStatus ?? "generic",
+        readOnlyFlags: [...profile.readOnlyFlags],
+        readiness,
         reviewProfileReady: profile.reviewProfileReady ?? false,
-        profileStatus: profile.profileStatus ?? "generic"
+        stage: readiness.ready ? "READY" : "PROFILED",
+        version,
+        rawVersion
       });
     }
   }
@@ -170,18 +135,35 @@ export function isReviewerProfileReady(reviewer) {
 }
 
 /**
+ * Checks whether a probed reviewer has satisfied the complete 7-point readiness contract.
+ *
+ * @param {object} reviewer - Probed reviewer object
+ * @returns {boolean} True only if reviewer has passed all 7 readiness points
+ */
+export function isReviewerOperationalReady(reviewer) {
+  if (!reviewer || typeof reviewer !== "object") return false;
+  if (reviewer.readiness && typeof reviewer.readiness.ready === "boolean") {
+    return reviewer.readiness.ready;
+  }
+  return false;
+}
+
+/**
  * Evaluates whether installed reviewers satisfy Heterogeneous Quorum requirements.
  *
  * - BINARY_QUORUM_READY: >= 2 distinct vendor families with canonical review profiles (reviewProfileReady: true).
  * - PARTIAL: Exactly 1 trusted vendor family. Single sentry enabled; dual sentry requires 2nd vendor.
  * - STANDALONE: 0 external reviewers. Operates in zero-dependency offline deterministic mode.
  *
- * Generic fallback profiles (like generic Codex) are displayed as detected without granting dual quorum.
+ * Doctor only reports operational READY when all 7 readiness points pass.
+ * Non-live / offline probe marks live invocation/output as "unverified" rather than hallucinating READY.
  *
  * @param {Array<object>} [reviewers=[]] - List of probed reviewers
+ * @param {object} [options={}]
+ * @param {boolean} [options.require7Points=false] - Fail-closed readiness enforcing all 7 points
  * @returns {object} Quorum readiness verdict
  */
-export function evaluateQuorumReadiness(reviewers = []) {
+export function evaluateQuorumReadiness(reviewers = [], options = {}) {
   const activeReviewers = (Array.isArray(reviewers) ? reviewers : []).filter(
     r => r && (r.available === true || (r.available === undefined && r.installed === true))
   );
@@ -198,48 +180,85 @@ export function evaluateQuorumReadiness(reviewers = []) {
     )
   );
 
+  const verifiedReviewers = trustedReviewers.filter(r => r.readiness?.ready === true);
+  const verifiedFamilies = Array.from(
+    new Set(
+      verifiedReviewers
+        .map(r => (r.family ? String(r.family).toLowerCase().trim() : ""))
+        .filter(Boolean)
+    )
+  );
+
+  const all7PointsVerified = verifiedFamilies.length >= 2;
+  const hasUnverifiedLive = trustedReviewers.some(r => r.readiness?.points?.point5_liveInvocationSucceeds?.status === "unverified");
+
+  const require7Points = Boolean(options.require7Points);
+  const isReady = require7Points ? all7PointsVerified : (trustedFamilies.length >= 2);
+
   if (trustedFamilies.length >= 2) {
     const names = trustedFamilies.map(getFamilyDisplayName);
+    const summary = all7PointsVerified
+      ? `BINARY_QUORUM_READY (${names.join(" + ")}) [All 7 points verified]`
+      : `BINARY_QUORUM_READY (${names.join(" + ")})`;
+    const note = all7PointsVerified
+      ? "all 7 provider readiness points verified (live probe & output contract validated)"
+      : (hasUnverifiedLive
+          ? "version check only; operational review readiness requires authenticated probe (live probe: unverified)"
+          : "version check only; operational review readiness requires authenticated probe");
+
     return {
-      status: QUORUM_STATUS.BINARY_QUORUM_READY,
-      ready: true,
-      stage: "PROFILED",
+      activeReviewers: activeReviewers.map(r => r.id || r.command || "unknown"),
+      all7PointsVerified,
+      canRunDualQuorum: true,
+      canRunSingle: true,
       families: trustedFamilies,
       familyNames: names,
-      activeReviewers: activeReviewers.map(r => r.id || r.command || "unknown"),
-      summary: `BINARY_QUORUM_READY (${names.join(" + ")})`,
-      note: "version check only; operational review readiness requires authenticated probe",
-      canRunDualQuorum: true,
-      canRunSingle: true
+      hasUnverifiedLive,
+      note,
+      operationalReady: all7PointsVerified,
+      ready: isReady,
+      stage: all7PointsVerified ? "READY" : "PROFILED",
+      status: QUORUM_STATUS.BINARY_QUORUM_READY,
+      summary
     };
   }
 
   if (trustedFamilies.length === 1) {
     const names = trustedFamilies.map(getFamilyDisplayName);
+    const note = hasUnverifiedLive
+      ? "version check only; operational review readiness requires authenticated probe (live probe: unverified)"
+      : "version check only; operational review readiness requires authenticated probe";
+
     return {
-      status: QUORUM_STATUS.PARTIAL,
-      ready: false,
-      stage: "PROFILED",
+      activeReviewers: activeReviewers.map(r => r.id || r.command || "unknown"),
+      all7PointsVerified: false,
+      canRunDualQuorum: false,
+      canRunSingle: true,
       families: trustedFamilies,
       familyNames: names,
-      activeReviewers: activeReviewers.map(r => r.id || r.command || "unknown"),
-      summary: `PARTIAL (${names[0]})`,
-      note: "version check only; operational review readiness requires authenticated probe",
-      canRunDualQuorum: false,
-      canRunSingle: true
+      hasUnverifiedLive,
+      note,
+      operationalReady: false,
+      ready: false,
+      stage: "PROFILED",
+      status: QUORUM_STATUS.PARTIAL,
+      summary: `PARTIAL (${names[0]})`
     };
   }
 
   return {
-    status: QUORUM_STATUS.STANDALONE,
-    ready: false,
-    stage: "INSTALLED",
+    activeReviewers: activeReviewers.map(r => r.id || r.command || "unknown"),
+    all7PointsVerified: false,
+    canRunDualQuorum: false,
+    canRunSingle: false,
     families: [],
     familyNames: [],
-    activeReviewers: activeReviewers.map(r => r.id || r.command || "unknown"),
-    summary: "STANDALONE (Offline simulation / replay mode)",
-    canRunDualQuorum: false,
-    canRunSingle: false
+    hasUnverifiedLive: false,
+    operationalReady: false,
+    ready: false,
+    stage: "INSTALLED",
+    status: QUORUM_STATUS.STANDALONE,
+    summary: "STANDALONE (Offline simulation / replay mode)"
   };
 }
 
@@ -258,12 +277,19 @@ export function collectDoctorReport(options = {}) {
   const env = options.env || process.env;
 
   const reviewers = probeInstalledReviewers({
-    reviewers: options.reviewers,
+    cwd,
     execFn: options.execFn,
+    getGitState: options.getGitState,
+    live: Boolean(options.live),
+    liveProbe: Boolean(options.liveProbe),
+    reviewers: options.reviewers,
     timeoutMs: options.timeoutMs
   });
 
-  const quorum = evaluateQuorumReadiness(reviewers);
+  const quorum = evaluateQuorumReadiness(reviewers, {
+    live: Boolean(options.live),
+    require7Points: options.require7Points
+  });
 
   return {
     schemaVersion: "1.0.0",
@@ -288,6 +314,11 @@ export function collectDoctorReport(options = {}) {
     },
     reviewers,
     quorum,
+    readiness: {
+      all7PointsVerified: quorum.all7PointsVerified ?? false,
+      operationalReady: quorum.operationalReady ?? false,
+      status: quorum.all7PointsVerified ? "READY" : (quorum.hasUnverifiedLive ? "UNVERIFIED" : "NOT_READY")
+    },
     envKeys: {
       anthropic: Boolean(env?.ANTHROPIC_API_KEY),
       gemini: Boolean(env?.GEMINI_API_KEY),
@@ -343,7 +374,24 @@ export function formatDoctorReport(report, format = "text") {
           : (Array.isArray(r.readOnlyFlags) && r.readOnlyFlags.length > 0
             ? `read-only [${r.readOnlyFlags.join(", ")}]`
             : "default");
-        lines.push(`  ✔ ${name}: ${verStr} (Profile: ${flagsDesc})`);
+        let liveDesc = "";
+        if (r.readiness?.ready) {
+          liveDesc = "; live probe: verified READY";
+        } else if (r.readiness?.points?.point5_liveInvocationSucceeds?.status === "unverified") {
+          liveDesc = "; live probe: unverified";
+        } else if (r.readiness?.points) {
+          const pts = r.readiness.points;
+          if (pts.point5_liveInvocationSucceeds?.pass === false) {
+            liveDesc = `; live probe: FAILED (${pts.point5_liveInvocationSucceeds.error || "invocation error"})`;
+          } else if (pts.point6_outputContractValidates?.pass === false) {
+            liveDesc = `; output contract: FAILED (${pts.point6_outputContractValidates.error || "schema invalid"})`;
+          } else if (pts.point7_workingTreeUnchanged?.pass === false) {
+            liveDesc = `; working tree: FAILED (${pts.point7_workingTreeUnchanged.error || "dirty tree"})`;
+          } else {
+            liveDesc = "; live probe: NOT_READY";
+          }
+        }
+        lines.push(`  ✔ ${name}: ${verStr} (Profile: ${flagsDesc}${liveDesc})`);
       } else {
         lines.push(`  ⚠️ ${name}: Not detected / Inactive`);
       }
@@ -367,6 +415,12 @@ export function formatDoctorReport(report, format = "text") {
     lines.push(`  ℹ Heterogeneous Quorum: ${quorum.summary}`);
   }
   lines.push("");
+
+  if (report?.readiness) {
+    const rStatus = report.readiness.operationalReady ? "✔" : (report.readiness.status === "UNVERIFIED" ? "ℹ" : "⚠️");
+    lines.push("🛡️ 7-Point Provider Readiness Contract:");
+    lines.push(`  ${rStatus} Operational Readiness: ${report.readiness.status} (${report.readiness.all7PointsVerified ? "All 7 points verified" : (report.readiness.status === "UNVERIFIED" ? "Live invocation & output contract unverified in offline mode" : "1 or more readiness points failed")})\n`);
+  }
 
   lines.push("🔑 API Keys Environment (Legacy / Fallback):");
   lines.push(`  ℹ Anthropic Key: ${report?.envKeys?.anthropic ? "Configured" : "Unset (Real provider execution requires adapter)"}`);

@@ -37,13 +37,31 @@ const optionsConfig = {
   case: { type: "string" },
   limit: { type: "string" },
   report: { type: "string", default: "benchmark-results.json" },
+  receipt: { type: "string" },
   strict: { type: "boolean", default: false },
   help: { type: "boolean", short: "h", default: false }
 };
 
+const rawArgs = process.argv.slice(2);
+const normalizedArgs = [];
+for (let i = 0; i < rawArgs.length; i++) {
+  const arg = rawArgs[i];
+  if (arg === "--receipt") {
+    const next = rawArgs[i + 1];
+    if (next && !next.startsWith("-")) {
+      normalizedArgs.push(`--receipt=${next}`);
+      i++;
+    } else {
+      normalizedArgs.push("--receipt=audit-receipt.json");
+    }
+  } else {
+    normalizedArgs.push(arg);
+  }
+}
+
 let values;
 try {
-  const parsed = parseArgs({ options: optionsConfig, allowPositionals: true });
+  const parsed = parseArgs({ args: normalizedArgs, options: optionsConfig, allowPositionals: true });
   values = parsed.values;
 } catch (err) {
   console.error(`Argument error: ${err.message}`);
@@ -64,6 +82,7 @@ Options:
   --case=<id>                           Evaluate specific corpus case (e.g. BENCH-REAL-001)
   --limit=<n>                           Limit number of cases evaluated
   --report=<path>                       Path to write JSON benchmark report (default: benchmark-results.json)
+  --receipt[=<path>]                    Path to write JSON audit receipt (default: audit-receipt.json)
   --strict                              Enable strict gate mode (exits non-zero on case failure)
   -h, --help                            Show help and usage information
   `);
@@ -144,6 +163,19 @@ async function main() {
     fs.mkdirSync(path.dirname(reportPath), { recursive: true });
     fs.writeFileSync(reportPath, JSON.stringify(runResult, null, 2) + "\n", "utf8");
     console.log(`Benchmark audit report saved to: ${reportPath}`);
+  }
+
+  // Save audit-receipt.json alongside benchmark-results.json when --receipt or --report is given
+  const receiptTarget = values.receipt
+    ? (typeof values.receipt === "string" && values.receipt.trim().length > 0
+        ? path.resolve(values.receipt.trim())
+        : (reportPath ? path.join(path.dirname(reportPath), "audit-receipt.json") : path.resolve("audit-receipt.json")))
+    : (reportPath ? path.join(path.dirname(reportPath), "audit-receipt.json") : null);
+
+  if (receiptTarget && runResult.receipt) {
+    fs.mkdirSync(path.dirname(receiptTarget), { recursive: true });
+    fs.writeFileSync(receiptTarget, JSON.stringify(runResult.receipt, null, 2) + "\n", "utf8");
+    console.log(`Benchmark audit receipt saved to: ${receiptTarget}`);
   }
 
   // If strict mode is requested, enforce non-zero exit on failures

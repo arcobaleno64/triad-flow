@@ -278,3 +278,47 @@ export function convertProviderResultToSentryReport(result, roleName = "macro") 
     findings: result.findings
   };
 }
+
+/**
+ * Extracts a JSON string from raw text that may contain markdown code fences or pre/postambles.
+ *
+ * @param {string} text - Raw input text from reviewer CLI or model response
+ * @returns {object|null} Parsed JSON object/array or null if not extractable
+ */
+export function extractJsonFromText(text = "") {
+  if (typeof text !== "string") return null;
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+
+  // Try direct parse first
+  if ((trimmed.startsWith("{") && trimmed.endsWith("}")) || (trimmed.startsWith("[") && trimmed.endsWith("]"))) {
+    try {
+      return JSON.parse(trimmed);
+    } catch {
+      // Fall through to fence extraction
+    }
+  }
+
+  // Extract from ```json ... ``` or ``` ... ```
+  const fenceMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  if (fenceMatch && fenceMatch[1]) {
+    try {
+      return JSON.parse(fenceMatch[1].trim());
+    } catch {
+      // Fall through
+    }
+  }
+
+  // Extract outermost balanced JSON object
+  const startIdx = trimmed.indexOf("{");
+  const endIdx = trimmed.lastIndexOf("}");
+  if (startIdx !== -1 && endIdx > startIdx) {
+    try {
+      return JSON.parse(trimmed.slice(startIdx, endIdx + 1));
+    } catch {
+      return null;
+    }
+  }
+
+  return null;
+}
