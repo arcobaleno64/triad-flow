@@ -383,7 +383,7 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
         cwd: options.cwd || process.cwd(),
         getGitState: options.getGitState,
         execFn: options.execFn,
-        timeoutMs: timeoutArg ? parseInt(timeoutArg, 10) : (liveArg ? 30000 : options.timeoutMs),
+        timeoutMs: timeoutArg ? parseInt(timeoutArg, 10) : (liveArg ? 60000 : options.timeoutMs),
         env: options.env || process.env,
         reviewers: options.reviewers,
         live: liveArg
