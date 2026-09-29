@@ -8,3 +8,7 @@ coverage/
 .env.*.local
 benchmark-results.json
 benchmark-*.json
+audit-receipt*.json
+artifact-manifest*.json
+summary.md
+

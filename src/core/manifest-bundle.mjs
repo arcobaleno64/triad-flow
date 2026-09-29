@@ -84,7 +84,23 @@ export function formatSummaryMarkdown({ results = {}, receipt = null, metadata =
     "## Benchmark Quality & Performance Metrics"
   ];
 
-  if (results?.metrics) {
+  if (results?.configurations) {
+    lines.push("| Configuration | Mode | Cases | Recall | Precision | FBR | P50 Latency |");
+    lines.push("|---|---|---|---|---|---|---|");
+    for (const [cfgName, cfg] of Object.entries(results.configurations)) {
+      const cm = cfg.metrics || {};
+      const rec = typeof cm.recall === "number" ? `${(cm.recall * 100).toFixed(1)}%` : "N/A";
+      const prec = typeof cm.precision === "number" ? `${(cm.precision * 100).toFixed(1)}%` : "N/A";
+      const fbr = typeof cm.falseBlockRate === "number" ? `${(cm.falseBlockRate * 100).toFixed(1)}%` : "N/A";
+      const p50 = cm.latency?.p50Ms !== undefined ? `${cm.latency.p50Ms} ms` : "N/A";
+      lines.push(`| ${cfgName} | \`${cfg.mode}\` | ${cm.totalCases ?? 0} | ${rec} | ${prec} | ${fbr} | ${p50} |`);
+    }
+    lines.push("");
+    if (results.recommendation) {
+      lines.push(`**Recommendation**: ${results.recommendation}`);
+      lines.push("");
+    }
+  } else if (results?.metrics) {
     const m = results.metrics;
     const recallStr = typeof m.recall === "number" ? `${(m.recall * 100).toFixed(1)}%` : "N/A";
     const precisionStr = typeof m.precision === "number" ? `${(m.precision * 100).toFixed(1)}%` : "N/A";
@@ -107,22 +123,6 @@ export function formatSummaryMarkdown({ results = {}, receipt = null, metadata =
     lines.push(`| Latency P95 | ${p95Str} |`);
     lines.push(`| Authoritative Token Usage | ${tokensStr} |`);
     lines.push("");
-  } else if (results?.configurations) {
-    lines.push("| Configuration | Mode | Cases | Recall | Precision | FBR | P50 Latency |");
-    lines.push("|---|---|---|---|---|---|---|");
-    for (const [cfgName, cfg] of Object.entries(results.configurations)) {
-      const cm = cfg.metrics || {};
-      const rec = typeof cm.recall === "number" ? `${(cm.recall * 100).toFixed(1)}%` : "N/A";
-      const prec = typeof cm.precision === "number" ? `${(cm.precision * 100).toFixed(1)}%` : "N/A";
-      const fbr = typeof cm.falseBlockRate === "number" ? `${(cm.falseBlockRate * 100).toFixed(1)}%` : "N/A";
-      const p50 = cm.latency?.p50Ms !== undefined ? `${cm.latency.p50Ms} ms` : "N/A";
-      lines.push(`| ${cfgName} | \`${cfg.mode}\` | ${cm.totalCases ?? 0} | ${rec} | ${prec} | ${fbr} | ${p50} |`);
-    }
-    lines.push("");
-    if (results.recommendation) {
-      lines.push(`**Recommendation**: ${results.recommendation}`);
-      lines.push("");
-    }
   }
 
   lines.push("## Cryptographic Artifact Bundle");
