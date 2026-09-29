@@ -431,13 +431,13 @@ export function verifyProviderReadiness(providerName = "agy", options = {}) {
         probeRes = options.probeFn(profile, options);
       } else if (typeof options.execFn === "function") {
         const benignPrompt = 'Respond ONLY with a JSON object: {"findings":[],"coverage":{"coveredFiles":[],"omittedFiles":[]},"usage":{"promptTokens":null,"completionTokens":null,"totalTokens":null}}';
-        probeRes = options.execFn(command, assembleProviderArgs(profile, [benignPrompt]), {
+        probeRes = options.execFn(command, [...assembleProviderArgs(profile), benignPrompt], {
           cwd,
           timeout: timeoutMs
         });
       } else {
         const benignPrompt = 'Respond ONLY with a JSON object: {"findings":[],"coverage":{"coveredFiles":[],"omittedFiles":[]},"usage":{"promptTokens":null,"completionTokens":null,"totalTokens":null}}';
-        const probeArgs = assembleProviderArgs(profile, [benignPrompt]);
+        const probeArgs = [...assembleProviderArgs(profile), benignPrompt];
         probeRes = spawnSync(command, probeArgs, {
           cwd,
           encoding: "utf8",
