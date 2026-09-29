@@ -13,6 +13,7 @@ import {
   computeDigest,
   PROHIBITED_IDENTITY_KEYS
 } from "./canonical-digest.mjs";
+import { TOOL_VERSION } from "./review-run-report.mjs";
 
 /**
  * Normative receipt schema version.
@@ -253,7 +254,7 @@ export function buildAuditReceipt({
   const sysSection = {
     branch: systemProvenance.branch || "unknown",
     commitSha: systemProvenance.commitSha || "unknown",
-    triadFlowVersion: systemProvenance.triadFlowVersion || "2.2.0",
+    triadFlowVersion: systemProvenance.triadFlowVersion || TOOL_VERSION,
     ...(systemProvenance || {})
   };
 

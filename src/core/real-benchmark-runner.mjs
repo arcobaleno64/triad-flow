@@ -23,6 +23,7 @@ import { deduplicateBenchmarkFindings } from "./benchmark-pilot.mjs";
 import { evaluateDiffScale } from "./graph-router.mjs";
 import { buildAuditReceipt, normalizeActualModel } from "./audit-receipt.mjs";
 import { createCorpusIdentity } from "./canonical-digest.mjs";
+import { TOOL_VERSION } from "./review-run-report.mjs";
 
 export const BENCHMARK_FRAMEWORK_NAME = "Triad-Flow Real Benchmark Corpus v0 (TF-RBC-v0)";
 
@@ -329,7 +330,7 @@ export async function evaluateCorpusSuite(corpus = TF_RBC_V0_CASES, adapters = n
   const systemProvenance = {
     branch: options.branch || branch,
     commitSha: options.commitSha || commitSha,
-    triadFlowVersion: "2.2.0",
+    triadFlowVersion: options.triadFlowVersion || TOOL_VERSION,
     ...(options.systemProvenance || {})
   };
 
