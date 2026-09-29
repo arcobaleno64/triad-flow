@@ -39,6 +39,7 @@ import {
   formatDoctorReport,
   QUORUM_STATUS
 } from "../src/core/doctor.mjs";
+import { TOOL_VERSION } from "../src/core/review-run-report.mjs";
 import {
   evaluateCorpusSuite,
   runThreeWayRealComparison
@@ -383,7 +384,7 @@ test("Benchmark Runner Integration: evaluateCorpusSuite generates valid audit re
 
   // System Provenance
   assert.ok(receipt.systemProvenance);
-  assert.equal(receipt.systemProvenance.triadFlowVersion, "2.2.0");
+  assert.equal(receipt.systemProvenance.triadFlowVersion, TOOL_VERSION);
 
   // Contract 4: Provider Provenance
   assert.ok(receipt.providerProvenance);
