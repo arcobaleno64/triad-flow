@@ -58,7 +58,7 @@ export function probeInstalledReviewers(options = {}) {
   const targets = validTargets.length > 0 ? validTargets : DEFAULT_PROBE_TARGETS;
   const timeoutMs = typeof options.timeoutMs === "number" && options.timeoutMs > 0
     ? options.timeoutMs
-    : DEFAULT_PROBE_TIMEOUT_MS;
+    : (options.live ? 30000 : DEFAULT_PROBE_TIMEOUT_MS);
 
   const results = [];
 
