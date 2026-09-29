@@ -1,7 +1,9 @@
 # Triad-Flow Real Benchmark Corpus v0 Specification
 **Document ID**: `TF-DOC-BENCH-REAL-V0`  
-**Status**: Target Specification (Milestone 2 Real Provider Pilot)  
-**Applicability**: Triad-Flow v2.1.0+ Empirical Evaluation  
+**Status**: Frozen Baseline (`TF-RBC-v0 = FROZEN_BASELINE`)  
+**Corpus Digest**: `sha256:cf9c4596cca5910bf1c493590e16a4333782defea779a39488fa95f6b16fb82b`  
+**Applicability**: Triad-Flow v2.2.0+ Empirical Evaluation  
+**Immutability Invariant**: Any modification to case content, golden findings, or fixtures requires bumping to a new corpusVersion (e.g. TF-RBC-v1). In-place modification of TF-RBC-v0 is strictly prohibited.
 
 ---
 

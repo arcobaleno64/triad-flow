@@ -152,3 +152,17 @@ Every completed live benchmark run produces an immutable bundle:
 3. **No PR CI Live Invocations**: Live reviewer executions remain strictly isolated to manual `workflow_dispatch` on protected branches.
 4. **No Corpus Case Expansion**: Frozen at 20 cases (12 vulnerable, 8 clean controls).
 5. **No Synthetic Zero Usage**: Missing tokens remain `null`.
+
+---
+
+## 6. Frozen Baseline Invariant & Corpus Revision Policy
+
+1. **TF-RBC-v0 = FROZEN_BASELINE**:
+   - `corpusVersion`: `TF-RBC-v0`
+   - `corpusDigest`: `sha256:cf9c4596cca5910bf1c493590e16a4333782defea779a39488fa95f6b16fb82b`
+2. **Immutability Contract**:
+   Any modification to any benchmark case (code, comments, golden findings, tolerance, or risk tier) MUST generate a new `corpusVersion` (e.g., `TF-RBC-v1` or candidate dataset) and derive a new `corpusDigest`.
+   In-place alteration of `TF-RBC-v0` is strictly prohibited.
+3. **Patch Identity Lineage**:
+   - `v2.2.0`: Released auditable evidence infrastructure; tag `0ab4ef0` contained optional schedule.
+   - `v2.2.1`: Safety contract patch restricting `benchmark-live.yml` strictly to manual `workflow_dispatch` only.
