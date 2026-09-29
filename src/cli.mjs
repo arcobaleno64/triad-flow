@@ -385,7 +385,8 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
         execFn: options.execFn,
         timeoutMs: options.timeoutMs,
         env: options.env || process.env,
-        reviewers: options.reviewers
+        reviewers: options.reviewers,
+        live: liveArg
       });
 
       const formatted = formatDoctorReport(report, formatArg);
