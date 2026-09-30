@@ -15,6 +15,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { execFileSync } from "node:child_process";
 
 import {
   REMEDIATION_STATES,
@@ -244,3 +245,190 @@ test("Contract 4: Partial Failure Semantics (Failure does not erase prior CLOSED
   assert.equal(batchReceipt.summary.rejectedCount, 1);
   assert.equal(batchReceipt.verdict, BATCH_VERDICTS.PARTIAL);
 });
+
+test("Contract 5: Real Worktree Ephemeral Jail Sequential Execution and Lineage", () => {
+  const tmpRepo = fs.mkdtempSync(path.join(os.tmpdir(), "tf-batch-jail-repo-"));
+  const gitExec = (args) => execFileSync("git", ["-c", "core.fsmonitor=false", ...args], {
+    cwd: tmpRepo,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+    windowsHide: true
+  });
+
+  try {
+    gitExec(["init", "-q"]);
+    fs.mkdirSync(path.join(tmpRepo, "src"), { recursive: true });
+    fs.writeFileSync(path.join(tmpRepo, "src/sql.js"), "const query = 'SELECT * FROM users WHERE id = ' + id;\n", "utf8");
+    fs.writeFileSync(path.join(tmpRepo, "src/auth.js"), "const secret = 'hardcoded_jwt_secret_123';\n", "utf8");
+    gitExec(["add", "."]);
+    gitExec(["-c", "user.name=test", "-c", "user.email=test@test.com", "commit", "-q", "-m", "initial"]);
+
+    const headSha = gitExec(["rev-parse", "HEAD"]).trim();
+
+    const patch1 = [
+      "diff --git a/src/sql.js b/src/sql.js",
+      "--- a/src/sql.js",
+      "+++ b/src/sql.js",
+      "@@ -1,1 +1,2 @@",
+      "-const query = 'SELECT * FROM users WHERE id = ' + id;",
+      "+const query = 'SELECT * FROM users WHERE id = ?';",
+      "+return db.query(query, [id]);"
+    ].join("\n") + "\n";
+
+    const patch2 = [
+      "diff --git a/src/auth.js b/src/auth.js",
+      "--- a/src/auth.js",
+      "+++ b/src/auth.js",
+      "@@ -1,1 +1,2 @@",
+      "-const secret = 'hardcoded_jwt_secret_123';",
+      "+const secret = process.env.JWT_SECRET;",
+      "+if (!secret) throw new Error('Missing secret');"
+    ].join("\n") + "\n";
+
+    const findings = [
+      { id: "F-SQL-01", targetFiles: ["src/sql.js"], severity: "critical" },
+      { id: "F-AUTH-01", targetFiles: ["src/auth.js"], severity: "high" }
+    ];
+
+    const batch = new BatchRemediationSession("BATCH-E2E-001", findings);
+
+    // 1. Propose & Authorize both
+    const s1 = batch.getSession("F-SQL-01");
+    s1.proposeFix({ diff: patch1, rationale: "Parameterized SQL", synthesizer: { providerName: "codex" } });
+    s1.authorizePatch({ authorizer: { identity: "sec-lead@triad.flow", type: "human" } });
+
+    const s2 = batch.getSession("F-AUTH-01");
+    s2.proposeFix({ diff: patch2, rationale: "Env Secret", synthesizer: { providerName: "codex" } });
+    s2.authorizePatch({ authorizer: { identity: "sec-lead@triad.flow", type: "human" } });
+
+    // 2. Execute Batch in Ephemeral Jail Worktree
+    const batchTrial = batch.executeBatchInJailWorktree(tmpRepo, {
+      baseSha: headSha,
+      testRunnerFn: (jailDir, { findingId }) => {
+        if (findingId === "F-SQL-01") {
+          const sqlContent = fs.readFileSync(path.join(jailDir, "src/sql.js"), "utf8");
+          assert.ok(sqlContent.includes("SELECT * FROM users WHERE id = ?"));
+        } else if (findingId === "F-AUTH-01") {
+          const authContent = fs.readFileSync(path.join(jailDir, "src/auth.js"), "utf8");
+          assert.ok(authContent.includes("process.env.JWT_SECRET"));
+          // Invariant: earlier patch F-SQL-01 must still be present in the worktree!
+          const sqlContent = fs.readFileSync(path.join(jailDir, "src/sql.js"), "utf8");
+          assert.ok(sqlContent.includes("SELECT * FROM users WHERE id = ?"));
+        }
+        return { exitCode: 0, passedCount: 1, failedCount: 0 };
+      }
+    });
+
+    assert.equal(batchTrial.executionResults.length, 2);
+    assert.equal(batch.lineageHistory.length, 2);
+    assert.ok(batchTrial.aggregateDiff.includes("SELECT * FROM users WHERE id = ?"));
+    assert.ok(batchTrial.aggregateDiff.includes("process.env.JWT_SECRET"));
+
+    // 3. Record Independent Verification for both
+    s1.recordClosureVerification({
+      verifier: { providerName: "claude" },
+      verificationRecord: createMockVerificationRecord("F-SQL-01", { file: "src/sql.js" })
+    });
+    s2.recordClosureVerification({
+      verifier: { providerName: "claude" },
+      verificationRecord: createMockVerificationRecord("F-AUTH-01", { file: "src/auth.js" })
+    });
+
+    // 4. Batch Receipt Schema 1.0.0
+    const batchReceipt = batch.toBatchReceipt();
+    assert.equal(batchReceipt.status, BATCH_REMEDIATION_STATES.COMPLETED);
+    assert.equal(batchReceipt.verdict, BATCH_VERDICTS.ALL_CLOSED);
+    assert.equal(batchReceipt.summary.closedCount, 2);
+    assert.equal(validateBatchReceipt(batchReceipt), true);
+
+    // 5. Assert authoritative repository was untouched!
+    const origSql = fs.readFileSync(path.join(tmpRepo, "src/sql.js"), "utf8");
+    assert.ok(origSql.includes("WHERE id = ' + id"));
+  } finally {
+    try {
+      fs.rmSync(tmpRepo, { recursive: true, force: true });
+    } catch {
+      // Windows lock ignore
+    }
+  }
+});
+
+test("Contract 6: Ephemeral Jail Partial Failure and Rollback Invariant", () => {
+  const tmpRepo = fs.mkdtempSync(path.join(os.tmpdir(), "tf-batch-rollback-repo-"));
+  const gitExec = (args) => execFileSync("git", ["-c", "core.fsmonitor=false", ...args], {
+    cwd: tmpRepo,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+    windowsHide: true
+  });
+
+  try {
+    gitExec(["init", "-q"]);
+    fs.mkdirSync(path.join(tmpRepo, "src"), { recursive: true });
+    fs.writeFileSync(path.join(tmpRepo, "src/a.js"), "const a = 1;\n", "utf8");
+    fs.writeFileSync(path.join(tmpRepo, "src/b.js"), "const b = 1;\n", "utf8");
+    gitExec(["add", "."]);
+    gitExec(["-c", "user.name=test", "-c", "user.email=test@test.com", "commit", "-q", "-m", "initial"]);
+
+    const headSha = gitExec(["rev-parse", "HEAD"]).trim();
+
+    const patchA = "diff --git a/src/a.js b/src/a.js\n--- a/src/a.js\n+++ b/src/a.js\n@@ -1,1 +1,1 @@\n-const a = 1;\n+const a = 2;\n";
+    const patchB = "diff --git a/src/b.js b/src/b.js\n--- a/src/b.js\n+++ b/src/b.js\n@@ -1,1 +1,1 @@\n-const b = 1;\n+const b = 99;\n";
+
+    const findings = [
+      { id: "F-A", targetFiles: ["src/a.js"], severity: "critical" },
+      { id: "F-B", targetFiles: ["src/b.js"], severity: "high" }
+    ];
+
+    const batch = new BatchRemediationSession("BATCH-ROLLBACK-001", findings);
+
+    const sA = batch.getSession("F-A");
+    sA.proposeFix({ diff: patchA, rationale: "Fix A", synthesizer: { providerName: "codex" } });
+    sA.authorizePatch({ authorizer: { identity: "sec-lead@triad.flow", type: "human" } });
+
+    const sB = batch.getSession("F-B");
+    sB.proposeFix({ diff: patchB, rationale: "Fix B", synthesizer: { providerName: "codex" } });
+    sB.authorizePatch({ authorizer: { identity: "sec-lead@triad.flow", type: "human" } });
+
+    // Execute in Jail: F-A passes, but F-B fails test runner!
+    const batchTrial = batch.executeBatchInJailWorktree(tmpRepo, {
+      baseSha: headSha,
+      testRunnerFn: (jailDir, { findingId }) => {
+        if (findingId === "F-A") {
+          return { exitCode: 0, passedCount: 1, failedCount: 0 };
+        }
+        // F-B regression!
+        return { exitCode: 1, passedCount: 0, failedCount: 1, regressionDetected: true };
+      }
+    });
+
+    assert.equal(sA.status, REMEDIATION_STATES.FIXED_PENDING_VERIFY);
+    assert.equal(sB.status, REMEDIATION_STATES.REJECTED_FIX);
+
+    // Closure verification conducted only on F-A
+    sA.recordClosureVerification({
+      verifier: { providerName: "claude" },
+      verificationRecord: createMockVerificationRecord("F-A", { file: "src/a.js" })
+    });
+    assert.equal(sA.status, REMEDIATION_STATES.CLOSED);
+
+    // Finalized batch reflects PARTIAL
+    const receipt = batch.toBatchReceipt();
+    assert.equal(receipt.status, BATCH_REMEDIATION_STATES.COMPLETED);
+    assert.equal(receipt.verdict, BATCH_VERDICTS.PARTIAL);
+    assert.equal(receipt.summary.closedCount, 1);
+    assert.equal(receipt.summary.rejectedCount, 1);
+
+    // Aggregate diff contains only successful patch A
+    assert.ok(batchTrial.aggregateDiff.includes("const a = 2"));
+    assert.ok(!batchTrial.aggregateDiff.includes("const b = 99"));
+  } finally {
+    try {
+      fs.rmSync(tmpRepo, { recursive: true, force: true });
+    } catch {
+      // Windows lock ignore
+    }
+  }
+});
+
+
