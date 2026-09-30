@@ -44,18 +44,37 @@ jobs:
               exit 1
               ;;
           esac
+      - name: Assert tag is signed by authorized release key
+        shell: bash
+        run: |
+          git config gpg.format ssh
+          git config gpg.ssh.allowedSignersFile .github/allowed_signers
+          if ! git verify-tag "$GITHUB_REF_NAME" 2>&1; then
+            echo "::error::Tag $GITHUB_REF_NAME signature verification failed or signer not authorized in .github/allowed_signers." >&2
+            exit 1
+          fi
       - run: npm test
       - run: npm run check-version
       - run: npm pack --dry-run
       - name: Build npm package tarball
         if: matrix.os == 'ubuntu-latest' && matrix.node-version == 20
         run: npm pack
+      - name: Generate SPDX 2.3 SBOM
+        if: matrix.os == 'ubuntu-latest' && matrix.node-version == 20
+        run: npm sbom --sbom-format=spdx > triad-flow.spdx.json
       - name: Upload npm package artifact
         if: matrix.os == 'ubuntu-latest' && matrix.node-version == 20
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
           name: package-tarball
           path: "*.tgz"
+          if-no-files-found: error
+      - name: Upload SBOM artifact
+        if: matrix.os == 'ubuntu-latest' && matrix.node-version == 20
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: package-sbom
+          path: "triad-flow.spdx.json"
           if-no-files-found: error
 
   publish:
@@ -74,10 +93,20 @@ jobs:
         with:
           name: package-tarball
           path: .
+      - name: Download SBOM
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: package-sbom
+          path: .
       - name: Attest build provenance
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: "*.tgz"
+      - name: Attest SPDX SBOM
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: "*.tgz"
+          sbom-path: "triad-flow.spdx.json"
       - name: Create GitHub Release and Upload Assets
         env:
           GH_TOKEN: ${{ github.token }}
@@ -93,7 +122,8 @@ jobs:
             --title "$GITHUB_REF_NAME" \
             --notes-file release-notes.md \
             --verify-tag \
-            *.tgz
+            *.tgz \
+            triad-flow.spdx.json
 
   # Tests what a user actually installs, not the tree the workflow was handed.
   verify-published:
@@ -110,6 +140,12 @@ jobs:
         run: |
           gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --pattern "*.tgz"
           gh attestation verify *.tgz --repo "$GITHUB_REPOSITORY"
+      - name: Verify SBOM attestation
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --pattern "triad-flow.spdx.json"
+          gh attestation verify *.tgz --repo "$GITHUB_REPOSITORY" --predicate-type https://spdx.dev/Document
       - name: Install the published tag from git and run its CLI
         env:
           GH_TOKEN: ${{ github.token }}
