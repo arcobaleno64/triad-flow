@@ -30,6 +30,14 @@ import {
   StructuralAntiEvasionError
 } from "./anti-evasion-guard.mjs";
 import {
+  resolveAstAdapter,
+  BuiltinSemanticAdapter,
+  AcornAstAdapter,
+  BabelAstAdapter,
+  AstAdapterUnavailableError,
+  AST_ADAPTER_NAMES
+} from "./semantic-parser-adapter.mjs";
+import {
   resolveSandboxDriver,
   WorktreeDriver,
   ContainerDriver,
@@ -43,6 +51,12 @@ export {
   EVASION_VIOLATION_TYPES,
   BaseAstAdapter,
   StructuralAntiEvasionError,
+  resolveAstAdapter,
+  BuiltinSemanticAdapter,
+  AcornAstAdapter,
+  BabelAstAdapter,
+  AstAdapterUnavailableError,
+  AST_ADAPTER_NAMES,
   resolveSandboxDriver,
   WorktreeDriver,
   ContainerDriver,
@@ -988,6 +1002,7 @@ export class ControlledRemediationSession {
     this.attempts = 0;
     this.history = [];
     this.startedAt = new Date().toISOString();
+    this.astAdapter = options.astAdapter ?? null;
     this.actors = {
       producer: options.producer || { providerName: "agy", modelName: "cli-default" },
       synthesizer: options.synthesizer || null,
@@ -1025,18 +1040,24 @@ export class ControlledRemediationSession {
     this.status = toState;
   }
 
-  proposeFix({ diff, rationale = "", synthesizer = { providerName: "claude", modelName: "opusplan" } }) {
+  proposeFix({
+    diff,
+    rationale = "",
+    synthesizer = { providerName: "claude", modelName: "opusplan" },
+    astAdapter = this.astAdapter
+  }) {
     this.attempts++;
     this.actors.synthesizer = synthesizer;
 
-    const validated = validatePatchScope(diff, this.targetFiles);
+    const validated = validatePatchScope(diff, this.targetFiles, { astAdapter });
     this.patch = {
       rawDiff: diff,
       patchDiffDigest: validated.patchDiffDigest,
       targetFiles: validated.targetFiles,
       additions: validated.additions,
       deletions: validated.deletions,
-      rationale
+      rationale,
+      astSemanticReport: astAdapter && typeof astAdapter.probe === "function" ? astAdapter.probe() : null
     };
 
     this._recordTransition(REMEDIATION_STATES.FIX_PROPOSED, synthesizer, {
