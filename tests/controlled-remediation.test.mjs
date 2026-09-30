@@ -889,3 +889,370 @@ test("Contract 16: Negative Test - Authorization digest mismatch is rejected", (
   assert.equal(session.status, REMEDIATION_STATES.FIX_PROPOSED);
 });
 
+test("Contract 17: Multi-Defect Generalization - BENCH-REAL-002 (CWE-798 Hardcoded Secret) fails closed on functional regression", () => {
+  const caseDef = getCorpusCaseById("BENCH-REAL-002");
+  const workspace = createCorpusCaseWorkspace(caseDef, { virtual: false });
+  try {
+    const session = new ControlledRemediationSession(
+      "BENCH-REAL-002-FINDING-001",
+      [caseDef.targetFile]
+    );
+
+    const candidateDiff = [
+      "diff --git a/src/auth/jwt-service.js b/src/auth/jwt-service.js",
+      "--- a/src/auth/jwt-service.js",
+      "+++ b/src/auth/jwt-service.js",
+      "@@ -1,8 +1,7 @@",
+      "-const JWT_SECRET = \"super_secret_jwt_token_key_123456789_triad_pilot\";",
+      "+import jwt from \"jsonwebtoken\";",
+      " ",
+      " export function verifySessionToken(token) {",
+      "-  // Parse token parts and decode payload",
+      "-  const parts = token.split(\".\");",
+      "-  if (parts.length !== 3) throw new Error(\"Invalid token format\");",
+      "-  return JSON.parse(Buffer.from(parts[1], \"base64\").toString(\"utf8\"));",
+      "+  const secret = process.env.JWT_SIGNING_SECRET;",
+      "+  if (!secret) throw new Error(\"JWT_SIGNING_SECRET not configured\");",
+      "+  return jwt.verify(token, secret);",
+      " }"
+    ].join("\n") + "\n";
+
+    session.proposeFix({
+      diff: candidateDiff,
+      rationale: "Removed hardcoded secret and restored jwt.verify signature verification.",
+      synthesizer: { providerName: "codex", modelName: "gpt-6.1-sol" }
+    });
+    assert.equal(session.status, REMEDIATION_STATES.FIX_PROPOSED);
+
+    session.authorizePatch({
+      authorizer: { identity: "sec-lead@triad.flow", type: "human" }
+    });
+    assert.equal(session.status, REMEDIATION_STATES.PATCH_AUTHORIZED);
+
+    // In jail worktree: patch applies cleanly, but tests fail due to missing env var (functional regression)
+    const jailTrial = session.executeInJailWorktree(workspace.dir, {
+      baseSha: workspace.headSha,
+      testRunnerFn: (jailDir) => {
+        const patched = fs.readFileSync(path.join(jailDir, caseDef.targetFile), "utf8");
+        assert.ok(patched.includes("process.env.JWT_SIGNING_SECRET"));
+        assert.ok(!patched.includes("super_secret_jwt_token_key"));
+        return {
+          testCommand: "npm test",
+          exitCode: 1,
+          passedCount: 0,
+          failedCount: 1,
+          regressionDetected: true,
+          error: "Error: JWT_SIGNING_SECRET not configured in test environment"
+        };
+      }
+    });
+
+    assert.equal(jailTrial.jailResult.applied, true);
+    assert.equal(session.status, REMEDIATION_STATES.REJECTED_FIX);
+    assert.equal(session.deterministicChecks.regressionDetected, true);
+
+    // Monotonic Defense: attempting to transition to CLOSED throws
+    assert.throws(
+      () => validateRemediationTransition(session.status, REMEDIATION_STATES.CLOSED),
+      RemediationTransitionError
+    );
+
+    // Receipt reflects rejection
+    const receipt = session.toReceipt();
+    assert.equal(receipt.status, "REJECTED_FIX");
+    assert.equal(receipt.deterministicChecks.exitCode, 1);
+    assert.equal(receipt.deterministicChecks.regressionDetected, true);
+
+    workspace.assertImmutability();
+  } finally {
+    workspace.cleanup();
+  }
+});
+
+test("Contract 18: Multi-Defect Generalization - BENCH-REAL-003 (CWE-22 Path Traversal) incomplete patch contested by verifier", () => {
+  const caseDef = getCorpusCaseById("BENCH-REAL-003");
+  const workspace = createCorpusCaseWorkspace(caseDef, { virtual: false });
+  try {
+    const session = new ControlledRemediationSession(
+      "BENCH-REAL-003-FINDING-001",
+      [caseDef.targetFile]
+    );
+
+    // Naive/incomplete patch: attempts to strip ".." but bypassable via nested or absolute paths
+    const naiveDiff = [
+      "diff --git a/src/storage/file-fetcher.js b/src/storage/file-fetcher.js",
+      "--- a/src/storage/file-fetcher.js",
+      "+++ b/src/storage/file-fetcher.js",
+      "@@ -4,5 +4,6 @@",
+      " export async function readStorageFile(baseDir, userInputFilename) {",
+      "-  // Resolve target file path within base directory",
+      "-  const target = path.join(baseDir, userInputFilename);",
+      "+  // Naive filter attempting to strip dot-dot",
+      "+  const sanitized = userInputFilename.replace(/\\.\\./g, \"\");",
+      "+  const target = path.join(baseDir, sanitized);",
+      "   return fs.readFile(target, \"utf8\");",
+      " }"
+    ].join("\n") + "\n";
+
+    session.proposeFix({
+      diff: naiveDiff,
+      rationale: "Sanitized path by stripping dot-dot occurrences.",
+      synthesizer: { providerName: "codex", modelName: "gpt-6.1-sol" }
+    });
+    session.authorizePatch({
+      authorizer: { identity: "sec-lead@triad.flow", type: "human" }
+    });
+
+    // Basic deterministic checks pass because naive unit tests didn't test nested traversal
+    session.executeInJailWorktree(workspace.dir, {
+      baseSha: workspace.headSha,
+      testRunnerFn: (jailDir) => {
+        return {
+          testCommand: "node --test tests/storage.test.js",
+          exitCode: 0,
+          passedCount: 3,
+          failedCount: 0
+        };
+      }
+    });
+    assert.equal(session.status, REMEDIATION_STATES.FIXED_PENDING_VERIFY);
+
+    // Independent heterogeneous verifier (claude) detects naive bypass and issues CONTESTED
+    const verifierRecord = createMockVerificationRecord("BENCH-REAL-003-FINDING-001", {
+      verdict: "CONTESTED",
+      file: caseDef.targetFile,
+      verifierProvider: "claude"
+    });
+    session.recordClosureVerification({
+      verifier: { providerName: "claude", modelName: "cli-default" },
+      verificationRecord: verifierRecord
+    });
+
+    // Must transition to REJECTED_FIX and record dissent
+    assert.equal(session.status, REMEDIATION_STATES.REJECTED_FIX);
+    assert.equal(session.closureVerification.verified, false);
+    assert.equal(session.closureVerification.verdict, "CONTESTED");
+
+    const receipt = session.toReceipt();
+    assert.equal(receipt.status, "REJECTED_FIX");
+    assert.equal(receipt.closureVerification.verified, false);
+
+    workspace.assertImmutability();
+  } finally {
+    workspace.cleanup();
+  }
+});
+
+test("Contract 19: Multi-Defect Generalization - BENCH-REAL-004 (CWE-79 XSS) post-test worktree leak fails closed", () => {
+  const caseDef = getCorpusCaseById("BENCH-REAL-004");
+  const workspace = createCorpusCaseWorkspace(caseDef, { virtual: false });
+  try {
+    const session = new ControlledRemediationSession(
+      "BENCH-REAL-004-FINDING-001",
+      [caseDef.targetFile]
+    );
+
+    const cleanDiff = [
+      "diff --git a/src/views/profile-render.js b/src/views/profile-render.js",
+      "--- a/src/views/profile-render.js",
+      "+++ b/src/views/profile-render.js",
+      "@@ -1,4 +1,6 @@",
+      " export function renderUserProfile(container, user) {",
+      "-  // Render formatted bio markup directly into profile container",
+      "-  container.innerHTML = `<div class=\"user-bio\">${user.bio || \"\"}</div>`;",
+      "+  const bioElement = document.createElement(\"div\");",
+      "+  bioElement.className = \"user-bio\";",
+      "+  bioElement.textContent = user.bio || \"\";",
+      "+  container.appendChild(bioElement);",
+      " }"
+    ].join("\n") + "\n";
+
+    session.proposeFix({
+      diff: cleanDiff,
+      rationale: "Used textContent to prevent script injection via user bio.",
+      synthesizer: { providerName: "codex", modelName: "gpt-6.1-sol" }
+    });
+    session.authorizePatch({
+      authorizer: { identity: "sec-lead@triad.flow", type: "human" }
+    });
+
+    // Test runner leaks an uncommitted build artifact outside targetFiles
+    session.executeInJailWorktree(workspace.dir, {
+      baseSha: workspace.headSha,
+      testRunnerFn: (jailDir) => {
+        fs.writeFileSync(path.join(jailDir, "profile-render.bundle.js"), "// leaked bundle\n");
+        return {
+          testCommand: "npm test",
+          exitCode: 0,
+          passedCount: 4,
+          failedCount: 0
+        };
+      }
+    });
+
+    assert.equal(session.status, REMEDIATION_STATES.REJECTED_FIX);
+    assert.equal(session.deterministicChecks.dirtyLeakDetected, true);
+    assert.equal(session.deterministicChecks.dirtyLeakFile, "profile-render.bundle.js");
+
+    workspace.assertImmutability();
+  } finally {
+    workspace.cleanup();
+  }
+});
+
+test("Contract 20: Multi-Defect Generalization - BENCH-REAL-005 (CWE-639 IDOR) clean multi-actor remediation & closure", () => {
+  const caseDef = getCorpusCaseById("BENCH-REAL-005");
+  const workspace = createCorpusCaseWorkspace(caseDef, { virtual: false });
+  try {
+    const session = new ControlledRemediationSession(
+      "BENCH-REAL-005-FINDING-001",
+      [caseDef.targetFile]
+    );
+
+    const validDiff = [
+      "diff --git a/src/api/invoice-handler.js b/src/api/invoice-handler.js",
+      "--- a/src/api/invoice-handler.js",
+      "+++ b/src/api/invoice-handler.js",
+      "@@ -2,6 +2,9 @@",
+      "   const { invoiceId } = req.params;",
+      "-  // Retrieve invoice details by identifier",
+      "+  const currentTenantId = req.user.tenantId;",
+      "+",
+      "   const invoice = await db.invoices.findById(invoiceId);",
+      "-  if (!invoice) return res.status(404).json({ error: \"Not found\" });",
+      "+  if (!invoice || invoice.tenantId !== currentTenantId) {",
+      "+    return res.status(403).json({ error: \"Access denied\" });",
+      "+  }",
+      "   return res.json(invoice);",
+      " }"
+    ].join("\n") + "\n";
+
+    session.proposeFix({
+      diff: validDiff,
+      rationale: "Added tenant authorization check to ensure callers only access invoices in their tenant.",
+      synthesizer: { providerName: "codex", modelName: "gpt-6.1-sol" }
+    });
+    assert.equal(session.status, REMEDIATION_STATES.FIX_PROPOSED);
+
+    session.authorizePatch({
+      authorizer: { identity: "sec-lead@triad.flow", type: "human" }
+    });
+    assert.equal(session.status, REMEDIATION_STATES.PATCH_AUTHORIZED);
+
+    session.executeInJailWorktree(workspace.dir, {
+      baseSha: workspace.headSha,
+      testRunnerFn: (jailDir) => {
+        const patched = fs.readFileSync(path.join(jailDir, caseDef.targetFile), "utf8");
+        assert.ok(patched.includes("invoice.tenantId !== currentTenantId"));
+        return {
+          testCommand: "npm test",
+          exitCode: 0,
+          passedCount: 6,
+          failedCount: 0
+        };
+      }
+    });
+    assert.equal(session.status, REMEDIATION_STATES.FIXED_PENDING_VERIFY);
+
+    // Independent heterogeneous verifier (claude) verifies closure
+    const record = createMockVerificationRecord("BENCH-REAL-005-FINDING-001", {
+      verdict: "SUPPORTED",
+      file: caseDef.targetFile,
+      verifierProvider: "claude"
+    });
+    session.recordClosureVerification({
+      verifier: { providerName: "claude", modelName: "cli-default" },
+      verificationRecord: record
+    });
+
+    assert.equal(session.status, REMEDIATION_STATES.CLOSED);
+    const receipt = session.toReceipt();
+    assert.equal(receipt.status, "CLOSED");
+    assert.equal(receipt.schemaVersion, "1.0.0");
+    assert.equal(receipt.actors.synthesizer.providerName, "codex");
+    assert.equal(receipt.actors.verifier.providerName, "claude");
+    assert.equal(receipt.closureVerification.verified, true);
+
+    workspace.assertImmutability();
+  } finally {
+    workspace.cleanup();
+  }
+});
+
+test("Contract 21: Multi-Defect Generalization - BENCH-REAL-003 (CWE-22 Path Traversal) robust closure & tree lineage", () => {
+  const caseDef = getCorpusCaseById("BENCH-REAL-003");
+  const workspace = createCorpusCaseWorkspace(caseDef, { virtual: false });
+  try {
+    const session = new ControlledRemediationSession(
+      "BENCH-REAL-003-FINDING-002",
+      [caseDef.targetFile]
+    );
+
+    // Robust patch with path.basename, path.resolve, and boundary check
+    const robustDiff = [
+      "diff --git a/src/storage/file-fetcher.js b/src/storage/file-fetcher.js",
+      "--- a/src/storage/file-fetcher.js",
+      "+++ b/src/storage/file-fetcher.js",
+      "@@ -4,5 +4,8 @@",
+      " export async function readStorageFile(baseDir, userInputFilename) {",
+      "-  // Resolve target file path within base directory",
+      "-  const target = path.join(baseDir, userInputFilename);",
+      "+  const safeName = path.basename(userInputFilename);",
+      "+  const target = path.resolve(baseDir, safeName);",
+      "+  if (!target.startsWith(path.resolve(baseDir))) {",
+      "+    throw new Error(\"Access denied: invalid file path\");",
+      "+  }",
+      "   return fs.readFile(target, \"utf8\");",
+      " }"
+    ].join("\n") + "\n";
+
+    session.proposeFix({
+      diff: robustDiff,
+      rationale: "Enforced path boundary check using path.resolve and startsWith.",
+      synthesizer: { providerName: "codex", modelName: "gpt-6.1-sol" }
+    });
+    session.authorizePatch({
+      authorizer: { identity: "sec-lead@triad.flow", type: "human" }
+    });
+
+    session.executeInJailWorktree(workspace.dir, {
+      baseSha: workspace.headSha,
+      testRunnerFn: (jailDir) => {
+        return {
+          testCommand: "npm test",
+          exitCode: 0,
+          passedCount: 7,
+          failedCount: 0
+        };
+      }
+    });
+
+    assert.equal(session.status, REMEDIATION_STATES.FIXED_PENDING_VERIFY);
+    assert.ok(session.jail.prePatchTreeDigest.startsWith("sha256:"));
+    assert.ok(session.jail.postPatchTreeDigest.startsWith("sha256:"));
+    assert.notEqual(session.jail.prePatchTreeDigest, session.jail.postPatchTreeDigest);
+
+    const record = createMockVerificationRecord("BENCH-REAL-003-FINDING-002", {
+      verdict: "SUPPORTED",
+      file: caseDef.targetFile,
+      verifierProvider: "claude"
+    });
+    session.recordClosureVerification({
+      verifier: { providerName: "claude", modelName: "cli-default" },
+      verificationRecord: record
+    });
+
+    assert.equal(session.status, REMEDIATION_STATES.CLOSED);
+    const receipt = session.toReceipt();
+    assert.equal(receipt.status, "CLOSED");
+    assert.equal(receipt.jail.isolatedExecutionPass, true);
+
+    const receiptDigest = computeRemediationReceiptDigest(receipt);
+    assert.ok(receiptDigest.startsWith("sha256:"));
+
+    workspace.assertImmutability();
+  } finally {
+    workspace.cleanup();
+  }
+});
+

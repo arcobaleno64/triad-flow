@@ -154,7 +154,7 @@ Every controlled remediation trial emits an immutable `remediation-receipt.json`
   },
   "actors": {
     "producer": { "providerName": "agy", "modelName": "cli-default" },
-    "synthesizer": { "providerName": "claude", "modelName": "opusplan" },
+    "synthesizer": { "providerName": "codex", "modelName": "gpt-6.1-sol" },
     "verifier": { "providerName": "claude", "modelName": "cli-default" },
     "authorizer": { "identity": "security-lead@company.internal", "type": "human" }
   },
@@ -185,7 +185,7 @@ Every controlled remediation trial emits an immutable `remediation-receipt.json`
     "residualVulnerabilityDetected": false
   },
   "history": [
-    { "from": "OPEN", "to": "FIX_PROPOSED", "at": "2026-09-30T02:15:05.000Z", "actor": "claude" },
+    { "from": "OPEN", "to": "FIX_PROPOSED", "at": "2026-09-30T02:15:05.000Z", "actor": "codex" },
     { "from": "FIX_PROPOSED", "to": "PATCH_AUTHORIZED", "at": "2026-09-30T02:15:15.000Z", "actor": "security-lead" },
     { "from": "PATCH_AUTHORIZED", "to": "PATCH_APPLIED_IN_JAIL", "at": "2026-09-30T02:15:20.000Z", "actor": "orchestrator" },
     { "from": "PATCH_APPLIED_IN_JAIL", "to": "FIXED_PENDING_VERIFY", "at": "2026-09-30T02:15:45.000Z", "actor": "test-runner" },
@@ -228,13 +228,35 @@ A patch is classified as a hostile regression and rejected automatically if it:
 
 ---
 
-## 7. Next Assurance Gate: Controlled Remediation Proof-of-Concept
+## 7. Sealed Baseline & Reference PoC
 
 > [!NOTE]
-> **Validation Status**: Controlled Remediation reference path validated on `BENCH-REAL-001` (CWE-89 SQL Injection). Full generalization across all 20 corpus cases and multi-finding scenarios remains subject to subsequent gate iterations.
+> **Baseline Status: VALIDATED & SEALED**  
+> Commit SHA: `36f203dcfaf3538603acf69eba48ed4845f1ae26`  
+> CI Status: GitHub Actions Run #29 (`conclusion: success`)  
+> Deterministic Test Suite: 325 tests (322 passed, 3 skipped, 0 failed)  
+> Scope: Validated reference closure on `BENCH-REAL-001` (CWE-89), Default-Deny state machine, worktree isolation, post-test mutation detection, and heterogeneous closure verification.
 
-To achieve v2.3.0 readiness, Triad-Flow must demonstrate:
+Key invariants verified in baseline:
 1. `BENCH-REAL-001` candidate patch formulated strictly in `FIX_PROPOSED` plan mode.
 2. Ephemeral Git worktree successfully applies patch in isolation without polluting host repository.
-3. Deterministic regression tests run inside worktree and record bit-for-bit tree digests.
-4. Independent verifier confirms closure in `remediation-receipt.json` before any PR diff is presented to maintainers.
+3. Deterministic regression tests run inside worktree and record bit-for-bit tree digests (`prePatchTreeDigest`, `postPatchTreeDigest`, `postTestTreeDigest`).
+4. Heterogeneous verifier (`claude` verifying `codex`) confirms closure in `remediation-receipt.json` before diff presentation.
+5. Worktree mutations and unauthorized file leaks outside `targetFiles` trigger `REJECTED_FIX`.
+
+---
+
+## 8. Multi-Defect Generalization & Failure-Mode Assurance Gate
+
+To advance from a single reference case to general applicability, the controlled remediation engine is evaluated against a 5-case multi-defect matrix across `TF-RBC-v0`, explicitly asserting fail-closed behavior across negative paths:
+
+| Case ID | Defect Family | Scenario Tested | Required Outcome |
+|---|---|---|---|
+| `BENCH-REAL-001` | CWE-89 (SQL Injection) | Reference Closure & Unauthorized File Leak | `CLOSED` on valid fix; `REJECTED_FIX` on leak |
+| `BENCH-REAL-002` | CWE-798 (Hardcoded Secret) | Functional Defect Regression (Missing Env Var) | `REJECTED_FIX` (exit code !== 0) |
+| `BENCH-REAL-003` | CWE-22 (Path Traversal) | Incomplete Patch & Verifier Contradiction | `REJECTED_FIX` (`CONTESTED` verdict with dissent) |
+| `BENCH-REAL-004` | CWE-79 (Stored/DOM XSS) | Post-Test Worktree Contamination | `REJECTED_FIX` (`dirtyLeakDetected: true`) |
+| `BENCH-REAL-005` | CWE-639 (IDOR Access Control) | Multi-Actor Tenant Remediation & Closure | `CLOSED` (Heterogeneous verification verified) |
+
+All generalization cases maintain zero repository writes to the authoritative workspace and emit canonical `remediation-receipt.json` Schema 1.0.0 artifacts.
+
