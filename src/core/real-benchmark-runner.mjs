@@ -17,6 +17,13 @@ import {
   getCorpusCaseById,
   listCorpusCases
 } from "../../tests/fixtures/real-corpus-fixtures.mjs";
+import {
+  TF_OSS_CORPUS_V1_CASES,
+  createOssCaseWorkspace,
+  createMockOssAdapters,
+  getOssCaseById,
+  listOssCases
+} from "../../tests/fixtures/real-oss-fixtures.mjs";
 import { orchestrateReview } from "../adapters/review-orchestrator.mjs";
 import { verifyHeldOutBaseline } from "./scoring.mjs";
 import { deduplicateBenchmarkFindings } from "./benchmark-pilot.mjs";
@@ -26,6 +33,12 @@ import { createCorpusIdentity } from "./canonical-digest.mjs";
 import { TOOL_VERSION } from "./review-run-report.mjs";
 
 export const BENCHMARK_FRAMEWORK_NAME = "Triad-Flow Real Benchmark Corpus v0 (TF-RBC-v0)";
+export const OSS_BENCHMARK_FRAMEWORK_NAME = "Triad-Flow Real-World OSS Corpus v1 (TF-OSS-v1)";
+
+export const CORPUS_NAMES = Object.freeze({
+  V0: "v0",
+  OSS: "oss"
+});
 
 /**
  * Evaluates a single corpus case in an isolated, disposable Git workspace.
@@ -48,7 +61,9 @@ export async function evaluateCorpusCase(caseDef, adapters = {}, options = {}) {
   const timeoutMs = options.timeoutMs || 30000;
 
   // 1. Create isolated disposable workspace (or zero-spawn virtual workspace)
-  const workspace = createCorpusCaseWorkspace(caseDef, { virtual: Boolean(options.virtual) });
+  const workspace = caseDef.id?.startsWith("TF-OSS")
+    ? createOssCaseWorkspace(caseDef, { virtual: Boolean(options.virtual) })
+    : createCorpusCaseWorkspace(caseDef, { virtual: Boolean(options.virtual) });
   try {
     // 2. Pre-execution immutability check
     workspace.assertImmutability();
@@ -205,27 +220,32 @@ export async function evaluateCorpusCase(caseDef, adapters = {}, options = {}) {
  * @param {number} [options.timeoutMs=30000]
  * @returns {Promise<object>} Benchmark execution report.
  */
-export async function evaluateCorpusSuite(corpus = TF_RBC_V0_CASES, adapters = null, options = {}) {
+export async function evaluateCorpusSuite(corpus = null, adapters = null, options = {}) {
   const mode = options.mode || "single";
+  const isOss = options.corpus === "oss" || corpus === TF_OSS_CORPUS_V1_CASES || (Array.isArray(corpus) && corpus[0]?.id?.startsWith("TF-OSS"));
+  const defaultCorpus = isOss ? TF_OSS_CORPUS_V1_CASES : TF_RBC_V0_CASES;
+  const activeCorpus = corpus || defaultCorpus;
 
   // Delegate 3-way comparison if mode is "all"
   if (mode === "all") {
-    return runThreeWayRealComparison(corpus, adapters, options);
+    return runThreeWayRealComparison(activeCorpus, adapters, { ...options, corpus: isOss ? "oss" : "v0" });
   }
 
   // Use high-fidelity mock adapters if adapters are not explicitly provided and not in live mode
-  const activeAdapters = adapters || createMockCorpusAdapters(options.mockOptions || {});
+  const activeAdapters = adapters || (isOss
+    ? createMockOssAdapters(options.mockOptions || {})
+    : createMockCorpusAdapters(options.mockOptions || {}));
 
   // Case filtering
-  let cases = Array.isArray(corpus) ? [...corpus] : [...TF_RBC_V0_CASES];
+  let cases = Array.isArray(activeCorpus) ? [...activeCorpus] : [...defaultCorpus];
   if (options.case) {
-    const single = getCorpusCaseById(options.case);
+    const single = isOss ? getOssCaseById(options.case) : getCorpusCaseById(options.case);
     if (!single) {
       throw new Error(`Corpus case '${options.case}' not found.`);
     }
     cases = [single];
   } else if (options.filter) {
-    cases = listCorpusCases(options.filter);
+    cases = isOss ? listOssCases(options.filter) : listCorpusCases(options.filter);
   }
 
   if (options.limit && Number.isFinite(options.limit) && options.limit > 0) {
@@ -317,7 +337,9 @@ export async function evaluateCorpusSuite(corpus = TF_RBC_V0_CASES, adapters = n
   const executionMode = options.executionMode || (options.live ? "live" : "mock");
   const workspaceMode = Boolean(options.virtual) ? "virtual" : "physical";
 
-  const identity = createCorpusIdentity(corpus);
+  const identity = createCorpusIdentity(activeCorpus, {
+    corpusVersion: isOss ? "TF-OSS-v1" : (options.corpusVersion || undefined)
+  });
 
   let commitSha = "unknown";
   let branch = "unknown";
@@ -420,7 +442,8 @@ export async function evaluateCorpusSuite(corpus = TF_RBC_V0_CASES, adapters = n
   });
 
   return {
-    framework: BENCHMARK_FRAMEWORK_NAME,
+    framework: isOss ? OSS_BENCHMARK_FRAMEWORK_NAME : BENCHMARK_FRAMEWORK_NAME,
+    corpus: isOss ? "oss" : "v0",
     mode,
     executionMode,
     workspaceMode,
@@ -474,10 +497,14 @@ export async function evaluateCorpusSuite(corpus = TF_RBC_V0_CASES, adapters = n
  * @param {object} [options]
  * @returns {Promise<object>}
  */
-export async function runThreeWayRealComparison(corpus = TF_RBC_V0_CASES, adapters = null, options = {}) {
-  const single = await evaluateCorpusSuite(corpus, adapters, { ...options, mode: "single" });
-  const dual = await evaluateCorpusSuite(corpus, adapters, { ...options, mode: "dual" });
-  const riskRouted = await evaluateCorpusSuite(corpus, adapters, { ...options, mode: "risk-routed" });
+export async function runThreeWayRealComparison(corpus = null, adapters = null, options = {}) {
+  const isOss = options.corpus === "oss" || corpus === TF_OSS_CORPUS_V1_CASES || (Array.isArray(corpus) && corpus[0]?.id?.startsWith("TF-OSS"));
+  const defaultCorpus = isOss ? TF_OSS_CORPUS_V1_CASES : TF_RBC_V0_CASES;
+  const activeCorpus = corpus || defaultCorpus;
+
+  const single = await evaluateCorpusSuite(activeCorpus, adapters, { ...options, mode: "single", corpus: isOss ? "oss" : "v0" });
+  const dual = await evaluateCorpusSuite(activeCorpus, adapters, { ...options, mode: "dual", corpus: isOss ? "oss" : "v0" });
+  const riskRouted = await evaluateCorpusSuite(activeCorpus, adapters, { ...options, mode: "risk-routed", corpus: isOss ? "oss" : "v0" });
 
   const tokensAvailable = Boolean(
     single.metrics.tokens?.available &&
@@ -519,7 +546,9 @@ export async function runThreeWayRealComparison(corpus = TF_RBC_V0_CASES, adapte
   const executionMode = options.executionMode || (options.live ? "live" : "mock");
   const workspaceMode = Boolean(options.virtual) ? "virtual" : "physical";
 
-  const comparisonIdentity = createCorpusIdentity(corpus);
+  const comparisonIdentity = createCorpusIdentity(activeCorpus, {
+    corpusVersion: isOss ? "TF-OSS-v1" : (options.corpusVersion || undefined)
+  });
   const comparisonReceipt = buildAuditReceipt({
     identity: comparisonIdentity,
     providerProvenance: dual.receipt?.providerProvenance || single.receipt?.providerProvenance || {},
@@ -542,7 +571,8 @@ export async function runThreeWayRealComparison(corpus = TF_RBC_V0_CASES, adapte
   });
 
   return {
-    framework: BENCHMARK_FRAMEWORK_NAME,
+    framework: isOss ? OSS_BENCHMARK_FRAMEWORK_NAME : BENCHMARK_FRAMEWORK_NAME,
+    corpus: isOss ? "oss" : "v0",
     mode: "all",
     executionMode,
     workspaceMode,
@@ -571,6 +601,7 @@ export async function runThreeWayRealComparison(corpus = TF_RBC_V0_CASES, adapte
 export function formatBenchmarkSummary(runResult) {
   if (!runResult) return "No benchmark results available.";
 
+  const frameworkTitle = runResult.framework || BENCHMARK_FRAMEWORK_NAME;
   const lines = [];
 
   if (runResult.mode === "all" && runResult.configurations) {
@@ -584,7 +615,7 @@ export function formatBenchmarkSummary(runResult) {
       : "             N/A";
 
     lines.push("==================================================================================");
-    lines.push(` ${BENCHMARK_FRAMEWORK_NAME} Three-Way Comparison Matrix`);
+    lines.push(` ${frameworkTitle} Three-Way Comparison Matrix`);
     lines.push("==================================================================================");
     lines.push(" Configuration    | Recall  | Precision | False Block Rate | P50 (ms) | Tokens | Cost Ratio");
     lines.push("------------------+---------+-----------+------------------+----------+--------+-----------");
@@ -604,7 +635,7 @@ export function formatBenchmarkSummary(runResult) {
 
   const { mode, totalCases, metrics, caseResults } = runResult;
   lines.push("==================================================================================");
-  lines.push(` ${BENCHMARK_FRAMEWORK_NAME}`);
+  lines.push(` ${frameworkTitle}`);
   lines.push(` Mode: ${mode.toUpperCase()} | Execution: ${runResult.executionMode || "mock"} | Workspace: ${runResult.workspaceMode || "virtual"} | Total Cases: ${totalCases}`);
   lines.push("==================================================================================");
   lines.push(" Case ID        | Risk   | Expected | Actual   | Status                 | Latency | Result");
