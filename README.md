@@ -51,6 +51,10 @@ triad-flow review --format=json --report=run.json  # Emit auditable review-run.j
 npm run bench:real                                 # Run 20-case offline benchmark evaluation
 npm run bench:real -- --limit=3                    # Evaluate subset of cases
 npm run bench:real -- --live                       # Run against live local AI CLI (e.g. agy)
+
+# 7. Controlled remediation trial (v2.3 Plan-Only)
+node bin/triad-flow.mjs remediate --case=BENCH-REAL-001          # Run trial fix in ephemeral Patch Jail
+node bin/triad-flow.mjs remediate --case=BENCH-REAL-001 --format=json # Emit canonical receipt JSON
 ```
 
 ---
@@ -125,6 +129,7 @@ npm run bench:real -- --live                       # Run against live local AI C
 | 🩺 **Capability Doctor** | [`src/core/doctor.mjs`](src/core/doctor.mjs) | Probes local AI CLI binaries (agy, claude, codex), evaluates Heterogeneous Quorum readiness, emits text or JSON | Wired to CLI |
 | 📝 **Run Auditing** | [`src/core/review-run-report.mjs`](src/core/review-run-report.mjs) | Canonical `review-run.json` audit schema, 6 unambiguous run statuses, CI exit code preservation | Wired to CLI |
 | 🎯 **Eval & Benchmark** | [`src/core/scoring.mjs`](src/core/scoring.mjs), [`src/core/benchmark-pilot.mjs`](src/core/benchmark-pilot.mjs), [`src/core/real-benchmark-runner.mjs`](src/core/real-benchmark-runner.mjs) | 1-to-1 instance matching, TF-RBC-v0 20-case real benchmark corpus & runner, 3-way Pareto comparison | Active Framework |
+| 🩹 **Controlled Remediation** | [`src/core/controlled-remediation.mjs`](src/core/controlled-remediation.mjs) | 9-State machine, Patch Jail worktree isolation, fail-closed negative gates & Schema 1.0.0 receipts | Wired to CLI (`remediate`) |
 | 🔭 **Telemetry** | [`src/core/telemetry.mjs`](src/core/telemetry.mjs) | Lean in-process span tracer and latency profiler | Demo / Simulation |
 | 🏭 **Autonomous Factory** | [`src/core/factory.mjs`](src/core/factory.mjs) | Autonomous remediation pipeline pre-flight & fail-closed gate | Execution Skeleton (Frozen) |
 

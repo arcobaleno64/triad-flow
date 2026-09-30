@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -268,3 +270,80 @@ test("runCli rejects --report followed by unknown flag with EXIT_CODES.USAGE_ERR
   assert.equal(code, EXIT_CODES.USAGE_ERROR);
   assert.match(stderr.buffer, /Unsupported option\(s\): --bogus/i);
 });
+
+test("runCli 'remediate --case=BENCH-REAL-001' executes plan-only remediation and emits receipt", async () => {
+  const stdout = new MockStream();
+  const stderr = new MockStream();
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "triad-remed-cli-"));
+  const receiptPath = path.join(tmpDir, "rem-receipt.json");
+  try {
+    const code = await runCli(["remediate", "--case=BENCH-REAL-001", `--receipt=${receiptPath}`], { stdout, stderr });
+    assert.equal(code, EXIT_CODES.SUCCESS);
+    assert.match(stdout.buffer, /Triad-Flow Remediation Summary: CLOSED/i);
+    assert.match(stdout.buffer, /Plan-Only Boundary/i);
+    assert.ok(fs.existsSync(receiptPath));
+    const receipt = JSON.parse(fs.readFileSync(receiptPath, "utf8"));
+    assert.equal(receipt.schemaVersion, "1.0.0");
+    assert.equal(receipt.status, "CLOSED");
+    assert.equal(receipt.findingId, "BENCH-REAL-001-FINDING-001");
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("runCli 'remediate --case=BENCH-REAL-001 --format=json' produces valid JSON receipt on stdout", async () => {
+  const stdout = new MockStream();
+  const stderr = new MockStream();
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "triad-remed-cli-"));
+  const receiptPath = path.join(tmpDir, "rem-receipt.json");
+  try {
+    const code = await runCli(["remediate", "--case=BENCH-REAL-001", "--format=json", `--receipt=${receiptPath}`], { stdout, stderr });
+    assert.equal(code, EXIT_CODES.SUCCESS);
+    const receipt = JSON.parse(stdout.buffer);
+    assert.equal(receipt.schemaVersion, "1.0.0");
+    assert.equal(receipt.status, "CLOSED");
+    assert.equal(receipt.actors.synthesizer.providerName, "codex");
+    assert.equal(receipt.actors.verifier.providerName, "claude");
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("runCli 'remediate' without --case fails with EXIT_CODES.USAGE_ERROR", async () => {
+  const stdout = new MockStream();
+  const stderr = new MockStream();
+  const code = await runCli(["remediate"], { stdout, stderr });
+  assert.equal(code, EXIT_CODES.USAGE_ERROR);
+  assert.match(stderr.buffer, /requires '--case <case-id>'/i);
+});
+
+test("runCli 'remediate --case=UNKNOWN_999' fails with EXIT_CODES.USAGE_ERROR", async () => {
+  const stdout = new MockStream();
+  const stderr = new MockStream();
+  const code = await runCli(["remediate", "--case=UNKNOWN_999"], { stdout, stderr });
+  assert.equal(code, EXIT_CODES.USAGE_ERROR);
+  assert.match(stderr.buffer, /Unknown corpus case: 'UNKNOWN_999'/i);
+});
+
+test("runCli 'remediate' fails closed with EXIT_CODES.GATE_BLOCKED when tests fail in strict mode", async () => {
+  const stdout = new MockStream();
+  const stderr = new MockStream();
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "triad-remed-cli-"));
+  const receiptPath = path.join(tmpDir, "rem-receipt.json");
+  try {
+    const code = await runCli(
+      ["remediate", "--case=BENCH-REAL-001", "--strict", `--receipt=${receiptPath}`],
+      { stdout, stderr },
+      {
+        testRunnerFn: () => ({ exitCode: 1, passedCount: 0, failedCount: 1, regressionDetected: true })
+      }
+    );
+    assert.equal(code, EXIT_CODES.GATE_BLOCKED);
+    assert.match(stderr.buffer, /Remediation did not reach CLOSED state/i);
+    const receipt = JSON.parse(fs.readFileSync(receiptPath, "utf8"));
+    assert.equal(receipt.status, "REJECTED_FIX");
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
