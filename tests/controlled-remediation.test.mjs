@@ -2,7 +2,7 @@
  * Test Suite: Controlled Remediation Engine & Patch Jail Sandbox (v2.3)
  *
  * Validates TF-SPEC-REMEDIATION-v1.0.0:
- * - 8-State lifecycle transitions and Monotonic Defense enforcement.
+ * - 9-State lifecycle transitions and Monotonic Defense enforcement.
  * - Patch Jail worktree isolation and target file boundary enforcement.
  * - Goodhart anti-degradation evasion detection.
  * - Anti-thrashing stop rules (max 2 attempts).

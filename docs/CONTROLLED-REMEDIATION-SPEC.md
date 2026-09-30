@@ -116,10 +116,13 @@ The **Patch Jail** provides deterministic isolation so candidate code cannot tam
 2. **RAII Cleanliness**: Worktrees are pruned and removed on exit (`git worktree remove --force`), guaranteeing zero lingering temporary branches or orphaned worktrees.
 3. **HEAD Immutability**: The primary repository's working tree and branch pointers are untouched.
 
-### 3.2 Secret Insulation
-1. **No Production Credentials**: Secrets (`.env`, `token`, private keys, cloud tokens) are explicitly excluded from the Jail worktree.
-2. **Dummy Mock Configs**: Tests execute against mocked credentials or local fixtures only.
-3. **No External Network**: Default network egress is denied during sandbox test execution.
+### 3.2 Repository and Workspace Isolation (Reference Implementation Boundaries)
+1. **Target File Scope & Pattern Exclusion**: Forbidden patterns (`.env*`, `.git*`, package manifests, CI workflows) are blocked from being modified by candidate diffs.
+2. **Mock Test Configurations**: Test runners SHOULD execute against local fixtures and mocked credentials.
+3. **Operational Boundaries**:
+   - Production credential exclusion is a caller/environment responsibility.
+   - Network egress is NOT blocked by the reference Git worktree Patch Jail.
+   - Strong OS-level secret insulation and network egress denial require an external container/hypervisor runtime.
 
 ### 3.3 Restricted Blast Radius (Target File Constraint)
 1. **Target File Scope**: Remediations are strictly permitted to alter **only** the vulnerable source files cited in the finding locator (`finding.file`).

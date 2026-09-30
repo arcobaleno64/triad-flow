@@ -2,8 +2,8 @@
  * Triad-Flow Controlled Remediation Engine & Patch Jail Sandbox (v2.3)
  *
  * Implements TF-SPEC-REMEDIATION-v1.0.0:
- * - 8-State Canonical Lifecycle State Machine with Monotonic Defense invariants.
- * - Ephemeral Git Worktree Patch Jail with strict secret insulation and target file constraints.
+ * - 9-State Canonical Lifecycle State Machine with Monotonic Defense invariants.
+ * - Ephemeral Git Worktree Patch Jail with repository write isolation and target file constraints.
  * - Cryptographic pre/post tree digest lineage and unified diff verification.
  * - Anti-thrashing stop rules (max 2 attempts) and Goodhart anti-degradation protections.
  * - Immutable Remediation Receipt Schema 1.0.0 builder and validator.
