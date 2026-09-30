@@ -39,10 +39,13 @@ export const TF_OSS_CORPUS_V1_CASES = Object.freeze([
     severity: "medium",
     cvss: 5.6,
     taxonomy: {
-      source: "NVD/GHSA",
-      cvss: 5.6,
-      severity: "medium",
-      historicalNote: "Earlier advisories categorized as high; canonical NVD/GHSA base score is 5.6 (Medium)"
+      nvdSeverity: "medium",
+      nvdCvss: 5.6,
+      snykSeverity: "high",
+      snykCvss: 7.3,
+      scannerSeverity: "high",
+      source: "NVD (Medium 5.6) / Snyk & Triad-Flow Gate (High 7.3)",
+      note: "NVD rates CVE-2020-7598 as Medium (5.6); Snyk (SNYK-JS-MINIMIST-559764) and Triad-Flow Gate policy require High severity finding to enforce Gate BLOCK"
     },
     upstream: {
       repository: "https://github.com/minimistjs/minimist",
@@ -63,7 +66,7 @@ export const TF_OSS_CORPUS_V1_CASES = Object.freeze([
         type: "prototype-pollution",
         file: "index.js",
         line: 9,
-        severity: "medium",
+        severity: "high",
         rationale: "Direct traversal of __proto__ key allows remote attackers to pollute Object.prototype"
       }
     ],
@@ -589,10 +592,10 @@ export const TF_OSS_CORPUS_V1_CASES = Object.freeze([
 /**
  * Pinned Expected Cryptographic Digests for TF-OSS-v1 (Exact Pinning Invariant)
  */
-export const TF_OSS_V1_EXPECTED_CORPUS_DIGEST = "sha256:47ed3ce44878b77572005358a16511e3f0900dda11d14443e6a2a84baf501625";
+export const TF_OSS_V1_EXPECTED_CORPUS_DIGEST = "sha256:050ee6363f17c557d4cc85c96254c2f5ccd69758bcd10fffe69fbb3e5ed9f023";
 
 export const TF_OSS_V1_EXPECTED_CASE_DIGESTS = Object.freeze({
-  "TF-OSS-001": "sha256:c520d0f6ad9a3e9553426c4bb20578995d12425df4931c24fe8e99759c903914",
+  "TF-OSS-001": "sha256:c4b88d5ecc0fca2eea567e6a0a4279656bbf3919e2fd16712bff490b01f77571",
   "TF-OSS-002": "sha256:1586be7b815652fd1ab477d623c1f9df5c8ce7b6337a4ef2292bd5b38b7180f7",
   "TF-OSS-003": "sha256:f0d9241de553560e3576c15d77cf1f0a42cbc6df917c579b28ae8219e6535c28",
   "TF-OSS-004": "sha256:5dc8195324d977d05bf20e340f08c41f0ff2a5036ebd03288bd235488365e672",
