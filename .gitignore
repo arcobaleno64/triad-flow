@@ -12,6 +12,7 @@ coverage/
 /audit-receipt*.json
 /artifact-manifest*.json
 /verification-record*.json
+/disagreement-ledger*.json
 /summary.md
 
 # Scratch directory
