@@ -1,0 +1,3 @@
+# Triad-Flow Release Authority Allowed Signers
+# Format: <principal> namespaces="git" <keytype> <key>
+T11306458@live.yuntech.edu.tw namespaces="git" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHL7akYtHsReAW8BuFRAG6JuH9I9opJLNwlVFLoz1OvM
