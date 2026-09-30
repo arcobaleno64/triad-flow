@@ -1,0 +1,92 @@
+{
+  "schemaVersion": "1.0.0",
+  "bundleId": "TF-EVIDENCE-0001",
+  "title": "Triad-Flow Dual-Provider Live Evidence & Independent Verification Pilot Bundle",
+  "triadFlowVersion": "2.2.1",
+  "sealedAt": "2026-09-30T00:56:31.566Z",
+  "commitSha": "a4d0b92f06859e75223225fce72b0c3d0b25d23d",
+  "corpusVersion": "TF-RBC-v0",
+  "corpusDigest": "sha256:cf9c4596cca5910bf1c493590e16a4333782defea779a39488fa95f6b16fb82b",
+  "targetCase": "BENCH-REAL-001",
+  "targetCaseDigest": "sha256:90d4d1148510062f9a4ca8cd9a18ad63b4cd48af38a7c13cc636d0039d2fdadb",
+  "environment": {
+    "platform": "win32",
+    "arch": "x64",
+    "nodeVersion": "v24.14.1"
+  },
+  "providerRuns": {
+    "agy-run-1": {
+      "runId": "run-bench-1790729451810-5f1f8318",
+      "provider": "agy",
+      "providerVersion": null,
+      "commitSha": "a4d0b92f06859e75223225fce72b0c3d0b25d23d",
+      "startedAt": "2026-09-30T00:50:51.810Z",
+      "finishedAt": "2026-09-30T00:50:51.809Z",
+      "latencyMs": 20282,
+      "recall": 1,
+      "precision": 1,
+      "passed": true,
+      "findingsCount": 1,
+      "receiptDigest": "sha256:4656bc8b37cfb3f0a6d5fc8a27171525347e86d61831b04d50b5562165225803",
+      "resultsDigest": "sha256:eeb61e874185a9f29ff6addd43f2c4a4701738999007cc57173044b33134a8c4"
+    },
+    "agy-run-2": {
+      "runId": "run-bench-1790729507453-9e6aae7c",
+      "provider": "agy",
+      "providerVersion": null,
+      "commitSha": "a4d0b92f06859e75223225fce72b0c3d0b25d23d",
+      "startedAt": "2026-09-30T00:51:47.453Z",
+      "finishedAt": "2026-09-30T00:51:47.453Z",
+      "latencyMs": 51568,
+      "recall": 1,
+      "precision": 1,
+      "passed": true,
+      "findingsCount": 1,
+      "receiptDigest": "sha256:f4cf02ddadad6a29e94f948a5638e0f126152b5d40a123fbcce2fdc6cf4bd7e1",
+      "resultsDigest": "sha256:ec3251a754c124ade96cbf27c3ca3048809496eb7ce8804ecf728cffe6032d5d"
+    },
+    "claude-run-1": {
+      "runId": "run-bench-1790729532349-487fe592",
+      "provider": "claude",
+      "providerVersion": null,
+      "commitSha": "a4d0b92f06859e75223225fce72b0c3d0b25d23d",
+      "startedAt": "2026-09-30T00:52:12.349Z",
+      "finishedAt": "2026-09-30T00:52:12.348Z",
+      "latencyMs": 19549,
+      "recall": 1,
+      "precision": 0.25,
+      "passed": true,
+      "findingsCount": 4,
+      "receiptDigest": "sha256:56f98e0df3d05a1c9a18b78e1e70b8f1828393577b5ddf01c1f35bfdc6da7741",
+      "resultsDigest": "sha256:2e8f07f446932a678066ccd9f557096d7f4f69114e648fe8a68b6d9b1d076e5c"
+    },
+    "claude-run-2": {
+      "runId": "run-bench-1790729554835-d392ada6",
+      "provider": "claude",
+      "providerVersion": null,
+      "commitSha": "a4d0b92f06859e75223225fce72b0c3d0b25d23d",
+      "startedAt": "2026-09-30T00:52:34.835Z",
+      "finishedAt": "2026-09-30T00:52:34.834Z",
+      "latencyMs": 18197,
+      "recall": 1,
+      "precision": 0.333,
+      "passed": true,
+      "findingsCount": 3,
+      "receiptDigest": "sha256:998546938963c7c7b36beeabd736b5780338fbe5688ce12c128f756a02f13b88",
+      "resultsDigest": "sha256:b38358a48be1318f57d4e7b36507b144d84f22c7e558d85dea03c481b70e785f"
+    }
+  },
+  "independentVerification": {
+    "schemaVersion": "1.0.0",
+    "verifiedAt": "2026-09-30T00:53:19.142Z",
+    "producerProvider": "agy",
+    "verifierProvider": "claude",
+    "producerFindingsCount": 1,
+    "verdict": "SUPPORTED",
+    "locatorAccurate": true,
+    "typeAccurate": true,
+    "severityAccurate": true,
+    "disagreementsCount": 0,
+    "verifierOmissionsCount": 1
+  }
+}

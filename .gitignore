@@ -6,10 +6,17 @@ coverage/
 .env
 .env.local
 .env.*.local
-benchmark-results.json
-benchmark-*.json
-audit-receipt*.json
-artifact-manifest*.json
-verification-record*.json
-summary.md
+# Root transient benchmark outputs
+/benchmark-results.json
+/benchmark-*.json
+/audit-receipt*.json
+/artifact-manifest*.json
+/verification-record*.json
+/summary.md
+
+# Scratch directory
+scratch/
+
+# Immutable evidence bundles
+!evidence-runs/**
 

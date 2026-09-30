@@ -1,0 +1,21 @@
+{
+  "schemaVersion": "1.0.0",
+  "verifiedAt": "2026-09-30T00:53:19.142Z",
+  "producer": {
+    "providerName": "agy",
+    "runId": "run-bench-1790729451810-5f1f8318",
+    "commitSha": "a4d0b92f06859e75223225fce72b0c3d0b25d23d"
+  },
+  "verifier": {
+    "providerName": "claude",
+    "modelName": "claude-default"
+  },
+  "summary": {
+    "totalEvaluated": 1,
+    "supportedCount": 1,
+    "contestedCount": 0,
+    "insufficientEvidenceCount": 0,
+    "omissionsCount": 1
+  },
+  "ledger": []
+}

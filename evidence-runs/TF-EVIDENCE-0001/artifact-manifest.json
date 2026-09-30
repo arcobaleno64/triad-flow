@@ -1,0 +1,36 @@
+{
+  "artifacts": {
+    "README-EVIDENCE.md": "sha256:2c0535f90d37b50dec536b96a93480fe6a504b3e12b34510662a79af3987dc6f",
+    "corpus-identity.json": "sha256:440a24c3e4e46bfc0cce0943e7a9bcda67fae779d5d352f8f55d723f4c4bd583",
+    "disagreement-ledger.json": "sha256:ffb88da69333ffdf7d5530caf0abbff3007b681fe01a68945dab85f39957c6dd",
+    "evidence-index.json": "sha256:c6a32c2875a521347c2e373cbe365e10da73b41cd2f06008a9c28b6c6333e971",
+    "provider-runs/agy-run-1/artifact-manifest.json": "sha256:40827a1328964ad0ab18bc35a5a126d6a3f4a8bede40918925584a28e482df15",
+    "provider-runs/agy-run-1/audit-receipt.json": "sha256:a64737f830ba144f6161ed5cb10161c11ebd955bfeb47058649ac66bb1dbb182",
+    "provider-runs/agy-run-1/benchmark-results.json": "sha256:eeb61e874185a9f29ff6addd43f2c4a4701738999007cc57173044b33134a8c4",
+    "provider-runs/agy-run-1/summary.md": "sha256:afbd6b226d2c27609008def7793f563020db51249935ce8db075bcceb5297bb0",
+    "provider-runs/agy-run-2/artifact-manifest.json": "sha256:77e0ccfcad677c61c0b4b784827b25e2226177831310255b22ffb018598c4ae7",
+    "provider-runs/agy-run-2/audit-receipt.json": "sha256:dad3a4eb086ed6905cc5d363a3a8ede420c55fa35bd7bf2988ec60318095023d",
+    "provider-runs/agy-run-2/benchmark-results.json": "sha256:ec3251a754c124ade96cbf27c3ca3048809496eb7ce8804ecf728cffe6032d5d",
+    "provider-runs/agy-run-2/summary.md": "sha256:a79fd9935a7e0ec849845307bfbdf1b68a38f02d66f868e540760c7e19d58613",
+    "provider-runs/claude-run-1/artifact-manifest.json": "sha256:a656a0fd759492a57b4f07b69b27ab53c0e63c6d062041020c567ce7f9bcd32e",
+    "provider-runs/claude-run-1/audit-receipt.json": "sha256:897bed2220e08fce548c39004c1ec663a310282104a764e0345d0fecab5795c4",
+    "provider-runs/claude-run-1/benchmark-results.json": "sha256:2e8f07f446932a678066ccd9f557096d7f4f69114e648fe8a68b6d9b1d076e5c",
+    "provider-runs/claude-run-1/summary.md": "sha256:4c1d4c1dca52987dd438df9abca54bf25404eb5110caf13a440f43a2b3b1393a",
+    "provider-runs/claude-run-2/artifact-manifest.json": "sha256:5b6411a0dcb98a33d8f8f64e86d861a3981cb60410a4046cd89b8df34aff8f8e",
+    "provider-runs/claude-run-2/audit-receipt.json": "sha256:161e4d962f066e8d397ce9e00bc1d0c53b39a604d68d90ec2f95885e5f34769c",
+    "provider-runs/claude-run-2/benchmark-results.json": "sha256:b38358a48be1318f57d4e7b36507b144d84f22c7e558d85dea03c481b70e785f",
+    "provider-runs/claude-run-2/summary.md": "sha256:136383ff978e3a568b189f73f6cc4c346f98b7e6ba6f0481bc33f83b734a4780",
+    "release-identity.json": "sha256:0ccb0cb402638a4132f4f75054b717a5d4036b38c5ea208c1181c4ae6be34a6a",
+    "verification/verification-record.json": "sha256:64620cec835c8abfd8cdf30949ddc83318a070011b45b81fed2f510226630df6"
+  },
+  "metadata": {
+    "commitSha": "a4d0b92f06859e75223225fce72b0c3d0b25d23d",
+    "corpusDigest": "sha256:cf9c4596cca5910bf1c493590e16a4333782defea779a39488fa95f6b16fb82b",
+    "receiptDigest": null,
+    "resultsDigest": null,
+    "runId": "bundle-TF-EVIDENCE-0001",
+    "bundleId": "TF-EVIDENCE-0001",
+    "sealedAt": "2026-09-30T00:56:31.566Z"
+  },
+  "schemaVersion": "1.0.0"
+}

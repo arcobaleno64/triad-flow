@@ -19,6 +19,7 @@ import { verifyManifestBundle } from "../src/core/manifest-bundle.mjs";
 const optionsConfig = {
   dir: { type: "string" },
   manifest: { type: "string" },
+  bundle: { type: "boolean", default: false },
   help: { type: "boolean", short: "h", default: false }
 };
 
@@ -45,6 +46,7 @@ Arguments:
 Options:
   --dir=<dir>        Target directory containing artifacts
   --manifest=<path>  Path to artifact-manifest.json
+  --bundle           Verify as a release evidence bundle (skips single-run root checks)
   -h, --help         Show help and usage information
 \n`);
   process.exit(0);
@@ -56,7 +58,8 @@ const targetDir = values.dir || null;
 try {
   const verification = verifyManifestBundle({
     manifestPath,
-    targetDir
+    targetDir,
+    bundle: Boolean(values.bundle)
   });
 
   if (!verification.valid) {

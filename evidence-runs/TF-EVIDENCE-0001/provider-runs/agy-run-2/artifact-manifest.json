@@ -1,0 +1,15 @@
+{
+  "artifacts": {
+    "audit-receipt.json": "sha256:dad3a4eb086ed6905cc5d363a3a8ede420c55fa35bd7bf2988ec60318095023d",
+    "benchmark-results.json": "sha256:ec3251a754c124ade96cbf27c3ca3048809496eb7ce8804ecf728cffe6032d5d",
+    "summary.md": "sha256:a79fd9935a7e0ec849845307bfbdf1b68a38f02d66f868e540760c7e19d58613"
+  },
+  "metadata": {
+    "commitSha": "a4d0b92f06859e75223225fce72b0c3d0b25d23d",
+    "corpusDigest": "sha256:cf9c4596cca5910bf1c493590e16a4333782defea779a39488fa95f6b16fb82b",
+    "receiptDigest": "sha256:f4cf02ddadad6a29e94f948a5638e0f126152b5d40a123fbcce2fdc6cf4bd7e1",
+    "resultsDigest": "sha256:ec3251a754c124ade96cbf27c3ca3048809496eb7ce8804ecf728cffe6032d5d",
+    "runId": "run-bench-1790729507453-9e6aae7c"
+  },
+  "schemaVersion": "1.0.0"
+}

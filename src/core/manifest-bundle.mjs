@@ -321,7 +321,9 @@ export function generateManifestBundle({
  */
 export function verifyManifestBundle({
   manifestPath,
-  targetDir
+  targetDir,
+  bundle = false,
+  requireMandatoryArtifacts
 } = {}) {
   let resolvedManifestPath;
   let resolvedBaseDir;
@@ -394,9 +396,21 @@ export function verifyManifestBundle({
   const verifiedArtifacts = [];
 
   // 1. Mandatory artifacts check
-  for (const mandatory of MANDATORY_ARTIFACT_FILES) {
-    if (!manifest.artifacts[mandatory]) {
-      errors.push(`Manifest is missing mandatory artifact entry: '${mandatory}'`);
+  // Standard benchmark run manifests require MANDATORY_ARTIFACT_FILES.
+  // Evidence release bundles (identified by bundleId, bundleType, or explicit bundle flag)
+  // verify all declared artifacts without requiring single-run root files.
+  const isEvidenceBundle = Boolean(
+    bundle ||
+    manifest?.metadata?.bundleId ||
+    manifest?.metadata?.bundleType === "evidence-bundle"
+  );
+  const shouldCheckMandatory = (requireMandatoryArtifacts !== false) && !isEvidenceBundle;
+
+  if (shouldCheckMandatory) {
+    for (const mandatory of MANDATORY_ARTIFACT_FILES) {
+      if (!manifest.artifacts[mandatory]) {
+        errors.push(`Manifest is missing mandatory artifact entry: '${mandatory}'`);
+      }
     }
   }
 

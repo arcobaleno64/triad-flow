@@ -1,0 +1,178 @@
+{
+  "framework": "Triad-Flow Real Benchmark Corpus v0 (TF-RBC-v0)",
+  "mode": "single",
+  "executionMode": "live",
+  "workspaceMode": "physical",
+  "timestamp": "2026-09-30T00:51:47.454Z",
+  "totalCases": 1,
+  "caseResults": [
+    {
+      "caseId": "BENCH-REAL-001",
+      "title": "SQL Injection in User Query Handler",
+      "category": "vulnerable",
+      "riskTier": 1,
+      "expectedGateDecision": "block",
+      "actualGateDecision": "block",
+      "gateReason": "Found 1 critical/high severity findings. Merge blocked.",
+      "status": "reviewed-with-findings",
+      "latencyMs": 51568,
+      "usage": {
+        "available": false,
+        "promptTokens": null,
+        "completionTokens": null,
+        "totalTokens": null
+      },
+      "adapterUsage": {
+        "macro": {
+          "promptTokens": null,
+          "completionTokens": null,
+          "totalTokens": null
+        },
+        "micro": null
+      },
+      "actualFindings": [
+        {
+          "title": "SQL Injection in findUserById",
+          "severity": "critical",
+          "file": "src/db/user-repo.js",
+          "line_start": 8,
+          "line_end": 9,
+          "ruleId": "security/sql-injection",
+          "cwe": "CWE-89",
+          "type": "vulnerability",
+          "recommendation": "Use parameterized queries (e.g. `this.db.query('SELECT id, username, email FROM users WHERE id = ?', [id])`) instead of concatenating unvalidated input directly into the SQL statement.",
+          "sources": [
+            "agy"
+          ],
+          "corroborations": 1
+        }
+      ],
+      "goldenFindings": [
+        {
+          "cwe": "CWE-89",
+          "type": "sql-injection",
+          "file": "src/db/user-repo.js",
+          "line": 8,
+          "severity": "critical",
+          "rationale": "Direct SQL query concatenation with user-supplied parameter allows arbitrary SQL injection"
+        }
+      ],
+      "evalResult": {
+        "applicable": true,
+        "totalGoldens": 1,
+        "caughtGoldens": 1,
+        "recallRate": "100.0%",
+        "passed": true,
+        "claimedFindingsCount": 1
+      },
+      "isFalseBlock": false,
+      "isRecallCaught": true,
+      "detectionPass": true,
+      "gatePolicyPass": true,
+      "executionComplete": true,
+      "passed": true
+    }
+  ],
+  "metrics": {
+    "totalCases": 1,
+    "vulnerableCasesCount": 1,
+    "cleanCasesCount": 0,
+    "totalGoldens": 1,
+    "caughtGoldens": 1,
+    "totalReportedFindings": 1,
+    "truePositives": 1,
+    "falsePositives": 0,
+    "falseBlocks": 0,
+    "recall": 1,
+    "precision": 1,
+    "falseBlockRate": null,
+    "latency": {
+      "p50Ms": 51568,
+      "p95Ms": 51568,
+      "avgMs": 51568,
+      "minMs": 51568,
+      "maxMs": 51568
+    },
+    "tokens": {
+      "available": false,
+      "totalPromptTokens": null,
+      "totalCompletionTokens": null,
+      "totalTokens": null,
+      "avgTokensPerCase": null
+    },
+    "costRatio": null
+  },
+  "receipt": {
+    "identity": {
+      "caseDigests": {
+        "BENCH-REAL-001": "sha256:90d4d1148510062f9a4ca8cd9a18ad63b4cd48af38a7c13cc636d0039d2fdadb",
+        "BENCH-REAL-002": "sha256:fe5f89bf728154f1660acddc6c3f4e8ecad0c77e05aec0376a26953c91a098c3",
+        "BENCH-REAL-003": "sha256:6ae76dacb8c0d4e1ba4f4ecac9d552add61ca940dcbf6929d58cc2fbb9cbc14e",
+        "BENCH-REAL-004": "sha256:d1176acdb2ae2ba082f0aa5cff3d7dded1edc67328c3ab0edb3bcaf9b30a8af7",
+        "BENCH-REAL-005": "sha256:4d7d3d5ff6ca49ec2d0ec0bab45ceadb3253bec1c14108a534ece127c4ad1a1d",
+        "BENCH-REAL-006": "sha256:454fc8b9f465f7baf00869be39d20b0c6e373553c81c3e36deba8b954280eab3",
+        "BENCH-REAL-007": "sha256:a8965e7e20ca0a300d0e4d022ab6cb3bc19d829e3346a6c110cd316ca3c817dd",
+        "BENCH-REAL-008": "sha256:96214ba28fc34889694cb3a26e023e1150990f2ca96dbde78450df75c20f8ff7",
+        "BENCH-REAL-009": "sha256:771844513495a4559102b4abc9d5fcb8d8e0509cb0df1e8f55f4a6b30d4f26c2",
+        "BENCH-REAL-010": "sha256:e28805d56757f58ea0a052431feb82d41da2e86ab8ba6429ba48523d0d6216ae",
+        "BENCH-REAL-011": "sha256:6accbcb9cac22984a1927636328370cc31215ca8a2f00f01de0776fa225090c2",
+        "BENCH-REAL-012": "sha256:b9dc0905161f57acc846a5b42da1b3c5341e0aa50db1c5d532f97533849f0ab3",
+        "BENCH-REAL-013": "sha256:059febcec9d68e077ea687aa7aef103d8a9f40a25dd66507b2be3efa311e8993",
+        "BENCH-REAL-014": "sha256:bcad31a43630f3cf809fa7a5e97d7724d711ebf8cd4632f72100715c07701721",
+        "BENCH-REAL-015": "sha256:a012d43d711f22f5a3fdad1fecdc1080717c4c32a4cef452738401e08ca8decb",
+        "BENCH-REAL-016": "sha256:07beb053872dc73318de78d772f34a9b42ab2735aaaefb7b31b376d3efd046e5",
+        "BENCH-REAL-017": "sha256:80008784bdcb170cfbbd9d3eae30cbdffbff66d9a1eba74f1a38c459e7039b73",
+        "BENCH-REAL-018": "sha256:a6d1d93f8fa96f39a2670ec3f450ff76bba71c92fb29d33c47ee1f059da8cf97",
+        "BENCH-REAL-019": "sha256:1c2daf54669a494c1cf3ec153ffd584be4df17b57a8e8ca51096d0c039193601",
+        "BENCH-REAL-020": "sha256:e5e33240b815da1c0198341180092047a0e00b01e98cfbb2935ffcfb67bb4960"
+      },
+      "corpusDigest": "sha256:cf9c4596cca5910bf1c493590e16a4333782defea779a39488fa95f6b16fb82b",
+      "corpusVersion": "TF-RBC-v0"
+    },
+    "providerProvenance": {
+      "macro": {
+        "actualModel": {
+          "source": "unavailable",
+          "value": null
+        },
+        "completionTokens": null,
+        "modelName": "cli-default",
+        "promptTokens": null,
+        "providerName": "agy",
+        "totalTokens": null,
+        "usageSource": "unavailable",
+        "version": null
+      }
+    },
+    "results": {
+      "cleanCasesCount": 0,
+      "falseBlockRate": null,
+      "latency": {
+        "avgMs": 51568,
+        "p50Ms": 51568,
+        "p95Ms": 51568
+      },
+      "mode": "single",
+      "precision": 1,
+      "recall": 1,
+      "totalCases": 1,
+      "vulnerableCasesCount": 1
+    },
+    "run": {
+      "environment": {
+        "arch": "x64",
+        "nodeVersion": "v24.14.1",
+        "platform": "win32"
+      },
+      "finishedAt": "2026-09-30T00:51:47.453Z",
+      "runId": "run-bench-1790729507453-9e6aae7c",
+      "startedAt": "2026-09-30T00:51:47.453Z"
+    },
+    "schemaVersion": "1.0.0",
+    "systemProvenance": {
+      "branch": "main",
+      "commitSha": "a4d0b92f06859e75223225fce72b0c3d0b25d23d",
+      "triadFlowVersion": "2.2.1"
+    }
+  }
+}

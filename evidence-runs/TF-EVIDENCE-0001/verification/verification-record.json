@@ -1,0 +1,73 @@
+{
+  "schemaVersion": "1.0.0",
+  "verifiedAt": "2026-09-30T00:53:19.142Z",
+  "changeSetDigest": "sha256:b9b1b4e5515aded96466946c6214bcf9a0b1d401feedbb24db8d54fdabc24be4",
+  "producer": {
+    "providerName": "agy",
+    "findingsCount": 1,
+    "findings": [
+      {
+        "title": "SQL Injection via String Concatenation",
+        "severity": "critical",
+        "file": "src/db/user-repo.js",
+        "line_start": 8,
+        "line_end": 9,
+        "ruleId": "security/detect-sql-injection",
+        "cwe": "CWE-89",
+        "type": "security",
+        "recommendation": "Use parameterized queries with placeholders instead of string concatenation (e.g., query('SELECT id, username, email FROM users WHERE id = ?', [id])).",
+        "sources": [
+          "agy"
+        ],
+        "corroborations": 1,
+        "id": "agy-finding-001"
+      }
+    ]
+  },
+  "verifier": {
+    "providerName": "claude",
+    "modelName": "claude-default",
+    "actualModel": {
+      "source": "unavailable",
+      "value": null
+    },
+    "usage": {
+      "completionTokens": null,
+      "promptTokens": null,
+      "totalTokens": null,
+      "usageSource": "unavailable"
+    }
+  },
+  "evaluations": [
+    {
+      "findingId": "agy-finding-001",
+      "verdict": "SUPPORTED",
+      "locatorAccurate": true,
+      "typeAccurate": true,
+      "severityAccurate": true,
+      "reasoning": "diff 將 findUserById 的參數化查詢（原第 8 行使用 '?' 佔位符，第 9 行以 this.db.query(query, [id]) 綁定參數）改為字串串接：新第 8 行是 \"SELECT id, username, email FROM users WHERE id = '\" + id + \"'\"，新第 9 行是 this.db.query(query)，已不再傳入參數陣列。id 未經任何跳脫或型別檢查就直接嵌入 SQL 字面值，例如 id = \"' OR '1'='1\" 就會繞過 WHERE 條件，列出所有使用者。檔案位置 src/db/user-repo.js 與第 8–9 行都和 post-image 相符。CWE-89 與 security 分類正確。嚴重度判為 critical 有根據：這是從安全寫法直接退化成可注入的寫法，而且這是資料存取層，查詢結果包含 email。唯一的前提是 id 可能來自外部輸入，但 diff 看不到呼叫端；以 repository 方法的典型用法來看，這個前提成立，所以不影響判定。建議的修正（恢復 '?' 佔位符並傳入 [id]）等於直接還原前一版，正確且足夠。",
+      "dissent": null
+    }
+  ],
+  "verifierOmissions": [
+    {
+      "title": "Misleading code comment removed security intent marker",
+      "severity": "info",
+      "file": "src/db/user-repo.js",
+      "line_start": 7,
+      "line_end": 7,
+      "type": "maintainability",
+      "recommendation": "修正 SQL 注入時，一併把註解恢復成 '// Parameterized query execution'。這個註解標明此處必須使用參數化查詢，能在日後審查時提醒維護者。",
+      "id": "omission-1"
+    }
+  ],
+  "disagreementLedger": [],
+  "summary": {
+    "totalEvaluated": 1,
+    "supportedCount": 1,
+    "contestedCount": 0,
+    "insufficientEvidenceCount": 0,
+    "omissionsCount": 1
+  },
+  "ok": true
+}

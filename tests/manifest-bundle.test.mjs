@@ -636,3 +636,44 @@ test("Exports: manifest-bundle.mjs exports buildArtifactManifest and validateArt
   assert.equal(typeof validateArtifactManifest, "function");
 });
 
+test("Evidence Bundle: verifyManifestBundle verifies multi-file release bundles when bundleId is set", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "triad-test-evidence-bundle-"));
+  try {
+    const file1 = path.join(tmpDir, "corpus-identity.json");
+    const file2 = path.join(tmpDir, "release-identity.json");
+    fs.writeFileSync(file1, "{\"corpus\":\"test\"}\n", "utf8");
+    fs.writeFileSync(file2, "{\"release\":\"test\"}\n", "utf8");
+
+    const digest1 = computeDigest(fs.readFileSync(file1));
+    const digest2 = computeDigest(fs.readFileSync(file2));
+
+    const manifest = buildArtifactManifest({
+      artifacts: {
+        "corpus-identity.json": digest1,
+        "release-identity.json": digest2
+      },
+      metadata: {
+        bundleId: "TF-EVIDENCE-TEST",
+        commitSha: "abcdef1234567890abcdef1234567890abcdef12"
+      }
+    });
+
+    const manifestPath = path.join(tmpDir, "artifact-manifest.json");
+    fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + "\n", "utf8");
+
+    // 1. Programmatic verification
+    const res = verifyManifestBundle({ targetDir: tmpDir });
+    assert.equal(res.valid, true);
+    assert.equal(res.verifiedArtifacts.length, 2);
+
+    // 2. CLI script verification with --bundle flag
+    const scriptPath = path.resolve("scripts/verify-artifact-manifest.mjs");
+    const { stdout } = await execFileAsync(process.execPath, [scriptPath, "--bundle", tmpDir]);
+    assert.ok(stdout.includes("Manifest Bundle Verification SUCCEEDED"));
+    assert.ok(stdout.includes("corpus-identity.json"));
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+
