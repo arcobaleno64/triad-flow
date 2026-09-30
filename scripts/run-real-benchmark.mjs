@@ -13,6 +13,10 @@
  *   --case=<id>                           Evaluate specific corpus case (e.g. BENCH-REAL-001)
  *   --limit=<n>                           Limit number of cases evaluated
  *   --report=<path>                       Path to write JSON benchmark report (default: benchmark-results.json)
+ *   --receipt[=<path>]                    Path to write JSON audit receipt (default: audit-receipt.json)
+ *   --manifest[=<path>]                   Generate baseline artifact manifest bundle (default: artifact-manifest.json)
+ *   --verify-with=<cmd>                   Independent verifier command (e.g. claude or agy)
+ *   --verification-report=<path>          Path to write verification record JSON (default: verification-record.json)
  *   --strict                              Enable strict gate mode
  *   -h, --help                            Show help and usage information
  */
@@ -26,7 +30,15 @@ import {
   formatBenchmarkSummary
 } from "../src/core/real-benchmark-runner.mjs";
 import { generateManifestBundle } from "../src/core/manifest-bundle.mjs";
-import { createMockCorpusAdapters } from "../tests/fixtures/real-corpus-fixtures.mjs";
+import { createMockCorpusAdapters, getCorpusCaseById, buildSynthesizedChangeSet } from "../tests/fixtures/real-corpus-fixtures.mjs";
+import {
+  conductIndependentVerification,
+  validateVerifierCommand,
+  createMockVerifierAdapter,
+  buildDisagreementLedgerDocument,
+  CliVerifierAdapter,
+  VERIFICATION_SCHEMA_VERSION
+} from "../src/core/independent-verifier.mjs";
 
 const optionsConfig = {
   mode: { type: "string", default: "single" },
@@ -40,6 +52,8 @@ const optionsConfig = {
   report: { type: "string", default: "benchmark-results.json" },
   receipt: { type: "string" },
   manifest: { type: "string" },
+  "verify-with": { type: "string" },
+  "verification-report": { type: "string" },
   strict: { type: "boolean", default: false },
   help: { type: "boolean", short: "h", default: false }
 };
@@ -63,6 +77,20 @@ for (let i = 0; i < rawArgs.length; i++) {
       i++;
     } else {
       normalizedArgs.push("--manifest=artifact-manifest.json");
+    }
+  } else if (arg === "--verify-with") {
+    const next = rawArgs[i + 1];
+    if (next && !next.startsWith("-")) {
+      normalizedArgs.push(`--verify-with=${next}`);
+      i++;
+    }
+  } else if (arg === "--verification-report") {
+    const next = rawArgs[i + 1];
+    if (next && !next.startsWith("-")) {
+      normalizedArgs.push(`--verification-report=${next}`);
+      i++;
+    } else {
+      normalizedArgs.push("--verification-report=verification-record.json");
     }
   } else {
     normalizedArgs.push(arg);
@@ -94,6 +122,8 @@ Options:
   --report=<path>                       Path to write JSON benchmark report (default: benchmark-results.json)
   --receipt[=<path>]                    Path to write JSON audit receipt (default: audit-receipt.json)
   --manifest[=<path>]                   Generate baseline artifact manifest bundle (default: artifact-manifest.json)
+  --verify-with=<cmd>                   Independent verifier command (e.g. claude or agy)
+  --verification-report=<path>          Path to write verification record JSON (default: verification-record.json)
   --strict                              Enable strict gate mode (exits non-zero on case failure)
   -h, --help                            Show help and usage information
   `);
@@ -125,6 +155,16 @@ if (values.timeout !== undefined) {
 }
 
 async function main() {
+  let verifierProfile = null;
+  if (values["verify-with"]) {
+    try {
+      verifierProfile = validateVerifierCommand(values["verify-with"]);
+    } catch (err) {
+      console.error(`Error: ${err.message}`);
+      process.exit(1);
+    }
+  }
+
   const isLive = Boolean(values.live) || process.env.TRIAD_LIVE_BENCHMARK === "1";
   if (isLive && values.virtual) {
     console.error("Error: Live evaluation requires physical repository workspace (--live and --virtual cannot be combined).");
@@ -136,6 +176,7 @@ async function main() {
   const isVirtual = values.virtual !== undefined ? Boolean(values.virtual) : !isLive;
   const timeoutMs = parsedTimeout || (isLive ? 90000 : 30000);
   const reportPath = values.report ? path.resolve(values.report) : null;
+  const additionalArtifacts = {};
 
   console.log(`[TF-RBC-v0] Starting benchmark run... (mode: ${mode}, live: ${isLive}, virtual: ${isVirtual})`);
 
@@ -181,12 +222,104 @@ async function main() {
     ? (typeof values.receipt === "string" && values.receipt.trim().length > 0
         ? path.resolve(values.receipt.trim())
         : (reportPath ? path.join(path.dirname(reportPath), "audit-receipt.json") : path.resolve("audit-receipt.json")))
-    : (reportPath ? path.join(path.dirname(reportPath), "audit-receipt.json") : null);
+  : (reportPath ? path.join(path.dirname(reportPath), "audit-receipt.json") : null);
 
   if (receiptTarget && runResult.receipt) {
     fs.mkdirSync(path.dirname(receiptTarget), { recursive: true });
     fs.writeFileSync(receiptTarget, JSON.stringify(runResult.receipt, null, 2) + "\n", "utf8");
     console.log(`Benchmark audit receipt saved to: ${receiptTarget}`);
+  }
+
+  // Independent verification when --verify-with is specified
+  if (verifierProfile) {
+    console.log(`\n[TF-RBC-v0] Initiating Independent Verification with '${verifierProfile.id}'...`);
+    let verifierAdapter;
+    if (isLive) {
+      console.log(`[TF-RBC-v0] Initializing live independent verifier: '${verifierProfile.id}'`);
+      verifierAdapter = new CliVerifierAdapter({
+        command: verifierProfile.command,
+        providerName: verifierProfile.id,
+        modelName: "cli-default"
+      });
+    } else {
+      console.log(`[TF-RBC-v0] Using high-fidelity offline mock verifier for '${verifierProfile.id}'.`);
+      verifierAdapter = createMockVerifierAdapter(verifierProfile.id);
+    }
+
+    const verificationTarget = values["verification-report"]
+      ? path.resolve(values["verification-report"].trim())
+      : (reportPath ? path.join(path.dirname(reportPath), "verification-record.json") : path.resolve("verification-record.json"));
+    const disagreementLedgerTarget = path.join(path.dirname(verificationTarget), "disagreement-ledger.json");
+
+    let verificationRecord = null;
+    const caseResults = runResult.caseResults || [];
+
+    if (caseResults.length === 1) {
+      const c = caseResults[0];
+      const cs = c.changeSet || buildSynthesizedChangeSet(getCorpusCaseById(c.caseId));
+      verificationRecord = await conductIndependentVerification(
+        cs,
+        c.actualFindings || [],
+        verifierAdapter,
+        {
+          producerName: macroCmd,
+          verifierName: verifierProfile.id,
+          changeSetDigest: cs?.contentDigest
+        }
+      );
+    } else if (caseResults.length > 1) {
+      const caseRecords = {};
+      for (const c of caseResults) {
+        const cs = c.changeSet || buildSynthesizedChangeSet(getCorpusCaseById(c.caseId));
+        const rec = await conductIndependentVerification(
+          cs,
+          c.actualFindings || [],
+          verifierAdapter,
+          {
+            producerName: macroCmd,
+            verifierName: verifierProfile.id,
+            changeSetDigest: cs?.contentDigest
+          }
+        );
+        caseRecords[c.caseId] = rec;
+      }
+      verificationRecord = {
+        schemaVersion: VERIFICATION_SCHEMA_VERSION,
+        verifiedAt: new Date().toISOString(),
+        verifier: {
+          providerName: verifierProfile.id,
+          modelName: "cli-default"
+        },
+        cases: caseRecords,
+        summary: {
+          totalCases: caseResults.length,
+          totalEvaluated: Object.values(caseRecords).reduce((s, r) => s + (r.summary?.totalEvaluated || 0), 0),
+          supportedCount: Object.values(caseRecords).reduce((s, r) => s + (r.summary?.supportedCount || 0), 0),
+          partiallySupportedCount: Object.values(caseRecords).reduce((s, r) => s + (r.summary?.partiallySupportedCount || 0), 0),
+          contestedCount: Object.values(caseRecords).reduce((s, r) => s + (r.summary?.contestedCount || 0), 0),
+          insufficientEvidenceCount: Object.values(caseRecords).reduce((s, r) => s + (r.summary?.insufficientEvidenceCount || 0), 0),
+          omissionsCount: Object.values(caseRecords).reduce((s, r) => s + (r.summary?.omissionsCount || 0), 0)
+        }
+      };
+    }
+
+    if (verificationRecord) {
+      fs.mkdirSync(path.dirname(verificationTarget), { recursive: true });
+      fs.writeFileSync(verificationTarget, JSON.stringify(verificationRecord, null, 2) + "\n", "utf8");
+      console.log(`Independent verification record saved to: ${verificationTarget}`);
+      additionalArtifacts[path.basename(verificationTarget)] = verificationTarget;
+
+      if (verificationRecord.disagreementLedger) {
+        const ledgerDoc = buildDisagreementLedgerDocument({
+          verificationRecord,
+          producerRunId: runResult.runId || runResult.receipt?.run?.runId || "unknown",
+          commitSha: runResult.receipt?.systemProvenance?.commitSha || "unknown"
+        });
+        fs.writeFileSync(disagreementLedgerTarget, JSON.stringify(ledgerDoc, null, 2) + "\n", "utf8");
+        console.log(`Disagreement ledger saved to: ${disagreementLedgerTarget}`);
+        additionalArtifacts[path.basename(disagreementLedgerTarget)] = disagreementLedgerTarget;
+      }
+    }
   }
 
   // Generate baseline artifact manifest bundle when --manifest is specified
@@ -202,7 +335,8 @@ async function main() {
       receiptPath: receiptTarget || path.join(path.dirname(manifestTarget), "audit-receipt.json"),
       manifestPath: manifestTarget,
       resultsData: runResult,
-      receiptData: runResult.receipt
+      receiptData: runResult.receipt,
+      additionalArtifacts: Object.keys(additionalArtifacts).length > 0 ? additionalArtifacts : null
     });
     console.log(`Baseline artifact manifest bundle generated: ${bundle.manifestPath}`);
   }

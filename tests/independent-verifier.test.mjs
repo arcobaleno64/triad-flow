@@ -21,6 +21,7 @@ import {
   computeVerificationRecordDigest,
   VERIFICATION_SCHEMA_VERSION,
   VERIFICATION_VERDICTS,
+  DISAGREEMENT_CLASSIFICATIONS,
   CliVerifierAdapter,
   deepFreeze,
   truncateUtf8Safe
@@ -1040,4 +1041,48 @@ test("validateVerificationRecord: detects tampering when disagreementLedger or s
   assert.equal(val4.valid, false);
   assert.match(val4.errors[0], /valid parseable ISO timestamp/);
 });
+
+test("Disagreement Ledger: categorizes findings into canonical classifications", async () => {
+  const changeSet = makeChangeSet();
+  const producerFindings = [
+    { id: "f-1", title: "Defect 1", severity: "critical", file: "src/a.js" },
+    { id: "f-2", title: "Defect 2", severity: "high", file: "src/b.js" },
+    { id: "f-3", title: "Defect 3", severity: "medium", file: "src/c.js" },
+    { id: "f-4", title: "Defect 4", severity: "low", file: "src/d.js" }
+  ];
+
+  const mockVerifier = {
+    providerName: "claude",
+    executeVerification: async () => ({
+      evaluations: [
+        // 1. Supported
+        { findingId: "f-1", verdict: "SUPPORTED", locatorAccurate: true, typeAccurate: true, severityAccurate: true, reasoning: "Accurate" },
+        // 2. Partially Supported (severity inaccurate)
+        { findingId: "f-2", verdict: "SUPPORTED", locatorAccurate: true, typeAccurate: true, severityAccurate: false, reasoning: "Should be medium" },
+        // 3. Contested
+        { findingId: "f-3", verdict: "CONTESTED", locatorAccurate: false, typeAccurate: false, severityAccurate: false, reasoning: "False alarm", dissent: "Not a bug" }
+        // 4. f-4 omitted -> INSUFFICIENT_EVIDENCE
+      ],
+      verifierOmissions: [
+        { title: "Missed secret", severity: "critical", file: "src/secret.js", line_start: 1, line_end: 1, recommendation: "Remove secret" }
+      ]
+    })
+  };
+
+  const record = await conductIndependentVerification(changeSet, producerFindings, mockVerifier);
+  assert.equal(record.evaluations[0].classification, DISAGREEMENT_CLASSIFICATIONS.SUPPORTED);
+  assert.equal(record.evaluations[1].classification, DISAGREEMENT_CLASSIFICATIONS.PARTIALLY_SUPPORTED);
+  assert.equal(record.evaluations[2].classification, DISAGREEMENT_CLASSIFICATIONS.CONTRADICTED);
+  assert.equal(record.evaluations[3].classification, DISAGREEMENT_CLASSIFICATIONS.UNVERIFIABLE);
+
+  assert.equal(record.disagreementLedger.length, 3);
+  assert.equal(record.disagreementLedger[0].classification, DISAGREEMENT_CLASSIFICATIONS.PARTIALLY_SUPPORTED);
+  assert.equal(record.disagreementLedger[1].classification, DISAGREEMENT_CLASSIFICATIONS.CONTRADICTED);
+  assert.equal(record.disagreementLedger[2].classification, DISAGREEMENT_CLASSIFICATIONS.UNVERIFIABLE);
+
+  assert.equal(record.verifierOmissions.length, 1);
+  assert.equal(record.verifierOmissions[0].classification, DISAGREEMENT_CLASSIFICATIONS.MISSED_BY_PRODUCER);
+  assert.equal(record.summary.partiallySupportedCount, 1);
+});
+
 

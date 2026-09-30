@@ -132,6 +132,12 @@ export function formatSummaryMarkdown({ results = {}, receipt = null, metadata =
   if (artifacts["audit-receipt.json"]) {
     lines.push(`- \`audit-receipt.json\`: \`${artifacts["audit-receipt.json"]}\` (canonical: \`${receiptDigest}\`)`);
   }
+  for (const [name, digest] of Object.entries(artifacts)) {
+    if (name === "benchmark-results.json" || name === "audit-receipt.json" || name === "summary.md") {
+      continue;
+    }
+    lines.push(`- \`${name}\`: \`${digest}\``);
+  }
   lines.push("");
   lines.push("To verify the integrity of this bundle:");
   lines.push("```bash");
@@ -165,6 +171,7 @@ export function generateManifestBundle({
   resultsData = null,
   receiptData = null,
   metadata: customMetadata = null,
+  additionalArtifacts = null,
   writeFiles = true
 } = {}) {
   const dir = targetDir
@@ -268,6 +275,25 @@ export function generateManifestBundle({
     [path.basename(resolvedReceiptPath)]: receiptFileDigest,
     [path.basename(resolvedResultsPath)]: resultsFileDigest
   };
+
+  if (additionalArtifacts && typeof additionalArtifacts === "object") {
+    for (const [name, val] of Object.entries(additionalArtifacts)) {
+      if (typeof val === "string") {
+        if (val.startsWith("sha256:")) {
+          artifacts[name] = val;
+        } else {
+          const absPath = path.isAbsolute(val) ? val : path.join(dir, val);
+          if (fs.existsSync(absPath)) {
+            artifacts[name] = computeDigest(fs.readFileSync(absPath));
+          } else {
+            artifacts[name] = val;
+          }
+        }
+      } else if (Buffer.isBuffer(val)) {
+        artifacts[name] = computeDigest(val);
+      }
+    }
+  }
 
   const summaryContent = formatSummaryMarkdown({
     artifacts,

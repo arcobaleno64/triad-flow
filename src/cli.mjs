@@ -17,7 +17,15 @@ import { buildReviewRunReport, REVIEW_RUN_STATUS } from "./core/review-run-repor
 import { collectDoctorReport, formatDoctorReport } from "./core/doctor.mjs";
 import { evaluateCorpusSuite, formatBenchmarkSummary } from "./core/real-benchmark-runner.mjs";
 import { generateManifestBundle } from "./core/manifest-bundle.mjs";
-import { createMockCorpusAdapters } from "../tests/fixtures/real-corpus-fixtures.mjs";
+import { createMockCorpusAdapters, getCorpusCaseById, buildSynthesizedChangeSet } from "../tests/fixtures/real-corpus-fixtures.mjs";
+import {
+  conductIndependentVerification,
+  validateVerifierCommand,
+  createMockVerifierAdapter,
+  buildDisagreementLedgerDocument,
+  CliVerifierAdapter,
+  VERIFICATION_SCHEMA_VERSION
+} from "./core/independent-verifier.mjs";
 
 export const EXIT_CODES = {
   SUCCESS: 0,
@@ -54,6 +62,10 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
       "--head",
       "--report",
       "--output-run",
+      "--receipt",
+      "--manifest",
+      "--verify-with",
+      "--verification-report",
       "--macro-cmd",
       "--micro-cmd",
       "--macro-args",
@@ -73,6 +85,10 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
     "--head",
     "--report",
     "--output-run",
+    "--receipt",
+    "--manifest",
+    "--verify-with",
+    "--verification-report",
     "--macro-cmd",
     "--micro-cmd",
     "--macro-args",
@@ -170,6 +186,38 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
       }
     }
   }
+
+  let verifyWithArg = null;
+  const verifyWithExplicit = argv.find(a => a.startsWith("--verify-with="));
+  if (verifyWithExplicit) {
+    verifyWithArg = verifyWithExplicit.slice("--verify-with=".length);
+  } else {
+    const verifyWithIdx = argv.indexOf("--verify-with");
+    if (verifyWithIdx !== -1 && argv[verifyWithIdx + 1] && !argv[verifyWithIdx + 1].startsWith("--")) {
+      verifyWithArg = argv[verifyWithIdx + 1];
+    }
+  }
+  verifyWithArg = verifyWithArg || options.verifyWith || null;
+  if (typeof verifyWithArg === "string") {
+    verifyWithArg = verifyWithArg.trim() || null;
+  }
+
+  let verificationReportArg = null;
+  const verificationReportExplicit = argv.find(a => a.startsWith("--verification-report="));
+  if (verificationReportExplicit) {
+    verificationReportArg = verificationReportExplicit.slice("--verification-report=".length);
+  } else {
+    const verificationReportIdx = argv.indexOf("--verification-report");
+    if (verificationReportIdx !== -1) {
+      if (argv[verificationReportIdx + 1] && !argv[verificationReportIdx + 1].startsWith("--")) {
+        verificationReportArg = argv[verificationReportIdx + 1];
+        consumedArgsIndices.add(verificationReportIdx + 1);
+      } else {
+        verificationReportArg = "verification-record.json";
+      }
+    }
+  }
+  verificationReportArg = verificationReportArg || options.verificationReport || null;
 
   let macroCmd = null;
   const macroCmdExplicit = argv.find(a => a.startsWith("--macro-cmd="));
@@ -294,6 +342,8 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
     if (arg.startsWith("--report=") || arg === "--report") return true;
     if (arg.startsWith("--receipt=") || arg === "--receipt") return true;
     if (arg.startsWith("--manifest=") || arg === "--manifest") return true;
+    if (arg.startsWith("--verify-with=") || arg === "--verify-with") return true;
+    if (arg.startsWith("--verification-report=") || arg === "--verification-report") return true;
     if (arg.startsWith("--output-run=") || arg === "--output-run") return true;
     if (arg.startsWith("--macro-cmd=") || arg === "--macro-cmd") return true;
     if (arg.startsWith("--micro-cmd=") || arg === "--micro-cmd") return true;
@@ -360,6 +410,11 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
 
   if (argv.some(a => a === "--timeout" || a === "--timeout=") && (!timeoutArg || (argv.includes("--timeout") && (!argv[argv.indexOf("--timeout") + 1] || argv[argv.indexOf("--timeout") + 1].startsWith("--"))))) {
     io.stderr.write(`✖ [USAGE ERROR] Option '--timeout' requires a <ms> argument.\n`);
+    return EXIT_CODES.USAGE_ERROR;
+  }
+
+  if (argv.some(a => a === "--verify-with" || a === "--verify-with=") && !verifyWithArg) {
+    io.stderr.write(`✖ [USAGE ERROR] Option '--verify-with' requires a <cmd> argument.\n`);
     return EXIT_CODES.USAGE_ERROR;
   }
 
@@ -665,6 +720,16 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
         return EXIT_CODES.USAGE_ERROR;
       }
 
+      let verifierProfile = null;
+      if (verifyWithArg) {
+        try {
+          verifierProfile = validateVerifierCommand(verifyWithArg);
+        } catch (err) {
+          io.stderr.write(`✖ [USAGE ERROR] ${err.message}\n`);
+          return EXIT_CODES.USAGE_ERROR;
+        }
+      }
+
       let parsedLimit;
       if (limitArg !== null && limitArg !== undefined) {
         parsedLimit = parseInt(limitArg, 10);
@@ -765,6 +830,105 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
         }
       }
 
+      const additionalArtifacts = {};
+
+      if (verifierProfile) {
+        io.stderr.write(`\n[TF-RBC-v0] Initiating Independent Verification with '${verifierProfile.id}'...\n`);
+        let verifierAdapter = options.verifierAdapter || null;
+        if (!verifierAdapter) {
+          if (isLive) {
+            verifierAdapter = new CliVerifierAdapter({
+              command: verifierProfile.command,
+              providerName: verifierProfile.id,
+              modelName: "cli-default"
+            });
+          } else {
+            verifierAdapter = createMockVerifierAdapter(verifierProfile.id);
+          }
+        }
+
+        const reportDir = reportArg ? path.dirname(path.resolve(reportArg)) : process.cwd();
+        const verificationTarget = verificationReportArg
+          ? path.resolve(verificationReportArg)
+          : path.join(reportDir, "verification-record.json");
+        const disagreementLedgerTarget = path.join(path.dirname(verificationTarget), "disagreement-ledger.json");
+
+        let verificationRecord = null;
+        const caseResults = runResult.caseResults || [];
+
+        if (caseResults.length === 1) {
+          const c = caseResults[0];
+          const cs = c.changeSet || buildSynthesizedChangeSet(getCorpusCaseById(c.caseId));
+          verificationRecord = await conductIndependentVerification(
+            cs,
+            c.actualFindings || [],
+            verifierAdapter,
+            {
+              producerName: macroCmd || "agy",
+              verifierName: verifierProfile.id,
+              changeSetDigest: cs?.contentDigest
+            }
+          );
+        } else if (caseResults.length > 1) {
+          const caseRecords = {};
+          for (const c of caseResults) {
+            const cs = c.changeSet || buildSynthesizedChangeSet(getCorpusCaseById(c.caseId));
+            const rec = await conductIndependentVerification(
+              cs,
+              c.actualFindings || [],
+              verifierAdapter,
+              {
+                producerName: macroCmd || "agy",
+                verifierName: verifierProfile.id,
+                changeSetDigest: cs?.contentDigest
+              }
+            );
+            caseRecords[c.caseId] = rec;
+          }
+          verificationRecord = {
+            schemaVersion: VERIFICATION_SCHEMA_VERSION,
+            verifiedAt: new Date().toISOString(),
+            verifier: {
+              providerName: verifierProfile.id,
+              modelName: "cli-default"
+            },
+            cases: caseRecords,
+            summary: {
+              totalCases: caseResults.length,
+              totalEvaluated: Object.values(caseRecords).reduce((s, r) => s + (r.summary?.totalEvaluated || 0), 0),
+              supportedCount: Object.values(caseRecords).reduce((s, r) => s + (r.summary?.supportedCount || 0), 0),
+              partiallySupportedCount: Object.values(caseRecords).reduce((s, r) => s + (r.summary?.partiallySupportedCount || 0), 0),
+              contestedCount: Object.values(caseRecords).reduce((s, r) => s + (r.summary?.contestedCount || 0), 0),
+              insufficientEvidenceCount: Object.values(caseRecords).reduce((s, r) => s + (r.summary?.insufficientEvidenceCount || 0), 0),
+              omissionsCount: Object.values(caseRecords).reduce((s, r) => s + (r.summary?.omissionsCount || 0), 0)
+            }
+          };
+        }
+
+        if (verificationRecord) {
+          try {
+            fs.mkdirSync(path.dirname(verificationTarget), { recursive: true });
+            fs.writeFileSync(verificationTarget, JSON.stringify(verificationRecord, null, 2) + "\n", "utf8");
+            io.stderr.write(`📝 Independent verification record saved to: ${verificationTarget}\n`);
+            additionalArtifacts[path.basename(verificationTarget)] = verificationTarget;
+
+            if (verificationRecord.disagreementLedger) {
+              const ledgerDoc = buildDisagreementLedgerDocument({
+                verificationRecord,
+                producerRunId: runResult.runId || runResult.receipt?.run?.runId || "unknown",
+                commitSha: runResult.receipt?.systemProvenance?.commitSha || "unknown"
+              });
+              fs.writeFileSync(disagreementLedgerTarget, JSON.stringify(ledgerDoc, null, 2) + "\n", "utf8");
+              io.stderr.write(`📝 Disagreement ledger saved to: ${disagreementLedgerTarget}\n`);
+              additionalArtifacts[path.basename(disagreementLedgerTarget)] = disagreementLedgerTarget;
+            }
+          } catch (err) {
+            io.stderr.write(`✖ [FATAL SYSTEM FAILURE] Failed to write verification report to '${verificationTarget}': ${err.message}\n`);
+            return EXIT_CODES.SYSTEM_FAILURE;
+          }
+        }
+      }
+
       if (manifestArg) {
         try {
           const reportFullPath = reportArg ? path.resolve(reportArg) : path.resolve("benchmark-results.json");
@@ -774,6 +938,7 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
             ? path.join(path.dirname(reportFullPath), "artifact-manifest.json")
             : path.resolve(manifestArg);
           const bundle = generateManifestBundle({
+            additionalArtifacts: Object.keys(additionalArtifacts).length > 0 ? additionalArtifacts : null,
             manifestPath: manifestFullPath,
             receiptData: runResult.receipt,
             receiptPath: receiptFullPath,
@@ -814,7 +979,7 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
     }
 
     default: {
-      io.stderr.write(`Usage: triad-flow [doctor | demo | review | factory | benchmark] [--format=sarif|json] [--strict] [--staged] [--base=<ref>] [--head=<ref>] [--report=<file>] [--receipt=<file>] [--manifest[=<file>]] [--macro-cmd=<cmd>] [--micro-cmd=<cmd>] [--macro-args=<csv>] [--micro-args=<csv>] [--mode=<mode>] [--case=<id>] [--limit=<n>] [--live] [--virtual]\n`);
+      io.stderr.write(`Usage: triad-flow [doctor | demo | review | factory | benchmark] [--format=sarif|json] [--strict] [--staged] [--base=<ref>] [--head=<ref>] [--report=<file>] [--receipt=<file>] [--manifest[=<file>]] [--verify-with=<cmd>] [--verification-report=<file>] [--macro-cmd=<cmd>] [--micro-cmd=<cmd>] [--macro-args=<csv>] [--micro-args=<csv>] [--mode=<mode>] [--case=<id>] [--limit=<n>] [--live] [--virtual]\n`);
       return EXIT_CODES.USAGE_ERROR;
     }
   }

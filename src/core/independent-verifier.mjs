@@ -53,6 +53,18 @@ export const VERIFICATION_VERDICTS = Object.freeze({
 
 export const VALID_VERDICTS = Object.freeze(new Set(Object.values(VERIFICATION_VERDICTS)));
 
+/**
+ * Standard Disagreement Ledger classifications.
+ */
+export const DISAGREEMENT_CLASSIFICATIONS = Object.freeze({
+  SUPPORTED: "SUPPORTED",
+  PARTIALLY_SUPPORTED: "PARTIALLY_SUPPORTED",
+  CONTRADICTED: "CONTRADICTED",
+  UNVERIFIABLE: "UNVERIFIABLE",
+  MISSED_BY_PRODUCER: "MISSED_BY_PRODUCER",
+  VERIFIER_ONLY_FINDING: "VERIFIER_ONLY_FINDING"
+});
+
 const AUTH_ERROR_PATTERNS = [
   /not logged in/i,
   /unauthorized/i,
@@ -919,7 +931,10 @@ export async function conductIndependentVerification(changeSet, producerFindings
   }
 
   // 2. ChangeSet digest
-  const changeSetDigest = options.changeSetDigest || digestChangeSet(changeSet);
+  let changeSetDigest = options.changeSetDigest || digestChangeSet(changeSet);
+  if (typeof changeSetDigest === "string" && !changeSetDigest.startsWith("sha256:")) {
+    changeSetDigest = `sha256:${changeSetDigest}`;
+  }
 
   // 3. Build verification prompt
   const prompt = buildVerificationPrompt(changeSet, preservedProducerFindings, options);
@@ -990,9 +1005,23 @@ export async function conductIndependentVerification(changeSet, producerFindings
     const matched = validated.ok ? findEvaluationForProducerFinding(validated.evaluations, pf, i) : null;
 
     if (matched) {
+      const isFullySupported = matched.verdict === VERIFICATION_VERDICTS.SUPPORTED &&
+        matched.locatorAccurate === true &&
+        matched.typeAccurate === true &&
+        matched.severityAccurate === true;
+
+      const classification = matched.verdict === VERIFICATION_VERDICTS.CONTESTED
+        ? DISAGREEMENT_CLASSIFICATIONS.CONTRADICTED
+        : (matched.verdict === VERIFICATION_VERDICTS.INSUFFICIENT_EVIDENCE
+            ? DISAGREEMENT_CLASSIFICATIONS.UNVERIFIABLE
+            : (isFullySupported
+                ? DISAGREEMENT_CLASSIFICATIONS.SUPPORTED
+                : DISAGREEMENT_CLASSIFICATIONS.PARTIALLY_SUPPORTED));
+
       finalEvaluations.push(deepFreeze({
         findingId,
         verdict: matched.verdict,
+        classification,
         locatorAccurate: matched.locatorAccurate,
         typeAccurate: matched.typeAccurate,
         severityAccurate: matched.severityAccurate,
@@ -1004,6 +1033,7 @@ export async function conductIndependentVerification(changeSet, producerFindings
       finalEvaluations.push(deepFreeze({
         findingId,
         verdict: VERIFICATION_VERDICTS.INSUFFICIENT_EVIDENCE,
+        classification: DISAGREEMENT_CLASSIFICATIONS.UNVERIFIABLE,
         locatorAccurate: false,
         typeAccurate: false,
         severityAccurate: false,
@@ -1018,7 +1048,12 @@ export async function conductIndependentVerification(changeSet, producerFindings
   }
 
   // 7. Verifier omissions (isolated without polluting producer findings)
-  const verifierOmissions = Object.freeze(validated.ok ? [...validated.verifierOmissions] : []);
+  const verifierOmissions = Object.freeze(validated.ok
+    ? validated.verifierOmissions.map(o => deepFreeze({
+        ...o,
+        classification: DISAGREEMENT_CLASSIFICATIONS.MISSED_BY_PRODUCER
+      }))
+    : []);
 
   // 8. Construct Disagreement Ledger
   const disagreementLedger = [];
@@ -1035,6 +1070,7 @@ export async function conductIndependentVerification(changeSet, producerFindings
         findingId: ev.findingId,
         producerFinding: origFinding ? deepFreeze(cloneDeep(origFinding)) : null,
         verdict: ev.verdict,
+        classification: ev.classification,
         locatorAccurate: ev.locatorAccurate,
         typeAccurate: ev.typeAccurate,
         severityAccurate: ev.severityAccurate,
@@ -1048,6 +1084,7 @@ export async function conductIndependentVerification(changeSet, producerFindings
   const summary = deepFreeze({
     totalEvaluated: finalEvaluations.length,
     supportedCount: finalEvaluations.filter(e => e.verdict === VERIFICATION_VERDICTS.SUPPORTED).length,
+    partiallySupportedCount: finalEvaluations.filter(e => e.classification === DISAGREEMENT_CLASSIFICATIONS.PARTIALLY_SUPPORTED).length,
     contestedCount: finalEvaluations.filter(e => e.verdict === VERIFICATION_VERDICTS.CONTESTED).length,
     insufficientEvidenceCount: finalEvaluations.filter(e => e.verdict === VERIFICATION_VERDICTS.INSUFFICIENT_EVIDENCE).length,
     omissionsCount: verifierOmissions.length
@@ -1247,4 +1284,98 @@ export function computeVerificationRecordDigest(record) {
     throw new Error(`Cannot digest invalid verification record:\n  - ${validation.errors.join("\n  - ")}`);
   }
   return computeDigest(canonicalJsonStringify(record));
+}
+
+/**
+ * Validates a verifier command identifier against Section 7 security invariants.
+ * Strictly prohibits arbitrary shell strings, spaces, quotes, metacharacters, or flags.
+ * Requires the command to resolve to a canonical provider profile (agy, claude).
+ *
+ * @param {string} verifyWith - Raw CLI argument supplied to --verify-with.
+ * @returns {object} Resolved canonical provider profile.
+ */
+export function validateVerifierCommand(verifyWith) {
+  if (!verifyWith || typeof verifyWith !== "string") {
+    throw new Error("Invalid verifier: command must be a non-empty string.");
+  }
+  if (/[\s"'`;&|()<>$]/.test(verifyWith) || verifyWith.startsWith("-")) {
+    throw new Error(`Invalid verifier: '${verifyWith}' contains disallowed characters, spaces, or CLI flags. Must be a single canonical provider identifier (e.g. 'claude' or 'agy').`);
+  }
+  const trimmed = verifyWith.trim();
+  const profile = resolveProviderProfile(trimmed);
+  if (profile.profileStatus !== "canonical") {
+    throw new Error(`Invalid verifier: '${trimmed}' does not resolve to a canonical provider profile (status: '${profile.profileStatus}'). Supported canonical providers: agy, claude.`);
+  }
+  return profile;
+}
+
+/**
+ * Creates an offline mock verifier adapter for fast deterministic test suites.
+ *
+ * @param {string} [providerName="claude"]
+ * @param {object} [options]
+ * @returns {object} Mock verifier adapter conforming to verifier interface.
+ */
+export function createMockVerifierAdapter(providerName = "claude", options = {}) {
+  return {
+    providerName,
+    modelName: `${providerName}-mock`,
+    actualModel: { value: `${providerName}-mock-v1`, source: "runtime" },
+    usage: { promptTokens: 100, completionTokens: 50, totalTokens: 150, available: true, usageSource: "authoritative" },
+    executeVerification: async (adapterInput) => {
+      if (typeof options.executeVerification === "function") {
+        return options.executeVerification(adapterInput);
+      }
+      const { producerFindings } = adapterInput;
+      const evaluations = (producerFindings || []).map((f, i) => {
+        const findingId = f && typeof f === "object"
+          ? (f.id !== undefined && f.id !== null ? String(f.id) : (f.findingId !== undefined && f.findingId !== null ? String(f.findingId) : `finding-${i + 1}`))
+          : `finding-${i + 1}`;
+        return {
+          findingId,
+          verdict: VERIFICATION_VERDICTS.SUPPORTED,
+          locatorAccurate: true,
+          typeAccurate: true,
+          severityAccurate: true,
+          reasoning: `Offline mock verifier verified finding '${findingId}' against changeSet diff.`,
+          dissent: null
+        };
+      });
+      return {
+        ok: true,
+        evaluations,
+        verifierOmissions: []
+      };
+    }
+  };
+}
+
+/**
+ * Constructs a canonical Disagreement Ledger document from a completed verification record.
+ *
+ * @param {object} params
+ * @param {object} params.verificationRecord - Completed verification record.
+ * @param {string} [params.producerRunId="unknown"] - Producer run ID.
+ * @param {string} [params.commitSha="unknown"] - Repository commit SHA.
+ * @returns {object} Canonical disagreement ledger document.
+ */
+export function buildDisagreementLedgerDocument({ verificationRecord, producerRunId = "unknown", commitSha = "unknown" } = {}) {
+  if (!verificationRecord || typeof verificationRecord !== "object") {
+    throw new TypeError("verificationRecord must be a non-null plain object.");
+  }
+  return {
+    schemaVersion: VERIFICATION_SCHEMA_VERSION,
+    verifiedAt: verificationRecord.verifiedAt || new Date().toISOString(),
+    producer: {
+      providerName: verificationRecord.producer?.providerName || "unknown",
+      runId: producerRunId,
+      commitSha: commitSha
+    },
+    verifier: {
+      providerName: verificationRecord.verifier?.providerName || "unknown",
+      modelName: verificationRecord.verifier?.modelName || "unknown"
+    },
+    summary: verificationRecord.summary || {},
+    ledger: verificationRecord.disagreementLedger || []
+  };
 }

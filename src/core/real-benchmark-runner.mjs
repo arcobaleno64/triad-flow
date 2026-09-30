@@ -178,6 +178,7 @@ export async function evaluateCorpusCase(caseDef, adapters = {}, options = {}) {
       adapterUsage,
       actualFindings,
       goldenFindings,
+      changeSet: workspace.changeSet,
       evalResult,
       isFalseBlock,
       isRecallCaught,
