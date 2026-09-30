@@ -1325,11 +1325,13 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
 
           const anyAuthorized = Array.from(batch.sessions.values()).some(s => s.status === REMEDIATION_STATES.PATCH_AUTHORIZED);
           if (anyAuthorized) {
-            if (typeof opts.testRunnerFn === "function") {
+            const batchRunner = opts.testRunner || opts.testRunnerFn;
+            const validRunner = typeof batchRunner === "function" || (batchRunner && typeof batchRunner === "object" && batchRunner.command);
+            if (validRunner) {
               io.stderr.write(`[3/4] Executing batch sequential trials in ephemeral Patch Jail worktree...\n`);
               batch.executeBatchInJailWorktree(workspace ? workspace.dir : (opts.cwd || process.cwd()), {
                 baseSha: workspace ? workspace.headSha : (headArg || "HEAD"),
-                testRunnerFn: opts.testRunnerFn,
+                testRunnerFn: batchRunner,
                 sandboxDriver: sandboxDriverInstance
               });
             } else {
@@ -1485,11 +1487,13 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
         }
 
         if (session.status === REMEDIATION_STATES.PATCH_AUTHORIZED) {
-          if (typeof opts.testRunnerFn === "function") {
+          const singleRunner = opts.testRunner || opts.testRunnerFn;
+          const validRunner = typeof singleRunner === "function" || (singleRunner && typeof singleRunner === "object" && singleRunner.command);
+          if (validRunner) {
             io.stderr.write(`[3/4] Executing trial inside ephemeral Patch Jail worktree...\n`);
             session.executeInJailWorktree(workspace.dir, {
               baseSha: workspace.headSha,
-              testRunnerFn: opts.testRunnerFn,
+              testRunnerFn: singleRunner,
               sandboxDriver: sandboxDriverInstance
             });
           } else {

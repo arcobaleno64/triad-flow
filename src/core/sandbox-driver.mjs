@@ -39,7 +39,7 @@ export const CONTAINER_ALLOWLIST_ENV_VARS = Object.freeze([
   "TERM"
 ]);
 
-export const ACTIVE_EGRESS_PROBE_SCRIPT = "node -e 'const http=require(\"http\");const req=http.get(\"http://192.0.2.1:80\",{timeout:1000},()=>process.exit(0));req.on(\"error\",(e)=>{console.log(\"TF_EGRESS_DENIED:\"+(e.code||\"ERR\"));process.exit(42);});req.on(\"timeout\",()=>{req.destroy();console.log(\"TF_EGRESS_DENIED:ETIMEDOUT\");process.exit(42);});'";
+export const ACTIVE_EGRESS_PROBE_SCRIPT = "node -e 'const os=require(\"os\");const http=require(\"http\");const ifaces=Object.keys(os.networkInterfaces());const loopbackOnly=ifaces.length>0&&ifaces.every(i=>i.toLowerCase().startsWith(\"lo\"));if(!loopbackOnly){console.log(\"TF_NAMESPACE_LEAK:\"+ifaces.join(\",\"));process.exit(1);}const req=http.get(\"http://192.0.2.1:80\",{timeout:1000},()=>process.exit(0));req.on(\"error\",(e)=>{console.log(\"TF_EGRESS_DENIED:\"+(e.code||\"ERR\")+\":NS_ISOLATED\");process.exit(42);});req.on(\"timeout\",()=>{req.destroy();console.log(\"TF_EGRESS_DENIED:ETIMEDOUT:NS_ISOLATED\");process.exit(42);});'";
 
 export class SandboxUnavailableError extends Error {
   constructor(message, driver = "container") {
@@ -351,12 +351,20 @@ export class ContainerDriver extends BaseSandboxDriver {
     }
 
     const output = (String(probeRes.stdout || "") + " " + String(probeRes.stderr || "")).trim();
+    if (output.includes("TF_NAMESPACE_LEAK")) {
+      throw new SandboxSecurityViolationError(
+        `Container network namespace isolation breach detected: non-loopback network interfaces present: '${output}'.`,
+        this.runtime
+      );
+    }
+
     const hasSentinel = /TF_EGRESS_DENIED:(?:ENETUNREACH|EAI_AGAIN|ENOTFOUND|ECONNREFUSED|ETIMEDOUT|EHOSTUNREACH|ECONNRESET|ERR)/.test(output);
 
     // 2. Exit 42 + Sentinel: Authentic network denial verified
     if (probeRes.status === 42 && hasSentinel) {
       return {
         verified: true,
+        namespaceIsolated: true,
         probeExecuted: true,
         exitCode: 42,
         output
@@ -381,7 +389,7 @@ export class ContainerDriver extends BaseSandboxDriver {
 
     const jail = createPatchJailWorktree(repoPath, options);
 
-    let egressResult = { verified: true, probeExecuted: false, exitCode: 1 };
+    let egressResult = { verified: true, namespaceIsolated: true, probeExecuted: false, exitCode: 1 };
     if (this.activeEgressProbe) {
       try {
         egressResult = this.verifyEgressDenial(repoPath, jail.jailPath, {
@@ -397,6 +405,7 @@ export class ContainerDriver extends BaseSandboxDriver {
       runtimeVersion: probe.runtimeVersion,
       imageDigest: probe.imageDigest,
       egressDenied: egressResult.verified,
+      namespaceIsolated: egressResult.namespaceIsolated,
       probeExecuted: egressResult.probeExecuted,
       probeExitCode: egressResult.exitCode
     });
@@ -452,6 +461,7 @@ export class ContainerDriver extends BaseSandboxDriver {
       }),
       verifiedControls: Object.freeze({
         networkEgressDenied: Boolean(context.egressDenied),
+        namespaceIsolated: Boolean(context.namespaceIsolated !== false && context.egressDenied),
         probeExecuted: Boolean(context.probeExecuted),
         probeExitCode: typeof context.probeExitCode === "number" ? context.probeExitCode : null,
         probeDigest: context.probeDigest || computeDigest(ACTIVE_EGRESS_PROBE_SCRIPT)
