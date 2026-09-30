@@ -65,8 +65,11 @@ const AUTH_ERROR_PATTERNS = [
 ];
 
 /**
- * Deep freezes an object and all nested properties recursively.
- * Guarantees bit-level immutability across the verification lifecycle.
+ * Recursively freezes an object and all nested properties in place.
+ * Provides runtime in-memory mutation protection within the JavaScript engine.
+ * Note: Cryptographic tamper-evidence and bit-level immutability across the audit
+ * lifecycle are established by canonical digests and artifact manifests, while
+ * deepFreeze prevents accidental or deliberate in-memory modifications.
  *
  * @template T
  * @param {T} obj
@@ -104,14 +107,57 @@ export function cloneDeep(val) {
 }
 
 /**
+ * Truncates a UTF-8 buffer or string to at most maxBytes without splitting
+ * multi-byte UTF-8 sequences (avoiding replacement character \uFFFD).
+ *
+ * @param {Buffer|string} input
+ * @param {number} maxBytes
+ * @returns {string} UTF-8 decoded string guaranteed to end on a complete code point
+ */
+export function truncateUtf8Safe(input, maxBytes) {
+  const buf = Buffer.isBuffer(input) ? input : Buffer.from(String(input || ""), "utf8");
+  if (maxBytes <= 0) return "";
+  if (buf.length <= maxBytes) return buf.toString("utf8");
+
+  let end = maxBytes;
+  let i = end - 1;
+  let continuationCount = 0;
+  while (i >= 0 && (buf[i] & 0xC0) === 0x80 && continuationCount < 3) {
+    continuationCount++;
+    i--;
+  }
+
+  if (i < 0) {
+    // Only continuation bytes were found up to maxBytes; cannot form a valid character
+    end = 0;
+  } else {
+    const lead = buf[i];
+    let expectedLength = 1;
+    if ((lead & 0x80) === 0) {
+      expectedLength = 1;
+    } else if ((lead & 0xE0) === 0xC0) {
+      expectedLength = 2;
+    } else if ((lead & 0xF0) === 0xE0) {
+      expectedLength = 3;
+    } else if ((lead & 0xF8) === 0xF0) {
+      expectedLength = 4;
+    }
+
+    if (i + expectedLength > end) {
+      end = i;
+    }
+  }
+
+  return buf.subarray(0, end).toString("utf8");
+}
+
+/**
  * Safely parses boolean values from LLM responses handling string variations.
  *
  * @param {any} val
- * @param {boolean} defaultValue
  * @returns {boolean}
  */
-function parseBoolean(val, defaultValue = true) {
-  if (val === undefined || val === null) return defaultValue;
+function parseBoolean(val) {
   if (typeof val === "boolean") return val;
   if (typeof val === "string") {
     const s = val.trim().toLowerCase();
@@ -152,7 +198,7 @@ export function buildVerificationPrompt(changeSet = {}, producerFindings = [], o
   let hunks = "";
   let truncatedNotice = "";
   if (hunkBuf.length > maxBytes) {
-    hunks = hunkBuf.subarray(0, maxBytes).toString("utf8");
+    hunks = truncateUtf8Safe(hunkBuf, maxBytes);
     truncatedNotice = `\n[NOTE: Diff truncated at ${maxBytes} bytes limit]\n`;
   } else {
     hunks = hunkBuf.toString("utf8");
@@ -379,10 +425,43 @@ export function validateVerificationOutput(rawOutput, context = {}) {
       });
     }
 
-    const isContestedVerdict = rawVerdict === VERIFICATION_VERDICTS.CONTESTED;
-    const locatorAccurate = parseBoolean(item.locatorAccurate, !isContestedVerdict);
-    const typeAccurate = parseBoolean(item.typeAccurate, !isContestedVerdict);
-    const severityAccurate = parseBoolean(item.severityAccurate, !isContestedVerdict);
+    if (item.locatorAccurate === undefined || item.locatorAccurate === null) {
+      return Object.freeze({
+        ok: false,
+        valid: false,
+        executionStatus: EXECUTION_STATUS.MALFORMED_OUTPUT,
+        evaluations: Object.freeze([]),
+        verifierOmissions: Object.freeze([]),
+        usage: null,
+        error: `Evaluation at index ${i} is missing required boolean 'locatorAccurate'.`
+      });
+    }
+    if (item.typeAccurate === undefined || item.typeAccurate === null) {
+      return Object.freeze({
+        ok: false,
+        valid: false,
+        executionStatus: EXECUTION_STATUS.MALFORMED_OUTPUT,
+        evaluations: Object.freeze([]),
+        verifierOmissions: Object.freeze([]),
+        usage: null,
+        error: `Evaluation at index ${i} is missing required boolean 'typeAccurate'.`
+      });
+    }
+    if (item.severityAccurate === undefined || item.severityAccurate === null) {
+      return Object.freeze({
+        ok: false,
+        valid: false,
+        executionStatus: EXECUTION_STATUS.MALFORMED_OUTPUT,
+        evaluations: Object.freeze([]),
+        verifierOmissions: Object.freeze([]),
+        usage: null,
+        error: `Evaluation at index ${i} is missing required boolean 'severityAccurate'.`
+      });
+    }
+
+    const locatorAccurate = parseBoolean(item.locatorAccurate);
+    const typeAccurate = parseBoolean(item.typeAccurate);
+    const severityAccurate = parseBoolean(item.severityAccurate);
     const reasoning = item.reasoning !== undefined && item.reasoning !== null
       ? String(item.reasoning).trim()
       : "";

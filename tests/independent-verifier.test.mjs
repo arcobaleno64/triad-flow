@@ -22,7 +22,8 @@ import {
   VERIFICATION_SCHEMA_VERSION,
   VERIFICATION_VERDICTS,
   CliVerifierAdapter,
-  deepFreeze
+  deepFreeze,
+  truncateUtf8Safe
 } from "../src/core/independent-verifier.mjs";
 import { EXECUTION_STATUS } from "../src/adapters/provider-contract.mjs";
 import { getCorpusCaseById, createCorpusCaseWorkspace } from "./fixtures/real-corpus-fixtures.mjs";
@@ -139,13 +140,57 @@ test("validateVerificationOutput: rejects invalid verdict under Default-Deny", (
       {
         findingId: "f-1",
         verdict: "PLAUSIBLE_MAYBE",
-        locatorAccurate: true
+        locatorAccurate: true,
+        typeAccurate: true,
+        severityAccurate: true
       }
     ]
   });
   assert.equal(r.ok, false);
   assert.equal(r.executionStatus, EXECUTION_STATUS.MALFORMED_OUTPUT);
   assert.match(r.error, /Invalid verdict 'PLAUSIBLE_MAYBE'/);
+});
+
+test("validateVerificationOutput: rejects evaluations missing required accuracy booleans under Default-Deny", () => {
+  const rMissingAll = validateVerificationOutput({
+    evaluations: [
+      {
+        findingId: "finding-1",
+        verdict: "SUPPORTED"
+      }
+    ]
+  });
+  assert.equal(rMissingAll.ok, false);
+  assert.equal(rMissingAll.executionStatus, EXECUTION_STATUS.MALFORMED_OUTPUT);
+  assert.match(rMissingAll.error, /missing required boolean 'locatorAccurate'/i);
+
+  const rMissingType = validateVerificationOutput({
+    evaluations: [
+      {
+        findingId: "finding-1",
+        verdict: "SUPPORTED",
+        locatorAccurate: true,
+        severityAccurate: true
+      }
+    ]
+  });
+  assert.equal(rMissingType.ok, false);
+  assert.equal(rMissingType.executionStatus, EXECUTION_STATUS.MALFORMED_OUTPUT);
+  assert.match(rMissingType.error, /missing required boolean 'typeAccurate'/i);
+
+  const rMissingSeverity = validateVerificationOutput({
+    evaluations: [
+      {
+        findingId: "finding-1",
+        verdict: "SUPPORTED",
+        locatorAccurate: true,
+        typeAccurate: true
+      }
+    ]
+  });
+  assert.equal(rMissingSeverity.ok, false);
+  assert.equal(rMissingSeverity.executionStatus, EXECUTION_STATUS.MALFORMED_OUTPUT);
+  assert.match(rMissingSeverity.error, /missing required boolean 'severityAccurate'/i);
 });
 
 test("validateVerificationOutput: strips capability forgery fields", () => {
@@ -712,6 +757,51 @@ test("buildVerificationPrompt: handles multi-byte UTF-8 diffs and Buffer inputs 
   assert.match(promptBuf, /\[NOTE: Diff truncated at 200 bytes limit\]/);
 });
 
+test("truncateUtf8Safe: avoids \\uFFFD replacement char when splitting 3-byte Chinese characters", () => {
+  const text = "一二三"; // Each character is 3 bytes: 9 bytes total
+  assert.equal(truncateUtf8Safe(text, 0), "");
+  assert.equal(truncateUtf8Safe(text, 1), "");
+  assert.equal(truncateUtf8Safe(text, 2), "");
+  assert.equal(truncateUtf8Safe(text, 3), "一");
+  assert.equal(truncateUtf8Safe(text, 4), "一");
+  assert.equal(truncateUtf8Safe(text, 5), "一");
+  assert.equal(truncateUtf8Safe(text, 6), "一二");
+  assert.equal(truncateUtf8Safe(text, 7), "一二");
+  assert.equal(truncateUtf8Safe(text, 8), "一二");
+  assert.equal(truncateUtf8Safe(text, 9), "一二三");
+  assert.equal(truncateUtf8Safe(text, 10), "一二三");
+
+  for (let b = 0; b <= 12; b++) {
+    const res = truncateUtf8Safe(text, b);
+    assert.equal(res.includes("\uFFFD"), false, `Should not include replacement char at byte limit ${b}`);
+  }
+});
+
+test("truncateUtf8Safe: avoids \\uFFFD replacement char when splitting 4-byte emoji", () => {
+  const text = "A🚀B"; // 'A' (1b) + '🚀' (4b) + 'B' (1b) = 6 bytes total
+  assert.equal(truncateUtf8Safe(text, 0), "");
+  assert.equal(truncateUtf8Safe(text, 1), "A");
+  assert.equal(truncateUtf8Safe(text, 2), "A");
+  assert.equal(truncateUtf8Safe(text, 3), "A");
+  assert.equal(truncateUtf8Safe(text, 4), "A");
+  assert.equal(truncateUtf8Safe(text, 5), "A🚀");
+  assert.equal(truncateUtf8Safe(text, 6), "A🚀B");
+  assert.equal(truncateUtf8Safe(text, 10), "A🚀B");
+
+  for (let b = 0; b <= 10; b++) {
+    const res = truncateUtf8Safe(text, b);
+    assert.equal(res.includes("\uFFFD"), false, `Should not include replacement char at byte limit ${b}`);
+  }
+});
+
+test("buildVerificationPrompt: guarantees diff truncation never produces \\uFFFD replacement character", () => {
+  const mixedDiff = "+ // 修正：使用者輸入驗證 🚀 避免 SQL Injection\n".repeat(10);
+  for (let maxBytes = 1; maxBytes <= 60; maxBytes++) {
+    const prompt = buildVerificationPrompt({ diffHunks: mixedDiff }, [], { limits: { maxInputBytes: maxBytes } });
+    assert.equal(prompt.includes("\uFFFD"), false, `buildVerificationPrompt output contains replacement char at limit ${maxBytes}`);
+  }
+});
+
 test("validateVerificationOutput: preserves raw error message when ok is false without executionStatus", () => {
   const rawErr = {
     ok: false,
@@ -824,8 +914,8 @@ test("conductIndependentVerification: marks finding as CONTESTED on conflicting 
     providerName: "claude",
     executeVerification: async () => ({
       evaluations: [
-        { findingId: "f-1", verdict: "SUPPORTED", reasoning: "Looks like a flaw" },
-        { findingId: "f-1", verdict: "CONTESTED", reasoning: "Actually safe, verified sanitized" }
+        { findingId: "f-1", verdict: "SUPPORTED", locatorAccurate: true, typeAccurate: true, severityAccurate: true, reasoning: "Looks like a flaw" },
+        { findingId: "f-1", verdict: "CONTESTED", locatorAccurate: false, typeAccurate: false, severityAccurate: false, reasoning: "Actually safe, verified sanitized" }
       ],
       verifierOmissions: []
     })
