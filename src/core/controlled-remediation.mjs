@@ -21,6 +21,8 @@ import {
   normalizeRelativePath
 } from "./canonical-digest.mjs";
 import { SHA256_HEX_REGEX } from "./audit-receipt.mjs";
+import { isBinaryBuffer } from "./git-collector.mjs";
+import { validateVerificationRecord } from "./independent-verifier.mjs";
 
 /**
  * Normative remediation schema version.
@@ -54,6 +56,46 @@ export const TERMINAL_REMEDIATION_STATES = Object.freeze(
     REMEDIATION_STATES.WAIVED
   ])
 );
+
+/**
+ * Canonical state machine transition allowlist (Default-Deny).
+ * Any transition not explicitly listed is prohibited and will throw RemediationTransitionError.
+ */
+export const ALLOWED_TRANSITIONS = Object.freeze({
+  [REMEDIATION_STATES.OPEN]: Object.freeze(new Set([
+    REMEDIATION_STATES.FIX_PROPOSED,
+    REMEDIATION_STATES.WAIVED
+  ])),
+  [REMEDIATION_STATES.FIX_PROPOSED]: Object.freeze(new Set([
+    REMEDIATION_STATES.PATCH_AUTHORIZED,
+    REMEDIATION_STATES.REJECTED_FIX,
+    REMEDIATION_STATES.WAIVED
+  ])),
+  [REMEDIATION_STATES.PATCH_AUTHORIZED]: Object.freeze(new Set([
+    REMEDIATION_STATES.PATCH_APPLIED_IN_JAIL,
+    REMEDIATION_STATES.REJECTED_FIX
+  ])),
+  [REMEDIATION_STATES.PATCH_APPLIED_IN_JAIL]: Object.freeze(new Set([
+    REMEDIATION_STATES.FIXED_PENDING_VERIFY,
+    REMEDIATION_STATES.REJECTED_FIX
+  ])),
+  [REMEDIATION_STATES.FIXED_PENDING_VERIFY]: Object.freeze(new Set([
+    REMEDIATION_STATES.CLOSED,
+    REMEDIATION_STATES.REJECTED_FIX
+  ])),
+  [REMEDIATION_STATES.CLOSED]: Object.freeze(new Set([
+    REMEDIATION_STATES.REOPENED
+  ])),
+  [REMEDIATION_STATES.WAIVED]: Object.freeze(new Set([
+    REMEDIATION_STATES.REOPENED
+  ])),
+  [REMEDIATION_STATES.REOPENED]: Object.freeze(new Set([
+    REMEDIATION_STATES.FIX_PROPOSED
+  ])),
+  [REMEDIATION_STATES.REJECTED_FIX]: Object.freeze(new Set([
+    REMEDIATION_STATES.FIX_PROPOSED // Allowed retry under anti-thrashing rule (max 2 attempts)
+  ]))
+});
 
 /**
  * Anti-thrashing guardrails: maximum automated remediation attempts per finding.
@@ -349,6 +391,16 @@ export function validateRemediationTransition(fromState, toState, context = {}) 
     throw new RemediationValidationError(`Invalid toState "${toState}".`);
   }
 
+  // 1. Strict Whitelist Check (Default-Deny)
+  const allowed = ALLOWED_TRANSITIONS[fromState];
+  if (!allowed || !allowed.has(toState)) {
+    throw new RemediationTransitionError(
+      fromState,
+      toState,
+      `State transition from "${fromState}" to "${toState}" is not permitted by canonical lifecycle allowlist.`
+    );
+  }
+
   const actor = context.actor || "unknown";
   const actorType = context.actorType || (typeof actor === "object" ? actor.type : "unknown");
 
@@ -369,7 +421,7 @@ export function validateRemediationTransition(fromState, toState, context = {}) 
       );
     }
     const closure = context.closureVerification;
-    if (!closure || closure.verdict !== "SUPPORTED") {
+    if (!closure || !closure.verified || closure.verdict !== "SUPPORTED") {
       throw new RemediationTransitionError(
         fromState,
         toState,
@@ -383,9 +435,24 @@ export function validateRemediationTransition(fromState, toState, context = {}) 
         "CLOSED state cannot be reached when residual vulnerabilities are detected."
       );
     }
+    if (!closure.verificationRecord) {
+      throw new RemediationTransitionError(
+        fromState,
+        toState,
+        "CLOSED state requires a complete Section 7 verification record."
+      );
+    }
+    const val = validateVerificationRecord(closure.verificationRecord);
+    if (!val.valid) {
+      throw new RemediationTransitionError(
+        fromState,
+        toState,
+        `CLOSED state rejected: verification record is invalid: ${val.errors.join("; ")}`
+      );
+    }
   }
 
-  // PATCH_AUTHORIZED requires human authorization
+  // PATCH_AUTHORIZED requires human authorization and patch digest binding
   if (toState === REMEDIATION_STATES.PATCH_AUTHORIZED) {
     if (fromState !== REMEDIATION_STATES.FIX_PROPOSED) {
       throw new RemediationTransitionError(
@@ -406,6 +473,13 @@ export function validateRemediationTransition(fromState, toState, context = {}) 
         fromState,
         toState,
         "PATCH_AUTHORIZED transition requires authorized identity in context.authorizer."
+      );
+    }
+    if (context.patch && context.authorizedPatchDigest && context.authorizedPatchDigest !== context.patch.patchDiffDigest) {
+      throw new RemediationTransitionError(
+        fromState,
+        toState,
+        `PATCH_AUTHORIZED requires authorizedPatchDigest to match candidate patchDiffDigest.`
       );
     }
   }
@@ -438,11 +512,11 @@ export function validateRemediationTransition(fromState, toState, context = {}) 
       );
     }
     const checks = context.deterministicChecks;
-    if (!checks || checks.exitCode !== 0 || checks.regressionDetected) {
+    if (!checks || !checks.executed || checks.exitCode !== 0 || checks.regressionDetected) {
       throw new RemediationTransitionError(
         fromState,
         toState,
-        "FIXED_PENDING_VERIFY requires deterministic tests to pass with exit code 0 and zero regressions."
+        "FIXED_PENDING_VERIFY requires affirmative execution of deterministic tests with exit code 0 and zero regressions."
       );
     }
   }
@@ -524,8 +598,10 @@ export function computeTreeDigest(dirPath, options = {}) {
       } else if (ent.isFile()) {
         const rawContent = fs.readFileSync(fullPath);
         const normRelPath = normalizeRelativePath(relPath);
-        const normContent = normalizeLineEndings(rawContent);
-        fileEntries.push([normRelPath, normContent]);
+        const contentToHash = isBinaryBuffer(rawContent)
+          ? rawContent
+          : normalizeLineEndings(rawContent);
+        fileEntries.push([normRelPath, contentToHash]);
       }
     }
   }
@@ -742,11 +818,13 @@ export function buildRemediationReceipt(params = {}) {
   };
 
   const deterministicChecks = {
+    executed: Boolean(params.deterministicChecks?.executed),
     testCommand: params.deterministicChecks?.testCommand || "npm test",
     exitCode: typeof params.deterministicChecks?.exitCode === "number" ? params.deterministicChecks.exitCode : -1,
     passedCount: typeof params.deterministicChecks?.passedCount === "number" ? params.deterministicChecks.passedCount : 0,
     failedCount: typeof params.deterministicChecks?.failedCount === "number" ? params.deterministicChecks.failedCount : 0,
-    regressionDetected: Boolean(params.deterministicChecks?.regressionDetected)
+    regressionDetected: Boolean(params.deterministicChecks?.regressionDetected),
+    postTestTreeDigest: params.deterministicChecks?.postTestTreeDigest || null
   };
 
   const closureVerification = {
@@ -845,6 +923,10 @@ export function validateRemediationReceipt(receipt) {
 
   if (!receipt.deterministicChecks || typeof receipt.deterministicChecks !== "object") {
     throw new RemediationValidationError("deterministicChecks object is required.");
+  }
+
+  if (receipt.deterministicChecks.postTestTreeDigest && !SHA256_HEX_REGEX.test(receipt.deterministicChecks.postTestTreeDigest)) {
+    throw new RemediationValidationError(`postTestTreeDigest "${receipt.deterministicChecks.postTestTreeDigest}" is not a valid SHA-256 digest.`);
   }
 
   if (!receipt.closureVerification || typeof receipt.closureVerification !== "object") {
@@ -947,10 +1029,24 @@ export class ControlledRemediationSession {
     return this.status;
   }
 
-  authorizePatch({ authorizer = { identity: "security-lead@internal", type: "human" }, signature = null }) {
-    this.actors.authorizer = authorizer;
+  authorizePatch({ authorizer = { identity: "security-lead@internal", type: "human" }, signature = null, patchDiffDigest = null }) {
+    if (!this.patch || !this.patch.patchDiffDigest) {
+      throw new RemediationValidationError("Cannot authorize patch: no proposed patch exists.");
+    }
+    const targetDigest = patchDiffDigest || this.patch.patchDiffDigest;
+    if (targetDigest !== this.patch.patchDiffDigest) {
+      throw new RemediationValidationError(
+        `Authorization patchDiffDigest mismatch: expected "${this.patch.patchDiffDigest}", received "${targetDigest}".`
+      );
+    }
+    this.actors.authorizer = {
+      ...authorizer,
+      signature,
+      authorizedPatchDigest: targetDigest
+    };
     this._recordTransition(REMEDIATION_STATES.PATCH_AUTHORIZED, authorizer, {
-      authorizer,
+      authorizer: this.actors.authorizer,
+      authorizedPatchDigest: targetDigest,
       signature,
       actorType: authorizer.type || "human"
     });
@@ -980,6 +1076,12 @@ export class ControlledRemediationSession {
       );
     }
 
+    if (typeof testRunnerFn !== "function") {
+      throw new RemediationValidationError(
+        "Cannot verify remediation: testRunnerFn is required to execute deterministic checks in Patch Jail."
+      );
+    }
+
     const jail = createPatchJailWorktree(repoPath, { baseSha });
     try {
       const jailResult = applyPatchInJail(jail.jailPath, this.patch.rawDiff, this.targetFiles);
@@ -990,18 +1092,63 @@ export class ControlledRemediationSession {
         orchestrator
       });
 
-      let checkResult = {
-        testCommand: "npm test",
-        exitCode: 0,
-        passedCount: 1,
-        failedCount: 0,
-        runner: "test-runner"
-      };
-
-      if (typeof testRunnerFn === "function") {
-        const customRes = testRunnerFn(jail.jailPath);
-        checkResult = { ...checkResult, ...customRes };
+      let testRes;
+      try {
+        testRes = testRunnerFn(jail.jailPath);
+      } catch (err) {
+        testRes = {
+          testCommand: "custom-testRunnerFn",
+          exitCode: 1,
+          passedCount: 0,
+          failedCount: 1,
+          regressionDetected: true,
+          error: err.message
+        };
       }
+
+      // Check git status in jail worktree for post-test leaks / non-target changes
+      const postTestTreeDigest = computeTreeDigest(jail.jailPath);
+      let statusOut = "";
+      try {
+        statusOut = execFileSync("git", ["status", "--porcelain"], {
+          cwd: jail.jailPath,
+          encoding: "utf8",
+          stdio: ["ignore", "pipe", "pipe"],
+          windowsHide: true
+        });
+      } catch {
+        // ignore
+      }
+
+      const statusLines = statusOut.split("\n").map(l => l.trim()).filter(Boolean);
+      let dirtyLeakDetected = false;
+      let dirtyLeakFile = null;
+      for (const line of statusLines) {
+        const filePath = normalizeRelativePath(line.slice(2).trim());
+        if (!this.targetFiles.includes(filePath)) {
+          dirtyLeakDetected = true;
+          dirtyLeakFile = filePath;
+          break;
+        }
+      }
+
+      const exitCode = typeof testRes?.exitCode === "number" ? testRes.exitCode : (testRes ? 0 : 1);
+      const passedCount = typeof testRes?.passedCount === "number" ? testRes.passedCount : (exitCode === 0 ? 1 : 0);
+      const failedCount = typeof testRes?.failedCount === "number" ? testRes.failedCount : (exitCode === 0 ? 0 : 1);
+      const regressionDetected = exitCode !== 0 || failedCount > 0 || dirtyLeakDetected || Boolean(testRes?.regressionDetected);
+
+      const checkResult = {
+        executed: true,
+        testCommand: testRes?.testCommand || "npm test",
+        exitCode,
+        passedCount,
+        failedCount,
+        regressionDetected,
+        dirtyLeakDetected,
+        dirtyLeakFile,
+        postTestTreeDigest,
+        runner: testRes?.runner || "test-runner"
+      };
 
       this.recordDeterministicChecks(checkResult);
 
@@ -1015,16 +1162,26 @@ export class ControlledRemediationSession {
     }
   }
 
-  recordDeterministicChecks({ testCommand = "npm test", exitCode = 0, passedCount = 1, failedCount = 0, runner = "test-runner" }) {
-    const regressionDetected = exitCode !== 0 || failedCount > 0;
+  recordDeterministicChecks(checks = {}) {
+    const executed = Boolean(checks.executed);
+    const exitCode = typeof checks.exitCode === "number" ? checks.exitCode : -1;
+    const passedCount = typeof checks.passedCount === "number" ? checks.passedCount : 0;
+    const failedCount = typeof checks.failedCount === "number" ? checks.failedCount : 1;
+    const regressionDetected = !executed || exitCode !== 0 || failedCount > 0 || Boolean(checks.regressionDetected);
+
     this.deterministicChecks = {
-      testCommand,
+      executed,
+      testCommand: checks.testCommand || "npm test",
       exitCode,
       passedCount,
       failedCount,
-      regressionDetected
+      regressionDetected,
+      dirtyLeakDetected: Boolean(checks.dirtyLeakDetected),
+      dirtyLeakFile: checks.dirtyLeakFile || null,
+      postTestTreeDigest: checks.postTestTreeDigest || null
     };
 
+    const runner = checks.runner || "test-runner";
     if (regressionDetected) {
       this._recordTransition(REMEDIATION_STATES.REJECTED_FIX, runner, {
         deterministicChecks: this.deterministicChecks,
@@ -1041,21 +1198,61 @@ export class ControlledRemediationSession {
 
   recordClosureVerification({ verificationRecord, verifier = { providerName: "claude", modelName: "cli-default" } }) {
     this.actors.verifier = verifier;
-    const verdict = verificationRecord?.evaluations?.[0]?.verdict || verificationRecord?.verdict || "CONTESTED";
-    const supported = verdict === "SUPPORTED" && (verificationRecord?.summary?.contestedCount === 0 || !verificationRecord?.summary?.contestedCount);
+
+    // Validate verification record structure
+    const val = validateVerificationRecord(verificationRecord);
+    const validStructure = val.valid;
+
+    // Must find target finding in producer findings
+    const findingMatch = (verificationRecord?.producer?.findings || []).some(
+      f => (f.id || f.findingId) === this.findingId
+    );
+
+    // Must find evaluation for target finding with SUPPORTED and all accurate flags
+    const evalItem = (verificationRecord?.evaluations || []).find(
+      e => (e.id || e.findingId) === this.findingId
+    );
+
+    const verdict = evalItem?.verdict || "CONTESTED";
+    const evalPass = verdict === "SUPPORTED" &&
+      evalItem?.locatorAccurate === true &&
+      evalItem?.typeAccurate === true &&
+      evalItem?.severityAccurate === true;
+
+    const noContestedOrInsufficient =
+      (verificationRecord?.summary?.contestedCount === 0 || !verificationRecord?.summary?.contestedCount) &&
+      (verificationRecord?.summary?.insufficientEvidenceCount === 0 || !verificationRecord?.summary?.insufficientEvidenceCount);
+
     const residual = Boolean(verificationRecord?.residualVulnerabilityDetected);
 
+    // Monotonic Defense: Verifier cannot be the same provider family as synthesizer
+    const isSelfReview = Boolean(
+      this.actors.synthesizer?.providerName &&
+      verifier?.providerName &&
+      this.actors.synthesizer.providerName === verifier.providerName
+    );
+
+    const verified = validStructure &&
+      findingMatch &&
+      evalPass &&
+      noContestedOrInsufficient &&
+      !residual &&
+      !isSelfReview;
+
     this.closureVerification = {
-      verified: supported && !residual,
+      verified,
+      verificationRecord,
       verificationRecordDigest: verificationRecord?.digest || computeDigest(verificationRecord || {}),
       verdict,
-      residualVulnerabilityDetected: residual
+      residualVulnerabilityDetected: residual,
+      validationErrors: val.errors
     };
 
     if (this.closureVerification.verified) {
       this._recordTransition(REMEDIATION_STATES.CLOSED, verifier, {
         closureVerification: this.closureVerification,
-        actorType: "verifier"
+        actorType: "verifier",
+        isSelfVerification: isSelfReview
       });
     } else {
       this._recordTransition(REMEDIATION_STATES.REJECTED_FIX, verifier, {

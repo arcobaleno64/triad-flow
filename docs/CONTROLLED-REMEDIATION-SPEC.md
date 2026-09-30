@@ -32,7 +32,7 @@ Triad-Flow v2.3 enforces three foundational invariants:
 
 ---
 
-## 2. Canonical Remediation Lifecycle State Machine
+## 2. 9-State Canonical Remediation Lifecycle State Machine
 
 ```
               ┌───────────────────────────┐
@@ -105,6 +105,9 @@ Triad-Flow v2.3 enforces three foundational invariants:
 ---
 
 ## 3. The Patch Jail Invariant Contract (Sandbox Specification)
+
+> [!IMPORTANT]
+> **Boundary Limitation Notice**: The reference implementation establishes a **Git Worktree Isolation Boundary** preventing changes from modifying the authoritative host repository. It is **not** an OS sandbox, hypervisor, or container; network denial and OS-level environment isolation are not guaranteed in this reference implementation.
 
 The **Patch Jail** provides deterministic isolation so candidate code cannot tamper with host state, leak credentials, or alter uninspected files.
 
@@ -201,6 +204,10 @@ Every controlled remediation trial emits an immutable `remediation-receipt.json`
 - Automated loops are terminated immediately to prevent token exhaustion and hallucinatory patch thrashing.
 
 ### 5.2 Anti-Degradation Invariants (Goodhart Protection)
+
+> [!NOTE]
+> **Goodhart Enforcement Scope**: The v2.3 Reference PoC implements v0 syntactic & modifier evasion protection (detecting `.skip`, `xit/xdescribe`, `@ts-ignore/@ts-nocheck`, `eslint-disable`). Deeper semantic protections (AST schema weakening detection and fine-grained coverage gate) are designated for subsequent engine iterations.
+
 A patch is classified as a hostile regression and rejected automatically if it:
 1. Comments out, deletes, or skips existing test cases to achieve a passing exit code.
 2. Disables linter or type-checker warnings via inline suppresses (e.g. `// @ts-ignore`, `/* eslint-disable */`) without human authorization.
@@ -217,11 +224,14 @@ A patch is classified as a hostile regression and rejected automatically if it:
 | **Receipt Schema** | Schema `1.0.0` (`audit-receipt.json`) | Retained verbatim; Remediation receipts layered separately (`remediation-receipt.json`) |
 | **Independent Verification** | Normative Section 7 Contract | Reused as the mandatory gatekeeper between `FIXED_PENDING_VERIFY` and `CLOSED` |
 | **Worktree / Patch Execution** | Read-only inspection / disposable test | Ephemeral **Patch Jail** worktree for trial remediation |
-| **Remediation State** | Unspecified / Out-of-Scope | Normative 8-state machine; Plan-Only default; human authorization required |
+| **Remediation State** | Unspecified / Out-of-Scope | Normative 9-state machine; Plan-Only default; human authorization required |
 
 ---
 
 ## 7. Next Assurance Gate: Controlled Remediation Proof-of-Concept
+
+> [!NOTE]
+> **Validation Status**: Controlled Remediation reference path validated on `BENCH-REAL-001` (CWE-89 SQL Injection). Full generalization across all 20 corpus cases and multi-finding scenarios remains subject to subsequent gate iterations.
 
 To achieve v2.3.0 readiness, Triad-Flow must demonstrate:
 1. `BENCH-REAL-001` candidate patch formulated strictly in `FIX_PROPOSED` plan mode.

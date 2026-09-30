@@ -47,6 +47,67 @@ import {
   createCorpusCaseWorkspace
 } from "./fixtures/real-corpus-fixtures.mjs";
 
+function createMockVerificationRecord(findingId, options = {}) {
+  const verdict = options.verdict || "SUPPORTED";
+  const contested = verdict !== "SUPPORTED";
+  return {
+    schemaVersion: "1.0.0",
+    verifiedAt: new Date().toISOString(),
+    changeSetDigest: "sha256:" + "e".repeat(64),
+    producer: {
+      providerName: "agy",
+      findingsCount: 1,
+      findings: [
+        {
+          id: findingId,
+          findingId,
+          title: "Vulnerability Finding",
+          severity: "critical",
+          file: options.file || "src/db/user-repo.js",
+          line_start: 8,
+          line_end: 8
+        }
+      ]
+    },
+    verifier: {
+      providerName: options.verifierProvider || "claude",
+      modelName: "cli-default",
+      actualModel: { value: "claude-3-5-sonnet", source: "reported" }
+    },
+    evaluations: [
+      {
+        findingId,
+        verdict,
+        locatorAccurate: options.locatorAccurate ?? true,
+        typeAccurate: options.typeAccurate ?? true,
+        severityAccurate: options.severityAccurate ?? true,
+        reasoning: "Remediation verified."
+      }
+    ],
+    verifierOmissions: options.omissions || [],
+    disagreementLedger: contested
+      ? [
+          {
+            findingId,
+            classification: verdict,
+            locatorAccurate: options.locatorAccurate ?? true,
+            typeAccurate: options.typeAccurate ?? true,
+            severityAccurate: options.severityAccurate ?? true,
+            reasoning: "Contested by verifier."
+          }
+        ]
+      : [],
+    summary: {
+      totalEvaluated: 1,
+      supportedCount: contested ? 0 : 1,
+      contestedCount: contested ? 1 : 0,
+      insufficientEvidenceCount: 0,
+      omissionsCount: (options.omissions || []).length
+    },
+    residualVulnerabilityDetected: Boolean(options.residualVulnerabilityDetected)
+  };
+}
+
 test("Contract 1: Schema Major Version Parsing and Enforcement", () => {
   assert.equal(parseSchemaMajorVersion("1.0.0"), 1);
   assert.equal(parseSchemaMajorVersion("1.2.0"), 1);
@@ -146,18 +207,21 @@ test("Contract 2: Monotonic Defense & State Transitions", () => {
   assert.equal(
     validateRemediationTransition(REMEDIATION_STATES.PATCH_APPLIED_IN_JAIL, REMEDIATION_STATES.FIXED_PENDING_VERIFY, {
       actor: "test-runner",
-      deterministicChecks: { exitCode: 0, regressionDetected: false }
+      deterministicChecks: { executed: true, exitCode: 0, regressionDetected: false }
     }),
     true
   );
 
+  const validRecord = createMockVerificationRecord("TEST-FINDING-001");
   assert.equal(
     validateRemediationTransition(REMEDIATION_STATES.FIXED_PENDING_VERIFY, REMEDIATION_STATES.CLOSED, {
       actor: "claude-verifier",
       actorType: "verifier",
       closureVerification: {
+        verified: true,
         verdict: "SUPPORTED",
-        residualVulnerabilityDetected: false
+        residualVulnerabilityDetected: false,
+        verificationRecord: validRecord
       }
     }),
     true
@@ -334,7 +398,11 @@ test("Contract 7: Controlled Remediation Session Controller Lifecycle", () => {
     "+ const safe = sanitize(input);"
   ].join("\n");
 
-  session.proposeFix({ diff, rationale: "Sanitize unsanitized input" });
+  session.proposeFix({
+    diff,
+    rationale: "Sanitize unsanitized input",
+    synthesizer: { providerName: "codex", modelName: "gpt-6.1-sol" }
+  });
   assert.equal(session.status, REMEDIATION_STATES.FIX_PROPOSED);
   assert.equal(session.attempts, 1);
 
@@ -351,16 +419,12 @@ test("Contract 7: Controlled Remediation Session Controller Lifecycle", () => {
   assert.equal(session.status, REMEDIATION_STATES.PATCH_APPLIED_IN_JAIL);
 
   // Test Runner Green
-  session.recordDeterministicChecks({ exitCode: 0, passedCount: 10, failedCount: 0 });
+  session.recordDeterministicChecks({ executed: true, exitCode: 0, passedCount: 10, failedCount: 0 });
   assert.equal(session.status, REMEDIATION_STATES.FIXED_PENDING_VERIFY);
 
   // Independent Verifier Confirms Closure
   session.recordClosureVerification({
-    verificationRecord: {
-      verdict: "SUPPORTED",
-      summary: { supportedCount: 1, contestedCount: 0 },
-      residualVulnerabilityDetected: false
-    }
+    verificationRecord: createMockVerificationRecord("FINDING-BENCH-001")
   });
   assert.equal(session.status, REMEDIATION_STATES.CLOSED);
 
@@ -540,7 +604,7 @@ test("Contract 10: End-to-End Controlled Remediation Proof-of-Concept on BENCH-R
     session.proposeFix({
       diff: candidateDiff,
       rationale: "Replaced string concatenation with parameterized query placeholder to prevent SQL injection.",
-      synthesizer: { providerName: "claude", modelName: "opusplan" }
+      synthesizer: { providerName: "codex", modelName: "gpt-6.1-sol" }
     });
     assert.equal(session.status, REMEDIATION_STATES.FIX_PROPOSED);
 
@@ -572,30 +636,12 @@ test("Contract 10: End-to-End Controlled Remediation Proof-of-Concept on BENCH-R
     assert.equal(session.status, REMEDIATION_STATES.FIXED_PENDING_VERIFY);
 
     // 6. Independent Heterogeneous Verifier reviews diff and confirms closure
+    const verificationRecord = createMockVerificationRecord("BENCH-REAL-001-FINDING-001", {
+      verifierProvider: "claude"
+    });
     session.recordClosureVerification({
       verifier: { providerName: "claude", modelName: "cli-default" },
-      verificationRecord: {
-        verdict: "SUPPORTED",
-        digest: "sha256:" + "f".repeat(64),
-        evaluations: [
-          {
-            findingId: "BENCH-REAL-001-FINDING-001",
-            verdict: "SUPPORTED",
-            locatorAccurate: true,
-            typeAccurate: true,
-            severityAccurate: true,
-            reasoning: "Candidate diff converts raw string concatenation to parameterized binding, neutralizing CWE-89 without side effects."
-          }
-        ],
-        summary: {
-          totalEvaluated: 1,
-          supportedCount: 1,
-          contestedCount: 0,
-          insufficientEvidenceCount: 0,
-          omissionsCount: 0
-        },
-        residualVulnerabilityDetected: false
-      }
+      verificationRecord
     });
 
     assert.equal(session.status, REMEDIATION_STATES.CLOSED);
@@ -606,7 +652,7 @@ test("Contract 10: End-to-End Controlled Remediation Proof-of-Concept on BENCH-R
     assert.equal(receipt.status, "CLOSED");
     assert.equal(receipt.findingId, "BENCH-REAL-001-FINDING-001");
     assert.equal(receipt.actors.producer.providerName, "agy");
-    assert.equal(receipt.actors.synthesizer.providerName, "claude");
+    assert.equal(receipt.actors.synthesizer.providerName, "codex");
     assert.equal(receipt.actors.verifier.providerName, "claude");
     assert.equal(receipt.actors.authorizer.identity, "sec-lead@triad.flow");
     assert.deepEqual(receipt.patch.targetFiles, ["src/db/user-repo.js"]);
@@ -623,5 +669,223 @@ test("Contract 10: End-to-End Controlled Remediation Proof-of-Concept on BENCH-R
   } finally {
     workspace.cleanup();
   }
+});
+
+test("Contract 11: Negative Test - Fail closed when testRunnerFn is missing", () => {
+  const caseDef = getCorpusCaseById("BENCH-REAL-001");
+  const workspace = createCorpusCaseWorkspace(caseDef, { virtual: false });
+  try {
+    const session = new ControlledRemediationSession("NEG-001", [caseDef.targetFile]);
+    const candidateDiff = [
+      "diff --git a/src/db/user-repo.js b/src/db/user-repo.js",
+      "--- a/src/db/user-repo.js",
+      "+++ b/src/db/user-repo.js",
+      "@@ -6,6 +6,6 @@",
+      "   async findUserById(id) {",
+      "-    // Construct query for user record",
+      "-    const query = \"SELECT id, username, email FROM users WHERE id = '\" + id + \"'\";",
+      "-    return this.db.query(query);",
+      "+    // Parameterized query execution",
+      "+    const query = \"SELECT id, username, email FROM users WHERE id = ?\";",
+      "+    return this.db.query(query, [id]);",
+      "   }",
+      " }"
+    ].join("\n") + "\n";
+
+    session.proposeFix({ diff: candidateDiff, rationale: "fix" });
+    session.authorizePatch({ authorizer: { identity: "sec-lead", type: "human" } });
+    assert.equal(session.status, REMEDIATION_STATES.PATCH_AUTHORIZED);
+
+    // Calling executeInJailWorktree without testRunnerFn MUST fail closed!
+    assert.throws(
+      () => session.executeInJailWorktree(workspace.dir, { baseSha: workspace.headSha }),
+      RemediationValidationError
+    );
+    // Must NOT advance to FIXED_PENDING_VERIFY
+    assert.notEqual(session.status, REMEDIATION_STATES.FIXED_PENDING_VERIFY);
+    assert.equal(session.status, REMEDIATION_STATES.PATCH_AUTHORIZED);
+  } finally {
+    workspace.cleanup();
+  }
+});
+
+test("Contract 12: Negative Test - Deterministic test regression blocks CLOSED", () => {
+  const caseDef = getCorpusCaseById("BENCH-REAL-001");
+  const workspace = createCorpusCaseWorkspace(caseDef, { virtual: false });
+  try {
+    const session = new ControlledRemediationSession("NEG-002", [caseDef.targetFile]);
+    const candidateDiff = [
+      "diff --git a/src/db/user-repo.js b/src/db/user-repo.js",
+      "--- a/src/db/user-repo.js",
+      "+++ b/src/db/user-repo.js",
+      "@@ -6,6 +6,6 @@",
+      "   async findUserById(id) {",
+      "-    // Construct query for user record",
+      "-    const query = \"SELECT id, username, email FROM users WHERE id = '\" + id + \"'\";",
+      "-    return this.db.query(query);",
+      "+    // Parameterized query execution",
+      "+    const query = \"SELECT id, username, email FROM users WHERE id = ?\";",
+      "+    return this.db.query(query, [id]);",
+      "   }",
+      " }"
+    ].join("\n") + "\n";
+
+    session.proposeFix({ diff: candidateDiff, rationale: "fix" });
+    session.authorizePatch({ authorizer: { identity: "sec-lead", type: "human" } });
+
+    // Test runner reports failure/regression (e.g. exit code 1)
+    session.executeInJailWorktree(workspace.dir, {
+      baseSha: workspace.headSha,
+      testRunnerFn: () => ({
+        testCommand: "npm test",
+        exitCode: 1,
+        passedCount: 3,
+        failedCount: 1,
+        regressionDetected: true
+      })
+    });
+
+    // Must transition to REJECTED_FIX, NOT FIXED_PENDING_VERIFY
+    assert.equal(session.status, REMEDIATION_STATES.REJECTED_FIX);
+
+    // Attempting to close a rejected fix directly throws error
+    assert.throws(
+      () => validateRemediationTransition(session.status, REMEDIATION_STATES.CLOSED),
+      RemediationTransitionError
+    );
+  } finally {
+    workspace.cleanup();
+  }
+});
+
+test("Contract 13: Negative Test - Post-test worktree file leak triggers REJECTED_FIX", () => {
+  const caseDef = getCorpusCaseById("BENCH-REAL-001");
+  const workspace = createCorpusCaseWorkspace(caseDef, { virtual: false });
+  try {
+    const session = new ControlledRemediationSession("NEG-003", [caseDef.targetFile]);
+    const candidateDiff = [
+      "diff --git a/src/db/user-repo.js b/src/db/user-repo.js",
+      "--- a/src/db/user-repo.js",
+      "+++ b/src/db/user-repo.js",
+      "@@ -6,6 +6,6 @@",
+      "   async findUserById(id) {",
+      "-    // Construct query for user record",
+      "-    const query = \"SELECT id, username, email FROM users WHERE id = '\" + id + \"'\";",
+      "-    return this.db.query(query);",
+      "+    // Parameterized query execution",
+      "+    const query = \"SELECT id, username, email FROM users WHERE id = ?\";",
+      "+    return this.db.query(query, [id]);",
+      "   }",
+      " }"
+    ].join("\n") + "\n";
+
+    session.proposeFix({ diff: candidateDiff, rationale: "fix" });
+    session.authorizePatch({ authorizer: { identity: "sec-lead", type: "human" } });
+
+    // Test runner secretly writes an unauthorized file outside targetFiles
+    session.executeInJailWorktree(workspace.dir, {
+      baseSha: workspace.headSha,
+      testRunnerFn: (jailDir) => {
+        fs.writeFileSync(path.join(jailDir, "unauthorized-leak.js"), "console.log('pwned');\n");
+        return { exitCode: 0, passedCount: 5, failedCount: 0 };
+      }
+    });
+
+    // Must detect dirty leak outside targetFiles and transition to REJECTED_FIX
+    assert.equal(session.status, REMEDIATION_STATES.REJECTED_FIX);
+    assert.equal(session.deterministicChecks.dirtyLeakDetected, true);
+    assert.equal(session.deterministicChecks.dirtyLeakFile, "unauthorized-leak.js");
+  } finally {
+    workspace.cleanup();
+  }
+});
+
+test("Contract 14: Negative Test - Contested or malformed verification record blocks CLOSED", () => {
+  const session = new ControlledRemediationSession("NEG-004", ["src/app.js"]);
+  session.proposeFix({
+    diff: "diff --git a/src/app.js b/src/app.js\n--- a/src/app.js\n+++ b/src/app.js\n@@ -1,1 +1,1 @@\n+const x = 1;\n",
+    rationale: "fix",
+    synthesizer: { providerName: "codex", modelName: "gpt-6.1-sol" }
+  });
+  session.authorizePatch({ authorizer: { identity: "sec-lead", type: "human" } });
+  session.recordJailApplication({
+    worktreeSha: "sha123",
+    prePatchTreeDigest: "sha256:" + "1".repeat(64),
+    postPatchTreeDigest: "sha256:" + "2".repeat(64)
+  });
+  session.recordDeterministicChecks({ executed: true, exitCode: 0, passedCount: 1, failedCount: 0 });
+  assert.equal(session.status, REMEDIATION_STATES.FIXED_PENDING_VERIFY);
+
+  // 1. Contested verdict record transitions to REJECTED_FIX
+  const contestedRecord = createMockVerificationRecord("NEG-004", { verdict: "CONTESTED", file: "src/app.js" });
+  session.recordClosureVerification({
+    verifier: { providerName: "claude", modelName: "cli-default" },
+    verificationRecord: contestedRecord
+  });
+  assert.equal(session.status, REMEDIATION_STATES.REJECTED_FIX);
+
+  // 2. Malformed stub record also transitions to REJECTED_FIX
+  const session2 = new ControlledRemediationSession("NEG-004B", ["src/app.js"]);
+  session2.proposeFix({
+    diff: "diff --git a/src/app.js b/src/app.js\n--- a/src/app.js\n+++ b/src/app.js\n@@ -1,1 +1,1 @@\n+const x = 1;\n",
+    rationale: "fix",
+    synthesizer: { providerName: "codex", modelName: "gpt-6.1-sol" }
+  });
+  session2.authorizePatch({ authorizer: { identity: "sec-lead", type: "human" } });
+  session2.recordJailApplication({
+    worktreeSha: "sha123",
+    prePatchTreeDigest: "sha256:" + "1".repeat(64),
+    postPatchTreeDigest: "sha256:" + "2".repeat(64)
+  });
+  session2.recordDeterministicChecks({ executed: true, exitCode: 0, passedCount: 1, failedCount: 0 });
+
+  session2.recordClosureVerification({
+    verifier: { providerName: "claude", modelName: "cli-default" },
+    verificationRecord: { evaluations: [{ verdict: "SUPPORTED" }] } // fake minimal stub
+  });
+  assert.equal(session2.status, REMEDIATION_STATES.REJECTED_FIX);
+});
+
+test("Contract 15: Negative Test - Strict allowlist blocks arbitrary state transitions", () => {
+  // Prohibit CLOSED -> REJECTED_FIX
+  assert.throws(
+    () => validateRemediationTransition(REMEDIATION_STATES.CLOSED, REMEDIATION_STATES.REJECTED_FIX),
+    RemediationTransitionError
+  );
+
+  // Prohibit OPEN -> FIXED_PENDING_VERIFY
+  assert.throws(
+    () => validateRemediationTransition(REMEDIATION_STATES.OPEN, REMEDIATION_STATES.FIXED_PENDING_VERIFY),
+    RemediationTransitionError
+  );
+
+  // Prohibit PATCH_AUTHORIZED -> CLOSED
+  assert.throws(
+    () => validateRemediationTransition(REMEDIATION_STATES.PATCH_AUTHORIZED, REMEDIATION_STATES.CLOSED),
+    RemediationTransitionError
+  );
+
+  // Prohibit REOPENED -> CLOSED
+  assert.throws(
+    () => validateRemediationTransition(REMEDIATION_STATES.REOPENED, REMEDIATION_STATES.CLOSED),
+    RemediationTransitionError
+  );
+});
+
+test("Contract 16: Negative Test - Authorization digest mismatch is rejected", () => {
+  const session = new ControlledRemediationSession("NEG-006", ["src/app.js"]);
+  session.proposeFix({
+    diff: "diff --git a/src/app.js b/src/app.js\n--- a/src/app.js\n+++ b/src/app.js\n@@ -1,1 +1,1 @@\n+const x = 1;\n",
+    rationale: "fix"
+  });
+
+  assert.throws(
+    () => session.authorizePatch({
+      authorizer: { identity: "sec-lead", type: "human" },
+      patchDiffDigest: "sha256:" + "0".repeat(64) // mismatch!
+    }),
+    RemediationValidationError
+  );
+  assert.equal(session.status, REMEDIATION_STATES.FIX_PROPOSED);
 });
 
