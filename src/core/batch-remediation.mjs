@@ -9,6 +9,10 @@
  * - Immutable Batch Remediation Receipt Schema 1.0.0 builder and validator.
  */
 
+import fs from "node:fs";
+import path from "node:path";
+import { execFileSync } from "node:child_process";
+
 import {
   canonicalJsonStringify,
   computeDigest,
@@ -17,7 +21,13 @@ import {
 import {
   REMEDIATION_STATES,
   ControlledRemediationSession,
-  validateRemediationReceipt
+  validateRemediationReceipt,
+  createPatchJailWorktree,
+  cleanupPatchJailWorktree,
+  applyPatchInJail,
+  computeTreeDigest,
+  RemediationValidationError,
+  PatchJailExecutionError
 } from "./controlled-remediation.mjs";
 
 export const BATCH_SCHEMA_VERSION = "1.0.0";
@@ -218,6 +228,169 @@ export class BatchRemediationSession {
 
     this.currentTreeDigest = postPatchTreeDigest;
     this.status = BATCH_REMEDIATION_STATES.IN_PROGRESS;
+  }
+
+  /**
+   * Executes candidate patches sequentially in an ephemeral Git Worktree Patch Jail.
+   *
+   * @param {string} repoPath
+   * @param {object} [options]
+   * @param {string} [options.baseSha="HEAD"]
+   * @param {Function} options.testRunnerFn
+   * @param {string} [options.orchestrator="batch-orchestrator"]
+   * @returns {{ jailPath: string, baseSha: string, order: string[], executionResults: object[], initialTreeDigest: string, currentTreeDigest: string, lineage: object[], aggregateDiff: string }}
+   */
+  executeBatchInJailWorktree(repoPath, {
+    baseSha = "HEAD",
+    testRunnerFn = null,
+    orchestrator = "batch-orchestrator"
+  } = {}) {
+    if (typeof testRunnerFn !== "function") {
+      throw new BatchValidationError("executeBatchInJailWorktree requires a 'testRunnerFn' callback function.");
+    }
+
+    const jail = createPatchJailWorktree(repoPath, { baseSha });
+    const initialTreeDigest = computeTreeDigest(jail.jailPath);
+    if (!this.initialTreeDigest) {
+      this.initialTreeDigest = initialTreeDigest;
+    }
+    this.currentTreeDigest = initialTreeDigest;
+
+    const order = computeDeterministicBatchOrder(this.findings);
+    const executionResults = [];
+
+    const gitExec = (args) => execFileSync("git", ["-c", "core.fsmonitor=false", ...args], {
+      cwd: jail.jailPath,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true
+    });
+
+    try {
+      for (const findingId of order) {
+        const session = this.getSession(findingId);
+
+        // Invariant 1: Cannot execute in jail unless patch is in PATCH_AUTHORIZED state
+        if (session.status !== REMEDIATION_STATES.PATCH_AUTHORIZED) {
+          executionResults.push({
+            findingId,
+            status: session.status,
+            skipped: true,
+            reason: `Session status is ${session.status} (requires PATCH_AUTHORIZED)`
+          });
+          continue;
+        }
+
+        let jailResult;
+        try {
+          jailResult = applyPatchInJail(jail.jailPath, session.patch.rawDiff, session.targetFiles);
+          session.recordJailApplication({
+            worktreeSha: baseSha,
+            prePatchTreeDigest: jailResult.prePatchTreeDigest,
+            postPatchTreeDigest: jailResult.postPatchTreeDigest,
+            orchestrator
+          });
+        } catch (err) {
+          // Patch application or scope violation in jail -> roll back uncommitted changes
+          gitExec(["reset", "--hard", "HEAD"]);
+          gitExec(["clean", "-fd"]);
+          session._recordTransition(REMEDIATION_STATES.REJECTED_FIX, orchestrator, {
+            error: err.message,
+            actorType: "orchestrator"
+          });
+          executionResults.push({
+            findingId,
+            status: session.status,
+            applied: false,
+            error: err.message
+          });
+          continue;
+        }
+
+        // Run deterministic test runner in jail
+        let testRes;
+        try {
+          testRes = testRunnerFn(jail.jailPath, { findingId, session });
+        } catch (err) {
+          testRes = {
+            testCommand: "custom-testRunnerFn",
+            exitCode: 1,
+            passedCount: 0,
+            failedCount: 1,
+            regressionDetected: true,
+            error: err.message
+          };
+        }
+
+        const exitCode = typeof testRes?.exitCode === "number" ? testRes.exitCode : (testRes ? 0 : 1);
+        const passedCount = typeof testRes?.passedCount === "number" ? testRes.passedCount : (exitCode === 0 ? 1 : 0);
+        const failedCount = typeof testRes?.failedCount === "number" ? testRes.failedCount : (exitCode === 0 ? 0 : 1);
+        const regressionDetected = exitCode !== 0 || failedCount > 0 || Boolean(testRes?.regressionDetected);
+
+        session.recordDeterministicChecks({
+          executed: true,
+          testCommand: testRes?.testCommand || "npm test",
+          exitCode,
+          passedCount,
+          failedCount,
+          regressionDetected,
+          postTestTreeDigest: jailResult.postPatchTreeDigest,
+          runner: testRes?.runner || "test-runner"
+        });
+
+        if (session.status === REMEDIATION_STATES.FIXED_PENDING_VERIFY) {
+          // Commit in ephemeral worktree to anchor this step as the new base for next steps
+          gitExec(["add", "-A"]);
+          gitExec(["-c", "user.name=triad-flow", "-c", "user.email=bot@triad.flow", "commit", "-q", "-m", `remediate: ${findingId}`]);
+
+          this.recordStepSuccess(findingId, {
+            prePatchTreeDigest: jailResult.prePatchTreeDigest,
+            postPatchTreeDigest: jailResult.postPatchTreeDigest
+          });
+
+          executionResults.push({
+            findingId,
+            status: session.status,
+            applied: true,
+            prePatchTreeDigest: jailResult.prePatchTreeDigest,
+            postPatchTreeDigest: jailResult.postPatchTreeDigest,
+            testsPassed: true
+          });
+        } else {
+          // Roll back uncommitted changes from this failed patch
+          gitExec(["reset", "--hard", "HEAD"]);
+          gitExec(["clean", "-fd"]);
+
+          executionResults.push({
+            findingId,
+            status: session.status,
+            applied: true,
+            testsPassed: false
+          });
+        }
+      }
+
+      // Compute aggregate diff across all successfully committed patches
+      let aggregateDiff = "";
+      try {
+        aggregateDiff = gitExec(["diff", baseSha, "HEAD"]);
+      } catch {
+        // ignore
+      }
+
+      return {
+        jailPath: jail.jailPath,
+        baseSha,
+        order,
+        executionResults,
+        initialTreeDigest: this.initialTreeDigest,
+        currentTreeDigest: this.currentTreeDigest,
+        lineage: [...this.lineageHistory],
+        aggregateDiff
+      };
+    } finally {
+      jail.cleanup();
+    }
   }
 
   /**
