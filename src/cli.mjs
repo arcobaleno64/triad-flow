@@ -31,6 +31,11 @@ import {
   validateBatchReceipt
 } from "./core/batch-remediation.mjs";
 import {
+  resolveSandboxDriver,
+  SandboxUnavailableError,
+  SANDBOX_DRIVERS
+} from "./core/sandbox-driver.mjs";
+import {
   conductIndependentVerification,
   validateVerifierCommand,
   createMockVerifierAdapter,
@@ -168,7 +173,8 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
       "--authorizer",
       "--synthesizer",
       "--plan-only",
-      "--batch"
+      "--batch",
+      "--sandbox"
     ].includes(name);
   };
 
@@ -193,7 +199,8 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
     "--timeout",
     "--diff",
     "--authorizer",
-    "--synthesizer"
+    "--synthesizer",
+    "--sandbox"
   ]);
 
   for (let i = 0; i < argv.length; i++) {
@@ -484,6 +491,18 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
   }
   synthesizerArg = synthesizerArg || options.synthesizer || null;
 
+  let sandboxArg = null;
+  const sandboxExplicit = argv.find(a => a.startsWith("--sandbox="));
+  if (sandboxExplicit) {
+    sandboxArg = sandboxExplicit.slice("--sandbox=".length);
+  } else {
+    const sandboxIdx = argv.indexOf("--sandbox");
+    if (sandboxIdx !== -1 && argv[sandboxIdx + 1] && !argv[sandboxIdx + 1].startsWith("--")) {
+      sandboxArg = argv[sandboxIdx + 1];
+    }
+  }
+  sandboxArg = sandboxArg || options.sandbox || "worktree";
+
   const planOnlyArg = argv.includes("--plan-only") || Boolean(options.planOnly);
 
   const isRecognizedArg = (arg) => {
@@ -509,6 +528,7 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
     if (arg.startsWith("--diff=") || arg === "--diff") return true;
     if (arg.startsWith("--authorizer=") || arg === "--authorizer") return true;
     if (arg.startsWith("--synthesizer=") || arg === "--synthesizer") return true;
+    if (arg.startsWith("--sandbox=") || arg === "--sandbox") return true;
     if (arg === "--live" || arg === "--virtual") return true;
     return false;
   };
@@ -576,6 +596,11 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
 
   if (argv.some(a => a === "--diff" || a === "--diff=") && !diffArg) {
     io.stderr.write(`✖ [USAGE ERROR] Option '--diff' requires a <file> argument.\n`);
+    return EXIT_CODES.USAGE_ERROR;
+  }
+
+  if (argv.some(a => a === "--sandbox" || a === "--sandbox=") && (!sandboxArg || (argv.includes("--sandbox") && (!argv[argv.indexOf("--sandbox") + 1] || argv[argv.indexOf("--sandbox") + 1].startsWith("--"))))) {
+    io.stderr.write(`✖ [USAGE ERROR] Option '--sandbox' requires a <driver> argument (e.g. --sandbox=worktree or --sandbox=container).\n`);
     return EXIT_CODES.USAGE_ERROR;
   }
 
@@ -1143,6 +1168,16 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
       const opts = { ...io, ...options };
       const isBatch = batchArg || Boolean(casesArg && casesArg.includes(","));
 
+      let sandboxDriverInstance;
+      try {
+        sandboxDriverInstance = resolveSandboxDriver(sandboxArg, {
+          execFn: options.sandboxExecFn || options.execFn || null
+        });
+      } catch (err) {
+        io.stderr.write(`✖ [USAGE ERROR] ${err.message}\n`);
+        return EXIT_CODES.USAGE_ERROR;
+      }
+
       if (isBatch) {
         printBanner(io, "Triad-Flow • Multi-Finding Remediation Orchestrator [BATCH PLAN-ONLY]");
 
@@ -1285,7 +1320,8 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
               io.stderr.write(`[3/4] Executing batch sequential trials in ephemeral Patch Jail worktree...\n`);
               batch.executeBatchInJailWorktree(workspace ? workspace.dir : (opts.cwd || process.cwd()), {
                 baseSha: workspace ? workspace.headSha : (headArg || "HEAD"),
-                testRunnerFn: opts.testRunnerFn
+                testRunnerFn: opts.testRunnerFn,
+                sandboxDriver: sandboxDriverInstance
               });
             } else {
               io.stderr.write(`[3/4] No deterministic test runner provided. Cannot execute verification in Patch Jail; remaining in PATCH_AUTHORIZED.\n`);
@@ -1330,6 +1366,7 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
               "=======================================================",
               `Batch ID:           ${batchReceipt.batchId}`,
               `Batch Verdict:      ${batchReceipt.verdict}`,
+              `Sandbox Driver:     ${batchReceipt.sandbox?.driver || "worktree"} (fs: ${batchReceipt.sandbox?.capabilities?.filesystemIsolation || "worktree"}, egress: ${batchReceipt.sandbox?.capabilities?.networkEgressDenial || "unavailable"})`,
               `Total Findings:     ${batchReceipt.summary.totalFindings}`,
               `Closed:             ${batchReceipt.summary.closedCount}`,
               `Rejected:           ${batchReceipt.summary.rejectedCount}`,
@@ -1443,7 +1480,8 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
             io.stderr.write(`[3/4] Executing trial inside ephemeral Patch Jail worktree...\n`);
             session.executeInJailWorktree(workspace.dir, {
               baseSha: workspace.headSha,
-              testRunnerFn: opts.testRunnerFn
+              testRunnerFn: opts.testRunnerFn,
+              sandboxDriver: sandboxDriverInstance
             });
           } else {
             io.stderr.write(`[3/4] No deterministic test runner provided. Cannot execute verification in Patch Jail; remaining in PATCH_AUTHORIZED.\n`);
@@ -1485,6 +1523,7 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
               `Case ID:            ${caseDef.id} (${caseDef.title})`,
               `Target File:        ${caseDef.targetFile}`,
               `Lifecycle Status:   ${receipt.status}`,
+              `Sandbox Driver:     ${receipt.jail?.driver || "worktree"} (fs: ${receipt.jail?.capabilities?.filesystemIsolation || "worktree"}, egress: ${receipt.jail?.capabilities?.networkEgressDenial || "unavailable"})`,
               `Synthesizer:        ${receipt.actors.synthesizer?.providerName || "none"}`,
               `Verifier:           ${receipt.actors.verifier?.providerName || "none"}`,
               `Worktree SHA:       ${receipt.jail?.worktreeSha || "none"}`,
@@ -1515,7 +1554,7 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
     }
 
     default: {
-      io.stderr.write(`Usage: triad-flow [doctor | demo | review | factory | benchmark | remediate] [--format=sarif|json] [--strict] [--staged] [--base=<ref>] [--head=<ref>] [--report=<file>] [--receipt=<file>] [--manifest[=<file>]] [--verify-with=<cmd>] [--verification-report=<file>] [--macro-cmd=<cmd>] [--micro-cmd=<cmd>] [--macro-args=<csv>] [--micro-args=<csv>] [--mode=<mode>] [--case=<id>] [--cases=<ids>] [--limit=<n>] [--live] [--virtual] [--diff=<file>] [--authorizer=<id>] [--synthesizer=<provider>] [--plan-only] [--batch]\n`);
+      io.stderr.write(`Usage: triad-flow [doctor | demo | review | factory | benchmark | remediate] [--format=sarif|json] [--strict] [--staged] [--base=<ref>] [--head=<ref>] [--report=<file>] [--receipt=<file>] [--manifest[=<file>]] [--verify-with=<cmd>] [--verification-report=<file>] [--macro-cmd=<cmd>] [--micro-cmd=<cmd>] [--macro-args=<csv>] [--micro-args=<csv>] [--mode=<mode>] [--case=<id>] [--cases=<ids>] [--limit=<n>] [--live] [--virtual] [--diff=<file>] [--authorizer=<id>] [--synthesizer=<provider>] [--sandbox=worktree|container] [--plan-only] [--batch]\n`);
       return EXIT_CODES.USAGE_ERROR;
     }
   }
