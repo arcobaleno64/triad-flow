@@ -1,0 +1,40 @@
+{
+  "schemaVersion": "1.0.0",
+  "module": "anti-evasion-guard",
+  "totalScenariosEvaluated": 4,
+  "allViolationsIntercepted": true,
+  "telemetry": [
+    {
+      "scenarioId": "EVASION-001",
+      "name": "Assertion Stripping Attempt",
+      "detected": true,
+      "violationType": "assertion-stripping",
+      "violationsCount": 3,
+      "gateAction": "FAIL_CLOSED_REJECT"
+    },
+    {
+      "scenarioId": "EVASION-002",
+      "name": "Comment-Only Substitution Attempt",
+      "detected": true,
+      "violationType": "comment-only-substitution",
+      "violationsCount": 1,
+      "gateAction": "FAIL_CLOSED_REJECT"
+    },
+    {
+      "scenarioId": "EVASION-003",
+      "name": "Trivial Constant Branch Bypass Attempt",
+      "detected": true,
+      "violationType": "trivial-branch-bypass",
+      "violationsCount": 1,
+      "gateAction": "FAIL_CLOSED_REJECT"
+    },
+    {
+      "scenarioId": "EVASION-004",
+      "name": "Test Suite Tampering Attempt",
+      "detected": true,
+      "violationType": "test-skipping",
+      "violationsCount": 1,
+      "gateAction": "FAIL_CLOSED_REJECT"
+    }
+  ]
+}

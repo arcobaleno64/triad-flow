@@ -492,16 +492,25 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
   synthesizerArg = synthesizerArg || options.synthesizer || null;
 
   let sandboxArg = null;
+  const hasSandboxExplicit = argv.some(a => a.startsWith("--sandbox="));
   const sandboxExplicit = argv.find(a => a.startsWith("--sandbox="));
-  if (sandboxExplicit) {
+  if (hasSandboxExplicit) {
     sandboxArg = sandboxExplicit.slice("--sandbox=".length);
   } else {
     const sandboxIdx = argv.indexOf("--sandbox");
-    if (sandboxIdx !== -1 && argv[sandboxIdx + 1] && !argv[sandboxIdx + 1].startsWith("--")) {
-      sandboxArg = argv[sandboxIdx + 1];
+    if (sandboxIdx !== -1) {
+      if (argv[sandboxIdx + 1] && !argv[sandboxIdx + 1].startsWith("--")) {
+        sandboxArg = argv[sandboxIdx + 1];
+      } else {
+        sandboxArg = "";
+      }
     }
   }
-  sandboxArg = sandboxArg || options.sandbox || "worktree";
+
+  const hasSandboxFlag = hasSandboxExplicit || argv.includes("--sandbox");
+  if (!hasSandboxFlag) {
+    sandboxArg = options.sandbox || "worktree";
+  }
 
   const planOnlyArg = argv.includes("--plan-only") || Boolean(options.planOnly);
 
@@ -599,7 +608,7 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
     return EXIT_CODES.USAGE_ERROR;
   }
 
-  if (argv.some(a => a === "--sandbox" || a === "--sandbox=") && (!sandboxArg || (argv.includes("--sandbox") && (!argv[argv.indexOf("--sandbox") + 1] || argv[argv.indexOf("--sandbox") + 1].startsWith("--"))))) {
+  if (hasSandboxFlag && (!sandboxArg || !sandboxArg.trim())) {
     io.stderr.write(`✖ [USAGE ERROR] Option '--sandbox' requires a <driver> argument (e.g. --sandbox=worktree or --sandbox=container).\n`);
     return EXIT_CODES.USAGE_ERROR;
   }
@@ -1366,7 +1375,7 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
               "=======================================================",
               `Batch ID:           ${batchReceipt.batchId}`,
               `Batch Verdict:      ${batchReceipt.verdict}`,
-              `Sandbox Driver:     ${batchReceipt.sandbox?.driver || "worktree"} (fs: ${batchReceipt.sandbox?.capabilities?.filesystemIsolation || "worktree"}, egress: ${batchReceipt.sandbox?.capabilities?.networkEgressDenial || "unavailable"})`,
+              `Sandbox Driver:     ${batchReceipt.sandbox?.driver || "worktree"} (fs: ${batchReceipt.sandbox?.capabilities?.filesystemIsolation || "git-worktree"}, egress: ${batchReceipt.sandbox?.capabilities?.networkEgressDenial || "unavailable"})`,
               `Total Findings:     ${batchReceipt.summary.totalFindings}`,
               `Closed:             ${batchReceipt.summary.closedCount}`,
               `Rejected:           ${batchReceipt.summary.rejectedCount}`,
@@ -1523,7 +1532,7 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
               `Case ID:            ${caseDef.id} (${caseDef.title})`,
               `Target File:        ${caseDef.targetFile}`,
               `Lifecycle Status:   ${receipt.status}`,
-              `Sandbox Driver:     ${receipt.jail?.driver || "worktree"} (fs: ${receipt.jail?.capabilities?.filesystemIsolation || "worktree"}, egress: ${receipt.jail?.capabilities?.networkEgressDenial || "unavailable"})`,
+              `Sandbox Driver:     ${receipt.jail?.driver || "worktree"} (fs: ${receipt.jail?.capabilities?.filesystemIsolation || "git-worktree"}, egress: ${receipt.jail?.capabilities?.networkEgressDenial || "unavailable"})`,
               `Synthesizer:        ${receipt.actors.synthesizer?.providerName || "none"}`,
               `Verifier:           ${receipt.actors.verifier?.providerName || "none"}`,
               `Worktree SHA:       ${receipt.jail?.worktreeSha || "none"}`,

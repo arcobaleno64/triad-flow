@@ -1,0 +1,100 @@
+{
+  "schemaVersion": "1.0.0",
+  "receiptId": "rem-1790747532708-cfea20",
+  "findingId": "BENCH-REAL-003-FINDING-001",
+  "status": "CLOSED",
+  "timestamps": {
+    "startedAt": "2026-09-30T05:52:11.037Z",
+    "completedAt": "2026-09-30T05:52:12.708Z"
+  },
+  "actors": {
+    "producer": {
+      "providerName": "unknown",
+      "modelName": "unknown"
+    },
+    "synthesizer": {
+      "providerName": "codex",
+      "modelName": "cli-remediate"
+    },
+    "verifier": {
+      "providerName": "claude",
+      "modelName": "cli-default"
+    },
+    "authorizer": {
+      "identity": "security-lead@triad.flow",
+      "type": "human",
+      "signature": null,
+      "authorizedPatchDigest": "sha256:cbf4dae0c9a368b35a8282e63fc90ba60e480f04f8aa82b0a5338545c6beeefd"
+    }
+  },
+  "patch": {
+    "patchDiffDigest": "sha256:cbf4dae0c9a368b35a8282e63fc90ba60e480f04f8aa82b0a5338545c6beeefd",
+    "targetFiles": [
+      "src/storage/file-fetcher.js"
+    ],
+    "additions": 5,
+    "deletions": 2,
+    "rationale": "Enforced path normalization with path.basename() and prefix bounds validation with target.startsWith() to deny directory traversal."
+  },
+  "jail": {
+    "driver": "worktree",
+    "capabilities": {
+      "driver": "worktree",
+      "filesystemIsolation": "git-worktree",
+      "networkEgressDenial": "unavailable",
+      "processIsolation": "none",
+      "hostFilesystemWriteRestriction": "unenforced"
+    },
+    "worktreeSha": "a4e2709f211ae42de6ac2aa798913964a9426e50",
+    "prePatchTreeDigest": "sha256:e962ce854814cbda353dd7738911f06b12fa59d52792252074bae38aae936a85",
+    "postPatchTreeDigest": "sha256:f1cdfa769807683a5b799e030f1907e3ddb91c6a1aec93c9e83ceb33a53f48ef",
+    "isolatedExecutionPass": true
+  },
+  "deterministicChecks": {
+    "executed": true,
+    "testCommand": "npm test -- src/storage/file-fetcher.js",
+    "exitCode": 0,
+    "passedCount": 1,
+    "failedCount": 0,
+    "regressionDetected": false,
+    "postTestTreeDigest": "sha256:f1cdfa769807683a5b799e030f1907e3ddb91c6a1aec93c9e83ceb33a53f48ef"
+  },
+  "closureVerification": {
+    "verified": true,
+    "verificationRecordDigest": "sha256:b50d3ff8cf5071f761e402f0cf5a73e7f361957eb31103f7cad50e9488714389",
+    "verdict": "SUPPORTED",
+    "residualVulnerabilityDetected": false
+  },
+  "history": [
+    {
+      "from": "OPEN",
+      "to": "FIX_PROPOSED",
+      "at": "2026-09-30T05:52:11.038Z",
+      "actor": "codex"
+    },
+    {
+      "from": "FIX_PROPOSED",
+      "to": "PATCH_AUTHORIZED",
+      "at": "2026-09-30T05:52:11.038Z",
+      "actor": "security-lead@triad.flow"
+    },
+    {
+      "from": "PATCH_AUTHORIZED",
+      "to": "PATCH_APPLIED_IN_JAIL",
+      "at": "2026-09-30T05:52:11.865Z",
+      "actor": "batch-orchestrator"
+    },
+    {
+      "from": "PATCH_APPLIED_IN_JAIL",
+      "to": "FIXED_PENDING_VERIFY",
+      "at": "2026-09-30T05:52:11.865Z",
+      "actor": "test-runner"
+    },
+    {
+      "from": "FIXED_PENDING_VERIFY",
+      "to": "CLOSED",
+      "at": "2026-09-30T05:52:12.707Z",
+      "actor": "claude"
+    }
+  ]
+}

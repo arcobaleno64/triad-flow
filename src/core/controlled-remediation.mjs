@@ -823,9 +823,10 @@ export function buildRemediationReceipt(params = {}) {
     driver: params.jail?.driver || "worktree",
     capabilities: params.jail?.capabilities || {
       driver: params.jail?.driver || "worktree",
-      filesystemIsolation: params.jail?.driver === "container" ? "container" : "worktree",
-      networkEgressDenial: params.jail?.driver === "container" ? "verified" : "unavailable",
-      writeBoundary: params.jail?.driver === "container" ? "container-ephemeral-volume" : "jail-worktree-only"
+      filesystemIsolation: params.jail?.driver === "container" ? "container-unverified" : "git-worktree",
+      networkEgressDenial: "unavailable",
+      processIsolation: "none",
+      hostFilesystemWriteRestriction: "unenforced"
     },
     worktreeSha: params.jail?.worktreeSha || null,
     prePatchTreeDigest: params.jail?.prePatchTreeDigest || null,
@@ -1081,9 +1082,10 @@ export class ControlledRemediationSession {
       driver,
       capabilities: capabilities || {
         driver,
-        filesystemIsolation: driver === "container" ? "container" : "worktree",
-        networkEgressDenial: driver === "container" ? "verified" : "unavailable",
-        writeBoundary: driver === "container" ? "container-ephemeral-volume" : "jail-worktree-only"
+        filesystemIsolation: driver === "container" ? "container-unverified" : "git-worktree",
+        networkEgressDenial: "unavailable",
+        processIsolation: "none",
+        hostFilesystemWriteRestriction: "unenforced"
       },
       worktreeSha,
       prePatchTreeDigest,

@@ -1,0 +1,117 @@
+{
+  "schemaVersion": "1.0.0",
+  "bundleId": "TF-EVIDENCE-0004",
+  "totalFiles": 22,
+  "files": [
+    {
+      "path": "README-EVIDENCE.md",
+      "sizeBytes": 6329,
+      "sha256": "sha256:2e295321e5868e2e1b03059fdfdf268f8653c92c584f55c56df5353c72cc22e6"
+    },
+    {
+      "path": "aggregate-batch.patch",
+      "sizeBytes": 3132,
+      "sha256": "sha256:26dba4961c9247d4b5fc4614828e623338da947ac73bf5b8ad0fd216e5f68be0"
+    },
+    {
+      "path": "batch-remediation-receipt.json",
+      "sizeBytes": 22755,
+      "sha256": "sha256:f587e27ae8f40f1fe235ae866ff9e4ff8dc4d1c9b318f271c9454677e9b405a6"
+    },
+    {
+      "path": "corpus-identity.json",
+      "sizeBytes": 816,
+      "sha256": "sha256:37ef651eeb958f6ecd425a4d489bcfa4215e3d7bb23c1c0d955ab188f3c0d42b"
+    },
+    {
+      "path": "patches/BENCH-REAL-001.patch",
+      "sizeBytes": 535,
+      "sha256": "sha256:689438f629a752c0f909eff84e9d079b9f2edc9c3d6ba88edddcf6ba72a34c3f"
+    },
+    {
+      "path": "patches/BENCH-REAL-002.patch",
+      "sizeBytes": 699,
+      "sha256": "sha256:cfe84fd8a86f74e122e1464ac8c732badb3f3cb9b90e7b25b7c573632789022d"
+    },
+    {
+      "path": "patches/BENCH-REAL-003.patch",
+      "sizeBytes": 695,
+      "sha256": "sha256:cbf4dae0c9a368b35a8282e63fc90ba60e480f04f8aa82b0a5338545c6beeefd"
+    },
+    {
+      "path": "patches/BENCH-REAL-004.patch",
+      "sizeBytes": 555,
+      "sha256": "sha256:f50da0a438c169419bdae87ce4604abc66ed3a2ca083eee2b454bdac24a51bd8"
+    },
+    {
+      "path": "patches/BENCH-REAL-005.patch",
+      "sizeBytes": 648,
+      "sha256": "sha256:9942fae62fb7d183c66f691c6eb1c9041a3203c8e319eb909eb4b380a51a0ccd"
+    },
+    {
+      "path": "release-identity.json",
+      "sizeBytes": 7502,
+      "sha256": "sha256:07c44a3aaee95137db142bc201abdf66f4cde71cb62c7115889f4f6fb202b945"
+    },
+    {
+      "path": "remediation-receipts/BENCH-REAL-001-receipt.json",
+      "sizeBytes": 2993,
+      "sha256": "sha256:0731eef95314b769a136a4203b576801445e68d8abdea8e65e89072382591e60"
+    },
+    {
+      "path": "remediation-receipts/BENCH-REAL-002-receipt.json",
+      "sizeBytes": 3004,
+      "sha256": "sha256:eb40e4ab454d3da5229ab5da922d0ba95b724600b3c18781f632fef46010cb3e"
+    },
+    {
+      "path": "remediation-receipts/BENCH-REAL-003-receipt.json",
+      "sizeBytes": 3017,
+      "sha256": "sha256:89f9d5d60408159d1684d4ffa493cf420228bfb457f89aac58d4d366ecae0e3d"
+    },
+    {
+      "path": "remediation-receipts/BENCH-REAL-004-receipt.json",
+      "sizeBytes": 3027,
+      "sha256": "sha256:b5d1f3a501dbc1ceed62de5d7199958d1aae7bcecd61af910dadc1639f480bbb"
+    },
+    {
+      "path": "remediation-receipts/BENCH-REAL-005-receipt.json",
+      "sizeBytes": 3023,
+      "sha256": "sha256:65b5d07ed87745452eeb6cc48699a50060085736f99e78d9e3edfb03013ae99a"
+    },
+    {
+      "path": "telemetry/anti-evasion-telemetry.json",
+      "sizeBytes": 1102,
+      "sha256": "sha256:cbdccbbf3f852c72e59a767c145958cba91696f0b0ca8d77ac98d921ccb20b65"
+    },
+    {
+      "path": "telemetry/sandbox-driver-audit.json",
+      "sizeBytes": 642,
+      "sha256": "sha256:fdd02797a8d0f8ac41bf465bf085e28c21b85c145eedfde024db736675133af4"
+    },
+    {
+      "path": "verification/BENCH-REAL-001-verification.json",
+      "sizeBytes": 1445,
+      "sha256": "sha256:b8e9403fa96cc530a2addd31cb5b8886a9d844d0deddab31c02b999e6341cf55"
+    },
+    {
+      "path": "verification/BENCH-REAL-002-verification.json",
+      "sizeBytes": 1421,
+      "sha256": "sha256:c6f1243aea1dbb9b1a032704741c082957b29c9a9502f97865983550bf9a1d8d"
+    },
+    {
+      "path": "verification/BENCH-REAL-003-verification.json",
+      "sizeBytes": 1399,
+      "sha256": "sha256:77439d5b6d29b48b56e1d2c4d8cc373450f50cfa1367dca4eba7620226a2e06c"
+    },
+    {
+      "path": "verification/BENCH-REAL-004-verification.json",
+      "sizeBytes": 1416,
+      "sha256": "sha256:f3a5447ae1e50e4c304d1c28c943f5c6d909371ff66dfc909ef7caee78dc2901"
+    },
+    {
+      "path": "verification/BENCH-REAL-005-verification.json",
+      "sizeBytes": 1420,
+      "sha256": "sha256:f35b7b99a7b1ebee7e86858354d2d8e436dfe37b7cca4502f7235431ce0d4c57"
+    }
+  ]
+}

@@ -54,9 +54,10 @@ test("Contract 1: WorktreeDriver probe, isolation, and truthful capabilities rec
   // Authoritative capabilities
   const caps = driver.capabilities();
   assert.equal(caps.driver, "worktree");
-  assert.equal(caps.filesystemIsolation, "worktree");
+  assert.equal(caps.filesystemIsolation, "git-worktree");
   assert.equal(caps.networkEgressDenial, "unavailable");
-  assert.equal(caps.writeBoundary, "jail-worktree-only");
+  assert.equal(caps.processIsolation, "none");
+  assert.equal(caps.hostFilesystemWriteRestriction, "unenforced");
 
   // Create temporary disposable repo to verify create()
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-driver-test-"));
@@ -101,7 +102,7 @@ test("Contract 2: ContainerDriver probe failure and strict fail-closed (no silen
     () => driver.create("."),
     (err) => {
       assert.ok(err instanceof SandboxUnavailableError);
-      assert.match(err.message, /Cannot create container jail/);
+      assert.match(err.message, /Container execution sandbox is not yet implemented/);
       return true;
     }
   );
@@ -129,12 +130,19 @@ test("Contract 3: ContainerDriver probe success with custom/mock execution engin
 
   const caps = driver.capabilities();
   assert.equal(caps.driver, "container");
-  assert.equal(caps.filesystemIsolation, "container");
-  assert.equal(caps.networkEgressDenial, "verified");
-  assert.equal(caps.writeBoundary, "container-ephemeral-volume");
+  assert.equal(caps.filesystemIsolation, "container-unverified");
+  assert.equal(caps.networkEgressDenial, "unverified");
+  assert.equal(caps.processIsolation, "unverified");
+  assert.equal(caps.hostFilesystemWriteRestriction, "unenforced");
+
+  // create() still fails closed because in-container process execution is not integrated
+  assert.throws(
+    () => driver.create("."),
+    /Container execution sandbox is not yet implemented/
+  );
 });
 
-test("Contract 4: resolveSandboxDriver fail-closed on unavailable container runtime", () => {
+test("Contract 4: resolveSandboxDriver fail-closed on unavailable or unintegrated container runtime", () => {
   // Default resolution
   const defaultDriver = resolveSandboxDriver();
   assert.ok(defaultDriver instanceof WorktreeDriver);
@@ -159,6 +167,23 @@ test("Contract 4: resolveSandboxDriver fail-closed on unavailable container runt
       assert.ok(err instanceof SandboxUnavailableError);
       assert.match(err.message, /ADR-024-02/);
       assert.match(err.message, /Silent downgrade to worktree is prohibited/);
+      return true;
+    }
+  );
+
+  // Even if host container daemon is present, fail-closed against unverified container claims
+  const passingExecFn = (cmd, args) => {
+    if (args.includes("--version")) return { status: 0, stdout: "Docker version 27.0.3\n" };
+    if (args.includes("info")) return { status: 0, stdout: "27.0.3\n" };
+    return { status: 0, stdout: "" };
+  };
+
+  assert.throws(
+    () => resolveSandboxDriver("container", { execFn: passingExecFn }),
+    (err) => {
+      assert.ok(err instanceof SandboxUnavailableError);
+      assert.match(err.message, /in-container jail process execution is not yet integrated/);
+      assert.match(err.message, /ADR-024-02/);
       return true;
     }
   );
@@ -249,9 +274,10 @@ test("Contract 5: ControlledRemediationSession records truthful driver capabilit
     assert.equal(receipt.jail.driver, "worktree");
     assert.deepEqual(receipt.jail.capabilities, {
       driver: "worktree",
-      filesystemIsolation: "worktree",
+      filesystemIsolation: "git-worktree",
       networkEgressDenial: "unavailable",
-      writeBoundary: "jail-worktree-only"
+      processIsolation: "none",
+      hostFilesystemWriteRestriction: "unenforced"
     });
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -312,9 +338,10 @@ test("Contract 6: BatchRemediationSession records sandbox driver and capabilitie
     assert.equal(batchReceipt.sandbox.driver, "worktree");
     assert.deepEqual(batchReceipt.sandbox.capabilities, {
       driver: "worktree",
-      filesystemIsolation: "worktree",
+      filesystemIsolation: "git-worktree",
       networkEgressDenial: "unavailable",
-      writeBoundary: "jail-worktree-only"
+      processIsolation: "none",
+      hostFilesystemWriteRestriction: "unenforced"
     });
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -330,6 +357,12 @@ test("Contract 7: CLI rejects invalid --sandbox flags with EXIT_CODES.USAGE_ERRO
 
   const code = await runCli(["remediate", "--sandbox"], io);
   assert.equal(code, EXIT_CODES.USAGE_ERROR);
+  assert.match(stderr, /Option '--sandbox' requires a <driver> argument/);
+
+  // Test empty --sandbox= flag
+  stderr = "";
+  const codeEmpty = await runCli(["remediate", "--case=BENCH-REAL-001", "--sandbox="], io);
+  assert.equal(codeEmpty, EXIT_CODES.USAGE_ERROR);
   assert.match(stderr, /Option '--sandbox' requires a <driver> argument/);
 
   stderr = "";
@@ -379,5 +412,5 @@ test("Contract 9: Programmatic CLI executes with custom sandboxDriver recording 
 
   assert.equal(code, EXIT_CODES.SUCCESS);
   assert.match(stdout, /Lifecycle Status:\s+CLOSED/);
-  assert.match(stdout, /Sandbox Driver:\s+worktree \(fs: worktree, egress: unavailable\)/);
+  assert.match(stdout, /Sandbox Driver:\s+worktree \(fs: git-worktree, egress: unavailable\)/);
 });
