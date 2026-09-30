@@ -123,9 +123,9 @@ test("Contract 3: ContainerDriver probe success with custom/mock execution engin
     if (args.includes("inspect")) {
       return { status: 0, stdout: "sha256:d8a2bc4e7a4b89e5c9f5653b47c0b05b38234857ef129994c50259e5a8c2efec\n" };
     }
-    // Egress probe script: in --network=none, connection failure returns status 1
+    // Egress probe script: in --network=none, connection failure returns status 42 and sentinel
     if (args.includes("sh") && args.some(a => String(a).includes("192.0.2.1"))) {
-      return { status: 1, stderr: "Error: connect ENETUNREACH 192.0.2.1:80\n" };
+      return { status: 42, stdout: "TF_EGRESS_DENIED:ENETUNREACH\n", stderr: "" };
     }
     // General in-container test command
     if (args.includes("node") && args.includes("-v")) {
@@ -593,3 +593,44 @@ test("Contract 13: Pinned image digest matching and rejection of mismatched dige
   assert.equal(matchProbe.available, true);
   assert.equal(matchProbe.imageDigest, expectedDigest);
 });
+
+test("Contract 14: Active egress probe execution failure (status!=42 or missing sentinel) fails closed", () => {
+  // Simulates runtime crash / missing node / syntax error inside container probe (exit 127)
+  const crashedProbeExecFn = (cmd, args) => {
+    if (args.includes("--version")) return { status: 0, stdout: "Docker version 27.0.3\n" };
+    if (args.includes("info")) return { status: 0, stdout: "27.0.3\n" };
+    if (args.includes("inspect")) return { status: 0, stdout: "sha256:d8a2bc4e7a4b89e5c9f5653b47c0b05b38234857ef129994c50259e5a8c2efec\n" };
+    if (args.includes("sh") && args.some(a => String(a).includes("192.0.2.1"))) {
+      // Missing node or shell runtime crash: exits 127 without denial sentinel
+      return { status: 127, stderr: "sh: node: not found\n" };
+    }
+    return { status: 0, stdout: "" };
+  };
+
+  const driver = new ContainerDriver({
+    containerRuntime: "docker",
+    execFn: crashedProbeExecFn
+  });
+
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-probe-crash-test-"));
+  try {
+    execFileSync("git", ["init"], { cwd: tmpDir, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "Triad Test"], { cwd: tmpDir, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@triadflow.dev"], { cwd: tmpDir, stdio: "ignore" });
+    fs.writeFileSync(path.join(tmpDir, "index.js"), 'console.log("test");\n');
+    execFileSync("git", ["add", "."], { cwd: tmpDir, stdio: "ignore" });
+    execFileSync("git", ["commit", "-m", "init"], { cwd: tmpDir, stdio: "ignore" });
+
+    assert.throws(
+      () => driver.create(tmpDir),
+      (err) => {
+        assert.ok(err instanceof SandboxSecurityViolationError);
+        assert.match(err.message, /Active egress probe execution failed \(status=127\) without authentic network denial sentinel/);
+        return true;
+      }
+    );
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
