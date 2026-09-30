@@ -11,7 +11,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 
 import {
   canonicalJsonStringify,
@@ -260,17 +260,32 @@ export class BatchRemediationSession {
   executeBatchInJailWorktree(repoPath, {
     baseSha = "HEAD",
     testRunnerFn = null,
+    testRunner = null,
     orchestrator = "batch-orchestrator",
     sandboxDriver = null
   } = {}) {
-    if (typeof testRunnerFn !== "function") {
-      throw new BatchValidationError("executeBatchInJailWorktree requires a 'testRunnerFn' callback function.");
+    const runner = testRunner || testRunnerFn;
+    const isFunction = typeof runner === "function";
+    const isTypedCommand = Boolean(runner && typeof runner === "object" && typeof runner.command === "string" && runner.command.trim().length > 0);
+
+    if (!isFunction && !isTypedCommand) {
+      throw new BatchValidationError(
+        "executeBatchInJailWorktree requires a valid 'testRunner' (callback function or typed command object { command, args })."
+      );
     }
 
     const driver = sandboxDriver
       ? (typeof sandboxDriver === "string" ? resolveSandboxDriver(sandboxDriver) : sandboxDriver)
       : new WorktreeDriver();
     this.sandboxDriver = driver;
+
+    // Container sandbox execution authority enforcement: container mode strictly requires typed command runner.
+    // Arbitrary host callback functions are prohibited under container driver.
+    if (driver.name === "container" && !isTypedCommand) {
+      throw new BatchValidationError(
+        "Container sandbox execution requires a typed command runner ({ command, args }) to enforce isolated container execution. Arbitrary host callback functions are prohibited under container driver."
+      );
+    }
 
     const jail = driver.create(repoPath, { baseSha });
     this.jailCapabilities = jail.capabilities || driver.capabilities();
@@ -336,15 +351,56 @@ export class BatchRemediationSession {
         // Run deterministic test runner in jail
         let testRes;
         try {
-          testRes = testRunnerFn(jail.jailPath, { findingId, session });
+          if (driver.name === "container") {
+            const cmd = runner.command;
+            const args = Array.isArray(runner.args) ? runner.args : [];
+            const containerRes = jail.runInContainer([cmd, ...args]);
+            testRes = {
+              testCommand: `${cmd} ${args.join(" ")}`.trim(),
+              exitCode: containerRes.exitCode,
+              passedCount: containerRes.exitCode === 0 ? 1 : 0,
+              failedCount: containerRes.exitCode === 0 ? 0 : 1,
+              regressionDetected: containerRes.exitCode !== 0,
+              runner: "container-runner",
+              executionEnvironment: "container"
+            };
+          } else if (isTypedCommand) {
+            const cmd = runner.command;
+            const args = Array.isArray(runner.args) ? runner.args : [];
+            const hostRes = spawnSync(cmd, args, {
+              cwd: jail.jailPath,
+              encoding: "utf8",
+              windowsHide: true,
+              shell: process.platform === "win32"
+            });
+            testRes = {
+              testCommand: `${cmd} ${args.join(" ")}`.trim(),
+              exitCode: typeof hostRes.status === "number" ? hostRes.status : 1,
+              passedCount: hostRes.status === 0 ? 1 : 0,
+              failedCount: hostRes.status === 0 ? 0 : 1,
+              regressionDetected: hostRes.status !== 0,
+              runner: "worktree-runner",
+              executionEnvironment: "host"
+            };
+          } else {
+            testRes = runner(jail.jailPath, {
+              findingId,
+              session,
+              runInContainer: jail.runInContainer || null,
+              driver,
+              capabilities: this.jailCapabilities
+            });
+          }
         } catch (err) {
           testRes = {
-            testCommand: "custom-testRunnerFn",
+            testCommand: isTypedCommand ? `${runner.command} ${(runner.args || []).join(" ")}`.trim() : "custom-testRunnerFn",
             exitCode: 1,
             passedCount: 0,
             failedCount: 1,
             regressionDetected: true,
-            error: err.message
+            error: err.message,
+            runner: driver.name === "container" ? "container-runner" : "worktree-runner",
+            executionEnvironment: driver.name === "container" ? "container" : "host"
           };
         }
 
@@ -361,7 +417,8 @@ export class BatchRemediationSession {
           failedCount,
           regressionDetected,
           postTestTreeDigest: jailResult.postPatchTreeDigest,
-          runner: testRes?.runner || "test-runner"
+          runner: testRes?.runner || (driver.name === "container" ? "container-runner" : "worktree-runner"),
+          executionEnvironment: testRes?.executionEnvironment || (driver.name === "container" ? "container" : "host")
         });
 
         if (session.status === REMEDIATION_STATES.FIXED_PENDING_VERIFY) {

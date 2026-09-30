@@ -35,12 +35,14 @@ import {
 
 import {
   ControlledRemediationSession,
-  REMEDIATION_STATES
+  REMEDIATION_STATES,
+  RemediationValidationError
 } from "../src/core/controlled-remediation.mjs";
 
 import {
   BatchRemediationSession,
-  BATCH_VERDICTS
+  BATCH_VERDICTS,
+  BatchValidationError
 } from "../src/core/batch-remediation.mjs";
 
 import { runCli, EXIT_CODES } from "../src/cli.mjs";
@@ -629,6 +631,313 @@ test("Contract 14: Active egress probe execution failure (status!=42 or missing 
         return true;
       }
     );
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("Contract 15: ContainerDriver rejects host function callback in ControlledRemediationSession (fails closed)", () => {
+  const mockExecFn = (cmd, args) => {
+    if (args.includes("--version")) return { status: 0, stdout: "Docker version 27.0.3\n" };
+    if (args.includes("info")) return { status: 0, stdout: "27.0.3\n" };
+    if (args.includes("inspect")) return { status: 0, stdout: "sha256:d8a2bc4e7a4b89e5c9f5653b47c0b05b38234857ef129994c50259e5a8c2efec\n" };
+    if (args.includes("sh") && args.some(a => String(a).includes("192.0.2.1"))) {
+      return { status: 42, stdout: "TF_EGRESS_DENIED:ENETUNREACH:NS_ISOLATED\n", stderr: "" };
+    }
+    return { status: 0, stdout: "" };
+  };
+
+  const driver = new ContainerDriver({
+    containerRuntime: "docker",
+    execFn: mockExecFn
+  });
+
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-rem-cb-reject-"));
+  try {
+    execFileSync("git", ["init"], { cwd: tmpDir, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "Triad Test"], { cwd: tmpDir, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@triadflow.dev"], { cwd: tmpDir, stdio: "ignore" });
+    fs.writeFileSync(path.join(tmpDir, "index.js"), 'console.log("old");\n');
+    execFileSync("git", ["add", "."], { cwd: tmpDir, stdio: "ignore" });
+    execFileSync("git", ["commit", "-m", "init"], { cwd: tmpDir, stdio: "ignore" });
+
+    const session = new ControlledRemediationSession("F-CONTAINER-REJECT-CB", ["index.js"]);
+    session.proposeFix({
+      diff: "diff --git a/index.js b/index.js\n--- a/index.js\n+++ b/index.js\n@@ -1 +1 @@\n-console.log(\"old\");\n+console.log(\"new\");\n",
+      rationale: "Fix"
+    });
+    session.authorizePatch({ authorizer: { identity: "sec-lead", type: "human" } });
+
+    assert.throws(
+      () => session.executeInJailWorktree(tmpDir, {
+        sandboxDriver: driver,
+        testRunnerFn: () => ({ exitCode: 0 })
+      }),
+      (err) => {
+        assert.ok(err instanceof RemediationValidationError);
+        assert.match(err.message, /Container sandbox execution requires a typed command runner/);
+        assert.match(err.message, /Arbitrary host callback functions are prohibited under container driver/);
+        return true;
+      }
+    );
+    assert.equal(session.status, REMEDIATION_STATES.PATCH_AUTHORIZED);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("Contract 16: ContainerDriver executes typed command runner in ControlledRemediationSession via jail.runInContainer", () => {
+  const containerCommandsRan = [];
+  const mockExecFn = (cmd, args) => {
+    if (args.includes("--version")) return { status: 0, stdout: "Docker version 27.0.3\n" };
+    if (args.includes("info")) return { status: 0, stdout: "27.0.3\n" };
+    if (args.includes("inspect")) return { status: 0, stdout: "sha256:d8a2bc4e7a4b89e5c9f5653b47c0b05b38234857ef129994c50259e5a8c2efec\n" };
+    if (args.includes("sh") && args.some(a => String(a).includes("192.0.2.1"))) {
+      return { status: 42, stdout: "TF_EGRESS_DENIED:ENETUNREACH:NS_ISOLATED\n", stderr: "" };
+    }
+    if (args.includes("npm") && args.includes("test")) {
+      containerCommandsRan.push(args);
+      return { status: 0, stdout: "container deterministic tests passed\n" };
+    }
+    return { status: 0, stdout: "" };
+  };
+
+  const driver = new ContainerDriver({
+    containerRuntime: "docker",
+    execFn: mockExecFn
+  });
+
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-rem-cmd-container-"));
+  try {
+    execFileSync("git", ["init"], { cwd: tmpDir, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "Triad Test"], { cwd: tmpDir, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@triadflow.dev"], { cwd: tmpDir, stdio: "ignore" });
+    fs.writeFileSync(path.join(tmpDir, "index.js"), 'console.log("old");\n');
+    execFileSync("git", ["add", "."], { cwd: tmpDir, stdio: "ignore" });
+    execFileSync("git", ["commit", "-m", "init"], { cwd: tmpDir, stdio: "ignore" });
+
+    const session = new ControlledRemediationSession("F-CONTAINER-CMD", ["index.js"]);
+    session.proposeFix({
+      diff: "diff --git a/index.js b/index.js\n--- a/index.js\n+++ b/index.js\n@@ -1 +1 @@\n-console.log(\"old\");\n+console.log(\"new\");\n",
+      rationale: "Fix",
+      synthesizer: { providerName: "codex", modelName: "cli-remediate" }
+    });
+    session.authorizePatch({ authorizer: { identity: "sec-lead", type: "human" } });
+
+    session.executeInJailWorktree(tmpDir, {
+      sandboxDriver: driver,
+      testRunnerFn: { command: "npm", args: ["test"] }
+    });
+
+    assert.equal(session.status, REMEDIATION_STATES.FIXED_PENDING_VERIFY);
+    assert.equal(containerCommandsRan.length, 1);
+    assert.equal(session.deterministicChecks.runner, "container-runner");
+    assert.equal(session.deterministicChecks.executionEnvironment, "container");
+    assert.equal(session.deterministicChecks.exitCode, 0);
+
+    session.recordClosureVerification({
+      verifier: { providerName: "claude", modelName: "cli-default" },
+      verificationRecord: createMockVerificationRecord("F-CONTAINER-CMD", { file: "index.js" })
+    });
+
+    assert.equal(session.status, REMEDIATION_STATES.CLOSED);
+    const receipt = session.toReceipt();
+    assert.equal(receipt.deterministicChecks.runner, "container-runner");
+    assert.equal(receipt.deterministicChecks.executionEnvironment, "container");
+    assert.equal(receipt.jail.capabilities.environments.testExecutionEnvironment, "container");
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("Contract 17: ContainerDriver rejects host function callback in BatchRemediationSession (fails closed)", () => {
+  const mockExecFn = (cmd, args) => {
+    if (args.includes("--version")) return { status: 0, stdout: "Docker version 27.0.3\n" };
+    if (args.includes("info")) return { status: 0, stdout: "27.0.3\n" };
+    if (args.includes("inspect")) return { status: 0, stdout: "sha256:d8a2bc4e7a4b89e5c9f5653b47c0b05b38234857ef129994c50259e5a8c2efec\n" };
+    if (args.includes("sh") && args.some(a => String(a).includes("192.0.2.1"))) {
+      return { status: 42, stdout: "TF_EGRESS_DENIED:ENETUNREACH:NS_ISOLATED\n", stderr: "" };
+    }
+    return { status: 0, stdout: "" };
+  };
+
+  const driver = new ContainerDriver({
+    containerRuntime: "docker",
+    execFn: mockExecFn
+  });
+
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-batch-cb-reject-"));
+  try {
+    execFileSync("git", ["init"], { cwd: tmpDir, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "Triad Test"], { cwd: tmpDir, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@triadflow.dev"], { cwd: tmpDir, stdio: "ignore" });
+    fs.writeFileSync(path.join(tmpDir, "a.js"), 'console.log("a");\n');
+    execFileSync("git", ["add", "."], { cwd: tmpDir, stdio: "ignore" });
+    execFileSync("git", ["commit", "-m", "init"], { cwd: tmpDir, stdio: "ignore" });
+
+    const batch = new BatchRemediationSession("BATCH-REJECT-CB", [
+      { id: "F-001", targetFiles: ["a.js"] }
+    ]);
+    const s1 = batch.getSession("F-001");
+    s1.proposeFix({
+      diff: "diff --git a/a.js b/a.js\n--- a/a.js\n+++ b/a.js\n@@ -1 +1 @@\n-console.log(\"a\");\n+console.log(\"fixed\");\n",
+      rationale: "Fix a"
+    });
+    s1.authorizePatch({ authorizer: { identity: "sec-lead", type: "human" } });
+
+    assert.throws(
+      () => batch.executeBatchInJailWorktree(tmpDir, {
+        sandboxDriver: driver,
+        testRunnerFn: () => ({ exitCode: 0 })
+      }),
+      (err) => {
+        assert.ok(err instanceof BatchValidationError);
+        assert.match(err.message, /Container sandbox execution requires a typed command runner/);
+        assert.match(err.message, /Arbitrary host callback functions are prohibited under container driver/);
+        return true;
+      }
+    );
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("Contract 18: ContainerDriver executes typed command runner in BatchRemediationSession via jail.runInContainer", () => {
+  const containerCommandsRan = [];
+  const mockExecFn = (cmd, args) => {
+    if (args.includes("--version")) return { status: 0, stdout: "Docker version 27.0.3\n" };
+    if (args.includes("info")) return { status: 0, stdout: "27.0.3\n" };
+    if (args.includes("inspect")) return { status: 0, stdout: "sha256:d8a2bc4e7a4b89e5c9f5653b47c0b05b38234857ef129994c50259e5a8c2efec\n" };
+    if (args.includes("sh") && args.some(a => String(a).includes("192.0.2.1"))) {
+      return { status: 42, stdout: "TF_EGRESS_DENIED:ENETUNREACH:NS_ISOLATED\n", stderr: "" };
+    }
+    if (args.includes("npm") && args.includes("test")) {
+      containerCommandsRan.push(args);
+      return { status: 0, stdout: "batch container test passed\n" };
+    }
+    return { status: 0, stdout: "" };
+  };
+
+  const driver = new ContainerDriver({
+    containerRuntime: "docker",
+    execFn: mockExecFn
+  });
+
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-batch-cmd-container-"));
+  try {
+    execFileSync("git", ["init"], { cwd: tmpDir, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "Triad Test"], { cwd: tmpDir, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@triadflow.dev"], { cwd: tmpDir, stdio: "ignore" });
+    fs.writeFileSync(path.join(tmpDir, "a.js"), 'console.log("a");\n');
+    execFileSync("git", ["add", "."], { cwd: tmpDir, stdio: "ignore" });
+    execFileSync("git", ["commit", "-m", "init"], { cwd: tmpDir, stdio: "ignore" });
+
+    const batch = new BatchRemediationSession("BATCH-CONTAINER-CMD", [
+      { id: "F-001", targetFiles: ["a.js"] }
+    ]);
+    const s1 = batch.getSession("F-001");
+    s1.proposeFix({
+      diff: "diff --git a/a.js b/a.js\n--- a/a.js\n+++ b/a.js\n@@ -1 +1 @@\n-console.log(\"a\");\n+console.log(\"fixed\");\n",
+      rationale: "Fix a",
+      synthesizer: { providerName: "codex", modelName: "cli-remediate" }
+    });
+    s1.authorizePatch({ authorizer: { identity: "sec-lead", type: "human" } });
+
+    batch.executeBatchInJailWorktree(tmpDir, {
+      sandboxDriver: driver,
+      testRunnerFn: { command: "npm", args: ["test"] }
+    });
+
+    assert.equal(containerCommandsRan.length, 1);
+    assert.equal(s1.deterministicChecks.runner, "container-runner");
+    assert.equal(s1.deterministicChecks.executionEnvironment, "container");
+    assert.equal(s1.status, REMEDIATION_STATES.FIXED_PENDING_VERIFY);
+
+    s1.recordClosureVerification({
+      verifier: { providerName: "claude", modelName: "cli-default" },
+      verificationRecord: createMockVerificationRecord("F-001", { file: "a.js" })
+    });
+
+    batch.finalize();
+    const batchReceipt = batch.toBatchReceipt();
+    assert.equal(batchReceipt.verdict, BATCH_VERDICTS.ALL_CLOSED);
+    assert.equal(batchReceipt.receipts[0].deterministicChecks.runner, "container-runner");
+    assert.equal(batchReceipt.receipts[0].deterministicChecks.executionEnvironment, "container");
+    assert.equal(batchReceipt.sandbox.driver, "container");
+    assert.equal(batchReceipt.sandbox.capabilities.environments.testExecutionEnvironment, "container");
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("Contract 19: Container network namespace isolation breach (TF_NAMESPACE_LEAK) throws SandboxSecurityViolationError", () => {
+  const leakExecFn = (cmd, args) => {
+    if (args.includes("--version")) return { status: 0, stdout: "Docker version 27.0.3\n" };
+    if (args.includes("info")) return { status: 0, stdout: "27.0.3\n" };
+    if (args.includes("inspect")) return { status: 0, stdout: "sha256:d8a2bc4e7a4b89e5c9f5653b47c0b05b38234857ef129994c50259e5a8c2efec\n" };
+    if (args.includes("sh") && args.some(a => String(a).includes("192.0.2.1"))) {
+      return { status: 1, stdout: "TF_NAMESPACE_LEAK:lo,eth0\n" };
+    }
+    return { status: 0, stdout: "" };
+  };
+
+  const driver = new ContainerDriver({
+    containerRuntime: "docker",
+    execFn: leakExecFn
+  });
+
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-ns-leak-test-"));
+  try {
+    execFileSync("git", ["init"], { cwd: tmpDir, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "Triad Test"], { cwd: tmpDir, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@triadflow.dev"], { cwd: tmpDir, stdio: "ignore" });
+    fs.writeFileSync(path.join(tmpDir, "index.js"), 'console.log("test");\n');
+    execFileSync("git", ["add", "."], { cwd: tmpDir, stdio: "ignore" });
+    execFileSync("git", ["commit", "-m", "init"], { cwd: tmpDir, stdio: "ignore" });
+
+    assert.throws(
+      () => driver.create(tmpDir),
+      (err) => {
+        assert.ok(err instanceof SandboxSecurityViolationError);
+        assert.match(err.message, /Container network namespace isolation breach detected: non-loopback network interfaces present/);
+        return true;
+      }
+    );
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("Contract 20: WorktreeDriver supports typed command runner and records worktree-runner with host executionEnvironment", () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-worktree-cmd-"));
+  try {
+    execFileSync("git", ["init"], { cwd: tmpDir, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "Triad Test"], { cwd: tmpDir, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@triadflow.dev"], { cwd: tmpDir, stdio: "ignore" });
+    fs.writeFileSync(path.join(tmpDir, "index.js"), 'console.log("vulnerable");\n');
+    fs.writeFileSync(path.join(tmpDir, "test.js"), 'process.exit(0);\n');
+    execFileSync("git", ["add", "."], { cwd: tmpDir, stdio: "ignore" });
+    execFileSync("git", ["commit", "-m", "init"], { cwd: tmpDir, stdio: "ignore" });
+
+    const session = new ControlledRemediationSession("F-WORKTREE-CMD", ["index.js"]);
+    session.proposeFix({
+      diff: "diff --git a/index.js b/index.js\n--- a/index.js\n+++ b/index.js\n@@ -1 +1 @@\n-console.log(\"vulnerable\");\n+console.log(\"safe\");\n",
+      rationale: "Fix"
+    });
+    session.authorizePatch({ authorizer: { identity: "sec-lead", type: "human" } });
+
+    session.executeInJailWorktree(tmpDir, {
+      testRunnerFn: { command: "node", args: ["test.js"] }
+    });
+
+    assert.equal(session.status, REMEDIATION_STATES.FIXED_PENDING_VERIFY);
+    assert.equal(session.deterministicChecks.runner, "worktree-runner");
+    assert.equal(session.deterministicChecks.executionEnvironment, "host");
+    assert.equal(session.deterministicChecks.exitCode, 0);
+
+    const receipt = session.toReceipt();
+    assert.equal(receipt.deterministicChecks.runner, "worktree-runner");
+    assert.equal(receipt.deterministicChecks.executionEnvironment, "host");
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }

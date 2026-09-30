@@ -855,7 +855,9 @@ export function buildRemediationReceipt(params = {}) {
     passedCount: typeof params.deterministicChecks?.passedCount === "number" ? params.deterministicChecks.passedCount : 0,
     failedCount: typeof params.deterministicChecks?.failedCount === "number" ? params.deterministicChecks.failedCount : 0,
     regressionDetected: Boolean(params.deterministicChecks?.regressionDetected),
-    postTestTreeDigest: params.deterministicChecks?.postTestTreeDigest || null
+    postTestTreeDigest: params.deterministicChecks?.postTestTreeDigest || null,
+    runner: params.deterministicChecks?.runner || "test-runner",
+    executionEnvironment: params.deterministicChecks?.executionEnvironment || (params.jail?.driver === "container" ? "container" : "host")
   };
 
   const closureVerification = {
@@ -1123,6 +1125,7 @@ export class ControlledRemediationSession {
   executeInJailWorktree(repoPath, {
     baseSha = "HEAD",
     testRunnerFn = null,
+    testRunner = null,
     orchestrator = "jail-orchestrator",
     sandboxDriver = null
   } = {}) {
@@ -1134,15 +1137,27 @@ export class ControlledRemediationSession {
       );
     }
 
-    if (typeof testRunnerFn !== "function") {
+    const runner = testRunner || testRunnerFn;
+    const isFunction = typeof runner === "function";
+    const isTypedCommand = Boolean(runner && typeof runner === "object" && typeof runner.command === "string" && runner.command.trim().length > 0);
+
+    if (!isFunction && !isTypedCommand) {
       throw new RemediationValidationError(
-        "Cannot verify remediation: testRunnerFn is required to execute deterministic checks in Patch Jail."
+        "Cannot verify remediation: valid testRunner (callback function or typed command object { command, args }) is required to execute deterministic checks in Patch Jail."
       );
     }
 
     const driver = sandboxDriver
       ? (typeof sandboxDriver === "string" ? resolveSandboxDriver(sandboxDriver) : sandboxDriver)
       : new WorktreeDriver();
+
+    // Container sandbox execution authority enforcement: container mode strictly requires typed command runner.
+    // Arbitrary host callback functions are prohibited under container driver.
+    if (driver.name === "container" && !isTypedCommand) {
+      throw new RemediationValidationError(
+        "Container sandbox execution requires a typed command runner ({ command, args }) to enforce isolated container execution. Arbitrary host callback functions are prohibited under container driver."
+      );
+    }
 
     const jail = driver.create(repoPath, { baseSha });
     try {
@@ -1159,50 +1174,55 @@ export class ControlledRemediationSession {
 
       let testRes;
       try {
-        if (typeof testRunnerFn === "function") {
-          testRes = testRunnerFn(jail.jailPath, {
+        if (driver.name === "container") {
+          // Strictly enforced container execution via jail.runInContainer
+          const cmd = runner.command;
+          const args = Array.isArray(runner.args) ? runner.args : [];
+          const containerRes = jail.runInContainer([cmd, ...args]);
+          testRes = {
+            testCommand: `${cmd} ${args.join(" ")}`.trim(),
+            exitCode: containerRes.exitCode,
+            passedCount: containerRes.exitCode === 0 ? 1 : 0,
+            failedCount: containerRes.exitCode === 0 ? 0 : 1,
+            regressionDetected: containerRes.exitCode !== 0,
+            runner: "container-runner",
+            executionEnvironment: "container"
+          };
+        } else if (isTypedCommand) {
+          const cmd = runner.command;
+          const args = Array.isArray(runner.args) ? runner.args : [];
+          const hostRes = spawnSync(cmd, args, {
+            cwd: jail.jailPath,
+            encoding: "utf8",
+            windowsHide: true,
+            shell: process.platform === "win32"
+          });
+          testRes = {
+            testCommand: `${cmd} ${args.join(" ")}`.trim(),
+            exitCode: typeof hostRes.status === "number" ? hostRes.status : 1,
+            passedCount: hostRes.status === 0 ? 1 : 0,
+            failedCount: hostRes.status === 0 ? 0 : 1,
+            regressionDetected: hostRes.status !== 0,
+            runner: "worktree-runner",
+            executionEnvironment: "host"
+          };
+        } else {
+          testRes = runner(jail.jailPath, {
             runInContainer: jail.runInContainer || null,
             driver,
             capabilities: effectiveCapabilities
           });
-        } else if (testRunnerFn && typeof testRunnerFn === "object" && testRunnerFn.command) {
-          const cmd = testRunnerFn.command;
-          const args = testRunnerFn.args || [];
-          if (jail.runInContainer && typeof jail.runInContainer === "function" && driver.name === "container") {
-            const containerRes = jail.runInContainer([cmd, ...args]);
-            testRes = {
-              testCommand: `${cmd} ${args.join(" ")}`.trim(),
-              exitCode: containerRes.exitCode,
-              passedCount: containerRes.exitCode === 0 ? 1 : 0,
-              failedCount: containerRes.exitCode === 0 ? 0 : 1,
-              regressionDetected: containerRes.exitCode !== 0,
-              runner: "container-runner"
-            };
-          } else {
-            const hostRes = spawnSync(cmd, args, {
-              cwd: jail.jailPath,
-              encoding: "utf8",
-              windowsHide: true,
-              shell: process.platform === "win32"
-            });
-            testRes = {
-              testCommand: `${cmd} ${args.join(" ")}`.trim(),
-              exitCode: typeof hostRes.status === "number" ? hostRes.status : 1,
-              passedCount: hostRes.status === 0 ? 1 : 0,
-              failedCount: hostRes.status === 0 ? 0 : 1,
-              regressionDetected: hostRes.status !== 0,
-              runner: "worktree-runner"
-            };
-          }
         }
       } catch (err) {
         testRes = {
-          testCommand: "custom-testRunnerFn",
+          testCommand: isTypedCommand ? `${runner.command} ${(runner.args || []).join(" ")}`.trim() : "custom-testRunnerFn",
           exitCode: 1,
           passedCount: 0,
           failedCount: 1,
           regressionDetected: true,
-          error: err.message
+          error: err.message,
+          runner: driver.name === "container" ? "container-runner" : "worktree-runner",
+          executionEnvironment: driver.name === "container" ? "container" : "host"
         };
       }
 
@@ -1247,7 +1267,8 @@ export class ControlledRemediationSession {
         dirtyLeakDetected,
         dirtyLeakFile,
         postTestTreeDigest,
-        runner: testRes?.runner || "test-runner"
+        runner: testRes?.runner || (driver.name === "container" ? "container-runner" : "worktree-runner"),
+        executionEnvironment: testRes?.executionEnvironment || (driver.name === "container" ? "container" : "host")
       };
 
       this.recordDeterministicChecks(checkResult);
@@ -1278,7 +1299,9 @@ export class ControlledRemediationSession {
       regressionDetected,
       dirtyLeakDetected: Boolean(checks.dirtyLeakDetected),
       dirtyLeakFile: checks.dirtyLeakFile || null,
-      postTestTreeDigest: checks.postTestTreeDigest || null
+      postTestTreeDigest: checks.postTestTreeDigest || null,
+      runner: checks.runner || "test-runner",
+      executionEnvironment: checks.executionEnvironment || (this.jail?.driver === "container" ? "container" : "host")
     };
 
     const runner = checks.runner || "test-runner";
