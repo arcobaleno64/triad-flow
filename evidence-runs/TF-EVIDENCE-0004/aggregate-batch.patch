@@ -1,0 +1,80 @@
+diff --git a/src/api/invoice-handler.js b/src/api/invoice-handler.js
+index 8ff98cc..dbdc7e0 100644
+--- a/src/api/invoice-handler.js
++++ b/src/api/invoice-handler.js
+@@ -1,7 +1,10 @@
+ export async function getInvoice(req, res, db) {
+   const { invoiceId } = req.params;
+-  // Retrieve invoice details by identifier
++  const currentTenantId = req.user.tenantId;
++
+   const invoice = await db.invoices.findById(invoiceId);
+-  if (!invoice) return res.status(404).json({ error: "Not found" });
++  if (!invoice || invoice.tenantId !== currentTenantId) {
++    return res.status(403).json({ error: "Access denied" });
++  }
+   return res.json(invoice);
+ }
+diff --git a/src/auth/jwt-service.js b/src/auth/jwt-service.js
+index d129269..c52ff8d 100644
+--- a/src/auth/jwt-service.js
++++ b/src/auth/jwt-service.js
+@@ -1,8 +1,7 @@
+-const JWT_SECRET = "super_secret_jwt_token_key_123456789_triad_pilot";
++import jwt from "jsonwebtoken";
+ 
+ export function verifySessionToken(token) {
+-  // Parse token parts and decode payload
+-  const parts = token.split(".");
+-  if (parts.length !== 3) throw new Error("Invalid token format");
+-  return JSON.parse(Buffer.from(parts[1], "base64").toString("utf8"));
++  const secret = process.env.JWT_SIGNING_SECRET;
++  if (!secret) throw new Error("JWT_SIGNING_SECRET not configured");
++  return jwt.verify(token, secret);
+ }
+diff --git a/src/db/user-repo.js b/src/db/user-repo.js
+index a19039e..bec0a97 100644
+--- a/src/db/user-repo.js
++++ b/src/db/user-repo.js
+@@ -4,8 +4,8 @@ export class UserRepository {
+   }
+ 
+   async findUserById(id) {
+-    // Construct query for user record
+-    const query = "SELECT id, username, email FROM users WHERE id = '" + id + "'";
+-    return this.db.query(query);
++    // Parameterized query execution
++    const query = "SELECT id, username, email FROM users WHERE id = ?";
++    return this.db.query(query, [id]);
+   }
+ }
+diff --git a/src/storage/file-fetcher.js b/src/storage/file-fetcher.js
+index a4cdb84..fe846fe 100644
+--- a/src/storage/file-fetcher.js
++++ b/src/storage/file-fetcher.js
+@@ -2,7 +2,10 @@ import fs from "node:fs/promises";
+ import path from "node:path";
+ 
+ export async function readStorageFile(baseDir, userInputFilename) {
+-  // Resolve target file path within base directory
+-  const target = path.join(baseDir, userInputFilename);
++  const safeName = path.basename(userInputFilename);
++  const target = path.resolve(baseDir, safeName);
++  if (!target.startsWith(path.resolve(baseDir))) {
++    throw new Error("Access denied: invalid file path");
++  }
+   return fs.readFile(target, "utf8");
+ }
+diff --git a/src/views/profile-render.js b/src/views/profile-render.js
+index aa876ee..40b5a29 100644
+--- a/src/views/profile-render.js
++++ b/src/views/profile-render.js
+@@ -1,4 +1,6 @@
+ export function renderUserProfile(container, user) {
+-  // Render formatted bio markup directly into profile container
+-  container.innerHTML = `<div class="user-bio">${user.bio || ""}</div>`;
++  const bioElement = document.createElement("div");
++  bioElement.className = "user-bio";
++  bioElement.textContent = user.bio || "";
++  container.appendChild(bioElement);
+ }

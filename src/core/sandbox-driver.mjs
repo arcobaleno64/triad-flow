@@ -119,9 +119,10 @@ export class WorktreeDriver extends BaseSandboxDriver {
   capabilities() {
     return Object.freeze({
       driver: this.name,
-      filesystemIsolation: "worktree",
+      filesystemIsolation: "git-worktree",
       networkEgressDenial: "unavailable",
-      writeBoundary: "jail-worktree-only"
+      processIsolation: "none",
+      hostFilesystemWriteRestriction: "unenforced"
     });
   }
 }
@@ -185,38 +186,19 @@ export class ContainerDriver extends BaseSandboxDriver {
   }
 
   create(repoPath, options = {}) {
-    const probe = this.probe(options);
-    if (!probe.available) {
-      throw new SandboxUnavailableError(
-        `Cannot create container jail: container runtime '${this.runtime}' is unavailable (${probe.reason}).`,
-        this.runtime
-      );
-    }
-
-    // Create intermediate worktree so host repository is never directly mounted
-    const worktreeJail = createPatchJailWorktree(repoPath, options);
-
-    const cleanup = () => {
-      worktreeJail.cleanup();
-    };
-
-    return {
-      jailPath: worktreeJail.jailPath,
-      baseSha: worktreeJail.baseSha,
-      cleanup,
-      driver: this.name,
-      runtime: this.runtime,
-      image: this.image,
-      capabilities: this.capabilities()
-    };
+    throw new SandboxUnavailableError(
+      `Container execution sandbox is not yet implemented (in-container process execution primitive pending). To prevent unverified container isolation claims, container driver fails closed under ADR-024-02.`,
+      this.runtime
+    );
   }
 
   capabilities() {
     return Object.freeze({
       driver: this.name,
-      filesystemIsolation: "container",
-      networkEgressDenial: "verified",
-      writeBoundary: "container-ephemeral-volume"
+      filesystemIsolation: "container-unverified",
+      networkEgressDenial: "unverified",
+      processIsolation: "unverified",
+      hostFilesystemWriteRestriction: "unenforced"
     });
   }
 }
@@ -250,7 +232,11 @@ export function resolveSandboxDriver(driverName = "worktree", options = {}) {
       );
     }
 
-    return driver;
+    // Fail-Closed Trust Boundary: Real in-container execution is not yet integrated
+    throw new SandboxUnavailableError(
+      `Container runtime '${driver.runtime}' is available, but in-container jail process execution is not yet integrated. Generating unverified container isolation receipts is strictly prohibited by ADR-024-02.`,
+      driver.runtime
+    );
   }
 
   throw new Error(`Unsupported sandbox driver: '${driverName}'. Supported drivers: 'worktree', 'container'.`);

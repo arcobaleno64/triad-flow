@@ -1,0 +1,16 @@
+diff --git a/src/db/user-repo.js b/src/db/user-repo.js
+index a19039e..bec0a97 100644
+--- a/src/db/user-repo.js
++++ b/src/db/user-repo.js
+@@ -4,8 +4,8 @@ export class UserRepository {
+   }
+ 
+   async findUserById(id) {
+-    // Construct query for user record
+-    const query = "SELECT id, username, email FROM users WHERE id = '" + id + "'";
+-    return this.db.query(query);
++    // Parameterized query execution
++    const query = "SELECT id, username, email FROM users WHERE id = ?";
++    return this.db.query(query, [id]);
+   }
+ }

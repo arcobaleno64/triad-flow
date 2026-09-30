@@ -1,0 +1,17 @@
+diff --git a/src/auth/jwt-service.js b/src/auth/jwt-service.js
+index d129269..c52ff8d 100644
+--- a/src/auth/jwt-service.js
++++ b/src/auth/jwt-service.js
+@@ -1,8 +1,7 @@
+-const JWT_SECRET = "super_secret_jwt_token_key_123456789_triad_pilot";
++import jwt from "jsonwebtoken";
+ 
+ export function verifySessionToken(token) {
+-  // Parse token parts and decode payload
+-  const parts = token.split(".");
+-  if (parts.length !== 3) throw new Error("Invalid token format");
+-  return JSON.parse(Buffer.from(parts[1], "base64").toString("utf8"));
++  const secret = process.env.JWT_SIGNING_SECRET;
++  if (!secret) throw new Error("JWT_SIGNING_SECRET not configured");
++  return jwt.verify(token, secret);
+ }

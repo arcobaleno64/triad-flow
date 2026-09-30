@@ -1,0 +1,566 @@
+{
+  "schemaVersion": "1.0.0",
+  "batchId": "BATCH-V241-MUNOUE58",
+  "status": "COMPLETED",
+  "verdict": "ALL_CLOSED",
+  "timestamps": {
+    "createdAt": "2026-09-30T05:52:11.036Z",
+    "completedAt": "2026-09-30T05:52:12.708Z"
+  },
+  "summary": {
+    "totalFindings": 5,
+    "closedCount": 5,
+    "rejectedCount": 0,
+    "waivedCount": 0,
+    "openCount": 0
+  },
+  "sandbox": {
+    "driver": "worktree",
+    "capabilities": {
+      "driver": "worktree",
+      "filesystemIsolation": "git-worktree",
+      "networkEgressDenial": "unavailable",
+      "processIsolation": "none",
+      "hostFilesystemWriteRestriction": "unenforced"
+    }
+  },
+  "lineage": {
+    "initialTreeDigest": "sha256:3e77973471b56c9cb396265d751f156f44feb620ce00df8845dfa36cf86871ca",
+    "currentTreeDigest": "sha256:382ba5da795c03ee21db46df46b7ac76b5e3b2d0f0ac7a5bc058fef8f5530d2c",
+    "history": [
+      {
+        "findingId": "BENCH-REAL-001-FINDING-001",
+        "fromDigest": "sha256:3e77973471b56c9cb396265d751f156f44feb620ce00df8845dfa36cf86871ca",
+        "toDigest": "sha256:7e0ea1b1596c8090b0b76d1a5b21a1ab557c5d8cdc16b7f40ad3107d38ce871a",
+        "at": "2026-09-30T05:52:11.479Z"
+      },
+      {
+        "findingId": "BENCH-REAL-002-FINDING-001",
+        "fromDigest": "sha256:7e0ea1b1596c8090b0b76d1a5b21a1ab557c5d8cdc16b7f40ad3107d38ce871a",
+        "toDigest": "sha256:e962ce854814cbda353dd7738911f06b12fa59d52792252074bae38aae936a85",
+        "at": "2026-09-30T05:52:11.759Z"
+      },
+      {
+        "findingId": "BENCH-REAL-003-FINDING-001",
+        "fromDigest": "sha256:e962ce854814cbda353dd7738911f06b12fa59d52792252074bae38aae936a85",
+        "toDigest": "sha256:f1cdfa769807683a5b799e030f1907e3ddb91c6a1aec93c9e83ceb33a53f48ef",
+        "at": "2026-09-30T05:52:12.020Z"
+      },
+      {
+        "findingId": "BENCH-REAL-004-FINDING-001",
+        "fromDigest": "sha256:f1cdfa769807683a5b799e030f1907e3ddb91c6a1aec93c9e83ceb33a53f48ef",
+        "toDigest": "sha256:21ef637d3ffe3d54cd8f0c3646a8732bff5e3f5958c9f9d1e7b1fc11eac7e9e5",
+        "at": "2026-09-30T05:52:12.263Z"
+      },
+      {
+        "findingId": "BENCH-REAL-005-FINDING-001",
+        "fromDigest": "sha256:21ef637d3ffe3d54cd8f0c3646a8732bff5e3f5958c9f9d1e7b1fc11eac7e9e5",
+        "toDigest": "sha256:382ba5da795c03ee21db46df46b7ac76b5e3b2d0f0ac7a5bc058fef8f5530d2c",
+        "at": "2026-09-30T05:52:12.532Z"
+      }
+    ]
+  },
+  "aggregateDiff": "diff --git a/src/api/invoice-handler.js b/src/api/invoice-handler.js\nindex 8ff98cc..dbdc7e0 100644\n--- a/src/api/invoice-handler.js\n+++ b/src/api/invoice-handler.js\n@@ -1,7 +1,10 @@\n export async function getInvoice(req, res, db) {\n   const { invoiceId } = req.params;\n-  // Retrieve invoice details by identifier\n+  const currentTenantId = req.user.tenantId;\n+\n   const invoice = await db.invoices.findById(invoiceId);\n-  if (!invoice) return res.status(404).json({ error: \"Not found\" });\n+  if (!invoice || invoice.tenantId !== currentTenantId) {\n+    return res.status(403).json({ error: \"Access denied\" });\n+  }\n   return res.json(invoice);\n }\ndiff --git a/src/auth/jwt-service.js b/src/auth/jwt-service.js\nindex d129269..c52ff8d 100644\n--- a/src/auth/jwt-service.js\n+++ b/src/auth/jwt-service.js\n@@ -1,8 +1,7 @@\n-const JWT_SECRET = \"super_secret_jwt_token_key_123456789_triad_pilot\";\n+import jwt from \"jsonwebtoken\";\n \n export function verifySessionToken(token) {\n-  // Parse token parts and decode payload\n-  const parts = token.split(\".\");\n-  if (parts.length !== 3) throw new Error(\"Invalid token format\");\n-  return JSON.parse(Buffer.from(parts[1], \"base64\").toString(\"utf8\"));\n+  const secret = process.env.JWT_SIGNING_SECRET;\n+  if (!secret) throw new Error(\"JWT_SIGNING_SECRET not configured\");\n+  return jwt.verify(token, secret);\n }\ndiff --git a/src/db/user-repo.js b/src/db/user-repo.js\nindex a19039e..bec0a97 100644\n--- a/src/db/user-repo.js\n+++ b/src/db/user-repo.js\n@@ -4,8 +4,8 @@ export class UserRepository {\n   }\n \n   async findUserById(id) {\n-    // Construct query for user record\n-    const query = \"SELECT id, username, email FROM users WHERE id = '\" + id + \"'\";\n-    return this.db.query(query);\n+    // Parameterized query execution\n+    const query = \"SELECT id, username, email FROM users WHERE id = ?\";\n+    return this.db.query(query, [id]);\n   }\n }\ndiff --git a/src/storage/file-fetcher.js b/src/storage/file-fetcher.js\nindex a4cdb84..fe846fe 100644\n--- a/src/storage/file-fetcher.js\n+++ b/src/storage/file-fetcher.js\n@@ -2,7 +2,10 @@ import fs from \"node:fs/promises\";\n import path from \"node:path\";\n \n export async function readStorageFile(baseDir, userInputFilename) {\n-  // Resolve target file path within base directory\n-  const target = path.join(baseDir, userInputFilename);\n+  const safeName = path.basename(userInputFilename);\n+  const target = path.resolve(baseDir, safeName);\n+  if (!target.startsWith(path.resolve(baseDir))) {\n+    throw new Error(\"Access denied: invalid file path\");\n+  }\n   return fs.readFile(target, \"utf8\");\n }\ndiff --git a/src/views/profile-render.js b/src/views/profile-render.js\nindex aa876ee..40b5a29 100644\n--- a/src/views/profile-render.js\n+++ b/src/views/profile-render.js\n@@ -1,4 +1,6 @@\n export function renderUserProfile(container, user) {\n-  // Render formatted bio markup directly into profile container\n-  container.innerHTML = `<div class=\"user-bio\">${user.bio || \"\"}</div>`;\n+  const bioElement = document.createElement(\"div\");\n+  bioElement.className = \"user-bio\";\n+  bioElement.textContent = user.bio || \"\";\n+  container.appendChild(bioElement);\n }\n",
+  "receipts": [
+    {
+      "schemaVersion": "1.0.0",
+      "receiptId": "rem-1790747532708-4e16d5",
+      "findingId": "BENCH-REAL-001-FINDING-001",
+      "status": "CLOSED",
+      "timestamps": {
+        "startedAt": "2026-09-30T05:52:11.037Z",
+        "completedAt": "2026-09-30T05:52:12.708Z"
+      },
+      "actors": {
+        "producer": {
+          "providerName": "unknown",
+          "modelName": "unknown"
+        },
+        "synthesizer": {
+          "providerName": "codex",
+          "modelName": "cli-remediate"
+        },
+        "verifier": {
+          "providerName": "claude",
+          "modelName": "cli-default"
+        },
+        "authorizer": {
+          "identity": "security-lead@triad.flow",
+          "type": "human",
+          "signature": null,
+          "authorizedPatchDigest": "sha256:689438f629a752c0f909eff84e9d079b9f2edc9c3d6ba88edddcf6ba72a34c3f"
+        }
+      },
+      "patch": {
+        "patchDiffDigest": "sha256:689438f629a752c0f909eff84e9d079b9f2edc9c3d6ba88edddcf6ba72a34c3f",
+        "targetFiles": [
+          "src/db/user-repo.js"
+        ],
+        "additions": 3,
+        "deletions": 3,
+        "rationale": "Replaced string concatenation with parameterized query placeholder '?' and array argument binding to prevent SQL injection."
+      },
+      "jail": {
+        "driver": "worktree",
+        "capabilities": {
+          "driver": "worktree",
+          "filesystemIsolation": "git-worktree",
+          "networkEgressDenial": "unavailable",
+          "processIsolation": "none",
+          "hostFilesystemWriteRestriction": "unenforced"
+        },
+        "worktreeSha": "a4e2709f211ae42de6ac2aa798913964a9426e50",
+        "prePatchTreeDigest": "sha256:3e77973471b56c9cb396265d751f156f44feb620ce00df8845dfa36cf86871ca",
+        "postPatchTreeDigest": "sha256:7e0ea1b1596c8090b0b76d1a5b21a1ab557c5d8cdc16b7f40ad3107d38ce871a",
+        "isolatedExecutionPass": true
+      },
+      "deterministicChecks": {
+        "executed": true,
+        "testCommand": "npm test -- src/db/user-repo.js",
+        "exitCode": 0,
+        "passedCount": 1,
+        "failedCount": 0,
+        "regressionDetected": false,
+        "postTestTreeDigest": "sha256:7e0ea1b1596c8090b0b76d1a5b21a1ab557c5d8cdc16b7f40ad3107d38ce871a"
+      },
+      "closureVerification": {
+        "verified": true,
+        "verificationRecordDigest": "sha256:5994f0875fce117d87d01a4b214bffac4409cf73c94cbef8ccde3706202e059e",
+        "verdict": "SUPPORTED",
+        "residualVulnerabilityDetected": false
+      },
+      "history": [
+        {
+          "from": "OPEN",
+          "to": "FIX_PROPOSED",
+          "at": "2026-09-30T05:52:11.037Z",
+          "actor": "codex"
+        },
+        {
+          "from": "FIX_PROPOSED",
+          "to": "PATCH_AUTHORIZED",
+          "at": "2026-09-30T05:52:11.038Z",
+          "actor": "security-lead@triad.flow"
+        },
+        {
+          "from": "PATCH_AUTHORIZED",
+          "to": "PATCH_APPLIED_IN_JAIL",
+          "at": "2026-09-30T05:52:11.254Z",
+          "actor": "batch-orchestrator"
+        },
+        {
+          "from": "PATCH_APPLIED_IN_JAIL",
+          "to": "FIXED_PENDING_VERIFY",
+          "at": "2026-09-30T05:52:11.255Z",
+          "actor": "test-runner"
+        },
+        {
+          "from": "FIXED_PENDING_VERIFY",
+          "to": "CLOSED",
+          "at": "2026-09-30T05:52:12.706Z",
+          "actor": "claude"
+        }
+      ]
+    },
+    {
+      "schemaVersion": "1.0.0",
+      "receiptId": "rem-1790747532708-201c15",
+      "findingId": "BENCH-REAL-002-FINDING-001",
+      "status": "CLOSED",
+      "timestamps": {
+        "startedAt": "2026-09-30T05:52:11.037Z",
+        "completedAt": "2026-09-30T05:52:12.708Z"
+      },
+      "actors": {
+        "producer": {
+          "providerName": "unknown",
+          "modelName": "unknown"
+        },
+        "synthesizer": {
+          "providerName": "codex",
+          "modelName": "cli-remediate"
+        },
+        "verifier": {
+          "providerName": "claude",
+          "modelName": "cli-default"
+        },
+        "authorizer": {
+          "identity": "security-lead@triad.flow",
+          "type": "human",
+          "signature": null,
+          "authorizedPatchDigest": "sha256:cfe84fd8a86f74e122e1464ac8c732badb3f3cb9b90e7b25b7c573632789022d"
+        }
+      },
+      "patch": {
+        "patchDiffDigest": "sha256:cfe84fd8a86f74e122e1464ac8c732badb3f3cb9b90e7b25b7c573632789022d",
+        "targetFiles": [
+          "src/auth/jwt-service.js"
+        ],
+        "additions": 4,
+        "deletions": 5,
+        "rationale": "Removed hardcoded JWT signing secret and reinstated cryptographic signature verification using process.env.JWT_SIGNING_SECRET."
+      },
+      "jail": {
+        "driver": "worktree",
+        "capabilities": {
+          "driver": "worktree",
+          "filesystemIsolation": "git-worktree",
+          "networkEgressDenial": "unavailable",
+          "processIsolation": "none",
+          "hostFilesystemWriteRestriction": "unenforced"
+        },
+        "worktreeSha": "a4e2709f211ae42de6ac2aa798913964a9426e50",
+        "prePatchTreeDigest": "sha256:7e0ea1b1596c8090b0b76d1a5b21a1ab557c5d8cdc16b7f40ad3107d38ce871a",
+        "postPatchTreeDigest": "sha256:e962ce854814cbda353dd7738911f06b12fa59d52792252074bae38aae936a85",
+        "isolatedExecutionPass": true
+      },
+      "deterministicChecks": {
+        "executed": true,
+        "testCommand": "npm test -- src/auth/jwt-service.js",
+        "exitCode": 0,
+        "passedCount": 1,
+        "failedCount": 0,
+        "regressionDetected": false,
+        "postTestTreeDigest": "sha256:e962ce854814cbda353dd7738911f06b12fa59d52792252074bae38aae936a85"
+      },
+      "closureVerification": {
+        "verified": true,
+        "verificationRecordDigest": "sha256:ce9db4b2fc6a0ad2853b63dae53800a8271062ede1799bea05ff65d0cb27c05d",
+        "verdict": "SUPPORTED",
+        "residualVulnerabilityDetected": false
+      },
+      "history": [
+        {
+          "from": "OPEN",
+          "to": "FIX_PROPOSED",
+          "at": "2026-09-30T05:52:11.038Z",
+          "actor": "codex"
+        },
+        {
+          "from": "FIX_PROPOSED",
+          "to": "PATCH_AUTHORIZED",
+          "at": "2026-09-30T05:52:11.038Z",
+          "actor": "security-lead@triad.flow"
+        },
+        {
+          "from": "PATCH_AUTHORIZED",
+          "to": "PATCH_APPLIED_IN_JAIL",
+          "at": "2026-09-30T05:52:11.608Z",
+          "actor": "batch-orchestrator"
+        },
+        {
+          "from": "PATCH_APPLIED_IN_JAIL",
+          "to": "FIXED_PENDING_VERIFY",
+          "at": "2026-09-30T05:52:11.608Z",
+          "actor": "test-runner"
+        },
+        {
+          "from": "FIXED_PENDING_VERIFY",
+          "to": "CLOSED",
+          "at": "2026-09-30T05:52:12.706Z",
+          "actor": "claude"
+        }
+      ]
+    },
+    {
+      "schemaVersion": "1.0.0",
+      "receiptId": "rem-1790747532708-cfea20",
+      "findingId": "BENCH-REAL-003-FINDING-001",
+      "status": "CLOSED",
+      "timestamps": {
+        "startedAt": "2026-09-30T05:52:11.037Z",
+        "completedAt": "2026-09-30T05:52:12.708Z"
+      },
+      "actors": {
+        "producer": {
+          "providerName": "unknown",
+          "modelName": "unknown"
+        },
+        "synthesizer": {
+          "providerName": "codex",
+          "modelName": "cli-remediate"
+        },
+        "verifier": {
+          "providerName": "claude",
+          "modelName": "cli-default"
+        },
+        "authorizer": {
+          "identity": "security-lead@triad.flow",
+          "type": "human",
+          "signature": null,
+          "authorizedPatchDigest": "sha256:cbf4dae0c9a368b35a8282e63fc90ba60e480f04f8aa82b0a5338545c6beeefd"
+        }
+      },
+      "patch": {
+        "patchDiffDigest": "sha256:cbf4dae0c9a368b35a8282e63fc90ba60e480f04f8aa82b0a5338545c6beeefd",
+        "targetFiles": [
+          "src/storage/file-fetcher.js"
+        ],
+        "additions": 5,
+        "deletions": 2,
+        "rationale": "Enforced path normalization with path.basename() and prefix bounds validation with target.startsWith() to deny directory traversal."
+      },
+      "jail": {
+        "driver": "worktree",
+        "capabilities": {
+          "driver": "worktree",
+          "filesystemIsolation": "git-worktree",
+          "networkEgressDenial": "unavailable",
+          "processIsolation": "none",
+          "hostFilesystemWriteRestriction": "unenforced"
+        },
+        "worktreeSha": "a4e2709f211ae42de6ac2aa798913964a9426e50",
+        "prePatchTreeDigest": "sha256:e962ce854814cbda353dd7738911f06b12fa59d52792252074bae38aae936a85",
+        "postPatchTreeDigest": "sha256:f1cdfa769807683a5b799e030f1907e3ddb91c6a1aec93c9e83ceb33a53f48ef",
+        "isolatedExecutionPass": true
+      },
+      "deterministicChecks": {
+        "executed": true,
+        "testCommand": "npm test -- src/storage/file-fetcher.js",
+        "exitCode": 0,
+        "passedCount": 1,
+        "failedCount": 0,
+        "regressionDetected": false,
+        "postTestTreeDigest": "sha256:f1cdfa769807683a5b799e030f1907e3ddb91c6a1aec93c9e83ceb33a53f48ef"
+      },
+      "closureVerification": {
+        "verified": true,
+        "verificationRecordDigest": "sha256:b50d3ff8cf5071f761e402f0cf5a73e7f361957eb31103f7cad50e9488714389",
+        "verdict": "SUPPORTED",
+        "residualVulnerabilityDetected": false
+      },
+      "history": [
+        {
+          "from": "OPEN",
+          "to": "FIX_PROPOSED",
+          "at": "2026-09-30T05:52:11.038Z",
+          "actor": "codex"
+        },
+        {
+          "from": "FIX_PROPOSED",
+          "to": "PATCH_AUTHORIZED",
+          "at": "2026-09-30T05:52:11.038Z",
+          "actor": "security-lead@triad.flow"
+        },
+        {
+          "from": "PATCH_AUTHORIZED",
+          "to": "PATCH_APPLIED_IN_JAIL",
+          "at": "2026-09-30T05:52:11.865Z",
+          "actor": "batch-orchestrator"
+        },
+        {
+          "from": "PATCH_APPLIED_IN_JAIL",
+          "to": "FIXED_PENDING_VERIFY",
+          "at": "2026-09-30T05:52:11.865Z",
+          "actor": "test-runner"
+        },
+        {
+          "from": "FIXED_PENDING_VERIFY",
+          "to": "CLOSED",
+          "at": "2026-09-30T05:52:12.707Z",
+          "actor": "claude"
+        }
+      ]
+    },
+    {
+      "schemaVersion": "1.0.0",
+      "receiptId": "rem-1790747532708-e25516",
+      "findingId": "BENCH-REAL-004-FINDING-001",
+      "status": "CLOSED",
+      "timestamps": {
+        "startedAt": "2026-09-30T05:52:11.037Z",
+        "completedAt": "2026-09-30T05:52:12.708Z"
+      },
+      "actors": {
+        "producer": {
+          "providerName": "unknown",
+          "modelName": "unknown"
+        },
+        "synthesizer": {
+          "providerName": "codex",
+          "modelName": "cli-remediate"
+        },
+        "verifier": {
+          "providerName": "claude",
+          "modelName": "cli-default"
+        },
+        "authorizer": {
+          "identity": "security-lead@triad.flow",
+          "type": "human",
+          "signature": null,
+          "authorizedPatchDigest": "sha256:f50da0a438c169419bdae87ce4604abc66ed3a2ca083eee2b454bdac24a51bd8"
+        }
+      },
+      "patch": {
+        "patchDiffDigest": "sha256:f50da0a438c169419bdae87ce4604abc66ed3a2ca083eee2b454bdac24a51bd8",
+        "targetFiles": [
+          "src/views/profile-render.js"
+        ],
+        "additions": 4,
+        "deletions": 2,
+        "rationale": "Replaced direct innerHTML template literal assignment with safe DOM node creation and textContent assignment to prevent cross-site scripting."
+      },
+      "jail": {
+        "driver": "worktree",
+        "capabilities": {
+          "driver": "worktree",
+          "filesystemIsolation": "git-worktree",
+          "networkEgressDenial": "unavailable",
+          "processIsolation": "none",
+          "hostFilesystemWriteRestriction": "unenforced"
+        },
+        "worktreeSha": "a4e2709f211ae42de6ac2aa798913964a9426e50",
+        "prePatchTreeDigest": "sha256:f1cdfa769807683a5b799e030f1907e3ddb91c6a1aec93c9e83ceb33a53f48ef",
+        "postPatchTreeDigest": "sha256:21ef637d3ffe3d54cd8f0c3646a8732bff5e3f5958c9f9d1e7b1fc11eac7e9e5",
+        "isolatedExecutionPass": true
+      },
+      "deterministicChecks": {
+        "executed": true,
+        "testCommand": "npm test -- src/views/profile-render.js",
+        "exitCode": 0,
+        "passedCount": 1,
+        "failedCount": 0,
+        "regressionDetected": false,
+        "postTestTreeDigest": "sha256:21ef637d3ffe3d54cd8f0c3646a8732bff5e3f5958c9f9d1e7b1fc11eac7e9e5"
+      },
+      "closureVerification": {
+        "verified": true,
+        "verificationRecordDigest": "sha256:769dc9a417ba40ab245f1366e541ebb8a930c0f7712e4e7ca771ed6c8d71ba6c",
+        "verdict": "SUPPORTED",
+        "residualVulnerabilityDetected": false
+      },
+      "history": [
+        {
+          "from": "OPEN",
+          "to": "FIX_PROPOSED",
+          "at": "2026-09-30T05:52:11.038Z",
+          "actor": "codex"
+        },
+        {
+          "from": "FIX_PROPOSED",
+          "to": "PATCH_AUTHORIZED",
+          "at": "2026-09-30T05:52:11.038Z",
+          "actor": "security-lead@triad.flow"
+        },
+        {
+          "from": "PATCH_AUTHORIZED",
+          "to": "PATCH_APPLIED_IN_JAIL",
+          "at": "2026-09-30T05:52:12.114Z",
+          "actor": "batch-orchestrator"
+        },
+        {
+          "from": "PATCH_APPLIED_IN_JAIL",
+          "to": "FIXED_PENDING_VERIFY",
+          "at": "2026-09-30T05:52:12.114Z",
+          "actor": "test-runner"
+        },
+        {
+          "from": "FIXED_PENDING_VERIFY",
+          "to": "CLOSED",
+          "at": "2026-09-30T05:52:12.707Z",
+          "actor": "claude"
+        }
+      ]
+    },
+    {
+      "schemaVersion": "1.0.0",
+      "receiptId": "rem-1790747532708-282ecc",
+      "findingId": "BENCH-REAL-005-FINDING-001",
+      "status": "CLOSED",
+      "timestamps": {
+        "startedAt": "2026-09-30T05:52:11.037Z",
+        "completedAt": "2026-09-30T05:52:12.708Z"
+      },
+      "actors": {
+        "producer": {
+          "providerName": "unknown",
+          "modelName": "unknown"
+        },
+        "synthesizer": {
+          "providerName": "codex",
+          "modelName": "cli-remediate"
+        },
+        "verifier": {
+          "providerName": "claude",
+          "modelName": "cli-default"
+        },
+        "authorizer": {
+          "identity": "security-lead@triad.flow",
+          "type": "human",
+          "signature": null,
+          "authorizedPatchDigest": "sha256:9942fae62fb7d183c66f691c6eb1c9041a3203c8e319eb909eb4b380a51a0ccd"
+        }
+      },
+      "patch": {
+        "patchDiffDigest": "sha256:9942fae62fb7d183c66f691c6eb1c9041a3203c8e319eb909eb4b380a51a0ccd",
+        "targetFiles": [
+          "src/api/invoice-handler.js"
+        ],
+        "additions": 5,
+        "deletions": 2,
+        "rationale": "Enforced tenant authorization check ensuring invoice.tenantId matches req.user.tenantId, returning 403 Forbidden on authorization mismatch."
+      },
+      "jail": {
+        "driver": "worktree",
+        "capabilities": {
+          "driver": "worktree",
+          "filesystemIsolation": "git-worktree",
+          "networkEgressDenial": "unavailable",
+          "processIsolation": "none",
+          "hostFilesystemWriteRestriction": "unenforced"
+        },
+        "worktreeSha": "a4e2709f211ae42de6ac2aa798913964a9426e50",
+        "prePatchTreeDigest": "sha256:21ef637d3ffe3d54cd8f0c3646a8732bff5e3f5958c9f9d1e7b1fc11eac7e9e5",
+        "postPatchTreeDigest": "sha256:382ba5da795c03ee21db46df46b7ac76b5e3b2d0f0ac7a5bc058fef8f5530d2c",
+        "isolatedExecutionPass": true
+      },
+      "deterministicChecks": {
+        "executed": true,
+        "testCommand": "npm test -- src/api/invoice-handler.js",
+        "exitCode": 0,
+        "passedCount": 1,
+        "failedCount": 0,
+        "regressionDetected": false,
+        "postTestTreeDigest": "sha256:382ba5da795c03ee21db46df46b7ac76b5e3b2d0f0ac7a5bc058fef8f5530d2c"
+      },
+      "closureVerification": {
+        "verified": true,
+        "verificationRecordDigest": "sha256:c5a62508c8d182f7a34dd3cafb83a29f71661cc993abd3d1377ce1733ea8325c",
+        "verdict": "SUPPORTED",
+        "residualVulnerabilityDetected": false
+      },
+      "history": [
+        {
+          "from": "OPEN",
+          "to": "FIX_PROPOSED",
+          "at": "2026-09-30T05:52:11.038Z",
+          "actor": "codex"
+        },
+        {
+          "from": "FIX_PROPOSED",
+          "to": "PATCH_AUTHORIZED",
+          "at": "2026-09-30T05:52:11.038Z",
+          "actor": "security-lead@triad.flow"
+        },
+        {
+          "from": "PATCH_AUTHORIZED",
+          "to": "PATCH_APPLIED_IN_JAIL",
+          "at": "2026-09-30T05:52:12.376Z",
+          "actor": "batch-orchestrator"
+        },
+        {
+          "from": "PATCH_APPLIED_IN_JAIL",
+          "to": "FIXED_PENDING_VERIFY",
+          "at": "2026-09-30T05:52:12.376Z",
+          "actor": "test-runner"
+        },
+        {
+          "from": "FIXED_PENDING_VERIFY",
+          "to": "CLOSED",
+          "at": "2026-09-30T05:52:12.707Z",
+          "actor": "claude"
+        }
+      ]
+    }
+  ]
+}

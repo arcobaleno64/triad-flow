@@ -88,12 +88,14 @@ const SEVERITY_WEIGHTS = Object.freeze({
 });
 
 /**
- * Builds a conflict dependency graph across candidate findings based on target file overlap.
+ * Builds an undirected conflict graph across candidate findings based on target file overlap.
+ * Note: Relationships are symmetric (A conflicts B <=> B conflicts A).
+ * (Alias: buildConflictDAG maintained for backwards compatibility).
  *
  * @param {Array<{ id: string, targetFiles: string[] }>} findings
  * @returns {{ hasConflict: (id1: string, id2: string) => boolean, conflicts: Map<string, Set<string>> }}
  */
-export function buildConflictDAG(findings = []) {
+export function buildConflictGraph(findings = []) {
   const fileToFindings = new Map();
   const conflicts = new Map();
 
@@ -129,16 +131,18 @@ export function buildConflictDAG(findings = []) {
   };
 }
 
+export const buildConflictDAG = buildConflictGraph;
+
 /**
  * Computes deterministic execution order for batch findings.
- * Conflicting items are serialized by severity weight (critical first), then original index.
+ * Findings in the conflict graph are serialized by severity weight (critical first), then original index.
  *
  * @param {Array<{ id: string, severity?: string, targetFiles: string[] }>} findings
- * @param {ReturnType<typeof buildConflictDAG>} [dag]
+ * @param {ReturnType<typeof buildConflictGraph>} [conflictGraph]
  * @returns {string[]} Ordered list of finding IDs
  */
-export function computeDeterministicBatchOrder(findings = [], dag = null) {
-  const graph = dag || buildConflictDAG(findings);
+export function computeDeterministicBatchOrder(findings = [], conflictGraph = null) {
+  const graph = conflictGraph || buildConflictGraph(findings);
   const items = findings.map((f, idx) => ({
     id: f.id,
     severity: String(f.severity || "medium").toLowerCase(),
@@ -398,6 +402,7 @@ export class BatchRemediationSession {
       } catch {
         // ignore
       }
+      this.aggregateDiff = aggregateDiff;
 
       return {
         jailPath: jail.jailPath,
@@ -514,9 +519,10 @@ export class BatchRemediationSession {
         driver: this.sandboxDriver?.name || "worktree",
         capabilities: this.sandboxDriver?.capabilities() || {
           driver: "worktree",
-          filesystemIsolation: "worktree",
+          filesystemIsolation: "git-worktree",
           networkEgressDenial: "unavailable",
-          writeBoundary: "jail-worktree-only"
+          processIsolation: "none",
+          hostFilesystemWriteRestriction: "unenforced"
         }
       },
       lineage: {
@@ -524,6 +530,7 @@ export class BatchRemediationSession {
         currentTreeDigest: this.currentTreeDigest,
         history: [...this.lineageHistory]
       },
+      aggregateDiff: this.aggregateDiff || "",
       receipts
     };
 

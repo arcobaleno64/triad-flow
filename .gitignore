@@ -10,6 +10,7 @@ coverage/
 /benchmark-results.json
 /benchmark-*.json
 /audit-receipt*.json
+/remediation-receipt*.json
 /artifact-manifest*.json
 /verification-record*.json
 /disagreement-ledger*.json
