@@ -166,3 +166,16 @@ Every completed live benchmark run produces an immutable bundle:
 3. **Patch Identity Lineage**:
    - `v2.2.0`: Released auditable evidence infrastructure; tag `0ab4ef0` contained optional schedule.
    - `v2.2.1`: Safety contract patch restricting `benchmark-live.yml` strictly to manual `workflow_dispatch` only.
+
+---
+
+## 7. Next Assurance Gate: Independent Verification & Disagreement Ledger
+
+1. **Gate Declaration**:
+   > `BENCH-REAL-001 必須取得 independent verification record，且原始 agy findings 不可被 verifier 覆寫或合併消失。`
+
+2. **Producer / Verifier Decoupling**:
+   - **Producer**: Google `agy` executes `BENCH-REAL-001` and generates primary findings.
+   - **Cryptographic Gate**: `manifest:verify` guarantees bit-level non-tampering (`corpusDigest` + artifact manifest).
+   - **Independent Verifier**: Anthropic `claude` independently reviews the producer findings against the physical diff without capability to overwrite, delete, or silently merge dissenting opinions.
+   - **Disagreement Ledger**: Records whether each finding is verified, contested, or classified as `INSUFFICIENT_EVIDENCE`. Disagreements survive consensus minting as primary empirical evidence.
