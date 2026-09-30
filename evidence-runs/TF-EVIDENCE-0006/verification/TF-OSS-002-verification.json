@@ -1,0 +1,114 @@
+{
+  "schemaVersion": "1.0.0",
+  "verifiedAt": "2026-09-30T12:50:21.475Z",
+  "changeSetDigest": "sha256:0c29940910fb90a6f65f7126c6dfdf18222b1f011109a3296ef3bc91f0d9657d",
+  "producer": {
+    "providerName": "agy",
+    "findingsCount": 1,
+    "findings": [
+      {
+        "title": "Incomplete Prototype Pollution Protection via Blacklist",
+        "severity": "high",
+        "file": "ini.js",
+        "line_start": 13,
+        "line_end": 16,
+        "ruleId": "security/prototype-pollution",
+        "cwe": "CWE-1321",
+        "type": "vulnerability",
+        "recommendation": "Do not rely on a blacklist checking only '__proto__'. Block or ignore dangerous section identifiers including 'constructor' and 'prototype', or initialize 'out' with Object.create(null) and use Object.prototype.hasOwnProperty.call(out, section) to prevent traversing and polluting prototype properties.",
+        "sources": [
+          "agy"
+        ],
+        "corroborations": 1
+      }
+    ]
+  },
+  "verifier": {
+    "providerName": "claude",
+    "modelName": "claude-5.5-sonnet",
+    "actualModel": {
+      "source": "reported",
+      "value": "claude-5.5-sonnet"
+    },
+    "usage": {
+      "completionTokens": null,
+      "promptTokens": null,
+      "totalTokens": null,
+      "usageSource": "unavailable"
+    }
+  },
+  "evaluations": [
+    {
+      "findingId": "finding-1",
+      "verdict": "SUPPORTED",
+      "classification": "PARTIALLY_SUPPORTED",
+      "locatorAccurate": true,
+      "typeAccurate": true,
+      "severityAccurate": false,
+      "reasoning": "The diff adds a check for only `section === '__proto__'`. The following line, `p = out[section] = out[section] || {}`, still runs for other names. Because `out` is a plain object, `out['constructor']` is the inherited `Object` function, which is truthy. So `[constructor]` sets `p` to `Object`, and later key assignments write to global `Object` statics. The blacklist is therefore incomplete, and the hardening recommendation (`Object.create(null)` plus an own-property check) is valid. The locator is accurate: the guard and the assignment are at about lines 12-16 of the new file. The 'high' severity is not shown by the visible diff. `[prototype]` is harmless here, because `out.prototype` is undefined and just creates an own property. Reaching `Object.prototype` would need a nested path such as `constructor.prototype`. The diff shows no dot-splitting of section names, so that path is not visible. The demonstrated impact is tampering with the `Object` function's properties, which is closer to medium. It is not the classic pollution of `Object.prototype`.",
+      "dissent": "The diff adds a check for only `section === '__proto__'`. The following line, `p = out[section] = out[section] || {}`, still runs for other names. Because `out` is a plain object, `out['constructor']` is the inherited `Object` function, which is truthy. So `[constructor]` sets `p` to `Object`, and later key assignments write to global `Object` statics. The blacklist is therefore incomplete, and the hardening recommendation (`Object.create(null)` plus an own-property check) is valid. The locator is accurate: the guard and the assignment are at about lines 12-16 of the new file. The 'high' severity is not shown by the visible diff. `[prototype]` is harmless here, because `out.prototype` is undefined and just creates an own property. Reaching `Object.prototype` would need a nested path such as `constructor.prototype`. The diff shows no dot-splitting of section names, so that path is not visible. The demonstrated impact is tampering with the `Object` function's properties, which is closer to medium. It is not the classic pollution of `Object.prototype`."
+    }
+  ],
+  "verifierOmissions": [
+    {
+      "title": "Inherited-property lookup in `out[section] || {}` returns Object.prototype members (constructor, toString, hasOwnProperty) as the section target",
+      "severity": "medium",
+      "file": "ini.js",
+      "line_start": 16,
+      "line_end": 16,
+      "cwe": "CWE-1321",
+      "type": "vulnerability",
+      "recommendation": "Create `out` with Object.create(null), or use Object.prototype.hasOwnProperty.call(out, section) before reusing an existing entry. Otherwise always create a fresh own object for the section.",
+      "id": "omission-1",
+      "classification": "MISSED_BY_PRODUCER"
+    },
+    {
+      "title": "The '__proto__' section fix silently discards the section's data with no error or warning",
+      "severity": "low",
+      "file": "ini.js",
+      "line_start": 12,
+      "line_end": 15,
+      "cwe": "CWE-703",
+      "type": "bug",
+      "recommendation": "Skip the section deliberately and document or log it. Better, store it as an own property via Object.defineProperty on a null-prototype object so that legitimate input is not lost silently.",
+      "id": "omission-2",
+      "classification": "MISSED_BY_PRODUCER"
+    }
+  ],
+  "disagreementLedger": [
+    {
+      "findingId": "finding-1",
+      "producerFinding": {
+        "title": "Incomplete Prototype Pollution Protection via Blacklist",
+        "severity": "high",
+        "file": "ini.js",
+        "line_start": 13,
+        "line_end": 16,
+        "ruleId": "security/prototype-pollution",
+        "cwe": "CWE-1321",
+        "type": "vulnerability",
+        "recommendation": "Do not rely on a blacklist checking only '__proto__'. Block or ignore dangerous section identifiers including 'constructor' and 'prototype', or initialize 'out' with Object.create(null) and use Object.prototype.hasOwnProperty.call(out, section) to prevent traversing and polluting prototype properties.",
+        "sources": [
+          "agy"
+        ],
+        "corroborations": 1
+      },
+      "verdict": "SUPPORTED",
+      "classification": "PARTIALLY_SUPPORTED",
+      "locatorAccurate": true,
+      "typeAccurate": true,
+      "severityAccurate": false,
+      "reasoning": "The diff adds a check for only `section === '__proto__'`. The following line, `p = out[section] = out[section] || {}`, still runs for other names. Because `out` is a plain object, `out['constructor']` is the inherited `Object` function, which is truthy. So `[constructor]` sets `p` to `Object`, and later key assignments write to global `Object` statics. The blacklist is therefore incomplete, and the hardening recommendation (`Object.create(null)` plus an own-property check) is valid. The locator is accurate: the guard and the assignment are at about lines 12-16 of the new file. The 'high' severity is not shown by the visible diff. `[prototype]` is harmless here, because `out.prototype` is undefined and just creates an own property. Reaching `Object.prototype` would need a nested path such as `constructor.prototype`. The diff shows no dot-splitting of section names, so that path is not visible. The demonstrated impact is tampering with the `Object` function's properties, which is closer to medium. It is not the classic pollution of `Object.prototype`.",
+      "dissent": "The diff adds a check for only `section === '__proto__'`. The following line, `p = out[section] = out[section] || {}`, still runs for other names. Because `out` is a plain object, `out['constructor']` is the inherited `Object` function, which is truthy. So `[constructor]` sets `p` to `Object`, and later key assignments write to global `Object` statics. The blacklist is therefore incomplete, and the hardening recommendation (`Object.create(null)` plus an own-property check) is valid. The locator is accurate: the guard and the assignment are at about lines 12-16 of the new file. The 'high' severity is not shown by the visible diff. `[prototype]` is harmless here, because `out.prototype` is undefined and just creates an own property. Reaching `Object.prototype` would need a nested path such as `constructor.prototype`. The diff shows no dot-splitting of section names, so that path is not visible. The demonstrated impact is tampering with the `Object` function's properties, which is closer to medium. It is not the classic pollution of `Object.prototype`."
+    }
+  ],
+  "summary": {
+    "totalEvaluated": 1,
+    "supportedCount": 1,
+    "partiallySupportedCount": 1,
+    "contestedCount": 0,
+    "insufficientEvidenceCount": 0,
+    "omissionsCount": 2
+  },
+  "ok": true
+}

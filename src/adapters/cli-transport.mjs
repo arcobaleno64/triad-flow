@@ -99,6 +99,7 @@ export class CliReviewAdapter {
     this.profile = profile;
     this.providerName = options.providerName || profile.id || "cli-reviewer";
     this.modelName = options.modelName || "cli-default";
+    this.actualModel = options.actualModel || null;
     this.family = options.family || profile.family;
     this.inputChannel = options.inputChannel || profile.inputChannel || "argv";
     this.supportsStdin = options.supportsStdin !== undefined

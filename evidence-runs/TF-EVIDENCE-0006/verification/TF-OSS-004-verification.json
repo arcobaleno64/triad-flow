@@ -1,0 +1,63 @@
+{
+  "schemaVersion": "1.0.0",
+  "verifiedAt": "2026-09-30T12:50:57.450Z",
+  "changeSetDigest": "sha256:167f2fd7dc8426afc06df7d23d037cf1d58c280dc5d062fd4d499c16c337ab0b",
+  "producer": {
+    "providerName": "agy",
+    "findingsCount": 1,
+    "findings": [
+      {
+        "title": "Overly restrictive whitespace quantifier in safeRe[0] rejects valid versions with multiple spaces",
+        "severity": "medium",
+        "file": "internal/re.js",
+        "line_start": 6,
+        "line_end": 6,
+        "ruleId": "REGEX-RESTRICTIVE-WHITESPACE",
+        "cwe": "CWE-20",
+        "type": "bug",
+        "recommendation": "Use str.trim() prior to matching or restore \\s* since the base pattern does not exhibit catastrophic backtracking.",
+        "sources": [
+          "agy"
+        ],
+        "corroborations": 1
+      }
+    ]
+  },
+  "verifier": {
+    "providerName": "claude",
+    "modelName": "claude-5.5-sonnet",
+    "actualModel": {
+      "source": "reported",
+      "value": "claude-5.5-sonnet"
+    },
+    "usage": {
+      "completionTokens": null,
+      "promptTokens": null,
+      "totalTokens": null,
+      "usageSource": "unavailable"
+    }
+  },
+  "evaluations": [
+    {
+      "findingId": "finding-1",
+      "verdict": "SUPPORTED",
+      "classification": "SUPPORTED",
+      "locatorAccurate": true,
+      "typeAccurate": true,
+      "severityAccurate": true,
+      "reasoning": "The diff changes cleanVersion from re[0] to safeRe[0]. The base pattern allows any amount of surrounding whitespace (`\\s*`). safeRe[0] caps it at `\\s{0,1}`. Input such as '  1.2.3' (two leading spaces), '1.2.3  ', or '1.2.3\\n\\n' used to return '1.2.3' and now returns null. That is a real behavior regression for callers of the exported cleanVersion. The locator is correct: safeRe[0] is line 6 of the post-change file. The ReDoS rationale is weak. `^\\s*(digits)\\.` has a single unbounded quantifier at each end, and the digit groups are separated by literal dots, so there is no nested or overlapping quantification and no catastrophic backtracking. The recommendation to trim first or restore `\\s*` is therefore sound. CWE-20 (improper input validation) fits because valid input is now wrongly rejected. Medium severity is reasonable: this is a silent contract change in a public function, but it does not affect security or data integrity.",
+      "dissent": null
+    }
+  ],
+  "verifierOmissions": [],
+  "disagreementLedger": [],
+  "summary": {
+    "totalEvaluated": 1,
+    "supportedCount": 1,
+    "partiallySupportedCount": 0,
+    "contestedCount": 0,
+    "insufficientEvidenceCount": 0,
+    "omissionsCount": 0
+  },
+  "ok": true
+}

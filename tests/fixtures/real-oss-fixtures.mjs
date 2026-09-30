@@ -882,14 +882,14 @@ export function createMockOssAdapters(options = {}) {
   const macro = new CliReviewAdapter({
     command: "agy",
     providerName: "agy",
-    modelName: "gemini-2.5-flash",
+    modelName: "gemini-3.8-flash",
     execFn: createExecFn("macro")
   });
 
   const micro = new CliReviewAdapter({
     command: "claude",
     providerName: "claude",
-    modelName: "claude-3-5-sonnet",
+    modelName: "claude-5.5-sonnet",
     execFn: createExecFn("micro")
   });
 

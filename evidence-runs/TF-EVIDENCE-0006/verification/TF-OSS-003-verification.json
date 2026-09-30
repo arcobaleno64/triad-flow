@@ -1,0 +1,61 @@
+{
+  "schemaVersion": "1.0.0",
+  "verifiedAt": "2026-09-30T12:50:41.714Z",
+  "changeSetDigest": "sha256:06899edec052dfbeec830934b8e325091458b4cbf4156f3341c3465a643aa009",
+  "producer": {
+    "providerName": "agy",
+    "findingsCount": 0,
+    "findings": []
+  },
+  "verifier": {
+    "providerName": "claude",
+    "modelName": "claude-5.5-sonnet",
+    "actualModel": {
+      "source": "reported",
+      "value": "claude-5.5-sonnet"
+    },
+    "usage": {
+      "completionTokens": null,
+      "promptTokens": null,
+      "totalTokens": null,
+      "usageSource": "unavailable"
+    }
+  },
+  "evaluations": [],
+  "verifierOmissions": [
+    {
+      "title": "原型污染防護不完整：只檢查中間路徑，最後一個 key 與 'constructor' 單獨遍歷未防護",
+      "severity": "medium",
+      "file": "src/core.js",
+      "line_start": 6,
+      "line_end": 12,
+      "cwe": "CWE-1321",
+      "type": "INCOMPLETE-FIX",
+      "recommendation": "此 diff 只檢查迴圈內的中間 key（索引 0 到 keys.length-2），最後一個 key（keys[keys.length-1]）沒有被檢查。路徑如 '/__proto__' 會在最後賦值時直接改寫目標物件的原型。另外，'constructor' 單獨出現時沒有被禁止，'/constructor/foo' 會走到繼承而來的 Object 建構函式並在其上設定屬性。建議：對所有 key（包含最後一個）一律拒絕 '__proto__'、'constructor'、'prototype'，或改用 Object.prototype.hasOwnProperty.call(obj, key) 只走自有屬性，並對 add/replace/remove/move/copy 等所有會走路徑的操作套用同一套防護。目前 diff 沒有顯示這些其他操作與最後賦值處的程式碼，此判斷缺乏完整上下文。",
+      "id": "omission-1",
+      "classification": "MISSED_BY_PRODUCER"
+    },
+    {
+      "title": "缺少針對新防護的回歸測試",
+      "severity": "low",
+      "file": "src/core.js",
+      "line_start": 8,
+      "line_end": 10,
+      "cwe": "CWE-1321",
+      "type": "MISSING-TEST",
+      "recommendation": "diff 只改 src/core.js，沒有任何測試檔。請補上測試：路徑 '/__proto__/x' 與 '/constructor/prototype/x' 應拋出 TypeError，且 Object.prototype 不得被汙染。也要涵蓋最後 key 為 '__proto__' 的情形，確認已知缺口是否被鎖定。",
+      "id": "omission-2",
+      "classification": "MISSED_BY_PRODUCER"
+    }
+  ],
+  "disagreementLedger": [],
+  "summary": {
+    "totalEvaluated": 0,
+    "supportedCount": 0,
+    "partiallySupportedCount": 0,
+    "contestedCount": 0,
+    "insufficientEvidenceCount": 0,
+    "omissionsCount": 2
+  },
+  "ok": true
+}
