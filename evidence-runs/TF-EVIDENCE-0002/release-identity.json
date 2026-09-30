@@ -3,8 +3,8 @@
   "bundleId": "TF-EVIDENCE-0002",
   "title": "Triad-Flow Controlled Remediation Multi-Defect Verification Bundle (5 CWEs)",
   "triadFlowVersion": "2.3.0",
-  "sealedAt": "2026-09-30T04:12:29.558Z",
-  "commitSha": "a304939efb80b304d8bab08aaabdcca8f2f0e716",
+  "sealedAt": "2026-09-30T04:16:56.232Z",
+  "commitSha": "c9d0b6e8b51b08f9c888ccee5aeae42180c70987",
   "corpusVersion": "TF-RBC-v0",
   "corpusDigest": "sha256:cf9c4596cca5910bf1c493590e16a4333782defea779a39488fa95f6b16fb82b",
   "environment": {
@@ -24,8 +24,8 @@
       "verifier": "claude",
       "prePatchTreeDigest": "sha256:7cca73bb6696dbbc445157e82078102b68bd07fdf6afbfa962d085eafbd2e051",
       "postPatchTreeDigest": "sha256:ad9736f249e63a960d76999ee8ece281cc10c7bac86d8e0456f18333c7030fc7",
-      "receiptDigest": "sha256:c64610093138a92eae73dd1fa93d661a8897f4ed48c731932ab43a81d2a36cec",
-      "verificationDigest": "sha256:1862ddbe230704204879570f722e1091e8f2df7b0aeb2746b364616531c22088",
+      "receiptDigest": "sha256:e684615e4ac88bbe714b2811b6d8d3076d02ba440e16db7e2b8a5d3f191098b5",
+      "verificationDigest": "sha256:f0ecfbdf4751e875374f1d5e811b0a856bb2a4a50f70d7b48610fb50fb4c8c76",
       "patchDigest": "sha256:689438f629a752c0f909eff84e9d079b9f2edc9c3d6ba88edddcf6ba72a34c3f"
     },
     "BENCH-REAL-002": {
@@ -39,8 +39,8 @@
       "verifier": "claude",
       "prePatchTreeDigest": "sha256:5d74163f0d672a5f610bc64acea835107f89ee59a1c11b2f7632028744d54197",
       "postPatchTreeDigest": "sha256:36a9e5b08d37af4b813001380b42f42402083676bb2f22603c0f540917e655cd",
-      "receiptDigest": "sha256:67bde569d708f58e8ffe28afa6013789d0d0c4500a6720c5f3ac2e2c5a2378ce",
-      "verificationDigest": "sha256:5b849738da448ee104dffb74f4c80c95fc01b30c8df1fdf8606d74821f93dda0",
+      "receiptDigest": "sha256:5a2681dc5575273e871744bd5ce036614c580c828261f8bdeceb46460cb34be2",
+      "verificationDigest": "sha256:7fa93b3116ae3d2012ca6ff0e4097c04c93d6283f6ab83df11f9f66d4ec50194",
       "patchDigest": "sha256:cfe84fd8a86f74e122e1464ac8c732badb3f3cb9b90e7b25b7c573632789022d"
     },
     "BENCH-REAL-003": {
@@ -54,8 +54,8 @@
       "verifier": "claude",
       "prePatchTreeDigest": "sha256:fc7b77af778ac4aa21c83eda8979020541655ee924cadefd92e271ca8c29b9d0",
       "postPatchTreeDigest": "sha256:37b8735a4f066728735669c22538ae69cdcc89800279ad8d1af7316169d6edef",
-      "receiptDigest": "sha256:fdc5bcf19e56815addc6552ffe49d073ef2abfa7725104705b4ae99fdf476459",
-      "verificationDigest": "sha256:d04960ca9917df890c15a044654faebc71fa2e2c2c7a6b04a1c3572ffc522293",
+      "receiptDigest": "sha256:28402606c197ed2eb3f1d7de724b5a405bd75d807bf52ce19f8f30c5f400a092",
+      "verificationDigest": "sha256:c2b1df670f423e63d90ecc9552a832fe873c96e77ec1187f63908355e9e0d21b",
       "patchDigest": "sha256:cbf4dae0c9a368b35a8282e63fc90ba60e480f04f8aa82b0a5338545c6beeefd"
     },
     "BENCH-REAL-004": {
@@ -69,8 +69,8 @@
       "verifier": "claude",
       "prePatchTreeDigest": "sha256:a49a8d91c93f6e49153757cad465a2961b88af8f17fb501a58c68e3add74f77b",
       "postPatchTreeDigest": "sha256:9a68f304073cd2aedd128a1ed217f0b9fff809623fa0e9a1924e81d87bea8423",
-      "receiptDigest": "sha256:8c16fa1110c77b3434897debfa7198ac6bd93d5591df4be4f6722edefd9beb2d",
-      "verificationDigest": "sha256:cce4afb889a2ee83fba864780f7f056f60cf2842418e8caca780f69d5403419e",
+      "receiptDigest": "sha256:5cab34bc6bfec7769d94ca2c451857138924203e45afcb650444d5e985608939",
+      "verificationDigest": "sha256:a81d7a11705b9031cb078ad4c56f44c7ca08d14384e9e62ae385aa4e121affee",
       "patchDigest": "sha256:f50da0a438c169419bdae87ce4604abc66ed3a2ca083eee2b454bdac24a51bd8"
     },
     "BENCH-REAL-005": {
@@ -84,8 +84,8 @@
       "verifier": "claude",
       "prePatchTreeDigest": "sha256:c4d7e2b4b2469f2166df2881556f55657311ec05131a15045501b39adcb43b34",
       "postPatchTreeDigest": "sha256:a2ecd6023f0ebbdf0299509f6f60585e8bd35c2ce1908e824c22cc83a0184ee7",
-      "receiptDigest": "sha256:3f525de659a71c72c29ccdf076559eaaeb8d387f84dbfc7969813e1540167635",
-      "verificationDigest": "sha256:f0cef926edb80452105f7bf2de838a34461911844ce95820d0c5dee5dffe702d",
+      "receiptDigest": "sha256:06c91c18595680a686671582776be407897901d516774b08dde1acbdfefea5e7",
+      "verificationDigest": "sha256:477c1825f314d076853b1e77e70f7abedffa0172702e9d98f6cfd39f40089a2b",
       "patchDigest": "sha256:9942fae62fb7d183c66f691c6eb1c9041a3203c8e319eb909eb4b380a51a0ccd"
     }
   },

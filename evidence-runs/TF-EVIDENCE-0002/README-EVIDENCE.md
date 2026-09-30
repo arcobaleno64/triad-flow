@@ -4,10 +4,10 @@
 - **Bundle ID**: `TF-EVIDENCE-0002`
 - **Title**: Controlled Remediation Multi-Defect Verification Bundle (5 CWEs)
 - **Triad-Flow Version**: `2.3.0`
-- **Git Commit**: `a304939efb80b304d8bab08aaabdcca8f2f0e716`
+- **Git Commit**: `c9d0b6e8b51b08f9c888ccee5aeae42180c70987`
 - **Corpus Version**: `TF-RBC-v0`
 - **Corpus Digest**: `sha256:cf9c4596cca5910bf1c493590e16a4333782defea779a39488fa95f6b16fb82b`
-- **Sealed At**: `2026-09-30T04:12:29.558Z`
+- **Sealed At**: `2026-09-30T04:16:56.232Z`
 - **Remediated Defects**: 5 Tier-1 CWEs (`BENCH-REAL-001` through `005`)
 
 ## Multi-Defect Remediation Summary

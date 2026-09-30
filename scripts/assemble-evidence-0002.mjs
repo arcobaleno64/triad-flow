@@ -25,7 +25,8 @@ import {
 import {
   createCorpusIdentity,
   computeDigest,
-  canonicalJsonStringify
+  canonicalJsonStringify,
+  normalizeLineEndings
 } from "../src/core/canonical-digest.mjs";
 import {
   buildArtifactManifest
@@ -205,9 +206,10 @@ async function main() {
         windowsHide: true
       });
 
-      // Save patch file
+      // Save patch file with strict LF line endings
+      const normalizedDiff = normalizeLineEndings(candidateDiff).trimEnd() + "\n";
       const patchPath = path.join(patchesDir, `${caseDef.id}.patch`);
-      fs.writeFileSync(patchPath, candidateDiff, "utf8");
+      fs.writeFileSync(patchPath, normalizedDiff, "utf8");
       const patchDigest = getFileDigest(patchPath);
 
       // Initialize Controlled Remediation Session
@@ -221,7 +223,7 @@ async function main() {
 
       // Step 1: Propose Fix (State: FIX_PROPOSED)
       session.proposeFix({
-        diff: candidateDiff,
+        diff: normalizedDiff,
         rationale: targetConfig.rationale,
         synthesizer: { providerName: "codex", modelName: "gpt-6.1-sol" }
       });

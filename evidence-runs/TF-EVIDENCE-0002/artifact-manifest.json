@@ -1,34 +1,34 @@
 {
   "artifacts": {
-    "README-EVIDENCE.md": "sha256:1a138899fdaaf4d71cebcef4bd6b93e7e22d492775f8f9261bf0653c3f9b6f74",
+    "README-EVIDENCE.md": "sha256:4efa60d81fee1bf203fc100a3943f88e3ab3b18cf5536a3aa8a9a6cafaa65b35",
     "corpus-identity.json": "sha256:37ef651eeb958f6ecd425a4d489bcfa4215e3d7bb23c1c0d955ab188f3c0d42b",
-    "evidence-index.json": "sha256:a980f8d57ea4d5d825c58018f68789d2bc3115b15453be4df66316097089f9de",
+    "evidence-index.json": "sha256:eeacbe6f6da1de4ac5b09d9fca2b301bb6c5022465267067d39f517fcba4e2a6",
     "patches/BENCH-REAL-001.patch": "sha256:689438f629a752c0f909eff84e9d079b9f2edc9c3d6ba88edddcf6ba72a34c3f",
     "patches/BENCH-REAL-002.patch": "sha256:cfe84fd8a86f74e122e1464ac8c732badb3f3cb9b90e7b25b7c573632789022d",
     "patches/BENCH-REAL-003.patch": "sha256:cbf4dae0c9a368b35a8282e63fc90ba60e480f04f8aa82b0a5338545c6beeefd",
     "patches/BENCH-REAL-004.patch": "sha256:f50da0a438c169419bdae87ce4604abc66ed3a2ca083eee2b454bdac24a51bd8",
     "patches/BENCH-REAL-005.patch": "sha256:9942fae62fb7d183c66f691c6eb1c9041a3203c8e319eb909eb4b380a51a0ccd",
-    "release-identity.json": "sha256:0d1d807ed2088775abca15313a12aea87b84c4c715509a4781234b2f0583a963",
-    "remediation-receipts/BENCH-REAL-001-receipt.json": "sha256:ade200ca3f4c4754e676b9917cd2d141ca458872d4993193835e88a73b8d6c6c",
-    "remediation-receipts/BENCH-REAL-002-receipt.json": "sha256:f777fdd5f70876997a6886fb346d58f6ab4b9e57736adf013ee5c24ca7d90165",
-    "remediation-receipts/BENCH-REAL-003-receipt.json": "sha256:42e3c45983a8e2f3fd982f8e4291b4005ad12a35901ec3f4f2a514c595ddab55",
-    "remediation-receipts/BENCH-REAL-004-receipt.json": "sha256:44a8a21d6452672505ff168703f299f04c885390964a71277042a7afb7f422d0",
-    "remediation-receipts/BENCH-REAL-005-receipt.json": "sha256:0405f216d8e016d6afa11c527b737f18f1a15e533cae7746c5e1bd8ac605f740",
-    "verification/BENCH-REAL-001-verification.json": "sha256:1862ddbe230704204879570f722e1091e8f2df7b0aeb2746b364616531c22088",
-    "verification/BENCH-REAL-002-verification.json": "sha256:5b849738da448ee104dffb74f4c80c95fc01b30c8df1fdf8606d74821f93dda0",
-    "verification/BENCH-REAL-003-verification.json": "sha256:d04960ca9917df890c15a044654faebc71fa2e2c2c7a6b04a1c3572ffc522293",
-    "verification/BENCH-REAL-004-verification.json": "sha256:cce4afb889a2ee83fba864780f7f056f60cf2842418e8caca780f69d5403419e",
-    "verification/BENCH-REAL-005-verification.json": "sha256:f0cef926edb80452105f7bf2de838a34461911844ce95820d0c5dee5dffe702d"
+    "release-identity.json": "sha256:4dc3500f15d9cc45df285116c25b4af4cb598b2ddfd66eee16a703df7da73bc0",
+    "remediation-receipts/BENCH-REAL-001-receipt.json": "sha256:a1662b28e912ea10190848fff4a28a6b00dab000d2ab7a456341ac6b7de0569a",
+    "remediation-receipts/BENCH-REAL-002-receipt.json": "sha256:2e5b0398a7a1e9a95e8fb4d30275c3b7a5d310af325b1d8a5718a3c8cebd9b9d",
+    "remediation-receipts/BENCH-REAL-003-receipt.json": "sha256:4fd58115d65d9caf228873b139aeebd8067337d1bff6bfb20bff175bb324caf2",
+    "remediation-receipts/BENCH-REAL-004-receipt.json": "sha256:16af2f49b4816e654df5d72b0ba44b38d6529a9b51bce97f96fe0df0f958bf69",
+    "remediation-receipts/BENCH-REAL-005-receipt.json": "sha256:ad99238bdac67e2223251e9da9e68ab7c441daa443c8aed1ed6b512322cb890e",
+    "verification/BENCH-REAL-001-verification.json": "sha256:f0ecfbdf4751e875374f1d5e811b0a856bb2a4a50f70d7b48610fb50fb4c8c76",
+    "verification/BENCH-REAL-002-verification.json": "sha256:7fa93b3116ae3d2012ca6ff0e4097c04c93d6283f6ab83df11f9f66d4ec50194",
+    "verification/BENCH-REAL-003-verification.json": "sha256:c2b1df670f423e63d90ecc9552a832fe873c96e77ec1187f63908355e9e0d21b",
+    "verification/BENCH-REAL-004-verification.json": "sha256:a81d7a11705b9031cb078ad4c56f44c7ca08d14384e9e62ae385aa4e121affee",
+    "verification/BENCH-REAL-005-verification.json": "sha256:477c1825f314d076853b1e77e70f7abedffa0172702e9d98f6cfd39f40089a2b"
   },
   "metadata": {
-    "commitSha": "a304939efb80b304d8bab08aaabdcca8f2f0e716",
+    "commitSha": "c9d0b6e8b51b08f9c888ccee5aeae42180c70987",
     "corpusDigest": "sha256:cf9c4596cca5910bf1c493590e16a4333782defea779a39488fa95f6b16fb82b",
     "receiptDigest": null,
     "resultsDigest": null,
     "runId": "bundle-TF-EVIDENCE-0002",
     "bundleId": "TF-EVIDENCE-0002",
     "bundleType": "evidence-bundle",
-    "sealedAt": "2026-09-30T04:12:29.558Z"
+    "sealedAt": "2026-09-30T04:16:56.232Z"
   },
   "schemaVersion": "1.0.0"
 }

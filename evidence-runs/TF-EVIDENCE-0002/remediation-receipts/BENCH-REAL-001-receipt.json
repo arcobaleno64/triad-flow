@@ -1,11 +1,11 @@
 {
   "schemaVersion": "1.0.0",
-  "receiptId": "rem-1790741542239-bf0172",
+  "receiptId": "rem-1790741810000-97af31",
   "findingId": "BENCH-REAL-001-FINDING-001",
   "status": "CLOSED",
   "timestamps": {
-    "startedAt": "2026-09-30T04:12:21.636Z",
-    "completedAt": "2026-09-30T04:12:22.238Z"
+    "startedAt": "2026-09-30T04:16:49.502Z",
+    "completedAt": "2026-09-30T04:16:49.999Z"
   },
   "actors": {
     "producer": {
@@ -23,7 +23,7 @@
     "authorizer": {
       "identity": "security-lead@triad.flow",
       "type": "human",
-      "signature": "sig-auth-BENCH-REAL-001-a304939e",
+      "signature": "sig-auth-BENCH-REAL-001-c9d0b6e8",
       "authorizedPatchDigest": "sha256:689438f629a752c0f909eff84e9d079b9f2edc9c3d6ba88edddcf6ba72a34c3f"
     }
   },
@@ -53,7 +53,7 @@
   },
   "closureVerification": {
     "verified": true,
-    "verificationRecordDigest": "sha256:f40a2f4db9bcf7c8d5afc3ae8123169d1919543ebc34a6c3484e3af3c715738f",
+    "verificationRecordDigest": "sha256:8b73b7e21797fc5b7f0f0cd5f67dcc67e5687160b4707d2f300db96384c6c24b",
     "verdict": "SUPPORTED",
     "residualVulnerabilityDetected": false
   },
@@ -61,31 +61,31 @@
     {
       "from": "OPEN",
       "to": "FIX_PROPOSED",
-      "at": "2026-09-30T04:12:21.638Z",
+      "at": "2026-09-30T04:16:49.503Z",
       "actor": "codex"
     },
     {
       "from": "FIX_PROPOSED",
       "to": "PATCH_AUTHORIZED",
-      "at": "2026-09-30T04:12:21.638Z",
+      "at": "2026-09-30T04:16:49.504Z",
       "actor": "security-lead@triad.flow"
     },
     {
       "from": "PATCH_AUTHORIZED",
       "to": "PATCH_APPLIED_IN_JAIL",
-      "at": "2026-09-30T04:12:21.863Z",
+      "at": "2026-09-30T04:16:49.732Z",
       "actor": "jail-orchestrator"
     },
     {
       "from": "PATCH_APPLIED_IN_JAIL",
       "to": "FIXED_PENDING_VERIFY",
-      "at": "2026-09-30T04:12:22.065Z",
+      "at": "2026-09-30T04:16:49.885Z",
       "actor": "test-runner"
     },
     {
       "from": "FIXED_PENDING_VERIFY",
       "to": "CLOSED",
-      "at": "2026-09-30T04:12:22.238Z",
+      "at": "2026-09-30T04:16:49.999Z",
       "actor": "claude"
     }
   ]
