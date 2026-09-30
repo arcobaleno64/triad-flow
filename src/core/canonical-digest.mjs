@@ -553,6 +553,26 @@ export function canonicalizeCase(caseDef) {
     title: String(caseDef.title || "").trim()
   };
 
+  if (Array.isArray(caseDef.targetFiles)) {
+    canonical.targetFiles = caseDef.targetFiles.map(normalizeRelativePath).sort();
+  }
+  if (caseDef.cve) {
+    canonical.cve = String(caseDef.cve).trim();
+  }
+  if (caseDef.ghsa) {
+    canonical.ghsa = String(caseDef.ghsa).trim();
+  }
+  if (caseDef.upstream && typeof caseDef.upstream === "object") {
+    canonical.upstream = {
+      fixCommit: String(caseDef.upstream.fixCommit || "").trim(),
+      repository: String(caseDef.upstream.repository || "").trim(),
+      vulnerableCommit: String(caseDef.upstream.vulnerableCommit || "").trim()
+    };
+  }
+  if (caseDef.patchDiff) {
+    canonical.patchDiff = String(caseDef.patchDiff).replace(/\r\n/g, "\n").trim();
+  }
+
   // If changeSet is attached, canonicalize it without transient paths
   if (caseDef.changeSet && typeof caseDef.changeSet === "object") {
     canonical.changeSet = canonicalizeChangeSet(caseDef.changeSet);
