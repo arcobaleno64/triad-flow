@@ -39,7 +39,7 @@ export const CONTAINER_ALLOWLIST_ENV_VARS = Object.freeze([
   "TERM"
 ]);
 
-export const ACTIVE_EGRESS_PROBE_SCRIPT = "node -e 'const http=require(\"http\");const req=http.get(\"http://192.0.2.1:80\",{timeout:1000},()=>process.exit(0));req.on(\"error\",()=>process.exit(1));req.on(\"timeout\",()=>{req.destroy();process.exit(1)});'";
+export const ACTIVE_EGRESS_PROBE_SCRIPT = "node -e 'const http=require(\"http\");const req=http.get(\"http://192.0.2.1:80\",{timeout:1000},()=>process.exit(0));req.on(\"error\",(e)=>{console.log(\"TF_EGRESS_DENIED:\"+(e.code||\"ERR\"));process.exit(42);});req.on(\"timeout\",()=>{req.destroy();console.log(\"TF_EGRESS_DENIED:ETIMEDOUT\");process.exit(42);});'";
 
 export class SandboxUnavailableError extends Error {
   constructor(message, driver = "container") {
@@ -342,19 +342,30 @@ export class ContainerDriver extends BaseSandboxDriver {
   verifyEgressDenial(repoPath, jailPath, options = {}) {
     const probeRes = this.executeInContainer(repoPath, jailPath, ACTIVE_EGRESS_PROBE_SCRIPT, options);
 
-    // In --network=none, outbound probe MUST fail (exit code !== 0)
-    if (probeRes.status !== 0) {
+    // 1. Exit 0: Outbound connection unexpectedly succeeded -> Security Violation!
+    if (probeRes.status === 0) {
+      throw new SandboxSecurityViolationError(
+        "Active egress probe succeeded! Outbound network connection was established despite --network=none.",
+        this.runtime
+      );
+    }
+
+    const output = (String(probeRes.stdout || "") + " " + String(probeRes.stderr || "")).trim();
+    const hasSentinel = /TF_EGRESS_DENIED:(?:ENETUNREACH|EAI_AGAIN|ENOTFOUND|ECONNREFUSED|ETIMEDOUT|EHOSTUNREACH|ECONNRESET|ERR)/.test(output);
+
+    // 2. Exit 42 + Sentinel: Authentic network denial verified
+    if (probeRes.status === 42 && hasSentinel) {
       return {
         verified: true,
         probeExecuted: true,
-        exitCode: probeRes.status,
-        output: probeRes.stderr || probeRes.stdout
+        exitCode: 42,
+        output
       };
     }
 
-    // Flag != Evidence: probe unexpectedly succeeded!
+    // 3. Any other status or missing sentinel: Probe execution failed or crashed, cannot verify egress isolation
     throw new SandboxSecurityViolationError(
-      "Active egress probe succeeded! Outbound network connection was established despite --network=none.",
+      `Active egress probe execution failed (status=${probeRes.status}) without authentic network denial sentinel: '${output.slice(0, 80)}'. Cannot verify egress isolation.`,
       this.runtime
     );
   }

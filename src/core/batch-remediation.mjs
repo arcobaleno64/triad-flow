@@ -273,6 +273,7 @@ export class BatchRemediationSession {
     this.sandboxDriver = driver;
 
     const jail = driver.create(repoPath, { baseSha });
+    this.jailCapabilities = jail.capabilities || driver.capabilities();
     const initialTreeDigest = computeTreeDigest(jail.jailPath);
     if (!this.initialTreeDigest) {
       this.initialTreeDigest = initialTreeDigest;
@@ -312,7 +313,7 @@ export class BatchRemediationSession {
             prePatchTreeDigest: jailResult.prePatchTreeDigest,
             postPatchTreeDigest: jailResult.postPatchTreeDigest,
             driver: driver.name,
-            capabilities: driver.capabilities(),
+            capabilities: this.jailCapabilities,
             orchestrator
           });
         } catch (err) {
@@ -517,7 +518,7 @@ export class BatchRemediationSession {
       },
       sandbox: {
         driver: this.sandboxDriver?.name || "worktree",
-        capabilities: this.sandboxDriver?.capabilities() || {
+        capabilities: this.jailCapabilities || this.sandboxDriver?.capabilities() || {
           driver: "worktree",
           filesystemIsolation: "git-worktree",
           networkEgressDenial: "unavailable",

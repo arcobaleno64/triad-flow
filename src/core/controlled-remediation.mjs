@@ -13,7 +13,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import crypto from "node:crypto";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import {
   canonicalJsonStringify,
   computeDigest,
@@ -1147,18 +1147,54 @@ export class ControlledRemediationSession {
     const jail = driver.create(repoPath, { baseSha });
     try {
       const jailResult = applyPatchInJail(jail.jailPath, this.patch.rawDiff, this.targetFiles);
+      const effectiveCapabilities = jail.capabilities || driver.capabilities();
       this.recordJailApplication({
         worktreeSha: jail.baseSha,
         prePatchTreeDigest: jailResult.prePatchTreeDigest,
         postPatchTreeDigest: jailResult.postPatchTreeDigest,
         driver: driver.name,
-        capabilities: driver.capabilities(),
+        capabilities: effectiveCapabilities,
         orchestrator
       });
 
       let testRes;
       try {
-        testRes = testRunnerFn(jail.jailPath);
+        if (typeof testRunnerFn === "function") {
+          testRes = testRunnerFn(jail.jailPath, {
+            runInContainer: jail.runInContainer || null,
+            driver,
+            capabilities: effectiveCapabilities
+          });
+        } else if (testRunnerFn && typeof testRunnerFn === "object" && testRunnerFn.command) {
+          const cmd = testRunnerFn.command;
+          const args = testRunnerFn.args || [];
+          if (jail.runInContainer && typeof jail.runInContainer === "function" && driver.name === "container") {
+            const containerRes = jail.runInContainer([cmd, ...args]);
+            testRes = {
+              testCommand: `${cmd} ${args.join(" ")}`.trim(),
+              exitCode: containerRes.exitCode,
+              passedCount: containerRes.exitCode === 0 ? 1 : 0,
+              failedCount: containerRes.exitCode === 0 ? 0 : 1,
+              regressionDetected: containerRes.exitCode !== 0,
+              runner: "container-runner"
+            };
+          } else {
+            const hostRes = spawnSync(cmd, args, {
+              cwd: jail.jailPath,
+              encoding: "utf8",
+              windowsHide: true,
+              shell: process.platform === "win32"
+            });
+            testRes = {
+              testCommand: `${cmd} ${args.join(" ")}`.trim(),
+              exitCode: typeof hostRes.status === "number" ? hostRes.status : 1,
+              passedCount: hostRes.status === 0 ? 1 : 0,
+              failedCount: hostRes.status === 0 ? 0 : 1,
+              regressionDetected: hostRes.status !== 0,
+              runner: "worktree-runner"
+            };
+          }
+        }
       } catch (err) {
         testRes = {
           testCommand: "custom-testRunnerFn",

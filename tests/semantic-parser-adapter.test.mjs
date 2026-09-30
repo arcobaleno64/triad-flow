@@ -188,3 +188,105 @@ test("Contract 5: Optional absence never fabricates AST authority & Additive aut
   assert.ok(combinedViolations.some(v => v.type === EVASION_VIOLATION_TYPES.TEST_SKIPPING));
   assert.ok(combinedViolations.some(v => v.type === EVASION_VIOLATION_TYPES.ASSERTION_STRIPPING));
 });
+
+test("Contract 6: ExternalAstAdapter invokes real parse() and traverses AST nodes", () => {
+  let parseCalled = false;
+  // A mock AST parser producing an ESTree AST with an IfStatement having a literal true condition
+  const mockAst = {
+    type: "Program",
+    body: [
+      {
+        type: "IfStatement",
+        test: { type: "Literal", value: true },
+        consequent: {
+          type: "BlockStatement",
+          body: []
+        },
+        alternate: null
+      },
+      {
+        type: "TryStatement",
+        block: { type: "BlockStatement", body: [] },
+        handler: {
+          type: "CatchClause",
+          param: { type: "Identifier", name: "e" },
+          body: { type: "BlockStatement", body: [] }
+        },
+        finalizer: null
+      }
+    ]
+  };
+
+  const adapter = new AcornAstAdapter({
+    parserModule: {
+      parse: (code) => {
+        parseCalled = true;
+        return mockAst;
+      }
+    }
+  });
+
+  const probe = adapter.probe();
+  assert.equal(probe.available, true);
+  assert.equal(probe.astBacked, true);
+
+  const res = adapter.analyze({ code: "if (true) {} try {} catch (e) {}" });
+  assert.equal(parseCalled, true, "parse() must be genuinely called on the parser");
+  assert.equal(res.ok, false);
+  assert.equal(res.capabilityReceipt.astBacked, true);
+  assert.equal(res.capabilityReceipt.verified, true);
+  assert.equal(res.capabilityReceipt.status, "verified");
+  assert.ok(res.violations.some(v => v.description.includes("constant conditional branch")));
+  assert.ok(res.violations.some(v => v.description.includes("empty catch block")));
+});
+
+test("Contract 7: External parser exception fails closed or marks incomplete, never verified", () => {
+  // 7a. Required mode throws AstAdapterUnavailableError
+  const throwingAdapter = new BabelAstAdapter({
+    parserModule: {
+      parse: () => {
+        throw new Error("SyntaxError: Unexpected token");
+      }
+    },
+    required: true
+  });
+
+  assert.throws(
+    () => throwingAdapter.analyze({ code: "malformed code" }),
+    (err) => err instanceof AstAdapterUnavailableError && err.message.includes("AST Parser failed")
+  );
+
+  // 7b. Optional mode returns status: 'incomplete', verified: false, NEVER verified: true
+  const optionalThrowingAdapter = new BabelAstAdapter({
+    parserModule: {
+      parse: () => {
+        throw new Error("Parse failure");
+      }
+    },
+    required: false
+  });
+
+  const res = optionalThrowingAdapter.analyze({ code: "malformed code" });
+  assert.equal(res.ok, false);
+  assert.equal(res.capabilityReceipt.verified, false, "Must NEVER be marked verified: true on parser exception");
+  assert.equal(res.capabilityReceipt.status, "incomplete");
+  assert.equal(res.capabilityReceipt.astBacked, true);
+});
+
+test("Contract 8: Diff-only security call weakening without preCode/postCode is flagged", () => {
+  const adapter = new BuiltinSemanticAdapter();
+
+  const weakeningDiff = [
+    "diff --git a/src/auth.js b/src/auth.js",
+    "--- a/src/auth.js",
+    "+++ b/src/auth.js",
+    "@@ -10,2 +10,1 @@",
+    "- const valid = jwt.verify(token, secret);",
+    "+ const valid = true;"
+  ].join("\n");
+
+  const res = adapter.analyze({ diff: weakeningDiff, targetFile: "src/auth.js" });
+  assert.equal(res.ok, false);
+  assert.ok(res.violations.some(v => v.description.includes("removal of security validation call")));
+});
+
