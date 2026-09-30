@@ -23,6 +23,19 @@ import {
 import { SHA256_HEX_REGEX } from "./audit-receipt.mjs";
 import { isBinaryBuffer } from "./git-collector.mjs";
 import { validateVerificationRecord } from "./independent-verifier.mjs";
+import {
+  scanStructuralAntiEvasionViolations,
+  EVASION_VIOLATION_TYPES,
+  BaseAstAdapter,
+  StructuralAntiEvasionError
+} from "./anti-evasion-guard.mjs";
+
+export {
+  scanStructuralAntiEvasionViolations,
+  EVASION_VIOLATION_TYPES,
+  BaseAstAdapter,
+  StructuralAntiEvasionError
+};
 
 /**
  * Normative remediation schema version.
@@ -326,9 +339,9 @@ export function validatePatchScope(diffText, targetFiles = [], options = {}) {
     }
   }
 
-  // 3. Scan for Goodhart anti-degradation violations in added lines
+  // 3. Scan for Goodhart anti-degradation & structural anti-evasion violations
   if (!options.allowAntiDegradation) {
-    const violations = scanAntiDegradationViolations(diffText);
+    const violations = scanAntiDegradationViolations(diffText, { targetFiles: files, ...options });
     if (violations.length > 0) {
       throw new PatchJailSecurityError(
         `Anti-degradation check failed: ${violations.map(v => v.description).join("; ")}.`
@@ -347,32 +360,14 @@ export function validatePatchScope(diffText, targetFiles = [], options = {}) {
 }
 
 /**
- * Scans unified diff addition lines for anti-degradation (Goodhart evasion) patterns.
+ * Scans unified diff for Goodhart evasion & structural anti-evasion violations.
  *
  * @param {string} diffText
- * @returns {Array<{ type: string, description: string, line: string }>}
+ * @param {object} [options]
+ * @returns {Array<{ type: string, description: string, line?: string, file?: string }>}
  */
-export function scanAntiDegradationViolations(diffText) {
-  if (typeof diffText !== "string") return [];
-  const lines = normalizeLineEndings(diffText).split("\n");
-  const violations = [];
-
-  for (const line of lines) {
-    if (!line.startsWith("+") || line.startsWith("+++")) continue;
-    const content = line.slice(1);
-
-    for (const rule of ANTI_DEGRADATION_PATTERNS) {
-      if (rule.pattern.test(content)) {
-        violations.push({
-          type: rule.type,
-          description: rule.description,
-          line: content.trim()
-        });
-      }
-    }
-  }
-
-  return violations;
+export function scanAntiDegradationViolations(diffText, options = {}) {
+  return scanStructuralAntiEvasionViolations(diffText, options);
 }
 
 /**
