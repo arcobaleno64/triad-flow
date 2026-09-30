@@ -71,7 +71,7 @@ function createMockVerificationRecord(findingId, options = {}) {
     verifier: {
       providerName: options.verifierProvider || "claude",
       modelName: "cli-default",
-      actualModel: { value: "claude-3-5-sonnet", source: "reported" }
+      actualModel: { value: "claude-5.5-sonnet", source: "reported" }
     },
     evaluations: [
       {
@@ -449,7 +449,7 @@ test("Contract 8: Full lifecycle transition to CLOSED requires independent verif
 
     session.recordClosureVerification({
       verificationRecord,
-      verifier: { providerName: "claude", modelName: "claude-3-5-sonnet" }
+      verifier: { providerName: "claude", modelName: "claude-5.5-sonnet" }
     });
 
     assert.strictEqual(session.status, REMEDIATION_STATES.CLOSED);
