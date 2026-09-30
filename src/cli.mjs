@@ -19,6 +19,7 @@ import { collectDoctorReport, formatDoctorReport } from "./core/doctor.mjs";
 import { evaluateCorpusSuite, formatBenchmarkSummary } from "./core/real-benchmark-runner.mjs";
 import { generateManifestBundle } from "./core/manifest-bundle.mjs";
 import { createMockCorpusAdapters, getCorpusCaseById, buildSynthesizedChangeSet, createCorpusCaseWorkspace, createCorpusMultiCaseWorkspace } from "../tests/fixtures/real-corpus-fixtures.mjs";
+import { createMockOssAdapters, getOssCaseById, buildSynthesizedOssChangeSet } from "../tests/fixtures/real-oss-fixtures.mjs";
 import {
   ControlledRemediationSession,
   REMEDIATION_STATES,
@@ -174,7 +175,8 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
       "--synthesizer",
       "--plan-only",
       "--batch",
-      "--sandbox"
+      "--sandbox",
+      "--corpus"
     ].includes(name);
   };
 
@@ -200,7 +202,8 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
     "--diff",
     "--authorizer",
     "--synthesizer",
-    "--sandbox"
+    "--sandbox",
+    "--corpus"
   ]);
 
   for (let i = 0; i < argv.length; i++) {
@@ -452,6 +455,19 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
     timeoutArg = String(options.timeout);
   }
 
+  let corpusArg = null;
+  const corpusExplicit = argv.find(a => a.startsWith("--corpus="));
+  if (corpusExplicit) {
+    corpusArg = corpusExplicit.slice("--corpus=".length).toLowerCase();
+  } else {
+    const corpusIdx = argv.indexOf("--corpus");
+    if (corpusIdx !== -1 && argv[corpusIdx + 1] && !isTriadFlag(argv[corpusIdx + 1])) {
+      corpusArg = argv[corpusIdx + 1].toLowerCase();
+      consumedArgsIndices.add(corpusIdx + 1);
+    }
+  }
+  corpusArg = corpusArg || options.corpus || "v0";
+
   const liveArg = argv.includes("--live") || Boolean(options.live);
   const virtualArg = argv.includes("--virtual") ? true : (options.virtual !== undefined ? Boolean(options.virtual) : undefined);
 
@@ -538,6 +554,7 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
     if (arg.startsWith("--authorizer=") || arg === "--authorizer") return true;
     if (arg.startsWith("--synthesizer=") || arg === "--synthesizer") return true;
     if (arg.startsWith("--sandbox=") || arg === "--sandbox") return true;
+    if (arg.startsWith("--corpus=") || arg === "--corpus") return true;
     if (arg === "--live" || arg === "--virtual") return true;
     return false;
   };
@@ -915,6 +932,13 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
         return EXIT_CODES.USAGE_ERROR;
       }
 
+      const VALID_CORPORA = new Set(["v0", "oss", "real-oss"]);
+      if (corpusArg && !VALID_CORPORA.has(corpusArg)) {
+        io.stderr.write(`✖ [USAGE ERROR] Invalid --corpus='${corpusArg}'. Must be 'v0' or 'oss'.\n`);
+        return EXIT_CODES.USAGE_ERROR;
+      }
+      const isOss = corpusArg === "oss" || corpusArg === "real-oss";
+
       let verifierProfile = null;
       if (verifyWithArg) {
         try {
@@ -967,12 +991,13 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
             })
           };
         } else {
-          adapters = createMockCorpusAdapters();
+          adapters = isOss ? createMockOssAdapters() : createMockCorpusAdapters();
         }
       }
 
       const suiteOptions = {
         mode: modeArg,
+        corpus: isOss ? "oss" : "v0",
         live: isLive,
         executionMode: isLive ? "live" : "mock",
         virtual: isVirtual,
@@ -1053,7 +1078,7 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
 
         if (caseResults.length === 1) {
           const c = caseResults[0];
-          const cs = c.changeSet || buildSynthesizedChangeSet(getCorpusCaseById(c.caseId));
+          const cs = c.changeSet || (isOss ? buildSynthesizedOssChangeSet(getOssCaseById(c.caseId)) : buildSynthesizedChangeSet(getCorpusCaseById(c.caseId)));
           verificationRecord = await conductIndependentVerification(
             cs,
             c.actualFindings || [],
@@ -1067,7 +1092,7 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
         } else if (caseResults.length > 1) {
           const caseRecords = {};
           for (const c of caseResults) {
-            const cs = c.changeSet || buildSynthesizedChangeSet(getCorpusCaseById(c.caseId));
+            const cs = c.changeSet || (isOss ? buildSynthesizedOssChangeSet(getOssCaseById(c.caseId)) : buildSynthesizedChangeSet(getCorpusCaseById(c.caseId)));
             const rec = await conductIndependentVerification(
               cs,
               c.actualFindings || [],
