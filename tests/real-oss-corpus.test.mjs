@@ -18,6 +18,8 @@ import fs from "node:fs";
 import path from "node:path";
 import {
   TF_OSS_CORPUS_V1_CASES,
+  TF_OSS_V1_EXPECTED_CORPUS_DIGEST,
+  TF_OSS_V1_EXPECTED_CASE_DIGESTS,
   createOssCaseWorkspace,
   getOssCaseById,
   listOssCases
@@ -36,7 +38,7 @@ import {
   validateBatchReceipt
 } from "../src/core/batch-remediation.mjs";
 import { WorktreeDriver } from "../src/core/sandbox-driver.mjs";
-import { computeDigest } from "../src/core/canonical-digest.mjs";
+import { computeDigest, createCorpusIdentity } from "../src/core/canonical-digest.mjs";
 import {
   evaluateCorpusSuite,
   runThreeWayRealComparison,
@@ -475,8 +477,8 @@ test("Contract 9: evaluateCorpusSuite on OSS corpus achieves 100% recall with de
   assert.strictEqual(result.metrics.recall, 1.0, "Recall must be 100% for frozen OSS golden findings");
   assert.strictEqual(result.metrics.precision, 1.0, "Precision must be 100%");
   assert.strictEqual(result.receipt.identity.corpusVersion, "TF-OSS-v1");
-  assert.ok(result.receipt.identity.corpusDigest.startsWith("sha256:"));
-  assert.strictEqual(Object.keys(result.receipt.identity.caseDigests).length, 5);
+  assert.strictEqual(result.receipt.identity.corpusDigest, TF_OSS_V1_EXPECTED_CORPUS_DIGEST, "Corpus digest must match exact pinned hash");
+  assert.deepStrictEqual(result.receipt.identity.caseDigests, TF_OSS_V1_EXPECTED_CASE_DIGESTS, "Case digests must match exact pinned per-case hashes");
 });
 
 test("Contract 10: evaluateCorpusSuite preserves backward-compatibility with v0 corpus by default", async () => {
@@ -505,5 +507,33 @@ test("Contract 11: runThreeWayRealComparison evaluates OSS corpus across Single,
   assert.strictEqual(result.configurations.single.metrics.recall, 1.0);
   assert.strictEqual(result.configurations.dual.metrics.recall, 1.0);
   assert.strictEqual(result.receipt.identity.corpusVersion, "TF-OSS-v1");
+  assert.strictEqual(result.receipt.identity.corpusDigest, TF_OSS_V1_EXPECTED_CORPUS_DIGEST, "Three-way comparison corpus digest must match exact pinned hash");
+});
+
+test("Contract 12: Cryptographic pin fails closed if any base file, metadata, or patch is tampered", () => {
+  const caseDef = getOssCaseById("TF-OSS-001");
+  const tamperedCase = {
+    ...caseDef,
+    baseFiles: {
+      ...caseDef.baseFiles,
+      "index.js": caseDef.baseFiles["index.js"] + "\n// tampering"
+    }
+  };
+  const casesWithTampering = TF_OSS_CORPUS_V1_CASES.map(c => c.id === "TF-OSS-001" ? tamperedCase : c);
+  const identity = createCorpusIdentity(casesWithTampering, { corpusVersion: "TF-OSS-v1" });
+  assert.notStrictEqual(identity.corpusDigest, TF_OSS_V1_EXPECTED_CORPUS_DIGEST, "Corpus digest must change upon base file tampering");
+  assert.notStrictEqual(identity.caseDigests["TF-OSS-001"], TF_OSS_V1_EXPECTED_CASE_DIGESTS["TF-OSS-001"], "Case digest must change upon base file tampering");
+});
+
+test("Contract 13: All 5 cases contain authentic 40-character commit SHAs and verified advisory metadata", () => {
+  const shaRegex = /^[0-9a-f]{40}$/;
+  for (const c of TF_OSS_CORPUS_V1_CASES) {
+    assert.ok(c.cve.startsWith("CVE-"), `Case ${c.id} must have valid CVE ID`);
+    assert.ok(c.ghsa.startsWith("GHSA-"), `Case ${c.id} must have valid GHSA ID`);
+    assert.match(c.upstream.vulnerableCommit, shaRegex, `Case ${c.id} vulnerableCommit must be authentic 40-char SHA`);
+    assert.match(c.upstream.fixCommit, shaRegex, `Case ${c.id} fixCommit must be authentic 40-char SHA`);
+    assert.ok(c.upstream.repository.startsWith("https://github.com/"), `Case ${c.id} must specify valid upstream repository`);
+    assert.ok(c.taxonomy, `Case ${c.id} must document taxonomy source`);
+  }
 });
 

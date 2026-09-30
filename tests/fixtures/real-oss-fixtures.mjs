@@ -36,11 +36,18 @@ export const TF_OSS_CORPUS_V1_CASES = Object.freeze([
     cve: "CVE-2020-7598",
     ghsa: "GHSA-vh95-rmgr-6w4m",
     cwe: "CWE-1321",
-    severity: "high",
+    severity: "medium",
+    cvss: 5.6,
+    taxonomy: {
+      source: "NVD/GHSA",
+      cvss: 5.6,
+      severity: "medium",
+      historicalNote: "Earlier advisories categorized as high; canonical NVD/GHSA base score is 5.6 (Medium)"
+    },
     upstream: {
       repository: "https://github.com/minimistjs/minimist",
-      vulnerableCommit: "388a963",
-      fixCommit: "63e7ed0"
+      vulnerableCommit: "47acf72c715a630bf9ea013867f47f1dd69dfc54",
+      fixCommit: "63e7ed05aa4b1889ec2f3b196426db4500cbda94"
     },
     targetFiles: ["index.js"],
     description: "Unsanitized __proto__ assignment in argument parser allows arbitrary object prototype pollution",
@@ -56,7 +63,7 @@ export const TF_OSS_CORPUS_V1_CASES = Object.freeze([
         type: "prototype-pollution",
         file: "index.js",
         line: 9,
-        severity: "high",
+        severity: "medium",
         rationale: "Direct traversal of __proto__ key allows remote attackers to pollute Object.prototype"
       }
     ],
@@ -149,13 +156,19 @@ export const TF_OSS_CORPUS_V1_CASES = Object.freeze([
     riskTier: 1,
     category: "vulnerable",
     cve: "CVE-2020-7788",
-    ghsa: "GHSA-q9h2-87cx-55g6",
+    ghsa: "GHSA-qqgx-2p2h-9c37",
     cwe: "CWE-1321",
     severity: "high",
+    cvss: 7.3,
+    taxonomy: {
+      source: "GHSA/NVD",
+      cvss: 7.3,
+      severity: "high"
+    },
     upstream: {
       repository: "https://github.com/npm/ini",
-      vulnerableCommit: "590195d",
-      fixCommit: "56d2805"
+      vulnerableCommit: "738eca59d77d8cfdddf5c477c17a0d8f8fbfe0fd",
+      fixCommit: "56d2805e07ccd94e2ba0984ac9240ff02d44b6f1"
     },
     targetFiles: ["ini.js"],
     description: "INI section header [__proto__] directly pollutes global Object.prototype",
@@ -258,13 +271,19 @@ export const TF_OSS_CORPUS_V1_CASES = Object.freeze([
     riskTier: 1,
     category: "vulnerable",
     cve: "CVE-2021-4279",
-    ghsa: "GHSA-q7cm-758j-8q94",
+    ghsa: "GHSA-8gh8-hqwg-xf34",
     cwe: "CWE-1321",
     severity: "high",
+    cvss: 7.5,
+    taxonomy: {
+      source: "NVD/GHSA",
+      cvss: 7.5,
+      severity: "high"
+    },
     upstream: {
       repository: "https://github.com/Starcounter-Jack/JSON-Patch",
-      vulnerableCommit: "9a8f737",
-      fixCommit: "7ad6af4"
+      vulnerableCommit: "34d6405b2cc0a04ab67335fe0c1e845ba480f4ab",
+      fixCommit: "7ad6af41eabb2d799f698740a91284d762c955c9"
     },
     targetFiles: ["src/core.js"],
     description: "Bypass of prototype modification ban via constructor/prototype path components",
@@ -367,10 +386,17 @@ export const TF_OSS_CORPUS_V1_CASES = Object.freeze([
     ghsa: "GHSA-c2qf-rxjj-qqgw",
     cwe: "CWE-1333",
     severity: "high",
+    cvss: 7.5,
+    taxonomy: {
+      source: "NVD/GHSA",
+      cvss: 7.5,
+      severity: "high",
+      note: "ReDoS via whitespace quantifiers in Range regular expressions (PR #564)"
+    },
     upstream: {
       repository: "https://github.com/npm/node-semver",
-      vulnerableCommit: "ed88398",
-      fixCommit: "f73ef1a"
+      vulnerableCommit: "2f738e9a70d9b9468b7b69e9ed3e12418725c650",
+      fixCommit: "717534ee353682f3bcf33e60a8af4292626d4441"
     },
     targetFiles: ["internal/re.js"],
     description: "Greedy whitespace regex tokenization leads to catastrophic backtracking / ReDoS on large inputs",
@@ -459,10 +485,19 @@ export const TF_OSS_CORPUS_V1_CASES = Object.freeze([
     ghsa: "GHSA-phwq-j96m-2c2q",
     cwe: "CWE-94",
     severity: "critical",
+    cvss: 9.8,
+    taxonomy: {
+      primaryCwe: "CWE-94",
+      nvdCwe: "CWE-94",
+      ghsaCwe: "CWE-74",
+      cvss: 9.8,
+      severity: "critical",
+      note: "Dual-classified: NVD classifies as CWE-94 (Code Injection / SSTI), GitHub Advisory classifies as CWE-74 (Special Element Neutralization)"
+    },
     upstream: {
       repository: "https://github.com/mde/ejs",
-      vulnerableCommit: "aa6322e",
-      fixCommit: "15ee698"
+      vulnerableCommit: "c120527315e159ee48570f73936691f33113ec25",
+      fixCommit: "15ee698583c98dadc456639d6245580d17a24baf"
     },
     targetFiles: ["lib/ejs.js"],
     description: "Unsanitized outputFunctionName option allows arbitrary code injection during template compilation",
@@ -550,6 +585,19 @@ export const TF_OSS_CORPUS_V1_CASES = Object.freeze([
     ].join("\n")
   }
 ]);
+
+/**
+ * Pinned Expected Cryptographic Digests for TF-OSS-v1 (Exact Pinning Invariant)
+ */
+export const TF_OSS_V1_EXPECTED_CORPUS_DIGEST = "sha256:47ed3ce44878b77572005358a16511e3f0900dda11d14443e6a2a84baf501625";
+
+export const TF_OSS_V1_EXPECTED_CASE_DIGESTS = Object.freeze({
+  "TF-OSS-001": "sha256:c520d0f6ad9a3e9553426c4bb20578995d12425df4931c24fe8e99759c903914",
+  "TF-OSS-002": "sha256:1586be7b815652fd1ab477d623c1f9df5c8ce7b6337a4ef2292bd5b38b7180f7",
+  "TF-OSS-003": "sha256:f0d9241de553560e3576c15d77cf1f0a42cbc6df917c579b28ae8219e6535c28",
+  "TF-OSS-004": "sha256:5dc8195324d977d05bf20e340f08c41f0ff2a5036ebd03288bd235488365e672",
+  "TF-OSS-005": "sha256:294ad0c2b7383e86a45782e3928425f8fba2e6b181b1bd773c47f372af9f6071"
+});
 
 /**
  * Synthesizes a virtual ChangeSet object for an OSS case without disk/git overhead.
