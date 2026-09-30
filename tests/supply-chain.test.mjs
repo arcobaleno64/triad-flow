@@ -46,6 +46,8 @@ test("Contract 2: Release workflow enforces SSH tag signature verification and S
   // Verify SPDX SBOM generation and attestation
   assert.ok(content.includes("--sbom-format=spdx"), "release.yml must generate SPDX SBOM");
   assert.ok(content.includes("sbom-path"), "release.yml must attest SBOM");
+  assert.ok(content.includes("triad-flow.spdx.json.sha256"), "release.yml must generate and upload SBOM SHA256 digest");
+  assert.ok(content.includes("sha256sum"), "release.yml must verify SBOM checksum with sha256sum");
 });
 
 test("Contract 3: SPDX 2.3 SBOM generation produces compliant document", () => {

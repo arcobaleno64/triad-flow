@@ -59,9 +59,11 @@ jobs:
       - name: Build npm package tarball
         if: matrix.os == 'ubuntu-latest' && matrix.node-version == 20
         run: npm pack
-      - name: Generate SPDX 2.3 SBOM
+      - name: Generate SPDX 2.3 SBOM and SHA-256 Digest
         if: matrix.os == 'ubuntu-latest' && matrix.node-version == 20
-        run: npm sbom --sbom-format=spdx > triad-flow.spdx.json
+        run: |
+          npm sbom --sbom-format=spdx > triad-flow.spdx.json
+          sha256sum triad-flow.spdx.json > triad-flow.spdx.json.sha256
       - name: Upload npm package artifact
         if: matrix.os == 'ubuntu-latest' && matrix.node-version == 20
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
@@ -69,12 +71,14 @@ jobs:
           name: package-tarball
           path: "*.tgz"
           if-no-files-found: error
-      - name: Upload SBOM artifact
+      - name: Upload SBOM artifacts
         if: matrix.os == 'ubuntu-latest' && matrix.node-version == 20
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
           name: package-sbom
-          path: "triad-flow.spdx.json"
+          path: |
+            triad-flow.spdx.json
+            triad-flow.spdx.json.sha256
           if-no-files-found: error
 
   publish:
@@ -107,6 +111,10 @@ jobs:
         with:
           subject-path: "*.tgz"
           sbom-path: "triad-flow.spdx.json"
+      - name: Attest SBOM file identity
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: "triad-flow.spdx.json"
       - name: Create GitHub Release and Upload Assets
         env:
           GH_TOKEN: ${{ github.token }}
@@ -123,7 +131,8 @@ jobs:
             --notes-file release-notes.md \
             --verify-tag \
             *.tgz \
-            triad-flow.spdx.json
+            triad-flow.spdx.json \
+            triad-flow.spdx.json.sha256
 
   # Tests what a user actually installs, not the tree the workflow was handed.
   verify-published:
@@ -140,11 +149,13 @@ jobs:
         run: |
           gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --pattern "*.tgz"
           gh attestation verify *.tgz --repo "$GITHUB_REPOSITORY"
-      - name: Verify SBOM attestation
+      - name: Verify SBOM attestation and SHA-256 byte identity
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --pattern "triad-flow.spdx.json"
+          gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --pattern "triad-flow.spdx.json*"
+          sha256sum --check triad-flow.spdx.json.sha256
+          gh attestation verify triad-flow.spdx.json --repo "$GITHUB_REPOSITORY"
           gh attestation verify *.tgz --repo "$GITHUB_REPOSITORY" --predicate-type https://spdx.dev/Document
       - name: Install the published tag from git and run its CLI
         env:
