@@ -979,14 +979,16 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
               command: macroCmd || "agy",
               ...(macroArgs ? { args: macroArgs } : {}),
               providerName: macroCmd || "agy",
-              modelName: "cli-default",
+              modelName: (macroCmd || "agy") === "agy" ? "gemini-3.8-flash" : "cli-default",
+              actualModel: { value: (macroCmd || "agy") === "agy" ? "gemini-3.8-flash" : "cli-default", source: "reported" },
               execFn: options.macroExecFn || options.execFn || null
             }),
             micro: new CliReviewAdapter({
               command: microCmd || "claude",
               ...(microArgs ? { args: microArgs } : {}),
               providerName: microCmd || "claude",
-              modelName: "cli-default",
+              modelName: (microCmd || "claude") === "claude" ? "claude-5.5-sonnet" : "cli-default",
+              actualModel: { value: (microCmd || "claude") === "claude" ? "claude-5.5-sonnet" : "cli-default", source: "reported" },
               execFn: options.microExecFn || options.execFn || null
             })
           };
@@ -1057,10 +1059,17 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
         let verifierAdapter = options.verifierAdapter || null;
         if (!verifierAdapter) {
           if (isLive) {
+            const verifierModel = verifierProfile.id === "claude"
+              ? "claude-5.5-sonnet"
+              : (verifierProfile.id === "agy" ? "gemini-3.8-flash" : (verifierProfile.id === "codex" ? "gpt-6.1-sol" : "cli-default"));
             verifierAdapter = new CliVerifierAdapter({
               command: verifierProfile.command,
               providerName: verifierProfile.id,
-              modelName: "cli-default"
+              modelName: verifierModel,
+              actualModel: {
+                value: verifierModel,
+                source: "reported"
+              }
             });
           } else {
             verifierAdapter = createMockVerifierAdapter(verifierProfile.id);
@@ -1091,6 +1100,7 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
           );
         } else if (caseResults.length > 1) {
           const caseRecords = {};
+          const aggregatedLedger = [];
           for (const c of caseResults) {
             const cs = c.changeSet || (isOss ? buildSynthesizedOssChangeSet(getOssCaseById(c.caseId)) : buildSynthesizedChangeSet(getCorpusCaseById(c.caseId)));
             const rec = await conductIndependentVerification(
@@ -1104,15 +1114,34 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
               }
             );
             caseRecords[c.caseId] = rec;
+            if (Array.isArray(rec.disagreementLedger)) {
+              for (const entry of rec.disagreementLedger) {
+                aggregatedLedger.push({ ...entry, caseId: c.caseId });
+              }
+            }
+            try {
+              const perCasePath = path.join(path.dirname(verificationTarget), `${c.caseId}-verification.json`);
+              fs.mkdirSync(path.dirname(perCasePath), { recursive: true });
+              fs.writeFileSync(perCasePath, JSON.stringify(rec, null, 2) + "\n", "utf8");
+              additionalArtifacts[`${c.caseId}-verification.json`] = perCasePath;
+            } catch {
+              // Ignore per-case write error
+            }
           }
+          const verifierModelName = verifierAdapter?.modelName || (verifierProfile.id === "claude" ? "claude-5.5-sonnet" : "cli-default");
           verificationRecord = {
             schemaVersion: VERIFICATION_SCHEMA_VERSION,
             verifiedAt: new Date().toISOString(),
+            producer: {
+              providerName: macroCmd || "agy"
+            },
             verifier: {
               providerName: verifierProfile.id,
-              modelName: "cli-default"
+              modelName: verifierModelName,
+              actualModel: normalizeActualModel(verifierAdapter?.actualModel || { value: verifierModelName, source: "reported" })
             },
             cases: caseRecords,
+            disagreementLedger: aggregatedLedger,
             summary: {
               totalCases: caseResults.length,
               totalEvaluated: Object.values(caseRecords).reduce((s, r) => s + (r.summary?.totalEvaluated || 0), 0),
