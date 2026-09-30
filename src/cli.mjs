@@ -1098,85 +1098,48 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
           synthesizer: { providerName: synthProvider, modelName: "cli-remediate" }
         });
 
-        io.stderr.write(`[2/4] Authorizing patch evaluation under human/policy gate...\n`);
-        session.authorizePatch({
-          authorizer: { identity: authorizerArg || options.authorizer || "security-lead@triad.flow", type: "human" }
-        });
+        const explicitAuthorizer = authorizerArg || options.authorizer || null;
+        if (explicitAuthorizer) {
+          const authorizerObj = typeof explicitAuthorizer === "object"
+            ? explicitAuthorizer
+            : { identity: String(explicitAuthorizer), type: "human" };
+          io.stderr.write(`[2/4] Authorizing patch evaluation under human/policy gate (${authorizerObj.identity})...\n`);
+          session.authorizePatch({
+            authorizer: authorizerObj
+          });
+        } else {
+          io.stderr.write(`[2/4] No human authorizer specified (missing '--authorizer <id>'). Patch cannot be authorized; remaining in FIX_PROPOSED.\n`);
+        }
 
-        io.stderr.write(`[3/4] Executing trial inside ephemeral Patch Jail worktree...\n`);
-        session.executeInJailWorktree(workspace.dir, {
-          baseSha: workspace.headSha,
-          testRunnerFn: typeof opts.testRunnerFn === "function" ? opts.testRunnerFn : () => {
-            return {
-              testCommand: `node --check ${caseDef.targetFile}`,
-              exitCode: 0,
-              passedCount: 1,
-              failedCount: 0
-            };
+        if (session.status === REMEDIATION_STATES.PATCH_AUTHORIZED) {
+          if (typeof opts.testRunnerFn === "function") {
+            io.stderr.write(`[3/4] Executing trial inside ephemeral Patch Jail worktree...\n`);
+            session.executeInJailWorktree(workspace.dir, {
+              baseSha: workspace.headSha,
+              testRunnerFn: opts.testRunnerFn
+            });
+          } else {
+            io.stderr.write(`[3/4] No deterministic test runner provided. Cannot execute verification in Patch Jail; remaining in PATCH_AUTHORIZED.\n`);
           }
-        });
+        } else {
+          io.stderr.write(`[3/4] Skipping ephemeral Patch Jail execution because session status is: ${session.status}\n`);
+        }
 
         const verifierProvider = verifyWithArg || (synthProvider === "claude" ? "agy" : "claude");
 
         if (session.status === REMEDIATION_STATES.FIXED_PENDING_VERIFY) {
-          io.stderr.write(`[4/4] Conducting independent heterogeneous verification (${verifierProvider} verifying ${synthProvider})...\n`);
-
-          let verificationRecord;
           if (typeof opts.closureVerifierFn === "function") {
-            verificationRecord = opts.closureVerifierFn(session);
+            io.stderr.write(`[4/4] Conducting independent heterogeneous verification (${verifierProvider} verifying ${synthProvider})...\n`);
+            const verificationRecord = opts.closureVerifierFn(session);
+            session.recordClosureVerification({
+              verifier: { providerName: verifierProvider, modelName: "cli-default" },
+              verificationRecord
+            });
           } else {
-            verificationRecord = {
-              schemaVersion: "1.0.0",
-              verifiedAt: new Date().toISOString(),
-              changeSetDigest: "sha256:" + "0".repeat(64),
-              producer: {
-                providerName: "agy",
-                findingsCount: 1,
-                findings: [
-                  {
-                    id: findingId,
-                    findingId,
-                    title: caseDef.title,
-                    severity: caseDef.goldenFindings?.[0]?.severity || "critical",
-                    file: caseDef.targetFile,
-                    line_start: caseDef.goldenFindings?.[0]?.line || 1,
-                    line_end: caseDef.goldenFindings?.[0]?.line || 1
-                  }
-                ]
-              },
-              verifier: {
-                providerName: verifierProvider,
-                modelName: "cli-default",
-                actualModel: { value: `${verifierProvider}-verifier`, source: "reported" }
-              },
-              evaluations: [
-                {
-                  findingId,
-                  verdict: "SUPPORTED",
-                  locatorAccurate: true,
-                  typeAccurate: true,
-                  severityAccurate: true,
-                  reasoning: `Controlled remediation verified for ${caseDef.id}.`
-                }
-              ],
-              verifierOmissions: [],
-              disagreementLedger: [],
-              summary: {
-                totalEvaluated: 1,
-                supportedCount: 1,
-                contestedCount: 0,
-                insufficientEvidenceCount: 0,
-                omissionsCount: 0
-              }
-            };
+            io.stderr.write(`[4/4] No independent closure verifier provided. Remediation cannot be closed; remaining in FIXED_PENDING_VERIFY.\n`);
           }
-
-          session.recordClosureVerification({
-            verifier: { providerName: verifierProvider, modelName: "cli-default" },
-            verificationRecord
-          });
         } else {
-          io.stderr.write(`[4/4] Skipping closure verification because jail trial resulted in: ${session.status}\n`);
+          io.stderr.write(`[4/4] Skipping closure verification because session status is: ${session.status}\n`);
         }
 
         const receipt = session.toReceipt();
@@ -1195,13 +1158,13 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
               `Case ID:            ${caseDef.id} (${caseDef.title})`,
               `Target File:        ${caseDef.targetFile}`,
               `Lifecycle Status:   ${receipt.status}`,
-              `Synthesizer:        ${receipt.actors.synthesizer.providerName}`,
-              `Verifier:           ${receipt.actors.verifier.providerName}`,
-              `Worktree SHA:       ${receipt.jail.worktreeSha || "none"}`,
-              `Pre-Patch Digest:   ${(receipt.jail.prePatchTreeDigest || "").slice(0, 19)}...`,
-              `Post-Patch Digest:  ${(receipt.jail.postPatchTreeDigest || "").slice(0, 19)}...`,
-              `Deterministic Pass: ${receipt.deterministicChecks.exitCode === 0 ? "YES (exit 0)" : "NO (exit " + receipt.deterministicChecks.exitCode + ")"}`,
-              `Closure Verified:   ${receipt.closureVerification.verified ? "YES (SUPPORTED)" : "NO (" + (receipt.closureVerification.verdict || "NONE") + ")"}`,
+              `Synthesizer:        ${receipt.actors.synthesizer?.providerName || "none"}`,
+              `Verifier:           ${receipt.actors.verifier?.providerName || "none"}`,
+              `Worktree SHA:       ${receipt.jail?.worktreeSha || "none"}`,
+              `Pre-Patch Digest:   ${(receipt.jail?.prePatchTreeDigest || "").slice(0, 19) || "none"}...`,
+              `Post-Patch Digest:  ${(receipt.jail?.postPatchTreeDigest || "").slice(0, 19) || "none"}...`,
+              `Deterministic Pass: ${receipt.deterministicChecks?.executed ? (receipt.deterministicChecks.exitCode === 0 ? "YES (exit 0)" : "NO (exit " + receipt.deterministicChecks.exitCode + ")") : "SKIPPED (not executed)"}`,
+              `Closure Verified:   ${receipt.closureVerification?.verified ? "YES (SUPPORTED)" : "NO (" + (receipt.closureVerification?.verdict || "NOT_RUN") + ")"}`,
               `Receipt Path:       ${receiptOutPath}`,
               "-------------------------------------------------------",
               "Plan-Only Boundary: Ephemeral jail destroyed. Authoritative branch untouched.",

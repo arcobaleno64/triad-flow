@@ -271,13 +271,138 @@ test("runCli rejects --report followed by unknown flag with EXIT_CODES.USAGE_ERR
   assert.match(stderr.buffer, /Unsupported option\(s\): --bogus/i);
 });
 
-test("runCli 'remediate --case=BENCH-REAL-001' executes plan-only remediation and emits receipt", async () => {
+test("runCli 'remediate --case=BENCH-REAL-001' fails closed with GATE_BLOCKED without explicit authorizer", async () => {
   const stdout = new MockStream();
   const stderr = new MockStream();
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "triad-remed-cli-"));
   const receiptPath = path.join(tmpDir, "rem-receipt.json");
   try {
     const code = await runCli(["remediate", "--case=BENCH-REAL-001", `--receipt=${receiptPath}`], { stdout, stderr });
+    assert.equal(code, EXIT_CODES.GATE_BLOCKED);
+    assert.match(stderr.buffer, /No human authorizer specified/i);
+    assert.match(stdout.buffer, /Lifecycle Status:\s+FIX_PROPOSED/i);
+    assert.ok(fs.existsSync(receiptPath));
+    const receipt = JSON.parse(fs.readFileSync(receiptPath, "utf8"));
+    assert.equal(receipt.schemaVersion, "1.0.0");
+    assert.equal(receipt.status, "FIX_PROPOSED");
+    assert.equal(receipt.findingId, "BENCH-REAL-001-FINDING-001");
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("runCli 'remediate' fails closed with GATE_BLOCKED when authorizer is given but test runner is missing", async () => {
+  const stdout = new MockStream();
+  const stderr = new MockStream();
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "triad-remed-cli-"));
+  const receiptPath = path.join(tmpDir, "rem-receipt.json");
+  try {
+    const code = await runCli(
+      ["remediate", "--case=BENCH-REAL-001", "--authorizer=security-lead@triad.flow", `--receipt=${receiptPath}`],
+      { stdout, stderr }
+    );
+    assert.equal(code, EXIT_CODES.GATE_BLOCKED);
+    assert.match(stderr.buffer, /No deterministic test runner provided/i);
+    assert.match(stdout.buffer, /Lifecycle Status:\s+PATCH_AUTHORIZED/i);
+    assert.ok(fs.existsSync(receiptPath));
+    const receipt = JSON.parse(fs.readFileSync(receiptPath, "utf8"));
+    assert.equal(receipt.status, "PATCH_AUTHORIZED");
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("runCli 'remediate' fails closed with GATE_BLOCKED when tests pass but closure verifier is missing", async () => {
+  const stdout = new MockStream();
+  const stderr = new MockStream();
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "triad-remed-cli-"));
+  const receiptPath = path.join(tmpDir, "rem-receipt.json");
+  try {
+    const code = await runCli(
+      ["remediate", "--case=BENCH-REAL-001", "--authorizer=security-lead@triad.flow", `--receipt=${receiptPath}`],
+      { stdout, stderr },
+      {
+        testRunnerFn: () => ({
+          testCommand: "node --check src/db/user-repo.js",
+          exitCode: 0,
+          passedCount: 1,
+          failedCount: 0
+        })
+      }
+    );
+    assert.equal(code, EXIT_CODES.GATE_BLOCKED);
+    assert.match(stderr.buffer, /No independent closure verifier provided/i);
+    assert.match(stdout.buffer, /Lifecycle Status:\s+FIXED_PENDING_VERIFY/i);
+    assert.ok(fs.existsSync(receiptPath));
+    const receipt = JSON.parse(fs.readFileSync(receiptPath, "utf8"));
+    assert.equal(receipt.status, "FIXED_PENDING_VERIFY");
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("runCli 'remediate' successfully reaches CLOSED when authorizer, test runner, and verifier are all affirmatively provided", async () => {
+  const stdout = new MockStream();
+  const stderr = new MockStream();
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "triad-remed-cli-"));
+  const receiptPath = path.join(tmpDir, "rem-receipt.json");
+  try {
+    const code = await runCli(
+      ["remediate", "--case=BENCH-REAL-001", "--authorizer=security-lead@triad.flow", `--receipt=${receiptPath}`],
+      { stdout, stderr },
+      {
+        testRunnerFn: () => ({
+          testCommand: "node --check src/db/user-repo.js",
+          exitCode: 0,
+          passedCount: 1,
+          failedCount: 0
+        }),
+        closureVerifierFn: (session) => ({
+          schemaVersion: "1.0.0",
+          verifiedAt: new Date().toISOString(),
+          changeSetDigest: "sha256:" + "a".repeat(64),
+          producer: {
+            providerName: "agy",
+            findingsCount: 1,
+            findings: [
+              {
+                id: session.findingId,
+                findingId: session.findingId,
+                title: "SQL Injection in User Query Handler",
+                severity: "critical",
+                file: "src/db/user-repo.js",
+                line_start: 1,
+                line_end: 1
+              }
+            ]
+          },
+          verifier: {
+            providerName: "claude",
+            modelName: "cli-default",
+            actualModel: { value: "claude-verifier", source: "reported" }
+          },
+          evaluations: [
+            {
+              findingId: session.findingId,
+              verdict: "SUPPORTED",
+              locatorAccurate: true,
+              typeAccurate: true,
+              severityAccurate: true,
+              reasoning: "Controlled remediation verified by independent verifier."
+            }
+          ],
+          verifierOmissions: [],
+          disagreementLedger: [],
+          summary: {
+            totalEvaluated: 1,
+            supportedCount: 1,
+            contestedCount: 0,
+            insufficientEvidenceCount: 0,
+            omissionsCount: 0
+          }
+        })
+      }
+    );
     assert.equal(code, EXIT_CODES.SUCCESS);
     assert.match(stdout.buffer, /Triad-Flow Remediation Summary: CLOSED/i);
     assert.match(stdout.buffer, /Plan-Only Boundary/i);
@@ -291,19 +416,75 @@ test("runCli 'remediate --case=BENCH-REAL-001' executes plan-only remediation an
   }
 });
 
-test("runCli 'remediate --case=BENCH-REAL-001 --format=json' produces valid JSON receipt on stdout", async () => {
+test("runCli 'remediate --case=BENCH-REAL-001 --format=json' produces valid JSON receipt on stdout when fully verified", async () => {
   const stdout = new MockStream();
   const stderr = new MockStream();
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "triad-remed-cli-"));
   const receiptPath = path.join(tmpDir, "rem-receipt.json");
   try {
-    const code = await runCli(["remediate", "--case=BENCH-REAL-001", "--format=json", `--receipt=${receiptPath}`], { stdout, stderr });
+    const code = await runCli(
+      ["remediate", "--case=BENCH-REAL-001", "--format=json", "--authorizer=security-lead@triad.flow", `--receipt=${receiptPath}`],
+      { stdout, stderr },
+      {
+        testRunnerFn: () => ({
+          testCommand: "node --check src/db/user-repo.js",
+          exitCode: 0,
+          passedCount: 1,
+          failedCount: 0
+        }),
+        closureVerifierFn: (session) => ({
+          schemaVersion: "1.0.0",
+          verifiedAt: new Date().toISOString(),
+          changeSetDigest: "sha256:" + "a".repeat(64),
+          producer: {
+            providerName: "agy",
+            findingsCount: 1,
+            findings: [
+              {
+                id: session.findingId,
+                findingId: session.findingId,
+                title: "SQL Injection in User Query Handler",
+                severity: "critical",
+                file: "src/db/user-repo.js",
+                line_start: 1,
+                line_end: 1
+              }
+            ]
+          },
+          verifier: {
+            providerName: "claude",
+            modelName: "cli-default",
+            actualModel: { value: "claude-verifier", source: "reported" }
+          },
+          evaluations: [
+            {
+              findingId: session.findingId,
+              verdict: "SUPPORTED",
+              locatorAccurate: true,
+              typeAccurate: true,
+              severityAccurate: true,
+              reasoning: "JSON receipt verified."
+            }
+          ],
+          verifierOmissions: [],
+          disagreementLedger: [],
+          summary: {
+            totalEvaluated: 1,
+            supportedCount: 1,
+            contestedCount: 0,
+            insufficientEvidenceCount: 0,
+            omissionsCount: 0
+          }
+        })
+      }
+    );
     assert.equal(code, EXIT_CODES.SUCCESS);
     const receipt = JSON.parse(stdout.buffer);
     assert.equal(receipt.schemaVersion, "1.0.0");
     assert.equal(receipt.status, "CLOSED");
     assert.equal(receipt.actors.synthesizer.providerName, "codex");
     assert.equal(receipt.actors.verifier.providerName, "claude");
+    assert.equal(receipt.actors.authorizer.identity, "security-lead@triad.flow");
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
@@ -332,7 +513,7 @@ test("runCli 'remediate' fails closed with EXIT_CODES.GATE_BLOCKED when tests fa
   const receiptPath = path.join(tmpDir, "rem-receipt.json");
   try {
     const code = await runCli(
-      ["remediate", "--case=BENCH-REAL-001", "--strict", `--receipt=${receiptPath}`],
+      ["remediate", "--case=BENCH-REAL-001", "--strict", "--authorizer=security-lead@triad.flow", `--receipt=${receiptPath}`],
       { stdout, stderr },
       {
         testRunnerFn: () => ({ exitCode: 1, passedCount: 0, failedCount: 1, regressionDetected: true })
