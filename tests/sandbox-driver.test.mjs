@@ -27,7 +27,10 @@ import {
   resolveSandboxDriver,
   SandboxUnavailableError,
   SilentDowngradeProhibitedError,
-  SANDBOX_DRIVERS
+  SandboxSecurityViolationError,
+  SANDBOX_DRIVERS,
+  DEFAULT_CONTAINER_IMAGE,
+  ACTIVE_EGRESS_PROBE_SCRIPT
 } from "../src/core/sandbox-driver.mjs";
 
 import {
@@ -102,19 +105,31 @@ test("Contract 2: ContainerDriver probe failure and strict fail-closed (no silen
     () => driver.create("."),
     (err) => {
       assert.ok(err instanceof SandboxUnavailableError);
-      assert.match(err.message, /Container execution sandbox is not yet implemented/);
+      assert.match(err.message, /Requested sandbox driver 'container' is unavailable on this host/);
+      assert.match(err.message, /Silent downgrade to worktree is prohibited by ADR-024-02/);
       return true;
     }
   );
 });
 
-test("Contract 3: ContainerDriver probe success with custom/mock execution engine", () => {
+test("Contract 3: ContainerDriver probe success with custom/mock execution engine and active egress probe", () => {
   const mockExecFn = (cmd, args) => {
     if (args.includes("--version")) {
       return { status: 0, stdout: "Docker version 27.0.3, build 7d4eb36\n" };
     }
     if (args.includes("info")) {
       return { status: 0, stdout: "27.0.3\n" };
+    }
+    if (args.includes("inspect")) {
+      return { status: 0, stdout: "sha256:d8a2bc4e7a4b89e5c9f5653b47c0b05b38234857ef129994c50259e5a8c2efec\n" };
+    }
+    // Egress probe script: in --network=none, connection failure returns status 1
+    if (args.includes("sh") && args.some(a => String(a).includes("192.0.2.1"))) {
+      return { status: 1, stderr: "Error: connect ENETUNREACH 192.0.2.1:80\n" };
+    }
+    // General in-container test command
+    if (args.includes("node") && args.includes("-v")) {
+      return { status: 0, stdout: "v20.15.0\n" };
     }
     return { status: 0, stdout: "" };
   };
@@ -127,22 +142,42 @@ test("Contract 3: ContainerDriver probe success with custom/mock execution engin
   const probe = driver.probe();
   assert.equal(probe.available, true);
   assert.equal(probe.runtime, "docker");
+  assert.equal(probe.imageDigest, "sha256:d8a2bc4e7a4b89e5c9f5653b47c0b05b38234857ef129994c50259e5a8c2efec");
 
-  const caps = driver.capabilities();
-  assert.equal(caps.driver, "container");
-  assert.equal(caps.filesystemIsolation, "container-unverified");
-  assert.equal(caps.networkEgressDenial, "unverified");
-  assert.equal(caps.processIsolation, "unverified");
-  assert.equal(caps.hostFilesystemWriteRestriction, "unenforced");
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-container-driver-test-"));
+  try {
+    execFileSync("git", ["init"], { cwd: tmpDir, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "Triad Test"], { cwd: tmpDir, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@triadflow.dev"], { cwd: tmpDir, stdio: "ignore" });
+    fs.writeFileSync(path.join(tmpDir, "index.js"), 'console.log("container-base");\n');
+    execFileSync("git", ["add", "."], { cwd: tmpDir, stdio: "ignore" });
+    execFileSync("git", ["commit", "-m", "initial"], { cwd: tmpDir, stdio: "ignore" });
 
-  // create() still fails closed because in-container process execution is not integrated
-  assert.throws(
-    () => driver.create("."),
-    /Container execution sandbox is not yet implemented/
-  );
+    const jail = driver.create(tmpDir);
+    assert.ok(fs.existsSync(jail.jailPath));
+    assert.equal(jail.driver, "container");
+    assert.equal(jail.capabilities.filesystemIsolation, "container");
+    assert.equal(jail.capabilities.networkEgressDenial, "verified");
+    assert.equal(jail.capabilities.processIsolation, "container");
+    assert.equal(jail.capabilities.hostFilesystemWriteRestriction, "enforced-mount-ro");
+    assert.equal(jail.capabilities.requestedControls.pullPolicy, "never");
+    assert.equal(jail.capabilities.effectiveControls.networkMode, "none");
+    assert.equal(jail.capabilities.verifiedControls.networkEgressDenied, true);
+    assert.equal(jail.capabilities.environments.testExecutionEnvironment, "container");
+
+    // In-container command execution
+    const runRes = jail.runInContainer(["node", "-v"]);
+    assert.equal(runRes.exitCode, 0);
+    assert.equal(runRes.stdout.trim(), "v20.15.0");
+
+    jail.cleanup();
+    assert.ok(!fs.existsSync(jail.jailPath));
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
 });
 
-test("Contract 4: resolveSandboxDriver fail-closed on unavailable or unintegrated container runtime", () => {
+test("Contract 4: resolveSandboxDriver resolves container driver when available, and fails closed when unavailable", () => {
   // Default resolution
   const defaultDriver = resolveSandboxDriver();
   assert.ok(defaultDriver instanceof WorktreeDriver);
@@ -171,22 +206,17 @@ test("Contract 4: resolveSandboxDriver fail-closed on unavailable or unintegrate
     }
   );
 
-  // Even if host container daemon is present, fail-closed against unverified container claims
+  // When container daemon and image are available, resolveSandboxDriver returns ContainerDriver
   const passingExecFn = (cmd, args) => {
     if (args.includes("--version")) return { status: 0, stdout: "Docker version 27.0.3\n" };
     if (args.includes("info")) return { status: 0, stdout: "27.0.3\n" };
+    if (args.includes("inspect")) return { status: 0, stdout: "sha256:d8a2bc4e7a4b89e5c9f5653b47c0b05b38234857ef129994c50259e5a8c2efec\n" };
     return { status: 0, stdout: "" };
   };
 
-  assert.throws(
-    () => resolveSandboxDriver("container", { execFn: passingExecFn }),
-    (err) => {
-      assert.ok(err instanceof SandboxUnavailableError);
-      assert.match(err.message, /in-container jail process execution is not yet integrated/);
-      assert.match(err.message, /ADR-024-02/);
-      return true;
-    }
-  );
+  const resolved = resolveSandboxDriver("container", { execFn: passingExecFn });
+  assert.ok(resolved instanceof ContainerDriver);
+  assert.equal(resolved.runtime, "docker");
 });
 
 function createMockVerificationRecord(findingId, options = {}) {
@@ -413,4 +443,153 @@ test("Contract 9: Programmatic CLI executes with custom sandboxDriver recording 
   assert.equal(code, EXIT_CODES.SUCCESS);
   assert.match(stdout, /Lifecycle Status:\s+CLOSED/);
   assert.match(stdout, /Sandbox Driver:\s+worktree \(fs: git-worktree, egress: unavailable\)/);
+});
+
+test("Contract 10: Local image missing under --pull=never policy fails closed immediately", () => {
+  const missingImageExecFn = (cmd, args) => {
+    if (args.includes("--version")) return { status: 0, stdout: "Docker version 27.0.3\n" };
+    if (args.includes("info")) return { status: 0, stdout: "27.0.3\n" };
+    if (args.includes("inspect")) {
+      return { status: 1, stderr: "Error: No such image: node:20-slim\n" };
+    }
+    return { status: 0, stdout: "" };
+  };
+
+  const driver = new ContainerDriver({
+    containerRuntime: "docker",
+    image: "node:20-slim",
+    execFn: missingImageExecFn
+  });
+
+  const probe = driver.probe();
+  assert.equal(probe.available, false);
+  assert.match(probe.reason, /--pull=never policy prohibits implicit pull/);
+
+  assert.throws(
+    () => driver.create("."),
+    (err) => {
+      assert.ok(err instanceof SandboxUnavailableError);
+      assert.match(err.message, /--pull=never policy prohibits implicit pull/);
+      return true;
+    }
+  );
+});
+
+test("Contract 11: Active egress probe detects unexpected outbound network access and throws SandboxSecurityViolationError", () => {
+  const leakingExecFn = (cmd, args) => {
+    if (args.includes("--version")) return { status: 0, stdout: "Docker version 27.0.3\n" };
+    if (args.includes("info")) return { status: 0, stdout: "27.0.3\n" };
+    if (args.includes("inspect")) return { status: 0, stdout: "sha256:d8a2bc4e7a4b89e5c9f5653b47c0b05b38234857ef129994c50259e5a8c2efec\n" };
+    // Leaking egress: egress probe command returns 0 (connected!) instead of failing
+    if (args.includes("sh") && args.some(a => String(a).includes("192.0.2.1"))) {
+      return { status: 0, stdout: "Connected to outbound host unexpectedly\n" };
+    }
+    return { status: 0, stdout: "" };
+  };
+
+  const driver = new ContainerDriver({
+    containerRuntime: "docker",
+    execFn: leakingExecFn
+  });
+
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-egress-leak-test-"));
+  try {
+    execFileSync("git", ["init"], { cwd: tmpDir, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "Triad Test"], { cwd: tmpDir, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@triadflow.dev"], { cwd: tmpDir, stdio: "ignore" });
+    fs.writeFileSync(path.join(tmpDir, "index.js"), 'console.log("base");\n');
+    execFileSync("git", ["add", "."], { cwd: tmpDir, stdio: "ignore" });
+    execFileSync("git", ["commit", "-m", "initial"], { cwd: tmpDir, stdio: "ignore" });
+
+    assert.throws(
+      () => driver.create(tmpDir),
+      (err) => {
+        assert.ok(err instanceof SandboxSecurityViolationError);
+        assert.match(err.message, /Active egress probe succeeded! Outbound network connection was established/);
+        return true;
+      }
+    );
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("Contract 12: BuildRunArgs validates strict isolation flags and strips host tokens/secrets", () => {
+  const driver = new ContainerDriver({
+    containerRuntime: "docker"
+  });
+
+  const origGitHubToken = process.env.GITHUB_TOKEN;
+  const origOpenAiKey = process.env.OPENAI_API_KEY;
+  const origAwsKey = process.env.AWS_SECRET_ACCESS_KEY;
+  const origNodeEnv = process.env.NODE_ENV;
+
+  try {
+    process.env.GITHUB_TOKEN = "ghp_super_secret_token_123456";
+    process.env.OPENAI_API_KEY = "sk-super_secret_openai_key_123456";
+    process.env.AWS_SECRET_ACCESS_KEY = "super_secret_aws_key_123456";
+    process.env.NODE_ENV = "test";
+
+    const repoPath = "C:/fake/repo";
+    const jailPath = "C:/fake/jail";
+    const args = driver.buildRunArgs(repoPath, jailPath, ["npm", "test"]);
+
+    // Isolation flags
+    assert.ok(args.includes("--pull=never"), "Must include --pull=never");
+    assert.ok(args.includes("--network=none"), "Must include --network=none");
+    assert.ok(args.includes("--read-only"), "Must include --read-only rootfs");
+    assert.ok(args.includes("--cap-drop=ALL"), "Must drop all capabilities");
+    assert.ok(args.includes("--security-opt=no-new-privileges"), "Must enforce no-new-privileges");
+
+    // Mount points
+    assert.ok(args.some(a => a.endsWith(":/workspace:ro")), "Host repo must be mounted read-only (:ro)");
+    assert.ok(args.some(a => a.endsWith(":/jail:rw")), "Jail worktree must be mounted read-write (:rw)");
+    assert.ok(args.includes("/tmp:rw,noexec,nosuid,size=64m"), "Must mount volatile tmpfs");
+    assert.ok(args.includes("-w") && args[args.indexOf("-w") + 1] === "/jail", "Working directory must be /jail");
+
+    // Secrets MUST be stripped (never passed via -e)
+    const flattenedArgs = args.join(" ");
+    assert.ok(!flattenedArgs.includes("ghp_super_secret_token_123456"), "Must strip GITHUB_TOKEN");
+    assert.ok(!flattenedArgs.includes("sk-super_secret_openai_key_123456"), "Must strip OPENAI_API_KEY");
+    assert.ok(!flattenedArgs.includes("super_secret_aws_key_123456"), "Must strip AWS_SECRET_ACCESS_KEY");
+
+    // Allowlisted environment variables MUST be passed
+    assert.ok(args.includes("NODE_ENV=test"), "Allowlisted NODE_ENV must be present");
+  } finally {
+    if (origGitHubToken !== undefined) process.env.GITHUB_TOKEN = origGitHubToken; else delete process.env.GITHUB_TOKEN;
+    if (origOpenAiKey !== undefined) process.env.OPENAI_API_KEY = origOpenAiKey; else delete process.env.OPENAI_API_KEY;
+    if (origAwsKey !== undefined) process.env.AWS_SECRET_ACCESS_KEY = origAwsKey; else delete process.env.AWS_SECRET_ACCESS_KEY;
+    if (origNodeEnv !== undefined) process.env.NODE_ENV = origNodeEnv; else delete process.env.NODE_ENV;
+  }
+});
+
+test("Contract 13: Pinned image digest matching and rejection of mismatched digests", () => {
+  const expectedDigest = "sha256:1111111111111111111111111111111111111111111111111111111111111111";
+  const unexpectedDigest = "sha256:2222222222222222222222222222222222222222222222222222222222222222";
+
+  let inspectDigestToReturn = unexpectedDigest;
+  const mockExecFn = (cmd, args) => {
+    if (args.includes("--version")) return { status: 0, stdout: "Docker version 27.0.3\n" };
+    if (args.includes("info")) return { status: 0, stdout: "27.0.3\n" };
+    if (args.includes("inspect")) return { status: 0, stdout: inspectDigestToReturn + "\n" };
+    return { status: 0, stdout: "" };
+  };
+
+  const driver = new ContainerDriver({
+    containerRuntime: "docker",
+    image: "node:20-slim",
+    pinnedImageDigest: expectedDigest,
+    execFn: mockExecFn
+  });
+
+  // Mismatch -> probe fails
+  const mismatchProbe = driver.probe();
+  assert.equal(mismatchProbe.available, false);
+  assert.match(mismatchProbe.reason, /Image digest mismatch/);
+
+  // Match -> probe succeeds
+  inspectDigestToReturn = expectedDigest;
+  const matchProbe = driver.probe();
+  assert.equal(matchProbe.available, true);
+  assert.equal(matchProbe.imageDigest, expectedDigest);
 });
