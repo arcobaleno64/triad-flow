@@ -528,3 +528,354 @@ test("runCli 'remediate' fails closed with EXIT_CODES.GATE_BLOCKED when tests fa
   }
 });
 
+test("runCli 'remediate --batch' without --cases or --report fails with EXIT_CODES.USAGE_ERROR", async () => {
+  const stdout = new MockStream();
+  const stderr = new MockStream();
+  const code = await runCli(["remediate", "--batch"], { stdout, stderr });
+  assert.equal(code, EXIT_CODES.USAGE_ERROR);
+  assert.match(stderr.buffer, /requires '--report <file>' or '--cases <case-ids>'/i);
+});
+
+test("runCli 'remediate --batch --cases=UNKNOWN_A,UNKNOWN_B' fails with EXIT_CODES.USAGE_ERROR", async () => {
+  const stdout = new MockStream();
+  const stderr = new MockStream();
+  const code = await runCli(["remediate", "--batch", "--cases=UNKNOWN_A,UNKNOWN_B"], { stdout, stderr });
+  assert.equal(code, EXIT_CODES.USAGE_ERROR);
+  assert.match(stderr.buffer, /Unknown corpus case: 'UNKNOWN_A'/i);
+});
+
+test("runCli 'remediate --batch --cases=BENCH-REAL-001,BENCH-REAL-002' full lifecycle succeeds and produces valid batch receipt", async () => {
+  const stdout = new MockStream();
+  const stderr = new MockStream();
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "triad-batch-cli-"));
+  const receiptPath = path.join(tmpDir, "batch-receipt.json");
+  try {
+    const code = await runCli(
+      [
+        "remediate",
+        "--batch",
+        "--cases=BENCH-REAL-001,BENCH-REAL-002",
+        "--authorizer=sec-lead@triad.flow",
+        `--receipt=${receiptPath}`
+      ],
+      { stdout, stderr },
+      {
+        testRunnerFn: () => ({ exitCode: 0, passedCount: 1, failedCount: 0 }),
+        closureVerifierFn: (session) => ({
+          schemaVersion: "1.0.0",
+          verifiedAt: new Date().toISOString(),
+          changeSetDigest: "sha256:" + "a".repeat(64),
+          producer: {
+            providerName: "agy",
+            findingsCount: 1,
+            findings: [
+              {
+                id: session.findingId,
+                findingId: session.findingId,
+                title: "Finding",
+                severity: "critical",
+                file: session.targetFiles[0],
+                line_start: 1,
+                line_end: 1
+              }
+            ]
+          },
+          verifier: {
+            providerName: "claude",
+            modelName: "cli-default",
+            actualModel: { value: "claude-verifier", source: "reported" }
+          },
+          evaluations: [
+            {
+              findingId: session.findingId,
+              verdict: "SUPPORTED",
+              locatorAccurate: true,
+              typeAccurate: true,
+              severityAccurate: true,
+              reasoning: "Batch finding verified."
+            }
+          ],
+          verifierOmissions: [],
+          disagreementLedger: [],
+          summary: {
+            totalEvaluated: 1,
+            supportedCount: 1,
+            contestedCount: 0,
+            insufficientEvidenceCount: 0,
+            omissionsCount: 0
+          }
+        })
+      }
+    );
+    assert.equal(code, EXIT_CODES.SUCCESS);
+    assert.match(stdout.buffer, /Triad-Flow Batch Remediation Summary: ALL_CLOSED/i);
+    assert.match(stdout.buffer, /Total Findings:\s+2/i);
+    assert.match(stdout.buffer, /Closed:\s+2/i);
+    assert.ok(fs.existsSync(receiptPath));
+    const receipt = JSON.parse(fs.readFileSync(receiptPath, "utf8"));
+    assert.equal(receipt.schemaVersion, "1.0.0");
+    assert.equal(receipt.verdict, "ALL_CLOSED");
+    assert.equal(receipt.summary.closedCount, 2);
+    assert.equal(receipt.receipts.length, 2);
+    assert.equal(receipt.receipts[0].status, "CLOSED");
+    assert.equal(receipt.receipts[1].status, "CLOSED");
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("runCli 'remediate --batch --cases=BENCH-REAL-001,BENCH-REAL-002 --format=json' produces JSON batch receipt on stdout", async () => {
+  const stdout = new MockStream();
+  const stderr = new MockStream();
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "triad-batch-json-"));
+  const receiptPath = path.join(tmpDir, "batch-receipt.json");
+  try {
+    const code = await runCli(
+      [
+        "remediate",
+        "--batch",
+        "--cases=BENCH-REAL-001,BENCH-REAL-002",
+        "--format=json",
+        "--authorizer=sec-lead@triad.flow",
+        `--receipt=${receiptPath}`
+      ],
+      { stdout, stderr },
+      {
+        testRunnerFn: () => ({ exitCode: 0, passedCount: 1, failedCount: 0 }),
+        closureVerifierFn: (session) => ({
+          schemaVersion: "1.0.0",
+          verifiedAt: new Date().toISOString(),
+          changeSetDigest: "sha256:" + "a".repeat(64),
+          producer: {
+            providerName: "agy",
+            findingsCount: 1,
+            findings: [
+              {
+                id: session.findingId,
+                findingId: session.findingId,
+                title: "Finding",
+                severity: "critical",
+                file: session.targetFiles[0],
+                line_start: 1,
+                line_end: 1
+              }
+            ]
+          },
+          verifier: {
+            providerName: "claude",
+            modelName: "cli-default",
+            actualModel: { value: "claude-verifier", source: "reported" }
+          },
+          evaluations: [
+            {
+              findingId: session.findingId,
+              verdict: "SUPPORTED",
+              locatorAccurate: true,
+              typeAccurate: true,
+              severityAccurate: true,
+              reasoning: "Batch finding verified."
+            }
+          ],
+          verifierOmissions: [],
+          disagreementLedger: [],
+          summary: {
+            totalEvaluated: 1,
+            supportedCount: 1,
+            contestedCount: 0,
+            insufficientEvidenceCount: 0,
+            omissionsCount: 0
+          }
+        })
+      }
+    );
+    assert.equal(code, EXIT_CODES.SUCCESS);
+    const parsed = JSON.parse(stdout.buffer);
+    assert.equal(parsed.schemaVersion, "1.0.0");
+    assert.equal(parsed.verdict, "ALL_CLOSED");
+    assert.equal(parsed.summary.totalFindings, 2);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("runCli 'remediate --batch --cases=BENCH-REAL-001,BENCH-REAL-002 --strict' fails closed with EXIT_CODES.GATE_BLOCKED when one patch fails", async () => {
+  const stdout = new MockStream();
+  const stderr = new MockStream();
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "triad-batch-fail-"));
+  const receiptPath = path.join(tmpDir, "batch-receipt.json");
+  try {
+    const code = await runCli(
+      [
+        "remediate",
+        "--batch",
+        "--cases=BENCH-REAL-001,BENCH-REAL-002",
+        "--strict",
+        "--authorizer=sec-lead@triad.flow",
+        `--receipt=${receiptPath}`
+      ],
+      { stdout, stderr },
+      {
+        testRunnerFn: (jailDir, { findingId }) => {
+          if (findingId.includes("BENCH-REAL-002")) {
+            return { exitCode: 1, passedCount: 0, failedCount: 1, regressionDetected: true };
+          }
+          return { exitCode: 0, passedCount: 1, failedCount: 0 };
+        },
+        closureVerifierFn: (session) => ({
+          schemaVersion: "1.0.0",
+          verifiedAt: new Date().toISOString(),
+          changeSetDigest: "sha256:" + "a".repeat(64),
+          producer: {
+            providerName: "agy",
+            findingsCount: 1,
+            findings: [
+              {
+                id: session.findingId,
+                findingId: session.findingId,
+                title: "Finding",
+                severity: "critical",
+                file: session.targetFiles[0],
+                line_start: 1,
+                line_end: 1
+              }
+            ]
+          },
+          verifier: {
+            providerName: "claude",
+            modelName: "cli-default",
+            actualModel: { value: "claude-verifier", source: "reported" }
+          },
+          evaluations: [
+            {
+              findingId: session.findingId,
+              verdict: "SUPPORTED",
+              locatorAccurate: true,
+              typeAccurate: true,
+              severityAccurate: true,
+              reasoning: "Batch finding verified."
+            }
+          ],
+          verifierOmissions: [],
+          disagreementLedger: [],
+          summary: {
+            totalEvaluated: 1,
+            supportedCount: 1,
+            contestedCount: 0,
+            insufficientEvidenceCount: 0,
+            omissionsCount: 0
+          }
+        })
+      }
+    );
+    assert.equal(code, EXIT_CODES.GATE_BLOCKED);
+    assert.match(stderr.buffer, /did not reach ALL_CLOSED verdict/i);
+    const receipt = JSON.parse(fs.readFileSync(receiptPath, "utf8"));
+    assert.equal(receipt.verdict, "PARTIAL");
+    assert.equal(receipt.summary.closedCount, 1);
+    assert.equal(receipt.summary.rejectedCount, 1);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("runCli 'remediate --batch --report=audit-report.json' parses findings and succeeds", async () => {
+  const stdout = new MockStream();
+  const stderr = new MockStream();
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "triad-batch-report-"));
+  const reportPath = path.join(tmpDir, "audit-report.json");
+  const receiptPath = path.join(tmpDir, "batch-receipt.json");
+
+  // Initialize git repo in tmpDir
+  const gitExec = (args) => spawnSync("git", args, { cwd: tmpDir, encoding: "utf8" });
+  gitExec(["init", "-q"]);
+  fs.mkdirSync(path.join(tmpDir, "src/db"), { recursive: true });
+  fs.writeFileSync(path.join(tmpDir, "src/db/user-repo.js"), "vuln\n", "utf8");
+  gitExec(["add", "."]);
+  gitExec(["-c", "user.name=test", "-c", "user.email=test@test.com", "commit", "-q", "-m", "init"]);
+
+  const dummyReport = {
+    consensus: {
+      findings: [
+        {
+          id: "F-AUDIT-001",
+          file: "src/db/user-repo.js",
+          severity: "high",
+          title: "Vulnerability in User Repo",
+          patch: "diff --git a/src/db/user-repo.js b/src/db/user-repo.js\n--- a/src/db/user-repo.js\n+++ b/src/db/user-repo.js\n@@ -1,1 +1,1 @@\n-vuln\n+fixed\n"
+        }
+      ]
+    }
+  };
+  fs.writeFileSync(reportPath, JSON.stringify(dummyReport), "utf8");
+
+  try {
+    const code = await runCli(
+      [
+        "remediate",
+        "--batch",
+        `--report=${reportPath}`,
+        "--authorizer=sec-lead@triad.flow",
+        `--receipt=${receiptPath}`
+      ],
+      { stdout, stderr },
+      {
+        cwd: tmpDir,
+        testRunnerFn: () => ({ exitCode: 0, passedCount: 1, failedCount: 0 }),
+        closureVerifierFn: (session) => ({
+          schemaVersion: "1.0.0",
+          verifiedAt: new Date().toISOString(),
+          changeSetDigest: "sha256:" + "a".repeat(64),
+          producer: {
+            providerName: "agy",
+            findingsCount: 1,
+            findings: [
+              {
+                id: session.findingId,
+                findingId: session.findingId,
+                title: "Finding",
+                severity: "critical",
+                file: session.targetFiles[0],
+                line_start: 1,
+                line_end: 1
+              }
+            ]
+          },
+          verifier: {
+            providerName: "claude",
+            modelName: "cli-default",
+            actualModel: { value: "claude-verifier", source: "reported" }
+          },
+          evaluations: [
+            {
+              findingId: session.findingId,
+              verdict: "SUPPORTED",
+              locatorAccurate: true,
+              typeAccurate: true,
+              severityAccurate: true,
+              reasoning: "Batch report finding verified."
+            }
+          ],
+          verifierOmissions: [],
+          disagreementLedger: [],
+          summary: {
+            totalEvaluated: 1,
+            supportedCount: 1,
+            contestedCount: 0,
+            insufficientEvidenceCount: 0,
+            omissionsCount: 0
+          }
+        })
+      }
+    );
+    assert.equal(code, EXIT_CODES.SUCCESS);
+    assert.match(stdout.buffer, /Triad-Flow Batch Remediation Summary: ALL_CLOSED/i);
+    const receipt = JSON.parse(fs.readFileSync(receiptPath, "utf8"));
+    assert.equal(receipt.schemaVersion, "1.0.0");
+    assert.equal(receipt.verdict, "ALL_CLOSED");
+    assert.equal(receipt.summary.closedCount, 1);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+

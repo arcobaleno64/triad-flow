@@ -18,12 +18,18 @@ import { buildReviewRunReport, REVIEW_RUN_STATUS } from "./core/review-run-repor
 import { collectDoctorReport, formatDoctorReport } from "./core/doctor.mjs";
 import { evaluateCorpusSuite, formatBenchmarkSummary } from "./core/real-benchmark-runner.mjs";
 import { generateManifestBundle } from "./core/manifest-bundle.mjs";
-import { createMockCorpusAdapters, getCorpusCaseById, buildSynthesizedChangeSet, createCorpusCaseWorkspace } from "../tests/fixtures/real-corpus-fixtures.mjs";
+import { createMockCorpusAdapters, getCorpusCaseById, buildSynthesizedChangeSet, createCorpusCaseWorkspace, createCorpusMultiCaseWorkspace } from "../tests/fixtures/real-corpus-fixtures.mjs";
 import {
   ControlledRemediationSession,
   REMEDIATION_STATES,
   computeRemediationReceiptDigest
 } from "./core/controlled-remediation.mjs";
+import {
+  BatchRemediationSession,
+  BATCH_REMEDIATION_STATES,
+  BATCH_VERDICTS,
+  validateBatchReceipt
+} from "./core/batch-remediation.mjs";
 import {
   conductIndependentVerification,
   validateVerifierCommand,
@@ -52,6 +58,81 @@ export function normalizeCommandName(cmd) {
   return base.replace(/\.(exe|cmd|bat|ps1|js|mjs)$/i, "");
 }
 
+export function extractFindingsFromReport(reportData) {
+  if (!reportData || typeof reportData !== "object") return [];
+
+  // 1. Check for consensus findings (Triad-Flow review report / audit report)
+  if (Array.isArray(reportData.consensus?.findings)) {
+    return reportData.consensus.findings.map((f, idx) => ({
+      id: f.id || f.findingId || `FINDING-${idx + 1}`,
+      targetFiles: f.file ? [f.file] : (Array.isArray(f.targetFiles) ? f.targetFiles : []),
+      severity: f.severity || "medium",
+      title: f.title || f.ruleId || "Security Finding",
+      rationale: f.rationale || f.body || f.description || "",
+      patch: f.patch || null
+    }));
+  }
+
+  // 2. Direct findings array
+  if (Array.isArray(reportData.findings)) {
+    return reportData.findings.map((f, idx) => ({
+      id: f.id || f.findingId || `FINDING-${idx + 1}`,
+      targetFiles: f.file ? [f.file] : (Array.isArray(f.targetFiles) ? f.targetFiles : []),
+      severity: f.severity || "medium",
+      title: f.title || f.ruleId || "Security Finding",
+      rationale: f.rationale || f.body || f.description || "",
+      patch: f.patch || null
+    }));
+  }
+
+  // 3. Review run report format (review-run-report.mjs)
+  if (reportData.reviewRun && Array.isArray(reportData.reviewRun.findings)) {
+    return reportData.reviewRun.findings.map((f, idx) => ({
+      id: f.id || `FINDING-${idx + 1}`,
+      targetFiles: f.file ? [f.file] : [],
+      severity: f.severity || "medium",
+      title: f.title || "Security Finding",
+      patch: null
+    }));
+  }
+
+  // 4. SARIF format (runs[0].results)
+  if (Array.isArray(reportData.runs) && reportData.runs[0] && Array.isArray(reportData.runs[0].results)) {
+    return reportData.runs[0].results.map((r, idx) => {
+      const file = r.locations?.[0]?.physicalLocation?.artifactLocation?.uri;
+      const targetFiles = file ? [file] : [];
+      const sevMap = { error: "critical", warning: "high", note: "medium" };
+      return {
+        id: r.ruleId || `SARIF-${idx + 1}`,
+        targetFiles,
+        severity: sevMap[r.level] || "medium",
+        title: r.message?.text || r.ruleId || "SARIF Result",
+        rationale: r.message?.text || "",
+        patch: null
+      };
+    });
+  }
+
+  // 5. Benchmark report (caseResults)
+  if (Array.isArray(reportData.caseResults)) {
+    const list = [];
+    for (const c of reportData.caseResults) {
+      if (Array.isArray(c.findings)) {
+        list.push(...c.findings.map((f, idx) => ({
+          id: f.id || `${c.caseId || "CASE"}-F${idx + 1}`,
+          targetFiles: f.file ? [f.file] : [],
+          severity: f.severity || "medium",
+          title: f.title || "Benchmark Finding",
+          patch: null
+        })));
+      }
+    }
+    return list;
+  }
+
+  return [];
+}
+
 export async function runCli(argv = process.argv.slice(2), io = { stdout: process.stdout, stderr: process.stderr }, options = {}) {
   const strictArg = argv.includes("--strict") || Boolean(options.strict);
   const stagedArg = argv.includes("--staged") || Boolean(options.staged);
@@ -78,6 +159,7 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
       "--micro-args",
       "--mode",
       "--case",
+      "--cases",
       "--limit",
       "--timeout",
       "--live",
@@ -85,7 +167,8 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
       "--diff",
       "--authorizer",
       "--synthesizer",
-      "--plan-only"
+      "--plan-only",
+      "--batch"
     ].includes(name);
   };
 
@@ -105,6 +188,7 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
     "--micro-args",
     "--mode",
     "--case",
+    "--cases",
     "--limit",
     "--timeout",
     "--diff",
@@ -316,6 +400,23 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
   }
   caseArg = caseArg || options.case || null;
 
+  let casesArg = null;
+  const casesExplicit = argv.find(a => a.startsWith("--cases="));
+  if (casesExplicit) {
+    casesArg = casesExplicit.slice("--cases=".length);
+  } else {
+    const casesIdx = argv.indexOf("--cases");
+    if (casesIdx !== -1 && argv[casesIdx + 1] && !argv[casesIdx + 1].startsWith("--")) {
+      casesArg = argv[casesIdx + 1];
+    }
+  }
+  casesArg = casesArg || options.cases || null;
+  if (!casesArg && caseArg && caseArg.includes(",")) {
+    casesArg = caseArg;
+  }
+
+  const batchArg = argv.includes("--batch") || Boolean(options.batch);
+
   let limitArg = null;
   const limitExplicit = argv.find(a => a.startsWith("--limit="));
   if (limitExplicit) {
@@ -387,7 +488,7 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
 
   const isRecognizedArg = (arg) => {
     if (arg.startsWith("--format=") || arg === "--format") return true;
-    if (arg === "--strict" || arg === "--staged" || arg === "--plan-only") return true;
+    if (arg === "--strict" || arg === "--staged" || arg === "--plan-only" || arg === "--batch") return true;
     if (arg.startsWith("--base=") || arg === "--base") return true;
     if (arg.startsWith("--head=") || arg === "--head") return true;
     if (arg.startsWith("--report=") || arg === "--report") return true;
@@ -402,6 +503,7 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
     if (arg.startsWith("--micro-args=") || arg === "--micro-args") return true;
     if (arg.startsWith("--mode=") || arg === "--mode") return true;
     if (arg.startsWith("--case=") || arg === "--case") return true;
+    if (arg.startsWith("--cases=") || arg === "--cases") return true;
     if (arg.startsWith("--limit=") || arg === "--limit") return true;
     if (arg.startsWith("--timeout=") || arg === "--timeout") return true;
     if (arg.startsWith("--diff=") || arg === "--diff") return true;
@@ -1038,8 +1140,233 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
     }
 
     case "remediate": {
-      printBanner(io, "Triad-Flow • Controlled Remediation & Patch Jail Sandbox [PLAN-ONLY]");
       const opts = { ...io, ...options };
+      const isBatch = batchArg || Boolean(casesArg && casesArg.includes(","));
+
+      if (isBatch) {
+        printBanner(io, "Triad-Flow • Multi-Finding Remediation Orchestrator [BATCH PLAN-ONLY]");
+
+        let caseDefs = null;
+        let workspace = null;
+        let findings = [];
+
+        // 1. Resolve candidate cases or report
+        if (casesArg) {
+          const caseIds = casesArg.split(",").map(s => s.trim()).filter(Boolean);
+          caseDefs = [];
+          for (const cId of caseIds) {
+            const def = getCorpusCaseById(cId);
+            if (!def) {
+              io.stderr.write(`✖ [USAGE ERROR] Unknown corpus case: '${cId}'.\n`);
+              return EXIT_CODES.USAGE_ERROR;
+            }
+            caseDefs.push(def);
+          }
+          workspace = createCorpusMultiCaseWorkspace(caseDefs);
+          for (const cDef of caseDefs) {
+            let candidateDiff = "";
+            try {
+              candidateDiff = execFileSync("git", ["diff", workspace.headSha, workspace.baseSha, "--", cDef.targetFile], {
+                cwd: workspace.dir,
+                encoding: "utf8",
+                stdio: ["ignore", "pipe", "pipe"],
+                windowsHide: true
+              });
+            } catch (err) {
+              io.stderr.write(`✖ [FATAL SYSTEM FAILURE] Failed to extract reference patch diff for '${cDef.id}': ${err.message}\n`);
+              workspace.cleanup();
+              return EXIT_CODES.SYSTEM_FAILURE;
+            }
+
+            findings.push({
+              id: `${cDef.id}-FINDING-001`,
+              targetFiles: [cDef.targetFile],
+              severity: cDef.goldenFindings?.[0]?.severity || "high",
+              title: cDef.title,
+              rationale: `Remediation for ${cDef.goldenFindings?.[0]?.cwe || "Defect"} in ${cDef.targetFile}`,
+              patch: candidateDiff
+            });
+          }
+        } else if (reportArg) {
+          const reportFullPath = path.resolve(opts.cwd || process.cwd(), reportArg);
+          if (!fs.existsSync(reportFullPath)) {
+            io.stderr.write(`✖ [USAGE ERROR] Report file does not exist: "${reportFullPath}"\n`);
+            return EXIT_CODES.USAGE_ERROR;
+          }
+          let reportData;
+          try {
+            reportData = JSON.parse(fs.readFileSync(reportFullPath, "utf8"));
+          } catch (err) {
+            io.stderr.write(`✖ [USAGE ERROR] Failed to parse JSON report '${reportFullPath}': ${err.message}\n`);
+            return EXIT_CODES.USAGE_ERROR;
+          }
+          findings = extractFindingsFromReport(reportData);
+          if (findings.length === 0) {
+            io.stderr.write(`✖ [USAGE ERROR] No candidate findings found in report '${reportArg}'.\n`);
+            return EXIT_CODES.USAGE_ERROR;
+          }
+
+          if (diffArg) {
+            const diffFullPath = path.resolve(opts.cwd || process.cwd(), diffArg);
+            if (!fs.existsSync(diffFullPath)) {
+              io.stderr.write(`✖ [USAGE ERROR] Patch diff file does not exist: "${diffFullPath}"\n`);
+              return EXIT_CODES.USAGE_ERROR;
+            }
+            const explicitDiff = fs.readFileSync(diffFullPath, "utf8");
+            for (const f of findings) {
+              if (!f.patch) f.patch = explicitDiff;
+            }
+          }
+        } else if (caseArg) {
+          const def = getCorpusCaseById(caseArg);
+          if (!def) {
+            io.stderr.write(`✖ [USAGE ERROR] Unknown corpus case: '${caseArg}'.\n`);
+            return EXIT_CODES.USAGE_ERROR;
+          }
+          workspace = createCorpusMultiCaseWorkspace([def]);
+          let candidateDiff = "";
+          try {
+            candidateDiff = execFileSync("git", ["diff", workspace.headSha, workspace.baseSha, "--", def.targetFile], {
+              cwd: workspace.dir,
+              encoding: "utf8",
+              stdio: ["ignore", "pipe", "pipe"],
+              windowsHide: true
+            });
+          } catch (err) {
+            io.stderr.write(`✖ [FATAL SYSTEM FAILURE] Failed to extract reference patch diff for '${def.id}': ${err.message}\n`);
+            workspace.cleanup();
+            return EXIT_CODES.SYSTEM_FAILURE;
+          }
+          findings.push({
+            id: `${def.id}-FINDING-001`,
+            targetFiles: [def.targetFile],
+            severity: def.goldenFindings?.[0]?.severity || "high",
+            title: def.title,
+            rationale: `Remediation for ${def.goldenFindings?.[0]?.cwe || "Defect"} in ${def.targetFile}`,
+            patch: candidateDiff
+          });
+        } else {
+          io.stderr.write(`✖ [USAGE ERROR] Command 'remediate --batch' requires '--report <file>' or '--cases <case-ids>' (e.g. --cases=BENCH-REAL-001,BENCH-REAL-002).\n`);
+          return EXIT_CODES.USAGE_ERROR;
+        }
+
+        try {
+          const batchId = `BATCH-${Date.now().toString(36).toUpperCase()}`;
+          const batch = new BatchRemediationSession(batchId, findings);
+          const synthProvider = synthesizerArg || options.synthesizer || "codex";
+
+          io.stderr.write(`[1/4] Proposing patch plans for ${batch.sessionsCount} finding(s) in batch ${batchId}...\n`);
+          for (const f of findings) {
+            const session = batch.getSession(f.id);
+            session.proposeFix({
+              diff: f.patch || "",
+              rationale: f.rationale || `Remediation for ${f.id}`,
+              synthesizer: { providerName: synthProvider, modelName: "cli-remediate" }
+            });
+          }
+
+          const explicitAuthorizer = authorizerArg || options.authorizer || null;
+          if (explicitAuthorizer) {
+            const authorizerObj = typeof explicitAuthorizer === "object"
+              ? explicitAuthorizer
+              : { identity: String(explicitAuthorizer), type: "human" };
+            io.stderr.write(`[2/4] Authorizing patch evaluation under human/policy gate (${authorizerObj.identity})...\n`);
+            for (const f of findings) {
+              const session = batch.getSession(f.id);
+              session.authorizePatch({ authorizer: authorizerObj });
+            }
+          } else {
+            io.stderr.write(`[2/4] No human authorizer specified (missing '--authorizer <id>'). Patches cannot be authorized; remaining in FIX_PROPOSED.\n`);
+          }
+
+          const anyAuthorized = Array.from(batch.sessions.values()).some(s => s.status === REMEDIATION_STATES.PATCH_AUTHORIZED);
+          if (anyAuthorized) {
+            if (typeof opts.testRunnerFn === "function") {
+              io.stderr.write(`[3/4] Executing batch sequential trials in ephemeral Patch Jail worktree...\n`);
+              batch.executeBatchInJailWorktree(workspace ? workspace.dir : (opts.cwd || process.cwd()), {
+                baseSha: workspace ? workspace.headSha : (headArg || "HEAD"),
+                testRunnerFn: opts.testRunnerFn
+              });
+            } else {
+              io.stderr.write(`[3/4] No deterministic test runner provided. Cannot execute verification in Patch Jail; remaining in PATCH_AUTHORIZED.\n`);
+            }
+          } else {
+            io.stderr.write(`[3/4] Skipping ephemeral Patch Jail execution because sessions are not authorized.\n`);
+          }
+
+          const verifierProvider = verifyWithArg || (synthProvider === "claude" ? "agy" : "claude");
+          const anyPendingVerify = Array.from(batch.sessions.values()).some(s => s.status === REMEDIATION_STATES.FIXED_PENDING_VERIFY);
+          if (anyPendingVerify) {
+            if (typeof opts.closureVerifierFn === "function") {
+              io.stderr.write(`[4/4] Conducting independent heterogeneous verification (${verifierProvider} verifying ${synthProvider})...\n`);
+              for (const session of batch.sessions.values()) {
+                if (session.status === REMEDIATION_STATES.FIXED_PENDING_VERIFY) {
+                  const verificationRecord = opts.closureVerifierFn(session);
+                  session.recordClosureVerification({
+                    verifier: { providerName: verifierProvider, modelName: "cli-default" },
+                    verificationRecord
+                  });
+                }
+              }
+            } else {
+              io.stderr.write(`[4/4] No independent closure verifier provided. Remediation cannot be closed; remaining in FIXED_PENDING_VERIFY.\n`);
+            }
+          } else {
+            io.stderr.write(`[4/4] Skipping closure verification because no sessions reached FIXED_PENDING_VERIFY.\n`);
+          }
+
+          batch.finalize();
+          const batchReceipt = batch.toBatchReceipt();
+          const receiptOutPath = path.resolve(opts.cwd || process.cwd(), receiptArg || "batch-remediation-receipt.json");
+          fs.writeFileSync(receiptOutPath, JSON.stringify(batchReceipt, null, 2) + "\n", "utf8");
+          io.stderr.write(`📄 Batch remediation receipt saved to: ${receiptOutPath}\n\n`);
+
+          if (formatArg === "json") {
+            io.stdout.write(JSON.stringify(batchReceipt, null, 2) + "\n");
+          } else {
+            const lines = [
+              "=======================================================",
+              `  Triad-Flow Batch Remediation Summary: ${batchReceipt.verdict}`,
+              "=======================================================",
+              `Batch ID:           ${batchReceipt.batchId}`,
+              `Batch Verdict:      ${batchReceipt.verdict}`,
+              `Total Findings:     ${batchReceipt.summary.totalFindings}`,
+              `Closed:             ${batchReceipt.summary.closedCount}`,
+              `Rejected:           ${batchReceipt.summary.rejectedCount}`,
+              `Waived:             ${batchReceipt.summary.waivedCount}`,
+              `Pending/Open:       ${batchReceipt.summary.openCount}`,
+              `Receipt Path:       ${receiptOutPath}`,
+              "-------------------------------------------------------",
+              "Finding Details:"
+            ];
+            for (const r of batchReceipt.receipts) {
+              const files = (r.patch?.targetFiles || []).join(", ") || "no target files";
+              lines.push(`  - [${r.status}] ${r.findingId} (${files})`);
+            }
+            lines.push("-------------------------------------------------------");
+            lines.push("Plan-Only Boundary: Ephemeral jail destroyed. Authoritative branch untouched.");
+            lines.push("=======================================================\n");
+            io.stdout.write(lines.join("\n"));
+          }
+
+          if (workspace) {
+            workspace.assertImmutability();
+          }
+
+          if (strictArg && batchReceipt.verdict !== BATCH_VERDICTS.ALL_CLOSED) {
+            io.stderr.write(`\n[Strict Mode] Batch remediation did not reach ALL_CLOSED verdict (verdict: ${batchReceipt.verdict}).\n`);
+            return EXIT_CODES.GATE_BLOCKED;
+          }
+
+          return batchReceipt.verdict === BATCH_VERDICTS.ALL_CLOSED ? EXIT_CODES.SUCCESS : EXIT_CODES.GATE_BLOCKED;
+        } finally {
+          if (workspace) {
+            workspace.cleanup();
+          }
+        }
+      }
+
+      printBanner(io, "Triad-Flow • Controlled Remediation & Patch Jail Sandbox [PLAN-ONLY]");
 
       const targetCaseId = caseArg || options.case || null;
       if (!targetCaseId) {
@@ -1188,7 +1515,7 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
     }
 
     default: {
-      io.stderr.write(`Usage: triad-flow [doctor | demo | review | factory | benchmark | remediate] [--format=sarif|json] [--strict] [--staged] [--base=<ref>] [--head=<ref>] [--report=<file>] [--receipt=<file>] [--manifest[=<file>]] [--verify-with=<cmd>] [--verification-report=<file>] [--macro-cmd=<cmd>] [--micro-cmd=<cmd>] [--macro-args=<csv>] [--micro-args=<csv>] [--mode=<mode>] [--case=<id>] [--limit=<n>] [--live] [--virtual] [--diff=<file>] [--authorizer=<id>] [--synthesizer=<provider>] [--plan-only]\n`);
+      io.stderr.write(`Usage: triad-flow [doctor | demo | review | factory | benchmark | remediate] [--format=sarif|json] [--strict] [--staged] [--base=<ref>] [--head=<ref>] [--report=<file>] [--receipt=<file>] [--manifest[=<file>]] [--verify-with=<cmd>] [--verification-report=<file>] [--macro-cmd=<cmd>] [--micro-cmd=<cmd>] [--macro-args=<csv>] [--micro-args=<csv>] [--mode=<mode>] [--case=<id>] [--cases=<ids>] [--limit=<n>] [--live] [--virtual] [--diff=<file>] [--authorizer=<id>] [--synthesizer=<provider>] [--plan-only] [--batch]\n`);
       return EXIT_CODES.USAGE_ERROR;
     }
   }
