@@ -1,0 +1,73 @@
+{
+  "schemaVersion": "1.0.0",
+  "verifiedAt": "2026-09-30T12:49:57.565Z",
+  "changeSetDigest": "sha256:6ad15a6e2d7ff34d433b1bab4a7e1c7caa2d9ec90f0885e20320c2a1224b0dd1",
+  "producer": {
+    "providerName": "agy",
+    "findingsCount": 0,
+    "findings": []
+  },
+  "verifier": {
+    "providerName": "claude",
+    "modelName": "claude-5.5-sonnet",
+    "actualModel": {
+      "source": "reported",
+      "value": "claude-5.5-sonnet"
+    },
+    "usage": {
+      "completionTokens": null,
+      "promptTokens": null,
+      "totalTokens": null,
+      "usageSource": "unavailable"
+    }
+  },
+  "evaluations": [],
+  "verifierOmissions": [
+    {
+      "title": "Incomplete prototype pollution guard: only '__proto__' is blocked, 'constructor.prototype' path is still exploitable",
+      "severity": "high",
+      "file": "index.js",
+      "line_start": 9,
+      "line_end": 9,
+      "cwe": "CWE-1321",
+      "type": "PROTOTYPE-POLLUTION-INCOMPLETE-FIX",
+      "recommendation": "Block 'constructor' and 'prototype' keys as well as '__proto__' on every path segment. This includes the final key, which the loop does not visit because it stops at keys.length - 1. A stronger fix is to use Object.create(null) for the containers, or to check Object.prototype.hasOwnProperty.call(o, key) before traversing. For example, an argument like '--constructor.prototype.polluted=1' walks o['constructor'] (Object) and then o['prototype'] (Object.prototype), so the guard is bypassed. This is the same bypass later assigned CVE-2021-44906.",
+      "id": "omission-1",
+      "classification": "MISSED_BY_PRODUCER"
+    },
+    {
+      "title": "Guard does not cover the final key segment",
+      "severity": "medium",
+      "file": "index.js",
+      "line_start": 6,
+      "line_end": 11,
+      "cwe": "CWE-1321",
+      "type": "PROTOTYPE-POLLUTION-INCOMPLETE-FIX",
+      "recommendation": "The loop only checks keys[0..length-2]. The last key is assigned outside the loop, so validate it against the same denylist. For example, an argument whose final key is '__proto__' still reaches the terminal assignment. That assignment is outside the visible diff context, so confirm it in the full file.",
+      "id": "omission-2",
+      "classification": "MISSED_BY_PRODUCER"
+    },
+    {
+      "title": "Silent early return discards the whole argument without any signal",
+      "severity": "info",
+      "file": "index.js",
+      "line_start": 9,
+      "line_end": 9,
+      "cwe": "CWE-1321",
+      "type": "OBSERVABILITY",
+      "recommendation": "Consider explicitly skipping or ignoring the offending key rather than returning silently, and add a regression test asserting that {}.polluted stays undefined after parsing a malicious input.",
+      "id": "omission-3",
+      "classification": "MISSED_BY_PRODUCER"
+    }
+  ],
+  "disagreementLedger": [],
+  "summary": {
+    "totalEvaluated": 0,
+    "supportedCount": 0,
+    "partiallySupportedCount": 0,
+    "contestedCount": 0,
+    "insufficientEvidenceCount": 0,
+    "omissionsCount": 3
+  },
+  "ok": true
+}

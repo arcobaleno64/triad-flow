@@ -1,0 +1,67 @@
+{
+  "schemaVersion": "1.0.0",
+  "bundleId": "TF-EVIDENCE-0006",
+  "totalFiles": 12,
+  "files": [
+    {
+      "path": "README-EVIDENCE.md",
+      "sizeBytes": 4637,
+      "sha256": "sha256:7e4e9431386931e3b8f4b42fc4ec745fca2702ac5ce2e0986dbdf3e8b5536a43"
+    },
+    {
+      "path": "audit-receipt.json",
+      "sizeBytes": 2169,
+      "sha256": "sha256:a5ae6c4bd4f0dc07ceb352e59c4239e2aa651c0fd68325860e6a7380335ffca1"
+    },
+    {
+      "path": "benchmark-results.json",
+      "sizeBytes": 16081,
+      "sha256": "sha256:86da394b82baef2de57004dfa944c4f3bd5360ed87faac35e51425c495936232"
+    },
+    {
+      "path": "corpus-identity.json",
+      "sizeBytes": 663,
+      "sha256": "sha256:06a0ea0793adb5b05fa42459fd9b4d6e6f553203fc2ffd42f8282785c5d72add"
+    },
+    {
+      "path": "disagreement-ledger.json",
+      "sizeBytes": 3693,
+      "sha256": "sha256:7cb9611f8c52c18660940d280bd0e01e6c4b642f74153ffbb01c52d387f2cd6a"
+    },
+    {
+      "path": "release-identity.json",
+      "sizeBytes": 1725,
+      "sha256": "sha256:150f45fce0895af8d8604d685d1bfa03fb07b8a1e2fd3e37589f02aab0095873"
+    },
+    {
+      "path": "verification/TF-OSS-001-verification.json",
+      "sizeBytes": 3027,
+      "sha256": "sha256:1c136e7234dd73a9c33aefae8d22d70b689b83cfac102acec9491928d8fc8e3c"
+    },
+    {
+      "path": "verification/TF-OSS-002-verification.json",
+      "sizeBytes": 8265,
+      "sha256": "sha256:e54ffd2fb82de6868fb8d6fa186c887c01c22ec46764175b5259c60b979ee40b"
+    },
+    {
+      "path": "verification/TF-OSS-003-verification.json",
+      "sizeBytes": 2595,
+      "sha256": "sha256:58e3c22ac8843e620223002d35f67a496bf32f4b07ce6e334d35434c28df5cef"
+    },
+    {
+      "path": "verification/TF-OSS-004-verification.json",
+      "sizeBytes": 2633,
+      "sha256": "sha256:7960963bdf19920651fefc88d849360e8b74daf793d8ff15d542be14e0c99191"
+    },
+    {
+      "path": "verification/TF-OSS-005-verification.json",
+      "sizeBytes": 2720,
+      "sha256": "sha256:f9374a0dc03a05cdbd85a9ad3e7800c03292deafc2947b0c6fe6e5e31f6e70bb"
+    },
+    {
+      "path": "verification/verification-record.json",
+      "sizeBytes": 24549,
+      "sha256": "sha256:96c7898ecac4270ffef9b57a4bdc0d438cf23e804cdc2f523e4440bbb89b7fe0"
+    }
+  ]
+}

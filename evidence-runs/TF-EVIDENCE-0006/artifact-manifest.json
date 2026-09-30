@@ -1,0 +1,28 @@
+{
+  "artifacts": {
+    "README-EVIDENCE.md": "sha256:7e4e9431386931e3b8f4b42fc4ec745fca2702ac5ce2e0986dbdf3e8b5536a43",
+    "audit-receipt.json": "sha256:a5ae6c4bd4f0dc07ceb352e59c4239e2aa651c0fd68325860e6a7380335ffca1",
+    "benchmark-results.json": "sha256:86da394b82baef2de57004dfa944c4f3bd5360ed87faac35e51425c495936232",
+    "corpus-identity.json": "sha256:06a0ea0793adb5b05fa42459fd9b4d6e6f553203fc2ffd42f8282785c5d72add",
+    "disagreement-ledger.json": "sha256:7cb9611f8c52c18660940d280bd0e01e6c4b642f74153ffbb01c52d387f2cd6a",
+    "evidence-index.json": "sha256:a45e7e292cf9137d872d804928715d944d2c76fc2b9acd71ced4f8f83f3db10d",
+    "release-identity.json": "sha256:150f45fce0895af8d8604d685d1bfa03fb07b8a1e2fd3e37589f02aab0095873",
+    "verification/TF-OSS-001-verification.json": "sha256:1c136e7234dd73a9c33aefae8d22d70b689b83cfac102acec9491928d8fc8e3c",
+    "verification/TF-OSS-002-verification.json": "sha256:e54ffd2fb82de6868fb8d6fa186c887c01c22ec46764175b5259c60b979ee40b",
+    "verification/TF-OSS-003-verification.json": "sha256:58e3c22ac8843e620223002d35f67a496bf32f4b07ce6e334d35434c28df5cef",
+    "verification/TF-OSS-004-verification.json": "sha256:7960963bdf19920651fefc88d849360e8b74daf793d8ff15d542be14e0c99191",
+    "verification/TF-OSS-005-verification.json": "sha256:f9374a0dc03a05cdbd85a9ad3e7800c03292deafc2947b0c6fe6e5e31f6e70bb",
+    "verification/verification-record.json": "sha256:96c7898ecac4270ffef9b57a4bdc0d438cf23e804cdc2f523e4440bbb89b7fe0"
+  },
+  "metadata": {
+    "commitSha": "5198750b39b92ded2db604e2e11002b7417042f6",
+    "corpusDigest": "sha256:47ed3ce44878b77572005358a16511e3f0900dda11d14443e6a2a84baf501625",
+    "receiptDigest": null,
+    "resultsDigest": null,
+    "runId": "run-oss-live-1790772583811",
+    "bundleId": "TF-EVIDENCE-0006",
+    "bundleType": "evidence-bundle",
+    "sealedAt": "2026-09-30T12:51:16.193Z"
+  },
+  "schemaVersion": "1.0.0"
+}

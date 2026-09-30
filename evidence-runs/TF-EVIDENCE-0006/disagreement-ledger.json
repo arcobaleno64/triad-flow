@@ -1,0 +1,50 @@
+{
+  "schemaVersion": "1.0.0",
+  "verifiedAt": "2026-09-30T12:51:16.192Z",
+  "producer": {
+    "providerName": "agy",
+    "runId": "run-oss-live-1790772583811",
+    "commitSha": "5198750b39b92ded2db604e2e11002b7417042f6"
+  },
+  "verifier": {
+    "providerName": "claude",
+    "modelName": "claude-5.5-sonnet"
+  },
+  "summary": {
+    "totalCases": 5,
+    "totalEvaluated": 2,
+    "supportedCount": 2,
+    "partiallySupportedCount": 1,
+    "contestedCount": 0,
+    "insufficientEvidenceCount": 0,
+    "omissionsCount": 9
+  },
+  "ledger": [
+    {
+      "findingId": "finding-1",
+      "producerFinding": {
+        "title": "Incomplete Prototype Pollution Protection via Blacklist",
+        "severity": "high",
+        "file": "ini.js",
+        "line_start": 13,
+        "line_end": 16,
+        "ruleId": "security/prototype-pollution",
+        "cwe": "CWE-1321",
+        "type": "vulnerability",
+        "recommendation": "Do not rely on a blacklist checking only '__proto__'. Block or ignore dangerous section identifiers including 'constructor' and 'prototype', or initialize 'out' with Object.create(null) and use Object.prototype.hasOwnProperty.call(out, section) to prevent traversing and polluting prototype properties.",
+        "sources": [
+          "agy"
+        ],
+        "corroborations": 1
+      },
+      "verdict": "SUPPORTED",
+      "classification": "PARTIALLY_SUPPORTED",
+      "locatorAccurate": true,
+      "typeAccurate": true,
+      "severityAccurate": false,
+      "reasoning": "The diff adds a check for only `section === '__proto__'`. The following line, `p = out[section] = out[section] || {}`, still runs for other names. Because `out` is a plain object, `out['constructor']` is the inherited `Object` function, which is truthy. So `[constructor]` sets `p` to `Object`, and later key assignments write to global `Object` statics. The blacklist is therefore incomplete, and the hardening recommendation (`Object.create(null)` plus an own-property check) is valid. The locator is accurate: the guard and the assignment are at about lines 12-16 of the new file. The 'high' severity is not shown by the visible diff. `[prototype]` is harmless here, because `out.prototype` is undefined and just creates an own property. Reaching `Object.prototype` would need a nested path such as `constructor.prototype`. The diff shows no dot-splitting of section names, so that path is not visible. The demonstrated impact is tampering with the `Object` function's properties, which is closer to medium. It is not the classic pollution of `Object.prototype`.",
+      "dissent": "The diff adds a check for only `section === '__proto__'`. The following line, `p = out[section] = out[section] || {}`, still runs for other names. Because `out` is a plain object, `out['constructor']` is the inherited `Object` function, which is truthy. So `[constructor]` sets `p` to `Object`, and later key assignments write to global `Object` statics. The blacklist is therefore incomplete, and the hardening recommendation (`Object.create(null)` plus an own-property check) is valid. The locator is accurate: the guard and the assignment are at about lines 12-16 of the new file. The 'high' severity is not shown by the visible diff. `[prototype]` is harmless here, because `out.prototype` is undefined and just creates an own property. Reaching `Object.prototype` would need a nested path such as `constructor.prototype`. The diff shows no dot-splitting of section names, so that path is not visible. The demonstrated impact is tampering with the `Object` function's properties, which is closer to medium. It is not the classic pollution of `Object.prototype`.",
+      "caseId": "TF-OSS-002"
+    }
+  ]
+}

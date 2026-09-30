@@ -1,0 +1,61 @@
+{
+  "schemaVersion": "1.0.0",
+  "verifiedAt": "2026-09-30T12:51:16.191Z",
+  "changeSetDigest": "sha256:d4871325615b2521ffbc7c48418809de77f8ba768c036338c0e7a648668ed561",
+  "producer": {
+    "providerName": "agy",
+    "findingsCount": 0,
+    "findings": []
+  },
+  "verifier": {
+    "providerName": "claude",
+    "modelName": "claude-5.5-sonnet",
+    "actualModel": {
+      "source": "reported",
+      "value": "claude-5.5-sonnet"
+    },
+    "usage": {
+      "completionTokens": null,
+      "promptTokens": null,
+      "totalTokens": null,
+      "usageSource": "unavailable"
+    }
+  },
+  "evaluations": [],
+  "verifierOmissions": [
+    {
+      "title": "Template string is concatenated unescaped into a JS string literal (code injection / breakage)",
+      "severity": "medium",
+      "file": "lib/ejs.js",
+      "line_start": 12,
+      "line_end": 12,
+      "cwe": "CWE-94",
+      "type": "CODE-INJECTION",
+      "recommendation": "This line is unchanged context in the diff, but it undermines the outputFunctionName hardening. `'__output += \"' + template + '\"; ...'` does not escape `\"`, `\\`, or newlines in `template`. A template containing `\"` breaks out of the string literal and runs arbitrary code in the compiled function. Escape the template with JSON.stringify(template), or parse it into text and code segments, before building fnBody. If templates are fully trusted code by design, document that. Otherwise the identifier check only closes one of several injection paths.",
+      "id": "omission-1",
+      "classification": "MISSED_BY_PRODUCER"
+    },
+    {
+      "title": "Identifier regex accepts reserved words and non-string values",
+      "severity": "low",
+      "file": "lib/ejs.js",
+      "line_start": 1,
+      "line_end": 8,
+      "cwe": "CWE-20",
+      "type": "INPUT-VALIDATION",
+      "recommendation": "_JS_IDENTIFIER.test() coerces its argument to a string, so non-string values such as arrays or objects with a toString method pass the check. The value is coerced a second time at concatenation on line 10. A stateful toString could return different values on the two calls (TOCTOU). Add `typeof opts.outputFunctionName !== 'string'` to the validation and reject it. The regex also accepts reserved words such as `var`, `function`, and `class`. That causes a SyntaxError at compile time and not injection, but an explicit reserved-word denylist would give a clearer error.",
+      "id": "omission-2",
+      "classification": "MISSED_BY_PRODUCER"
+    }
+  ],
+  "disagreementLedger": [],
+  "summary": {
+    "totalEvaluated": 0,
+    "supportedCount": 0,
+    "partiallySupportedCount": 0,
+    "contestedCount": 0,
+    "insufficientEvidenceCount": 0,
+    "omissionsCount": 2
+  },
+  "ok": true
+}
