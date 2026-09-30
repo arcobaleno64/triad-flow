@@ -1251,6 +1251,99 @@ export function createCorpusCaseWorkspace(caseDef, options = {}) {
 }
 
 /**
+ * Creates an isolated disposable Git repository containing multiple corpus cases
+ * for multi-defect batch remediation testing and CLI execution.
+ *
+ * @param {object[]} caseDefs - Array of corpus case definitions
+ * @param {object} [options]
+ * @returns {{ dir: string, caseDefs: object[], baseSha: string, headSha: string, cleanup: Function, assertImmutability: Function }}
+ */
+export function createCorpusMultiCaseWorkspace(caseDefs = [], options = {}) {
+  if (!Array.isArray(caseDefs) || caseDefs.length === 0) {
+    throw new Error("Invalid caseDefs: must be a non-empty array of corpus case definitions.");
+  }
+
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "triad-corpus-multi-"));
+  const gitEnv = {
+    ...process.env,
+    GIT_AUTHOR_NAME: "Corpus Generator",
+    GIT_AUTHOR_EMAIL: "corpus@triad.flow",
+    GIT_AUTHOR_DATE: "2026-09-01T00:00:00Z",
+    GIT_COMMITTER_NAME: "Corpus Generator",
+    GIT_COMMITTER_EMAIL: "corpus@triad.flow",
+    GIT_COMMITTER_DATE: "2026-09-01T00:00:00Z"
+  };
+
+  const gitExec = (args) => execFileSync("git", ["-c", "core.fsmonitor=false", ...args], {
+    cwd: tmpDir,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+    env: gitEnv,
+    windowsHide: true
+  });
+
+  // 1. Initialize git repository
+  gitExec(["init", "-q"]);
+
+  // 2. Base files setup across all cases
+  const baseFiles = {
+    "package.json": JSON.stringify({
+      name: "corpus-multi-batch",
+      version: "1.0.0",
+      type: "module"
+    }, null, 2) + "\n"
+  };
+
+  for (const caseDef of caseDefs) {
+    if (caseDef.baseFiles) {
+      Object.assign(baseFiles, caseDef.baseFiles);
+    }
+  }
+
+  for (const [relPath, content] of Object.entries(baseFiles)) {
+    const fullPath = path.join(tmpDir, relPath);
+    fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+    fs.writeFileSync(fullPath, content, "utf8");
+  }
+
+  gitExec(["add", "."]);
+  gitExec(["-c", "user.email=corpus@triad.flow", "-c", "user.name=Corpus Generator", "-c", "core.autocrlf=false", "commit", "-q", "-m", "chore: base commit for multi-case batch"]);
+  const baseSha = gitExec(["rev-parse", "HEAD"]).trim();
+
+  // 3. Head files (modifications under test across all cases)
+  for (const caseDef of caseDefs) {
+    if (caseDef.headFiles) {
+      for (const [relPath, content] of Object.entries(caseDef.headFiles)) {
+        const fullPath = path.join(tmpDir, relPath);
+        fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+        fs.writeFileSync(fullPath, content, "utf8");
+      }
+    }
+  }
+
+  gitExec(["add", "."]);
+  gitExec(["-c", "user.email=corpus@triad.flow", "-c", "user.name=Corpus Generator", "-c", "core.autocrlf=false", "commit", "-q", "-m", "feat: apply modifications for multi-case batch"]);
+  const headSha = gitExec(["rev-parse", "HEAD"]).trim();
+
+  const cleanup = () => {
+    try {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    } catch {
+      // Ignore cleanup error on windows file locks
+    }
+  };
+
+  return {
+    dir: tmpDir,
+    caseDefs,
+    baseSha,
+    headSha,
+    cleanup,
+    assertImmutability: () => assertRepoImmutability(tmpDir, headSha)
+  };
+}
+
+/**
  * Retrieves a corpus case by its identifier (case-insensitive).
  *
  * @param {string} id - e.g. "BENCH-REAL-001"
