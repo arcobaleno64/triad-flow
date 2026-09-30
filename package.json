@@ -28,7 +28,8 @@
     "bump-version": "node scripts/bump-version.mjs",
     "check-version": "node scripts/bump-version.mjs --check",
     "manifest:generate": "node scripts/generate-manifest-bundle.mjs",
-    "manifest:verify": "node scripts/verify-artifact-manifest.mjs"
+    "manifest:verify": "node scripts/verify-artifact-manifest.mjs",
+    "evidence:0002": "node scripts/assemble-evidence-0002.mjs"
   },
   "keywords": [
     "multi-agent",

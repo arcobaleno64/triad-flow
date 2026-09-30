@@ -1,0 +1,92 @@
+{
+  "schemaVersion": "1.0.0",
+  "receiptId": "rem-1790741542239-bf0172",
+  "findingId": "BENCH-REAL-001-FINDING-001",
+  "status": "CLOSED",
+  "timestamps": {
+    "startedAt": "2026-09-30T04:12:21.636Z",
+    "completedAt": "2026-09-30T04:12:22.238Z"
+  },
+  "actors": {
+    "producer": {
+      "providerName": "agy",
+      "modelName": "cli-default"
+    },
+    "synthesizer": {
+      "providerName": "codex",
+      "modelName": "gpt-6.1-sol"
+    },
+    "verifier": {
+      "providerName": "claude",
+      "modelName": "cli-default"
+    },
+    "authorizer": {
+      "identity": "security-lead@triad.flow",
+      "type": "human",
+      "signature": "sig-auth-BENCH-REAL-001-a304939e",
+      "authorizedPatchDigest": "sha256:689438f629a752c0f909eff84e9d079b9f2edc9c3d6ba88edddcf6ba72a34c3f"
+    }
+  },
+  "patch": {
+    "patchDiffDigest": "sha256:689438f629a752c0f909eff84e9d079b9f2edc9c3d6ba88edddcf6ba72a34c3f",
+    "targetFiles": [
+      "src/db/user-repo.js"
+    ],
+    "additions": 3,
+    "deletions": 3,
+    "rationale": "Replaced string concatenation with parameterized query placeholder '?' and array argument binding to prevent SQL injection."
+  },
+  "jail": {
+    "worktreeSha": "14b2a07f6ada50329d233efd7c8868f2ae9b5ced",
+    "prePatchTreeDigest": "sha256:7cca73bb6696dbbc445157e82078102b68bd07fdf6afbfa962d085eafbd2e051",
+    "postPatchTreeDigest": "sha256:ad9736f249e63a960d76999ee8ece281cc10c7bac86d8e0456f18333c7030fc7",
+    "isolatedExecutionPass": true
+  },
+  "deterministicChecks": {
+    "executed": true,
+    "testCommand": "node --check src/db/user-repo.js && verify-safe-invariants",
+    "exitCode": 0,
+    "passedCount": 2,
+    "failedCount": 0,
+    "regressionDetected": false,
+    "postTestTreeDigest": "sha256:ad9736f249e63a960d76999ee8ece281cc10c7bac86d8e0456f18333c7030fc7"
+  },
+  "closureVerification": {
+    "verified": true,
+    "verificationRecordDigest": "sha256:f40a2f4db9bcf7c8d5afc3ae8123169d1919543ebc34a6c3484e3af3c715738f",
+    "verdict": "SUPPORTED",
+    "residualVulnerabilityDetected": false
+  },
+  "history": [
+    {
+      "from": "OPEN",
+      "to": "FIX_PROPOSED",
+      "at": "2026-09-30T04:12:21.638Z",
+      "actor": "codex"
+    },
+    {
+      "from": "FIX_PROPOSED",
+      "to": "PATCH_AUTHORIZED",
+      "at": "2026-09-30T04:12:21.638Z",
+      "actor": "security-lead@triad.flow"
+    },
+    {
+      "from": "PATCH_AUTHORIZED",
+      "to": "PATCH_APPLIED_IN_JAIL",
+      "at": "2026-09-30T04:12:21.863Z",
+      "actor": "jail-orchestrator"
+    },
+    {
+      "from": "PATCH_APPLIED_IN_JAIL",
+      "to": "FIXED_PENDING_VERIFY",
+      "at": "2026-09-30T04:12:22.065Z",
+      "actor": "test-runner"
+    },
+    {
+      "from": "FIXED_PENDING_VERIFY",
+      "to": "CLOSED",
+      "at": "2026-09-30T04:12:22.238Z",
+      "actor": "claude"
+    }
+  ]
+}

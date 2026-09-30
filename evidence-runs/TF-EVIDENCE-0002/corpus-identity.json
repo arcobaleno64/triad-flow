@@ -1,0 +1,20 @@
+{
+  "schemaVersion": "1.0.0",
+  "corpusVersion": "TF-RBC-v0",
+  "corpusDigest": "sha256:cf9c4596cca5910bf1c493590e16a4333782defea779a39488fa95f6b16fb82b",
+  "casesCount": 5,
+  "targetCases": [
+    "BENCH-REAL-001",
+    "BENCH-REAL-002",
+    "BENCH-REAL-003",
+    "BENCH-REAL-004",
+    "BENCH-REAL-005"
+  ],
+  "caseDigests": {
+    "BENCH-REAL-001": "sha256:90d4d1148510062f9a4ca8cd9a18ad63b4cd48af38a7c13cc636d0039d2fdadb",
+    "BENCH-REAL-002": "sha256:fe5f89bf728154f1660acddc6c3f4e8ecad0c77e05aec0376a26953c91a098c3",
+    "BENCH-REAL-003": "sha256:6ae76dacb8c0d4e1ba4f4ecac9d552add61ca940dcbf6929d58cc2fbb9cbc14e",
+    "BENCH-REAL-004": "sha256:d1176acdb2ae2ba082f0aa5cff3d7dded1edc67328c3ab0edb3bcaf9b30a8af7",
+    "BENCH-REAL-005": "sha256:4d7d3d5ff6ca49ec2d0ec0bab45ceadb3253bec1c14108a534ece127c4ad1a1d"
+  }
+}

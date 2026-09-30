@@ -1,0 +1,92 @@
+{
+  "schemaVersion": "1.0.0",
+  "receiptId": "rem-1790741545024-ccb1ed",
+  "findingId": "BENCH-REAL-002-FINDING-001",
+  "status": "CLOSED",
+  "timestamps": {
+    "startedAt": "2026-09-30T04:12:24.545Z",
+    "completedAt": "2026-09-30T04:12:25.024Z"
+  },
+  "actors": {
+    "producer": {
+      "providerName": "agy",
+      "modelName": "cli-default"
+    },
+    "synthesizer": {
+      "providerName": "codex",
+      "modelName": "gpt-6.1-sol"
+    },
+    "verifier": {
+      "providerName": "claude",
+      "modelName": "cli-default"
+    },
+    "authorizer": {
+      "identity": "security-lead@triad.flow",
+      "type": "human",
+      "signature": "sig-auth-BENCH-REAL-002-a304939e",
+      "authorizedPatchDigest": "sha256:cfe84fd8a86f74e122e1464ac8c732badb3f3cb9b90e7b25b7c573632789022d"
+    }
+  },
+  "patch": {
+    "patchDiffDigest": "sha256:cfe84fd8a86f74e122e1464ac8c732badb3f3cb9b90e7b25b7c573632789022d",
+    "targetFiles": [
+      "src/auth/jwt-service.js"
+    ],
+    "additions": 4,
+    "deletions": 5,
+    "rationale": "Removed hardcoded JWT signing secret and reinstated cryptographic signature verification using process.env.JWT_SIGNING_SECRET."
+  },
+  "jail": {
+    "worktreeSha": "49ba18f6cef8423874d1513ff1b28bde06228945",
+    "prePatchTreeDigest": "sha256:5d74163f0d672a5f610bc64acea835107f89ee59a1c11b2f7632028744d54197",
+    "postPatchTreeDigest": "sha256:36a9e5b08d37af4b813001380b42f42402083676bb2f22603c0f540917e655cd",
+    "isolatedExecutionPass": true
+  },
+  "deterministicChecks": {
+    "executed": true,
+    "testCommand": "node --check src/auth/jwt-service.js && verify-safe-invariants",
+    "exitCode": 0,
+    "passedCount": 2,
+    "failedCount": 0,
+    "regressionDetected": false,
+    "postTestTreeDigest": "sha256:36a9e5b08d37af4b813001380b42f42402083676bb2f22603c0f540917e655cd"
+  },
+  "closureVerification": {
+    "verified": true,
+    "verificationRecordDigest": "sha256:157eb7a6352d6d5694ecfcee95c3a91691b2f6b3efebdf8702606820250df1e1",
+    "verdict": "SUPPORTED",
+    "residualVulnerabilityDetected": false
+  },
+  "history": [
+    {
+      "from": "OPEN",
+      "to": "FIX_PROPOSED",
+      "at": "2026-09-30T04:12:24.546Z",
+      "actor": "codex"
+    },
+    {
+      "from": "FIX_PROPOSED",
+      "to": "PATCH_AUTHORIZED",
+      "at": "2026-09-30T04:12:24.546Z",
+      "actor": "security-lead@triad.flow"
+    },
+    {
+      "from": "PATCH_AUTHORIZED",
+      "to": "PATCH_APPLIED_IN_JAIL",
+      "at": "2026-09-30T04:12:24.767Z",
+      "actor": "jail-orchestrator"
+    },
+    {
+      "from": "PATCH_APPLIED_IN_JAIL",
+      "to": "FIXED_PENDING_VERIFY",
+      "at": "2026-09-30T04:12:24.898Z",
+      "actor": "test-runner"
+    },
+    {
+      "from": "FIXED_PENDING_VERIFY",
+      "to": "CLOSED",
+      "at": "2026-09-30T04:12:25.024Z",
+      "actor": "claude"
+    }
+  ]
+}

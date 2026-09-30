@@ -1,0 +1,17 @@
+diff --git a/src/api/invoice-handler.js b/src/api/invoice-handler.js
+index 8ff98cc..dbdc7e0 100644
+--- a/src/api/invoice-handler.js
++++ b/src/api/invoice-handler.js
+@@ -1,7 +1,10 @@
+ export async function getInvoice(req, res, db) {
+   const { invoiceId } = req.params;
+-  // Retrieve invoice details by identifier
++  const currentTenantId = req.user.tenantId;
++
+   const invoice = await db.invoices.findById(invoiceId);
+-  if (!invoice) return res.status(404).json({ error: "Not found" });
++  if (!invoice || invoice.tenantId !== currentTenantId) {
++    return res.status(403).json({ error: "Access denied" });
++  }
+   return res.json(invoice);
+ }

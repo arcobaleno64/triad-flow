@@ -1,0 +1,92 @@
+{
+  "schemaVersion": "1.0.0",
+  "receiptId": "rem-1790741549450-746d44",
+  "findingId": "BENCH-REAL-005-FINDING-001",
+  "status": "CLOSED",
+  "timestamps": {
+    "startedAt": "2026-09-30T04:12:28.925Z",
+    "completedAt": "2026-09-30T04:12:29.450Z"
+  },
+  "actors": {
+    "producer": {
+      "providerName": "agy",
+      "modelName": "cli-default"
+    },
+    "synthesizer": {
+      "providerName": "codex",
+      "modelName": "gpt-6.1-sol"
+    },
+    "verifier": {
+      "providerName": "claude",
+      "modelName": "cli-default"
+    },
+    "authorizer": {
+      "identity": "security-lead@triad.flow",
+      "type": "human",
+      "signature": "sig-auth-BENCH-REAL-005-a304939e",
+      "authorizedPatchDigest": "sha256:9942fae62fb7d183c66f691c6eb1c9041a3203c8e319eb909eb4b380a51a0ccd"
+    }
+  },
+  "patch": {
+    "patchDiffDigest": "sha256:9942fae62fb7d183c66f691c6eb1c9041a3203c8e319eb909eb4b380a51a0ccd",
+    "targetFiles": [
+      "src/api/invoice-handler.js"
+    ],
+    "additions": 5,
+    "deletions": 2,
+    "rationale": "Enforced tenant authorization check ensuring invoice.tenantId matches req.user.tenantId, returning 403 Forbidden on authorization mismatch."
+  },
+  "jail": {
+    "worktreeSha": "d614c5d71fc653785df23f27d156cdae8f5911fc",
+    "prePatchTreeDigest": "sha256:c4d7e2b4b2469f2166df2881556f55657311ec05131a15045501b39adcb43b34",
+    "postPatchTreeDigest": "sha256:a2ecd6023f0ebbdf0299509f6f60585e8bd35c2ce1908e824c22cc83a0184ee7",
+    "isolatedExecutionPass": true
+  },
+  "deterministicChecks": {
+    "executed": true,
+    "testCommand": "node --check src/api/invoice-handler.js && verify-safe-invariants",
+    "exitCode": 0,
+    "passedCount": 2,
+    "failedCount": 0,
+    "regressionDetected": false,
+    "postTestTreeDigest": "sha256:a2ecd6023f0ebbdf0299509f6f60585e8bd35c2ce1908e824c22cc83a0184ee7"
+  },
+  "closureVerification": {
+    "verified": true,
+    "verificationRecordDigest": "sha256:79b838e17bdff4c9f307a2ad0d68d735e7366107eade71612edd9dda37ba651e",
+    "verdict": "SUPPORTED",
+    "residualVulnerabilityDetected": false
+  },
+  "history": [
+    {
+      "from": "OPEN",
+      "to": "FIX_PROPOSED",
+      "at": "2026-09-30T04:12:28.925Z",
+      "actor": "codex"
+    },
+    {
+      "from": "FIX_PROPOSED",
+      "to": "PATCH_AUTHORIZED",
+      "at": "2026-09-30T04:12:28.925Z",
+      "actor": "security-lead@triad.flow"
+    },
+    {
+      "from": "PATCH_AUTHORIZED",
+      "to": "PATCH_APPLIED_IN_JAIL",
+      "at": "2026-09-30T04:12:29.218Z",
+      "actor": "jail-orchestrator"
+    },
+    {
+      "from": "PATCH_APPLIED_IN_JAIL",
+      "to": "FIXED_PENDING_VERIFY",
+      "at": "2026-09-30T04:12:29.346Z",
+      "actor": "test-runner"
+    },
+    {
+      "from": "FIXED_PENDING_VERIFY",
+      "to": "CLOSED",
+      "at": "2026-09-30T04:12:29.450Z",
+      "actor": "claude"
+    }
+  ]
+}

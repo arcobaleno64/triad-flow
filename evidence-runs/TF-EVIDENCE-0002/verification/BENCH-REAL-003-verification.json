@@ -1,0 +1,51 @@
+{
+  "schemaVersion": "1.0.0",
+  "verifiedAt": "2026-09-30T04:12:26.532Z",
+  "changeSetDigest": "sha256:cbf4dae0c9a368b35a8282e63fc90ba60e480f04f8aa82b0a5338545c6beeefd",
+  "producer": {
+    "providerName": "codex",
+    "findingsCount": 1,
+    "findings": [
+      {
+        "id": "BENCH-REAL-003-FINDING-001",
+        "findingId": "BENCH-REAL-003-FINDING-001",
+        "title": "Path Traversal in File Fetcher",
+        "severity": "critical",
+        "file": "src/storage/file-fetcher.js",
+        "line_start": 6,
+        "line_end": 6,
+        "cwe": "CWE-22",
+        "type": "path-traversal"
+      }
+    ]
+  },
+  "verifier": {
+    "providerName": "claude",
+    "modelName": "cli-default",
+    "actualModel": {
+      "source": "reported",
+      "value": "claude-3-7-sonnet"
+    }
+  },
+  "evaluations": [
+    {
+      "findingId": "BENCH-REAL-003-FINDING-001",
+      "verdict": "SUPPORTED",
+      "locatorAccurate": true,
+      "typeAccurate": true,
+      "severityAccurate": true,
+      "reasoning": "Candidate patch strips relative path markers via path.basename() and validates that resolved destination is within baseDir boundary, throwing Access denied on traversal attempts. CWE-22 neutralized."
+    }
+  ],
+  "verifierOmissions": [],
+  "disagreementLedger": [],
+  "summary": {
+    "totalEvaluated": 1,
+    "supportedCount": 1,
+    "contestedCount": 0,
+    "insufficientEvidenceCount": 0,
+    "omissionsCount": 0
+  },
+  "residualVulnerabilityDetected": false,
+  "ok": true
+}

@@ -1,0 +1,92 @@
+{
+  "schemaVersion": "1.0.0",
+  "receiptId": "rem-1790741547925-6e845d",
+  "findingId": "BENCH-REAL-004-FINDING-001",
+  "status": "CLOSED",
+  "timestamps": {
+    "startedAt": "2026-09-30T04:12:27.496Z",
+    "completedAt": "2026-09-30T04:12:27.925Z"
+  },
+  "actors": {
+    "producer": {
+      "providerName": "agy",
+      "modelName": "cli-default"
+    },
+    "synthesizer": {
+      "providerName": "codex",
+      "modelName": "gpt-6.1-sol"
+    },
+    "verifier": {
+      "providerName": "claude",
+      "modelName": "cli-default"
+    },
+    "authorizer": {
+      "identity": "security-lead@triad.flow",
+      "type": "human",
+      "signature": "sig-auth-BENCH-REAL-004-a304939e",
+      "authorizedPatchDigest": "sha256:f50da0a438c169419bdae87ce4604abc66ed3a2ca083eee2b454bdac24a51bd8"
+    }
+  },
+  "patch": {
+    "patchDiffDigest": "sha256:f50da0a438c169419bdae87ce4604abc66ed3a2ca083eee2b454bdac24a51bd8",
+    "targetFiles": [
+      "src/views/profile-render.js"
+    ],
+    "additions": 4,
+    "deletions": 2,
+    "rationale": "Replaced direct innerHTML template literal assignment with safe DOM node creation and textContent assignment to prevent cross-site scripting."
+  },
+  "jail": {
+    "worktreeSha": "8cac88c6ccca36668ef292ff909824659b687f4e",
+    "prePatchTreeDigest": "sha256:a49a8d91c93f6e49153757cad465a2961b88af8f17fb501a58c68e3add74f77b",
+    "postPatchTreeDigest": "sha256:9a68f304073cd2aedd128a1ed217f0b9fff809623fa0e9a1924e81d87bea8423",
+    "isolatedExecutionPass": true
+  },
+  "deterministicChecks": {
+    "executed": true,
+    "testCommand": "node --check src/views/profile-render.js && verify-safe-invariants",
+    "exitCode": 0,
+    "passedCount": 2,
+    "failedCount": 0,
+    "regressionDetected": false,
+    "postTestTreeDigest": "sha256:9a68f304073cd2aedd128a1ed217f0b9fff809623fa0e9a1924e81d87bea8423"
+  },
+  "closureVerification": {
+    "verified": true,
+    "verificationRecordDigest": "sha256:7409b08be1dfbc9765bb278be38048aca9c78357228fc73c4e898d476179ce04",
+    "verdict": "SUPPORTED",
+    "residualVulnerabilityDetected": false
+  },
+  "history": [
+    {
+      "from": "OPEN",
+      "to": "FIX_PROPOSED",
+      "at": "2026-09-30T04:12:27.497Z",
+      "actor": "codex"
+    },
+    {
+      "from": "FIX_PROPOSED",
+      "to": "PATCH_AUTHORIZED",
+      "at": "2026-09-30T04:12:27.497Z",
+      "actor": "security-lead@triad.flow"
+    },
+    {
+      "from": "PATCH_AUTHORIZED",
+      "to": "PATCH_APPLIED_IN_JAIL",
+      "at": "2026-09-30T04:12:27.699Z",
+      "actor": "jail-orchestrator"
+    },
+    {
+      "from": "PATCH_APPLIED_IN_JAIL",
+      "to": "FIXED_PENDING_VERIFY",
+      "at": "2026-09-30T04:12:27.826Z",
+      "actor": "test-runner"
+    },
+    {
+      "from": "FIXED_PENDING_VERIFY",
+      "to": "CLOSED",
+      "at": "2026-09-30T04:12:27.925Z",
+      "actor": "claude"
+    }
+  ]
+}

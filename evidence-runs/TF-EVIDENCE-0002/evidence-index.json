@@ -1,0 +1,97 @@
+{
+  "schemaVersion": "1.0.0",
+  "bundleId": "TF-EVIDENCE-0002",
+  "totalFiles": 18,
+  "files": [
+    {
+      "path": "README-EVIDENCE.md",
+      "sizeBytes": 5142,
+      "sha256": "sha256:1a138899fdaaf4d71cebcef4bd6b93e7e22d492775f8f9261bf0653c3f9b6f74"
+    },
+    {
+      "path": "corpus-identity.json",
+      "sizeBytes": 816,
+      "sha256": "sha256:37ef651eeb958f6ecd425a4d489bcfa4215e3d7bb23c1c0d955ab188f3c0d42b"
+    },
+    {
+      "path": "patches/BENCH-REAL-001.patch",
+      "sizeBytes": 535,
+      "sha256": "sha256:689438f629a752c0f909eff84e9d079b9f2edc9c3d6ba88edddcf6ba72a34c3f"
+    },
+    {
+      "path": "patches/BENCH-REAL-002.patch",
+      "sizeBytes": 699,
+      "sha256": "sha256:cfe84fd8a86f74e122e1464ac8c732badb3f3cb9b90e7b25b7c573632789022d"
+    },
+    {
+      "path": "patches/BENCH-REAL-003.patch",
+      "sizeBytes": 695,
+      "sha256": "sha256:cbf4dae0c9a368b35a8282e63fc90ba60e480f04f8aa82b0a5338545c6beeefd"
+    },
+    {
+      "path": "patches/BENCH-REAL-004.patch",
+      "sizeBytes": 555,
+      "sha256": "sha256:f50da0a438c169419bdae87ce4604abc66ed3a2ca083eee2b454bdac24a51bd8"
+    },
+    {
+      "path": "patches/BENCH-REAL-005.patch",
+      "sizeBytes": 648,
+      "sha256": "sha256:9942fae62fb7d183c66f691c6eb1c9041a3203c8e319eb909eb4b380a51a0ccd"
+    },
+    {
+      "path": "release-identity.json",
+      "sizeBytes": 4901,
+      "sha256": "sha256:0d1d807ed2088775abca15313a12aea87b84c4c715509a4781234b2f0583a963"
+    },
+    {
+      "path": "remediation-receipts/BENCH-REAL-001-receipt.json",
+      "sizeBytes": 2788,
+      "sha256": "sha256:ade200ca3f4c4754e676b9917cd2d141ca458872d4993193835e88a73b8d6c6c"
+    },
+    {
+      "path": "remediation-receipts/BENCH-REAL-002-receipt.json",
+      "sizeBytes": 2799,
+      "sha256": "sha256:f777fdd5f70876997a6886fb346d58f6ab4b9e57736adf013ee5c24ca7d90165"
+    },
+    {
+      "path": "remediation-receipts/BENCH-REAL-003-receipt.json",
+      "sizeBytes": 2812,
+      "sha256": "sha256:42e3c45983a8e2f3fd982f8e4291b4005ad12a35901ec3f4f2a514c595ddab55"
+    },
+    {
+      "path": "remediation-receipts/BENCH-REAL-004-receipt.json",
+      "sizeBytes": 2822,
+      "sha256": "sha256:44a8a21d6452672505ff168703f299f04c885390964a71277042a7afb7f422d0"
+    },
+    {
+      "path": "remediation-receipts/BENCH-REAL-005-receipt.json",
+      "sizeBytes": 2818,
+      "sha256": "sha256:0405f216d8e016d6afa11c527b737f18f1a15e533cae7746c5e1bd8ac605f740"
+    },
+    {
+      "path": "verification/BENCH-REAL-001-verification.json",
+      "sizeBytes": 1526,
+      "sha256": "sha256:1862ddbe230704204879570f722e1091e8f2df7b0aeb2746b364616531c22088"
+    },
+    {
+      "path": "verification/BENCH-REAL-002-verification.json",
+      "sizeBytes": 1511,
+      "sha256": "sha256:5b849738da448ee104dffb74f4c80c95fc01b30c8df1fdf8606d74821f93dda0"
+    },
+    {
+      "path": "verification/BENCH-REAL-003-verification.json",
+      "sizeBytes": 1481,
+      "sha256": "sha256:d04960ca9917df890c15a044654faebc71fa2e2c2c7a6b04a1c3572ffc522293"
+    },
+    {
+      "path": "verification/BENCH-REAL-004-verification.json",
+      "sizeBytes": 1504,
+      "sha256": "sha256:cce4afb889a2ee83fba864780f7f056f60cf2842418e8caca780f69d5403419e"
+    },
+    {
+      "path": "verification/BENCH-REAL-005-verification.json",
+      "sizeBytes": 1521,
+      "sha256": "sha256:f0cef926edb80452105f7bf2de838a34461911844ce95820d0c5dee5dffe702d"
+    }
+  ]
+}

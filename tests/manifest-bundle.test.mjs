@@ -676,4 +676,24 @@ test("Evidence Bundle: verifyManifestBundle verifies multi-file release bundles 
   }
 });
 
+test("Evidence Bundle: TF-EVIDENCE-0002 passes cryptographic offline manifest and receipt verification", async () => {
+  const bundleDir = path.resolve("evidence-runs/TF-EVIDENCE-0002");
+  if (!fs.existsSync(bundleDir)) {
+    return; // Skip if bundle not assembled in current environment
+  }
+
+  // 1. Verify bundle manifest
+  const res = verifyManifestBundle({ targetDir: bundleDir, bundle: true });
+  assert.equal(res.valid, true, `Manifest bundle errors: ${res.errors?.join("; ")}`);
+  assert.equal(res.verifiedArtifacts.length >= 19, true);
+
+  // 2. CLI script verification
+  const scriptPath = path.resolve("scripts/verify-artifact-manifest.mjs");
+  const { stdout } = await execFileAsync(process.execPath, [scriptPath, bundleDir]);
+  assert.ok(stdout.includes("Manifest Bundle Verification SUCCEEDED"));
+  assert.ok(stdout.includes("remediation-receipts/BENCH-REAL-001-receipt.json"));
+  assert.ok(stdout.includes("verification/BENCH-REAL-001-verification.json"));
+});
+
+
 
