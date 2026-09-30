@@ -1,0 +1,48 @@
+{
+  "schemaVersion": "1.0.0",
+  "verifiedAt": "2026-09-30T05:05:52.201Z",
+  "changeSetDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "producer": {
+    "providerName": "agy",
+    "findingsCount": 1,
+    "findings": [
+      {
+        "id": "BENCH-REAL-001-FINDING-001",
+        "findingId": "BENCH-REAL-001-FINDING-001",
+        "title": "SQL Injection in User Query Handler",
+        "severity": "critical",
+        "file": "src/db/user-repo.js",
+        "line_start": 1,
+        "line_end": 50
+      }
+    ]
+  },
+  "verifier": {
+    "providerName": "claude",
+    "modelName": "cli-default",
+    "actualModel": {
+      "value": "claude-3-5-sonnet",
+      "source": "reported"
+    }
+  },
+  "evaluations": [
+    {
+      "findingId": "BENCH-REAL-001-FINDING-001",
+      "verdict": "SUPPORTED",
+      "locatorAccurate": true,
+      "typeAccurate": true,
+      "severityAccurate": true,
+      "reasoning": "Candidate patch restores parameterized query execution using '?' placeholder and passes [id] parameter array to db.query(). Raw string concatenation is completely eliminated, neutralizing CWE-89 without modifying extraneous code or test harnesses."
+    }
+  ],
+  "verifierOmissions": [],
+  "disagreementLedger": [],
+  "summary": {
+    "totalEvaluated": 1,
+    "supportedCount": 1,
+    "partiallySupportedCount": 0,
+    "contestedCount": 0,
+    "insufficientEvidenceCount": 0,
+    "omissionsCount": 0
+  }
+}

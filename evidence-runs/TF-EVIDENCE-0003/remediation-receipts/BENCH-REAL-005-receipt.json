@@ -1,0 +1,99 @@
+{
+  "schemaVersion": "1.0.0",
+  "receiptId": "rem-1790744752204-68fff1",
+  "findingId": "BENCH-REAL-005-FINDING-001",
+  "status": "CLOSED",
+  "timestamps": {
+    "startedAt": "2026-09-30T05:05:50.852Z",
+    "completedAt": "2026-09-30T05:05:52.204Z"
+  },
+  "actors": {
+    "producer": {
+      "providerName": "unknown",
+      "modelName": "unknown"
+    },
+    "synthesizer": {
+      "providerName": "codex",
+      "modelName": "cli-remediate"
+    },
+    "verifier": {
+      "providerName": "claude",
+      "modelName": "cli-default"
+    },
+    "authorizer": {
+      "identity": "security-lead@triad.flow",
+      "type": "human",
+      "signature": null,
+      "authorizedPatchDigest": "sha256:9942fae62fb7d183c66f691c6eb1c9041a3203c8e319eb909eb4b380a51a0ccd"
+    }
+  },
+  "patch": {
+    "patchDiffDigest": "sha256:9942fae62fb7d183c66f691c6eb1c9041a3203c8e319eb909eb4b380a51a0ccd",
+    "targetFiles": [
+      "src/api/invoice-handler.js"
+    ],
+    "additions": 5,
+    "deletions": 2,
+    "rationale": "Enforced tenant authorization check ensuring invoice.tenantId matches req.user.tenantId, returning 403 Forbidden on authorization mismatch."
+  },
+  "jail": {
+    "driver": "worktree",
+    "capabilities": {
+      "driver": "worktree",
+      "filesystemIsolation": "worktree",
+      "networkEgressDenial": "unavailable",
+      "writeBoundary": "jail-worktree-only"
+    },
+    "worktreeSha": "a4e2709f211ae42de6ac2aa798913964a9426e50",
+    "prePatchTreeDigest": "sha256:21ef637d3ffe3d54cd8f0c3646a8732bff5e3f5958c9f9d1e7b1fc11eac7e9e5",
+    "postPatchTreeDigest": "sha256:382ba5da795c03ee21db46df46b7ac76b5e3b2d0f0ac7a5bc058fef8f5530d2c",
+    "isolatedExecutionPass": true
+  },
+  "deterministicChecks": {
+    "executed": true,
+    "testCommand": "npm test -- src/api/invoice-handler.js",
+    "exitCode": 0,
+    "passedCount": 1,
+    "failedCount": 0,
+    "regressionDetected": false,
+    "postTestTreeDigest": "sha256:382ba5da795c03ee21db46df46b7ac76b5e3b2d0f0ac7a5bc058fef8f5530d2c"
+  },
+  "closureVerification": {
+    "verified": true,
+    "verificationRecordDigest": "sha256:e64d8057568382ca46e26bb2a4d22131fac002ca61686212fab55a9ece2aecb8",
+    "verdict": "SUPPORTED",
+    "residualVulnerabilityDetected": false
+  },
+  "history": [
+    {
+      "from": "OPEN",
+      "to": "FIX_PROPOSED",
+      "at": "2026-09-30T05:05:50.853Z",
+      "actor": "codex"
+    },
+    {
+      "from": "FIX_PROPOSED",
+      "to": "PATCH_AUTHORIZED",
+      "at": "2026-09-30T05:05:50.853Z",
+      "actor": "security-lead@triad.flow"
+    },
+    {
+      "from": "PATCH_AUTHORIZED",
+      "to": "PATCH_APPLIED_IN_JAIL",
+      "at": "2026-09-30T05:05:51.948Z",
+      "actor": "batch-orchestrator"
+    },
+    {
+      "from": "PATCH_APPLIED_IN_JAIL",
+      "to": "FIXED_PENDING_VERIFY",
+      "at": "2026-09-30T05:05:51.948Z",
+      "actor": "test-runner"
+    },
+    {
+      "from": "FIXED_PENDING_VERIFY",
+      "to": "CLOSED",
+      "at": "2026-09-30T05:05:52.204Z",
+      "actor": "claude"
+    }
+  ]
+}

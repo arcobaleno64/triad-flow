@@ -51,6 +51,11 @@ triad-flow review --format=json --report=run.json  # 輸出標準 review-run.jso
 npm run bench:real                                 # 執行 20 案離線基準度量評估
 npm run bench:real -- --limit=3                    # 評估部分案例
 npm run bench:real -- --live                       # 調用本機真實 AI CLI（如 agy）執行實測
+
+# 7. 受控與批次修復 (v2.4 多缺陷自主編排與沙盒)
+node bin/triad-flow.mjs remediate --case=BENCH-REAL-001                         # 單缺陷補丁沙盒試驗
+node bin/triad-flow.mjs remediate --batch --cases=BENCH-REAL-001,BENCH-REAL-002 # 多缺陷批次自主編排
+node bin/triad-flow.mjs remediate --case=BENCH-REAL-001 --sandbox=worktree      # 明確指定沙盒驅動器 (ADR-024-02)
 ```
 
 ---

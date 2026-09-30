@@ -1,0 +1,13 @@
+diff --git a/src/views/profile-render.js b/src/views/profile-render.js
+index aa876ee..40b5a29 100644
+--- a/src/views/profile-render.js
++++ b/src/views/profile-render.js
+@@ -1,4 +1,6 @@
+ export function renderUserProfile(container, user) {
+-  // Render formatted bio markup directly into profile container
+-  container.innerHTML = `<div class="user-bio">${user.bio || ""}</div>`;
++  const bioElement = document.createElement("div");
++  bioElement.className = "user-bio";
++  bioElement.textContent = user.bio || "";
++  container.appendChild(bioElement);
+ }

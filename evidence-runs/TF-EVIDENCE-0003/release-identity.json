@@ -1,0 +1,155 @@
+{
+  "schemaVersion": "1.0.0",
+  "bundleId": "TF-EVIDENCE-0003",
+  "title": "Triad-Flow Multi-Defect Autonomous Orchestration, Semantic Anti-Evasion & Pluggable Sandbox Driver Bundle",
+  "triadFlowVersion": "2.4.0",
+  "sealedAt": "2026-09-30T05:05:52.342Z",
+  "commitSha": "48042bc2ec255e13c11efcd3fda52123dfc365d6",
+  "corpusVersion": "TF-RBC-v0",
+  "corpusDigest": "sha256:cf9c4596cca5910bf1c493590e16a4333782defea779a39488fa95f6b16fb82b",
+  "batchId": "BATCH-V240-MUNN6SXV",
+  "batchVerdict": "ALL_CLOSED",
+  "lineage": {
+    "initialTreeDigest": "sha256:3e77973471b56c9cb396265d751f156f44feb620ce00df8845dfa36cf86871ca",
+    "currentTreeDigest": "sha256:382ba5da795c03ee21db46df46b7ac76b5e3b2d0f0ac7a5bc058fef8f5530d2c",
+    "history": [
+      {
+        "findingId": "BENCH-REAL-001-FINDING-001",
+        "fromDigest": "sha256:3e77973471b56c9cb396265d751f156f44feb620ce00df8845dfa36cf86871ca",
+        "toDigest": "sha256:7e0ea1b1596c8090b0b76d1a5b21a1ab557c5d8cdc16b7f40ad3107d38ce871a",
+        "at": "2026-09-30T05:05:51.198Z"
+      },
+      {
+        "findingId": "BENCH-REAL-002-FINDING-001",
+        "fromDigest": "sha256:7e0ea1b1596c8090b0b76d1a5b21a1ab557c5d8cdc16b7f40ad3107d38ce871a",
+        "toDigest": "sha256:e962ce854814cbda353dd7738911f06b12fa59d52792252074bae38aae936a85",
+        "at": "2026-09-30T05:05:51.416Z"
+      },
+      {
+        "findingId": "BENCH-REAL-003-FINDING-001",
+        "fromDigest": "sha256:e962ce854814cbda353dd7738911f06b12fa59d52792252074bae38aae936a85",
+        "toDigest": "sha256:f1cdfa769807683a5b799e030f1907e3ddb91c6a1aec93c9e83ceb33a53f48ef",
+        "at": "2026-09-30T05:05:51.640Z"
+      },
+      {
+        "findingId": "BENCH-REAL-004-FINDING-001",
+        "fromDigest": "sha256:f1cdfa769807683a5b799e030f1907e3ddb91c6a1aec93c9e83ceb33a53f48ef",
+        "toDigest": "sha256:21ef637d3ffe3d54cd8f0c3646a8732bff5e3f5958c9f9d1e7b1fc11eac7e9e5",
+        "at": "2026-09-30T05:05:51.843Z"
+      },
+      {
+        "findingId": "BENCH-REAL-005-FINDING-001",
+        "fromDigest": "sha256:21ef637d3ffe3d54cd8f0c3646a8732bff5e3f5958c9f9d1e7b1fc11eac7e9e5",
+        "toDigest": "sha256:382ba5da795c03ee21db46df46b7ac76b5e3b2d0f0ac7a5bc058fef8f5530d2c",
+        "at": "2026-09-30T05:05:52.063Z"
+      }
+    ]
+  },
+  "sandbox": {
+    "driver": "worktree",
+    "capabilities": {
+      "driver": "worktree",
+      "filesystemIsolation": "worktree",
+      "networkEgressDenial": "unavailable",
+      "writeBoundary": "jail-worktree-only"
+    }
+  },
+  "environment": {
+    "platform": "win32",
+    "arch": "x64",
+    "nodeVersion": "v24.14.1"
+  },
+  "remediations": {
+    "BENCH-REAL-001": {
+      "caseId": "BENCH-REAL-001",
+      "findingId": "BENCH-REAL-001-FINDING-001",
+      "cwe": "CWE-89",
+      "title": "SQL Injection in User Query Handler",
+      "targetFile": "src/db/user-repo.js",
+      "status": "CLOSED",
+      "authorizer": "security-lead@triad.flow",
+      "synthesizer": "codex",
+      "verifier": "claude",
+      "prePatchTreeDigest": "sha256:3e77973471b56c9cb396265d751f156f44feb620ce00df8845dfa36cf86871ca",
+      "postPatchTreeDigest": "sha256:7e0ea1b1596c8090b0b76d1a5b21a1ab557c5d8cdc16b7f40ad3107d38ce871a",
+      "receiptDigest": "sha256:8974313038bfd08c279f700445e21a0ed2eb7175fe02846db7a81a5b145367ef",
+      "patchDigest": "sha256:689438f629a752c0f909eff84e9d079b9f2edc9c3d6ba88edddcf6ba72a34c3f",
+      "verificationDigest": "sha256:1e012f82e003e8804831ee97be3c89266d06b24578e8c2005fdeb4acf5717749"
+    },
+    "BENCH-REAL-002": {
+      "caseId": "BENCH-REAL-002",
+      "findingId": "BENCH-REAL-002-FINDING-001",
+      "cwe": "CWE-798",
+      "title": "Hardcoded JWT Secret and Verification Bypass",
+      "targetFile": "src/auth/jwt-service.js",
+      "status": "CLOSED",
+      "authorizer": "security-lead@triad.flow",
+      "synthesizer": "codex",
+      "verifier": "claude",
+      "prePatchTreeDigest": "sha256:7e0ea1b1596c8090b0b76d1a5b21a1ab557c5d8cdc16b7f40ad3107d38ce871a",
+      "postPatchTreeDigest": "sha256:e962ce854814cbda353dd7738911f06b12fa59d52792252074bae38aae936a85",
+      "receiptDigest": "sha256:411b2a45b7b78d3e6e803e72a3c229735a0f1173fd476433c8d66bbf47af502a",
+      "patchDigest": "sha256:cfe84fd8a86f74e122e1464ac8c732badb3f3cb9b90e7b25b7c573632789022d",
+      "verificationDigest": "sha256:db1dba0391e22870e417a3c0bed4a74dd8eb54992b469e545a7c6ea97b06c6a5"
+    },
+    "BENCH-REAL-003": {
+      "caseId": "BENCH-REAL-003",
+      "findingId": "BENCH-REAL-003-FINDING-001",
+      "cwe": "CWE-22",
+      "title": "Path Traversal in File Fetcher",
+      "targetFile": "src/storage/file-fetcher.js",
+      "status": "CLOSED",
+      "authorizer": "security-lead@triad.flow",
+      "synthesizer": "codex",
+      "verifier": "claude",
+      "prePatchTreeDigest": "sha256:e962ce854814cbda353dd7738911f06b12fa59d52792252074bae38aae936a85",
+      "postPatchTreeDigest": "sha256:f1cdfa769807683a5b799e030f1907e3ddb91c6a1aec93c9e83ceb33a53f48ef",
+      "receiptDigest": "sha256:cf711ee01be57b30640ec202932186cd9c7e37657ffd034844188cf02ec0fd3e",
+      "patchDigest": "sha256:cbf4dae0c9a368b35a8282e63fc90ba60e480f04f8aa82b0a5338545c6beeefd",
+      "verificationDigest": "sha256:cc3ffaef94b11ee8b7913654db9b2b9d931edf1cc5df7c4b0398d1deda126afd"
+    },
+    "BENCH-REAL-004": {
+      "caseId": "BENCH-REAL-004",
+      "findingId": "BENCH-REAL-004-FINDING-001",
+      "cwe": "CWE-79",
+      "title": "Stored and DOM XSS in Profile Render",
+      "targetFile": "src/views/profile-render.js",
+      "status": "CLOSED",
+      "authorizer": "security-lead@triad.flow",
+      "synthesizer": "codex",
+      "verifier": "claude",
+      "prePatchTreeDigest": "sha256:f1cdfa769807683a5b799e030f1907e3ddb91c6a1aec93c9e83ceb33a53f48ef",
+      "postPatchTreeDigest": "sha256:21ef637d3ffe3d54cd8f0c3646a8732bff5e3f5958c9f9d1e7b1fc11eac7e9e5",
+      "receiptDigest": "sha256:c02dfa4742f49e91c2ed292d15a3df238f0eb5ad6d68ca7341791826f8daebd2",
+      "patchDigest": "sha256:f50da0a438c169419bdae87ce4604abc66ed3a2ca083eee2b454bdac24a51bd8",
+      "verificationDigest": "sha256:03a894e5c49796581977a338c8835787e725f00b1053b218412933bd1895bb2f"
+    },
+    "BENCH-REAL-005": {
+      "caseId": "BENCH-REAL-005",
+      "findingId": "BENCH-REAL-005-FINDING-001",
+      "cwe": "CWE-639",
+      "title": "IDOR in Invoice Handler",
+      "targetFile": "src/api/invoice-handler.js",
+      "status": "CLOSED",
+      "authorizer": "security-lead@triad.flow",
+      "synthesizer": "codex",
+      "verifier": "claude",
+      "prePatchTreeDigest": "sha256:21ef637d3ffe3d54cd8f0c3646a8732bff5e3f5958c9f9d1e7b1fc11eac7e9e5",
+      "postPatchTreeDigest": "sha256:382ba5da795c03ee21db46df46b7ac76b5e3b2d0f0ac7a5bc058fef8f5530d2c",
+      "receiptDigest": "sha256:741a483cf5d2259c719d22f778cb09923efdafa86377363cba6f7be6ef8c792e",
+      "patchDigest": "sha256:9942fae62fb7d183c66f691c6eb1c9041a3203c8e319eb909eb4b380a51a0ccd",
+      "verificationDigest": "sha256:112991bc4decf7f51981202dc3cb05eda74beb544d8667c54a26b029791f1c1c"
+    }
+  },
+  "summary": {
+    "totalCases": 5,
+    "closedCount": 5,
+    "batchVerdict": "ALL_CLOSED",
+    "failClosedEnforced": true,
+    "monotonicDefenseSatisfied": true,
+    "antiEvasionShieldActive": true,
+    "sandboxDriver": "worktree",
+    "jailIsolationMechanism": "git-worktree-write-isolation",
+    "independentHeterogeneousVerification": true
+  }
+}

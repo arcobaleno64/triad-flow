@@ -1,0 +1,99 @@
+{
+  "schemaVersion": "1.0.0",
+  "receiptId": "rem-1790744752204-bccb2a",
+  "findingId": "BENCH-REAL-004-FINDING-001",
+  "status": "CLOSED",
+  "timestamps": {
+    "startedAt": "2026-09-30T05:05:50.852Z",
+    "completedAt": "2026-09-30T05:05:52.204Z"
+  },
+  "actors": {
+    "producer": {
+      "providerName": "unknown",
+      "modelName": "unknown"
+    },
+    "synthesizer": {
+      "providerName": "codex",
+      "modelName": "cli-remediate"
+    },
+    "verifier": {
+      "providerName": "claude",
+      "modelName": "cli-default"
+    },
+    "authorizer": {
+      "identity": "security-lead@triad.flow",
+      "type": "human",
+      "signature": null,
+      "authorizedPatchDigest": "sha256:f50da0a438c169419bdae87ce4604abc66ed3a2ca083eee2b454bdac24a51bd8"
+    }
+  },
+  "patch": {
+    "patchDiffDigest": "sha256:f50da0a438c169419bdae87ce4604abc66ed3a2ca083eee2b454bdac24a51bd8",
+    "targetFiles": [
+      "src/views/profile-render.js"
+    ],
+    "additions": 4,
+    "deletions": 2,
+    "rationale": "Replaced direct innerHTML template literal assignment with safe DOM node creation and textContent assignment to prevent cross-site scripting."
+  },
+  "jail": {
+    "driver": "worktree",
+    "capabilities": {
+      "driver": "worktree",
+      "filesystemIsolation": "worktree",
+      "networkEgressDenial": "unavailable",
+      "writeBoundary": "jail-worktree-only"
+    },
+    "worktreeSha": "a4e2709f211ae42de6ac2aa798913964a9426e50",
+    "prePatchTreeDigest": "sha256:f1cdfa769807683a5b799e030f1907e3ddb91c6a1aec93c9e83ceb33a53f48ef",
+    "postPatchTreeDigest": "sha256:21ef637d3ffe3d54cd8f0c3646a8732bff5e3f5958c9f9d1e7b1fc11eac7e9e5",
+    "isolatedExecutionPass": true
+  },
+  "deterministicChecks": {
+    "executed": true,
+    "testCommand": "npm test -- src/views/profile-render.js",
+    "exitCode": 0,
+    "passedCount": 1,
+    "failedCount": 0,
+    "regressionDetected": false,
+    "postTestTreeDigest": "sha256:21ef637d3ffe3d54cd8f0c3646a8732bff5e3f5958c9f9d1e7b1fc11eac7e9e5"
+  },
+  "closureVerification": {
+    "verified": true,
+    "verificationRecordDigest": "sha256:53006371f51f38f391bd0643a10aea585b5773e51135cb2d518f555f2b367b37",
+    "verdict": "SUPPORTED",
+    "residualVulnerabilityDetected": false
+  },
+  "history": [
+    {
+      "from": "OPEN",
+      "to": "FIX_PROPOSED",
+      "at": "2026-09-30T05:05:50.853Z",
+      "actor": "codex"
+    },
+    {
+      "from": "FIX_PROPOSED",
+      "to": "PATCH_AUTHORIZED",
+      "at": "2026-09-30T05:05:50.853Z",
+      "actor": "security-lead@triad.flow"
+    },
+    {
+      "from": "PATCH_AUTHORIZED",
+      "to": "PATCH_APPLIED_IN_JAIL",
+      "at": "2026-09-30T05:05:51.722Z",
+      "actor": "batch-orchestrator"
+    },
+    {
+      "from": "PATCH_APPLIED_IN_JAIL",
+      "to": "FIXED_PENDING_VERIFY",
+      "at": "2026-09-30T05:05:51.722Z",
+      "actor": "test-runner"
+    },
+    {
+      "from": "FIXED_PENDING_VERIFY",
+      "to": "CLOSED",
+      "at": "2026-09-30T05:05:52.203Z",
+      "actor": "claude"
+    }
+  ]
+}

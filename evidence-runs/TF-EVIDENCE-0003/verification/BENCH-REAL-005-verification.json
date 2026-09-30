@@ -1,0 +1,48 @@
+{
+  "schemaVersion": "1.0.0",
+  "verifiedAt": "2026-09-30T05:05:52.203Z",
+  "changeSetDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "producer": {
+    "providerName": "agy",
+    "findingsCount": 1,
+    "findings": [
+      {
+        "id": "BENCH-REAL-005-FINDING-001",
+        "findingId": "BENCH-REAL-005-FINDING-001",
+        "title": "IDOR in Invoice Handler",
+        "severity": "high",
+        "file": "src/api/invoice-handler.js",
+        "line_start": 1,
+        "line_end": 50
+      }
+    ]
+  },
+  "verifier": {
+    "providerName": "claude",
+    "modelName": "cli-default",
+    "actualModel": {
+      "value": "claude-3-5-sonnet",
+      "source": "reported"
+    }
+  },
+  "evaluations": [
+    {
+      "findingId": "BENCH-REAL-005-FINDING-001",
+      "verdict": "SUPPORTED",
+      "locatorAccurate": true,
+      "typeAccurate": true,
+      "severityAccurate": true,
+      "reasoning": "Candidate patch adds mandatory tenant boundary verification (invoice.tenantId !== currentTenantId) prior to returning sensitive invoice records. Prevents unauthorized horizontal privilege escalation, satisfying CWE-639 remediation."
+    }
+  ],
+  "verifierOmissions": [],
+  "disagreementLedger": [],
+  "summary": {
+    "totalEvaluated": 1,
+    "supportedCount": 1,
+    "partiallySupportedCount": 0,
+    "contestedCount": 0,
+    "insufficientEvidenceCount": 0,
+    "omissionsCount": 0
+  }
+}

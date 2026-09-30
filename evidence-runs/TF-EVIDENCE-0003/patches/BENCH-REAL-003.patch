@@ -1,0 +1,17 @@
+diff --git a/src/storage/file-fetcher.js b/src/storage/file-fetcher.js
+index a4cdb84..fe846fe 100644
+--- a/src/storage/file-fetcher.js
++++ b/src/storage/file-fetcher.js
+@@ -2,7 +2,10 @@ import fs from "node:fs/promises";
+ import path from "node:path";
+ 
+ export async function readStorageFile(baseDir, userInputFilename) {
+-  // Resolve target file path within base directory
+-  const target = path.join(baseDir, userInputFilename);
++  const safeName = path.basename(userInputFilename);
++  const target = path.resolve(baseDir, safeName);
++  if (!target.startsWith(path.resolve(baseDir))) {
++    throw new Error("Access denied: invalid file path");
++  }
+   return fs.readFile(target, "utf8");
+ }

@@ -52,9 +52,10 @@ npm run bench:real                                 # Run 20-case offline benchma
 npm run bench:real -- --limit=3                    # Evaluate subset of cases
 npm run bench:real -- --live                       # Run against live local AI CLI (e.g. agy)
 
-# 7. Controlled remediation trial (v2.3 Plan-Only)
-node bin/triad-flow.mjs remediate --case=BENCH-REAL-001          # Run trial fix in ephemeral Patch Jail
-node bin/triad-flow.mjs remediate --case=BENCH-REAL-001 --format=json # Emit canonical receipt JSON
+# 7. Controlled & Batch Remediation (v2.4 Multi-Defect & Sandbox)
+node bin/triad-flow.mjs remediate --case=BENCH-REAL-001                         # Run single-defect trial in Patch Jail
+node bin/triad-flow.mjs remediate --batch --cases=BENCH-REAL-001,BENCH-REAL-002 # Multi-defect batch remediation
+node bin/triad-flow.mjs remediate --case=BENCH-REAL-001 --sandbox=worktree      # Explicit sandbox driver (ADR-024-02)
 ```
 
 ---

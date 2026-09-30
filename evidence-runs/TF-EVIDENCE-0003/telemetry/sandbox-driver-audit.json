@@ -1,0 +1,21 @@
+{
+  "schemaVersion": "1.0.0",
+  "adr": "ADR-024-02",
+  "defaultDriver": "worktree",
+  "worktree": {
+    "available": true,
+    "version": "git version 2.54.0.windows.1",
+    "capabilities": {
+      "driver": "worktree",
+      "filesystemIsolation": "worktree",
+      "networkEgressDenial": "unavailable",
+      "writeBoundary": "jail-worktree-only"
+    }
+  },
+  "container": {
+    "available": false,
+    "runtime": "docker",
+    "reason": "Container runtime 'docker' returned exit code null: spawnSync docker ENOENT",
+    "silentDowngradeProhibited": true
+  }
+}
