@@ -29,12 +29,26 @@ import {
   BaseAstAdapter,
   StructuralAntiEvasionError
 } from "./anti-evasion-guard.mjs";
+import {
+  resolveSandboxDriver,
+  WorktreeDriver,
+  ContainerDriver,
+  SandboxUnavailableError,
+  SilentDowngradeProhibitedError,
+  SANDBOX_DRIVERS
+} from "./sandbox-driver.mjs";
 
 export {
   scanStructuralAntiEvasionViolations,
   EVASION_VIOLATION_TYPES,
   BaseAstAdapter,
-  StructuralAntiEvasionError
+  StructuralAntiEvasionError,
+  resolveSandboxDriver,
+  WorktreeDriver,
+  ContainerDriver,
+  SandboxUnavailableError,
+  SilentDowngradeProhibitedError,
+  SANDBOX_DRIVERS
 };
 
 /**
@@ -806,6 +820,13 @@ export function buildRemediationReceipt(params = {}) {
   };
 
   const jail = {
+    driver: params.jail?.driver || "worktree",
+    capabilities: params.jail?.capabilities || {
+      driver: params.jail?.driver || "worktree",
+      filesystemIsolation: params.jail?.driver === "container" ? "container" : "worktree",
+      networkEgressDenial: params.jail?.driver === "container" ? "verified" : "unavailable",
+      writeBoundary: params.jail?.driver === "container" ? "container-ephemeral-volume" : "jail-worktree-only"
+    },
     worktreeSha: params.jail?.worktreeSha || null,
     prePatchTreeDigest: params.jail?.prePatchTreeDigest || null,
     postPatchTreeDigest: params.jail?.postPatchTreeDigest || null,
@@ -1048,8 +1069,22 @@ export class ControlledRemediationSession {
     return this.status;
   }
 
-  recordJailApplication({ worktreeSha, prePatchTreeDigest, postPatchTreeDigest, orchestrator = "jail-orchestrator" }) {
+  recordJailApplication({
+    worktreeSha,
+    prePatchTreeDigest,
+    postPatchTreeDigest,
+    driver = "worktree",
+    capabilities = null,
+    orchestrator = "jail-orchestrator"
+  }) {
     this.jail = {
+      driver,
+      capabilities: capabilities || {
+        driver,
+        filesystemIsolation: driver === "container" ? "container" : "worktree",
+        networkEgressDenial: driver === "container" ? "verified" : "unavailable",
+        writeBoundary: driver === "container" ? "container-ephemeral-volume" : "jail-worktree-only"
+      },
       worktreeSha,
       prePatchTreeDigest,
       postPatchTreeDigest,
@@ -1062,7 +1097,12 @@ export class ControlledRemediationSession {
     return this.status;
   }
 
-  executeInJailWorktree(repoPath, { baseSha = "HEAD", testRunnerFn = null, orchestrator = "jail-orchestrator" } = {}) {
+  executeInJailWorktree(repoPath, {
+    baseSha = "HEAD",
+    testRunnerFn = null,
+    orchestrator = "jail-orchestrator",
+    sandboxDriver = null
+  } = {}) {
     if (this.status !== REMEDIATION_STATES.PATCH_AUTHORIZED) {
       throw new RemediationTransitionError(
         this.status,
@@ -1077,13 +1117,19 @@ export class ControlledRemediationSession {
       );
     }
 
-    const jail = createPatchJailWorktree(repoPath, { baseSha });
+    const driver = sandboxDriver
+      ? (typeof sandboxDriver === "string" ? resolveSandboxDriver(sandboxDriver) : sandboxDriver)
+      : new WorktreeDriver();
+
+    const jail = driver.create(repoPath, { baseSha });
     try {
       const jailResult = applyPatchInJail(jail.jailPath, this.patch.rawDiff, this.targetFiles);
       this.recordJailApplication({
         worktreeSha: jail.baseSha,
         prePatchTreeDigest: jailResult.prePatchTreeDigest,
         postPatchTreeDigest: jailResult.postPatchTreeDigest,
+        driver: driver.name,
+        capabilities: driver.capabilities(),
         orchestrator
       });
 

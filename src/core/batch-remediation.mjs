@@ -29,6 +29,19 @@ import {
   RemediationValidationError,
   PatchJailExecutionError
 } from "./controlled-remediation.mjs";
+import {
+  resolveSandboxDriver,
+  WorktreeDriver,
+  ContainerDriver,
+  SANDBOX_DRIVERS
+} from "./sandbox-driver.mjs";
+
+export {
+  resolveSandboxDriver,
+  WorktreeDriver,
+  ContainerDriver,
+  SANDBOX_DRIVERS
+};
 
 export const BATCH_SCHEMA_VERSION = "1.0.0";
 
@@ -243,13 +256,19 @@ export class BatchRemediationSession {
   executeBatchInJailWorktree(repoPath, {
     baseSha = "HEAD",
     testRunnerFn = null,
-    orchestrator = "batch-orchestrator"
+    orchestrator = "batch-orchestrator",
+    sandboxDriver = null
   } = {}) {
     if (typeof testRunnerFn !== "function") {
       throw new BatchValidationError("executeBatchInJailWorktree requires a 'testRunnerFn' callback function.");
     }
 
-    const jail = createPatchJailWorktree(repoPath, { baseSha });
+    const driver = sandboxDriver
+      ? (typeof sandboxDriver === "string" ? resolveSandboxDriver(sandboxDriver) : sandboxDriver)
+      : new WorktreeDriver();
+    this.sandboxDriver = driver;
+
+    const jail = driver.create(repoPath, { baseSha });
     const initialTreeDigest = computeTreeDigest(jail.jailPath);
     if (!this.initialTreeDigest) {
       this.initialTreeDigest = initialTreeDigest;
@@ -288,6 +307,8 @@ export class BatchRemediationSession {
             worktreeSha: baseSha,
             prePatchTreeDigest: jailResult.prePatchTreeDigest,
             postPatchTreeDigest: jailResult.postPatchTreeDigest,
+            driver: driver.name,
+            capabilities: driver.capabilities(),
             orchestrator
           });
         } catch (err) {
@@ -488,6 +509,15 @@ export class BatchRemediationSession {
         rejectedCount,
         waivedCount,
         openCount
+      },
+      sandbox: {
+        driver: this.sandboxDriver?.name || "worktree",
+        capabilities: this.sandboxDriver?.capabilities() || {
+          driver: "worktree",
+          filesystemIsolation: "worktree",
+          networkEgressDenial: "unavailable",
+          writeBoundary: "jail-worktree-only"
+        }
       },
       lineage: {
         initialTreeDigest: this.initialTreeDigest,
