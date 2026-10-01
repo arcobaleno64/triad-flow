@@ -6,7 +6,7 @@
  * Providers CANNOT mint capabilities, self-certify consensus, or dictate quorum.
  */
 
-import { normalizeFinding } from "../core/harness.mjs";
+import { normalizeFinding, redactSecrets } from "../core/harness.mjs";
 import { getProviderFamily } from "../core/benchmark-pilot.mjs";
 
 export const EXECUTION_STATUS = Object.freeze({
@@ -105,6 +105,17 @@ export function validateProviderOutput(rawOutput, inputContext = {}) {
     runId: String(inputContext.runId || rawOutput?.providerIdentity?.runId || "unassigned-run")
   };
 
+function sanitizeRawOutput(raw) {
+  if (raw === undefined || raw === null) return undefined;
+  const str = typeof raw === "string" ? raw : (typeof raw === "object" ? JSON.stringify(raw) : String(raw));
+  const MAX_RAW_OUTPUT_BYTES = 4096;
+  const redacted = redactSecrets(str);
+  if (redacted.length > MAX_RAW_OUTPUT_BYTES) {
+    return redacted.slice(0, MAX_RAW_OUTPUT_BYTES) + " ... [TRUNCATED]";
+  }
+  return redacted;
+}
+
   // If rawOutput indicates a transport-level error or terminal status
   if (rawOutput && rawOutput.executionStatus && rawOutput.executionStatus !== EXECUTION_STATUS.SUCCESS && rawOutput.executionStatus !== EXECUTION_STATUS.EMPTY) {
     const status = Object.values(EXECUTION_STATUS).includes(rawOutput.executionStatus)
@@ -118,7 +129,7 @@ export function validateProviderOutput(rawOutput, inputContext = {}) {
       coverage: Object.freeze({ coveredFiles: Object.freeze([]), omittedFiles: Object.freeze([]) }),
       usage: null,
       providerIdentity: Object.freeze(providerIdentity),
-      rawOutput: rawOutput.rawOutput ? String(rawOutput.rawOutput) : undefined,
+      rawOutput: sanitizeRawOutput(rawOutput.rawOutput),
       error: rawOutput.error ? String(rawOutput.error) : `Execution terminated with status '${status}'.`
     });
   }
@@ -131,7 +142,7 @@ export function validateProviderOutput(rawOutput, inputContext = {}) {
       coverage: Object.freeze({ coveredFiles: Object.freeze([]), omittedFiles: Object.freeze([]) }),
       usage: null,
       providerIdentity: Object.freeze(providerIdentity),
-      rawOutput: typeof rawOutput === "string" ? rawOutput : undefined,
+      rawOutput: sanitizeRawOutput(rawOutput),
       error: "Provider output must be a non-null plain object."
     });
   }
@@ -281,6 +292,37 @@ export function convertProviderResultToSentryReport(result, roleName = "macro") 
   };
 }
 
+function stripTrailingCommas(str) {
+  let inString = false;
+  let escaped = false;
+  let result = "";
+  for (let i = 0; i < str.length; i++) {
+    const char = str[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (char === "\\") escaped = true;
+      else if (char === '"') inString = false;
+      result += char;
+      continue;
+    }
+    if (char === '"') {
+      inString = true;
+      escaped = false;
+      result += char;
+      continue;
+    }
+    if (char === ",") {
+      let j = i + 1;
+      while (j < str.length && /\s/.test(str[j])) j++;
+      if (j < str.length && (str[j] === "}" || str[j] === "]")) {
+        continue;
+      }
+    }
+    result += char;
+  }
+  return result;
+}
+
 function tryParseJsonCandidate(str) {
   if (!str || typeof str !== "string") return null;
   const trimmed = str.trim();
@@ -288,9 +330,8 @@ function tryParseJsonCandidate(str) {
   try {
     return JSON.parse(trimmed);
   } catch {
-    // Try cleaning trailing commas: e.g. , } or , ]
     try {
-      const sanitized = trimmed.replace(/,(\s*[}\]])/g, "$1");
+      const sanitized = stripTrailingCommas(trimmed);
       return JSON.parse(sanitized);
     } catch {
       return null;
@@ -355,7 +396,9 @@ export function extractJsonFromText(text = "") {
   while ((fenceMatch = fenceRegex.exec(trimmed)) !== null) {
     const candidate = fenceMatch[1];
     const parsed = tryParseJsonCandidate(candidate);
-    if (parsed && typeof parsed === "object") return parsed;
+    if (parsed && typeof parsed === "object") {
+      if (Array.isArray(parsed.findings)) return parsed;
+    }
 
     // Inside fence, try bracket extraction
     const firstBrace = candidate.indexOf("{");
@@ -363,39 +406,50 @@ export function extractJsonFromText(text = "") {
       const closing = findMatchingBrace(candidate, firstBrace);
       if (closing !== -1) {
         const sub = tryParseJsonCandidate(candidate.slice(firstBrace, closing + 1));
-        if (sub && typeof sub === "object") return sub;
+        if (sub && typeof sub === "object") {
+          if (Array.isArray(sub.findings)) return sub;
+        }
       }
     }
   }
 
-  // 3. Bracket-balanced JSON extraction (prioritizing root containing "findings")
-  const findingsTokenIdx = trimmed.indexOf('"findings"');
-  if (findingsTokenIdx !== -1) {
-    // Scan backwards from "findings" to find its enclosing object root '{'
-    const openBrace = trimmed.lastIndexOf("{", findingsTokenIdx);
-    if (openBrace !== -1) {
-      const closeBrace = findMatchingBrace(trimmed, openBrace);
-      if (closeBrace !== -1) {
-        const candidate = tryParseJsonCandidate(trimmed.slice(openBrace, closeBrace + 1));
-        if (candidate && typeof candidate === "object") return candidate;
-      }
-    }
-  }
-
-  // 4. Fallback: scan for any balanced '{' from beginning
-  const startIdx = trimmed.indexOf("{");
-  if (startIdx !== -1) {
-    const closeBrace = findMatchingBrace(trimmed, startIdx);
+  // 3. Bracket-balanced JSON extraction across top-level blocks
+  const candidates = [];
+  let scanIdx = 0;
+  while (scanIdx < trimmed.length) {
+    const openBrace = trimmed.indexOf("{", scanIdx);
+    if (openBrace === -1) break;
+    const closeBrace = findMatchingBrace(trimmed, openBrace);
     if (closeBrace !== -1) {
-      const candidate = tryParseJsonCandidate(trimmed.slice(startIdx, closeBrace + 1));
-      if (candidate && typeof candidate === "object") return candidate;
+      candidates.push(trimmed.slice(openBrace, closeBrace + 1));
+      scanIdx = closeBrace + 1;
+    } else {
+      scanIdx = openBrace + 1;
     }
-    // Also try outermost slice as last resort
-    const lastIdx = trimmed.lastIndexOf("}");
-    if (lastIdx > startIdx) {
-      const candidate = tryParseJsonCandidate(trimmed.slice(startIdx, lastIdx + 1));
-      if (candidate && typeof candidate === "object") return candidate;
+  }
+
+  // Prioritize candidates that contain an explicit "findings" array
+  for (const cand of candidates) {
+    const parsed = tryParseJsonCandidate(cand);
+    if (parsed && typeof parsed === "object" && Array.isArray(parsed.findings)) {
+      return parsed;
     }
+  }
+
+  // Fallback: any parsed candidate object
+  for (const cand of candidates) {
+    const parsed = tryParseJsonCandidate(cand);
+    if (parsed && typeof parsed === "object") {
+      return parsed;
+    }
+  }
+
+  // 4. Fallback: scan from first '{' to last '}'
+  const startIdx = trimmed.indexOf("{");
+  const lastIdx = trimmed.lastIndexOf("}");
+  if (startIdx !== -1 && lastIdx > startIdx) {
+    const candidate = tryParseJsonCandidate(trimmed.slice(startIdx, lastIdx + 1));
+    if (candidate && typeof candidate === "object") return candidate;
   }
 
   return null;

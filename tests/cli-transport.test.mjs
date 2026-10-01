@@ -48,6 +48,10 @@ test("extractJsonFromText extracts JSON directly, from fences, or from surroundi
   // Robustness: trailing comma tolerance
   assert.deepEqual(extractJsonFromText('{"findings":[{"title":"issue",}],}'), { findings: [{ title: "issue" }] });
 
+  // Robustness: string literals containing trailing comma patterns must NOT be mutated
+  const literalWithCommas = '{"findings":[{"title":"code snippet: { a: 1, } and [2, ]"}]}';
+  assert.deepEqual(extractJsonFromText(literalWithCommas), { findings: [{ title: "code snippet: { a: 1, } and [2, ]" }] });
+
   // Robustness: preamble with braces and postamble with braces
   const complexText = `
   I analyzed the code. Note that options like { safe: true } were considered.
@@ -66,6 +70,23 @@ test("extractJsonFromText extracts JSON directly, from fences, or from surroundi
   const complexParsed = extractJsonFromText(complexText);
   assert.ok(complexParsed);
   assert.equal(complexParsed.findings[0].title, "Complex finding");
+
+  // Robustness: coverage before findings with inner braces
+  const coverageFirstText = `
+  Here is review:
+  {
+    "coverage": {
+      "nested": { "inner": true },
+      "coveredFiles": ["index.js"]
+    },
+    "findings": [
+      { "title": "Coverage first", "severity": "high" }
+    ]
+  }
+  `;
+  const covFirstParsed = extractJsonFromText(coverageFirstText);
+  assert.ok(covFirstParsed);
+  assert.equal(covFirstParsed.findings[0].title, "Coverage first");
 });
 
 test("buildReviewPrompt includes ChangeSet metadata, file list, and diff", () => {
