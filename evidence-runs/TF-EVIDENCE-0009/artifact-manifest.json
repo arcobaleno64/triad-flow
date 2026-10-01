@@ -1,0 +1,34 @@
+{
+  "artifacts": {
+    "README-EVIDENCE.md": "sha256:d8a73f1ed0834dec658929bf92f8d8e4f87f26736f0667180ea27ab3c3b709eb",
+    "audit-receipt.json": "sha256:c0836130c9d8a8bd17916079c1e8e5a248ad3906d8390fb46a7ef01a452ea65b",
+    "benchmark-results.json": "sha256:fe81832113a8bd6a6c5de2977463a000b087b2f3765aa2d5a1181e06d7847d78",
+    "corpus-identity.json": "sha256:06a0ea0793adb5b05fa42459fd9b4d6e6f553203fc2ffd42f8282785c5d72add",
+    "disagreement-ledger.json": "sha256:27e8a233bb30b6c9b5390d5b388fd7a32b189990fd81d7fa4390292a947e847e",
+    "evidence-index.json": "sha256:0628d8b68dc48223a50e89bf7bcef0f8a759e56ce3660193644d2b26d7e15fc1",
+    "release-identity.json": "sha256:4a3729681c168e92554fe93bf34835eb65abfa328b2f5e05c01bf949ffa59e5a",
+    "verification-records/TF-OSS-001-verification.json": "sha256:601c8655c4feee06d9165a99374ec078b8fe92b8b4e2935fed1e424fc3de7c74",
+    "verification-records/TF-OSS-002-verification.json": "sha256:92cf4d2cf96d46f9bf01558f523b719b5dfd80cee11039994dfcb0082320e119",
+    "verification-records/TF-OSS-003-verification.json": "sha256:947bea5b633722161bac0b73f7420e12def4c918ef7ff31116963a24fa63b9c0",
+    "verification-records/TF-OSS-004-verification.json": "sha256:00d6f739114085162fa15d6937198bf54cf6ce4979869bb3897599600b00c85a",
+    "verification-records/TF-OSS-005-verification.json": "sha256:7fc19d4e90ba964a0d7e91ea55d70151acd8d8509aeacf8580d7294304b9875a",
+    "verification-records/verification-record.json": "sha256:a823d023f554ff9106d14f558185cb278bda290c8fe1b7fa256365f804cc077a",
+    "verification/TF-OSS-001-verification.json": "sha256:601c8655c4feee06d9165a99374ec078b8fe92b8b4e2935fed1e424fc3de7c74",
+    "verification/TF-OSS-002-verification.json": "sha256:92cf4d2cf96d46f9bf01558f523b719b5dfd80cee11039994dfcb0082320e119",
+    "verification/TF-OSS-003-verification.json": "sha256:947bea5b633722161bac0b73f7420e12def4c918ef7ff31116963a24fa63b9c0",
+    "verification/TF-OSS-004-verification.json": "sha256:00d6f739114085162fa15d6937198bf54cf6ce4979869bb3897599600b00c85a",
+    "verification/TF-OSS-005-verification.json": "sha256:7fc19d4e90ba964a0d7e91ea55d70151acd8d8509aeacf8580d7294304b9875a",
+    "verification/verification-record.json": "sha256:a823d023f554ff9106d14f558185cb278bda290c8fe1b7fa256365f804cc077a"
+  },
+  "metadata": {
+    "commitSha": "329b904dcf8ac987f3ca1fba0a2c3be9ee799874",
+    "corpusDigest": "sha256:47ed3ce44878b77572005358a16511e3f0900dda11d14443e6a2a84baf501625",
+    "receiptDigest": null,
+    "resultsDigest": null,
+    "runId": "run-oss-v2.7-TF-EVIDENCE-0009-1790870476076",
+    "bundleId": "TF-EVIDENCE-0009",
+    "bundleType": "evidence-bundle",
+    "sealedAt": "2026-10-01T16:02:47.396Z"
+  },
+  "schemaVersion": "1.0.0"
+}

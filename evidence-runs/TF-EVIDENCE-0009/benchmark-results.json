@@ -1,0 +1,793 @@
+{
+  "framework": "Triad-Flow Real-World OSS Corpus v1 (TF-OSS-v1)",
+  "corpus": "oss",
+  "milestone": "v2.7.0",
+  "bundleId": "TF-EVIDENCE-0009",
+  "mode": "tri-party",
+  "executionMode": "live",
+  "workspaceMode": "physical",
+  "timestamp": "2026-10-01T16:01:16.076Z",
+  "totalCases": 5,
+  "caseResults": [
+    {
+      "caseId": "TF-OSS-001",
+      "title": "Prototype Pollution in minimist argument parsing",
+      "name": "minimist",
+      "cve": "CVE-2020-7598",
+      "cwe": "CWE-1321",
+      "riskTier": 1,
+      "category": "vulnerable",
+      "status": "incomplete",
+      "incomplete": true,
+      "latencyMs": 24086,
+      "plan": {
+        "mode": "tri-party",
+        "reason": "benchmark-tri-party-quorum"
+      },
+      "actualGateDecision": "block",
+      "expectedGateDecision": "block",
+      "passed": true,
+      "detectionPass": true,
+      "gatePolicyPass": true,
+      "immutabilityPass": true,
+      "actualFindings": [
+        {
+          "title": "Incomplete prototype pollution fix: 'constructor' and 'prototype' path segments are not blocked",
+          "severity": "high",
+          "file": "index.js",
+          "line_start": 9,
+          "line_end": 11,
+          "ruleId": "CHECKLIST-CWE-1321",
+          "cwe": "CWE-1321",
+          "type": "PROTOTYPE-POLLUTION",
+          "recommendation": "Don't only compare against '__proto__'. In the traversal loop, reject 'constructor' and 'prototype' as well. Apply the check to the final key assignment too. Better still, only traverse own properties: use Object.prototype.hasOwnProperty.call(o, key), and create intermediate objects with Object.create(null). Alternatively, store the parsed values in a Map or a null-prototype object.",
+          "sources": [
+            "claude",
+            "codex"
+          ],
+          "corroborations": 2
+        }
+      ],
+      "goldenFindings": [
+        {
+          "cwe": "CWE-1321",
+          "type": "prototype-pollution",
+          "file": "index.js",
+          "line": 9,
+          "severity": "medium",
+          "rationale": "Direct traversal of __proto__ key allows remote attackers to pollute Object.prototype"
+        }
+      ],
+      "evalResult": {
+        "totalGoldens": 1,
+        "caughtGoldens": 1,
+        "claimedFindingsCount": 1,
+        "recallRate": "100.0%",
+        "passed": true
+      },
+      "reports": {
+        "agy": {
+          "name": "agy",
+          "source": "agy",
+          "role": "agy",
+          "providerIdentity": {
+            "provider": "agy",
+            "family": "google",
+            "model": "gemini-3.8-flash",
+            "transport": "cli",
+            "runId": "run-TF-OSS-001-agy"
+          },
+          "coverage": {
+            "coveredFiles": [],
+            "omittedFiles": []
+          },
+          "error": "Failed to extract valid JSON findings from CLI reviewer output.",
+          "latencyMs": 24086,
+          "executionStatus": "malformed_output"
+        },
+        "claude": {
+          "name": "claude",
+          "source": "claude",
+          "role": "claude",
+          "providerIdentity": {
+            "provider": "claude",
+            "family": "anthropic",
+            "model": "claude-5.5-sonnet",
+            "transport": "cli",
+            "runId": "run-TF-OSS-001-claude"
+          },
+          "coverage": {
+            "coveredFiles": [
+              "index.js"
+            ],
+            "omittedFiles": []
+          },
+          "findings": [
+            {
+              "title": "Incomplete prototype pollution fix: 'constructor' and 'prototype' path segments are not blocked",
+              "severity": "high",
+              "file": "index.js",
+              "line_start": 9,
+              "line_end": 11,
+              "ruleId": "CHECKLIST-CWE-1321",
+              "cwe": "CWE-1321",
+              "type": "PROTOTYPE-POLLUTION",
+              "recommendation": "Don't only compare against '__proto__'. In the traversal loop, reject 'constructor' and 'prototype' as well. Apply the check to the final key assignment too. Better still, only traverse own properties: use Object.prototype.hasOwnProperty.call(o, key), and create intermediate objects with Object.create(null). Alternatively, store the parsed values in a Map or a null-prototype object."
+            },
+            {
+              "title": "Final key of the path is not guarded against '__proto__' or 'constructor' assignment",
+              "severity": "medium",
+              "file": "index.js",
+              "line_start": 6,
+              "line_end": 12,
+              "ruleId": "CHECKLIST-CWE-1321",
+              "cwe": "CWE-1321",
+              "type": "PROTOTYPE-POLLUTION",
+              "recommendation": "The guard only covers keys[0..n-2]. Apply the same denylist, or an own-property check, to the last key before the assignment. Doing so also stops the final write from altering the prototype or constructor on objects the loop has already reached."
+            }
+          ],
+          "latencyMs": 15199,
+          "executionStatus": "success"
+        },
+        "codex": {
+          "name": "codex",
+          "source": "codex",
+          "role": "codex",
+          "providerIdentity": {
+            "provider": "codex",
+            "family": "openai",
+            "model": "gpt-6.1-sol",
+            "transport": "cli",
+            "runId": "run-TF-OSS-001-codex"
+          },
+          "coverage": {
+            "coveredFiles": [
+              "index.js"
+            ],
+            "omittedFiles": []
+          },
+          "findings": [
+            {
+              "title": "Prototype guard leaves constructor.prototype traversal unblocked",
+              "severity": "high",
+              "file": "index.js",
+              "line_start": 9,
+              "line_end": 11,
+              "ruleId": "CHECKLIST-CWE-1321",
+              "cwe": "CWE-1321",
+              "type": "prototype-pollution",
+              "recommendation": "Reject '__proto__', 'constructor', and 'prototype' in every path segment before traversal or assignment. The new guard permits constructor.prototype traversal through inherited properties, allowing a subsequent assignment to alter Object.prototype."
+            }
+          ],
+          "latencyMs": 18479,
+          "executionStatus": "success"
+        }
+      },
+      "consensus": {
+        "verdict": "needs-attention",
+        "quorumReached": true,
+        "totalFindings": 1,
+        "selectedReportIds": [
+          "ev:355c9477-35fb-4d8d-9921-9c2a5ee389e2:claude",
+          "ev:355c9477-35fb-4d8d-9921-9c2a5ee389e2:codex"
+        ],
+        "consensusProof": "Consensus reached: Blocking vulnerabilities identified by sentry quorum (ev:355c9477-35fb-4d8d-9921-9c2a5ee389e2:claude, ev:355c9477-35fb-4d8d-9921-9c2a5ee389e2:codex)."
+      }
+    },
+    {
+      "caseId": "TF-OSS-002",
+      "title": "Prototype Pollution in ini file section decoding",
+      "name": "ini",
+      "cve": "CVE-2020-7788",
+      "cwe": "CWE-1321",
+      "riskTier": 1,
+      "category": "vulnerable",
+      "status": "reviewed-with-findings",
+      "incomplete": false,
+      "latencyMs": 133245,
+      "plan": {
+        "mode": "tri-party",
+        "reason": "benchmark-tri-party-quorum"
+      },
+      "actualGateDecision": "block",
+      "expectedGateDecision": "block",
+      "passed": true,
+      "detectionPass": true,
+      "gatePolicyPass": true,
+      "immutabilityPass": true,
+      "actualFindings": [
+        {
+          "title": "Incomplete Prototype Pollution Defense Allowing Bypass via 'constructor'",
+          "severity": "high",
+          "file": "ini.js",
+          "line_start": 14,
+          "line_end": 17,
+          "ruleId": "CHECKLIST-CWE-1321",
+          "cwe": "CWE-1321",
+          "type": "Prototype Pollution",
+          "recommendation": "Block 'constructor' and 'prototype' in addition to '__proto__', or create the container object with a null prototype using Object.create(null) and defend against prototype property access paths.",
+          "sources": [
+            "agy",
+            "claude"
+          ],
+          "corroborations": 2
+        }
+      ],
+      "goldenFindings": [
+        {
+          "cwe": "CWE-1321",
+          "type": "prototype-pollution",
+          "file": "ini.js",
+          "line": 14,
+          "severity": "high",
+          "rationale": "Unsanitized section key allows __proto__ property injection during INI decoding"
+        }
+      ],
+      "evalResult": {
+        "totalGoldens": 1,
+        "caughtGoldens": 1,
+        "claimedFindingsCount": 1,
+        "recallRate": "100.0%",
+        "passed": true
+      },
+      "reports": {
+        "agy": {
+          "name": "agy",
+          "source": "agy",
+          "role": "agy",
+          "providerIdentity": {
+            "provider": "agy",
+            "family": "google",
+            "model": "gemini-3.8-flash",
+            "transport": "cli",
+            "runId": "run-TF-OSS-002-agy"
+          },
+          "coverage": {
+            "coveredFiles": [
+              "ini.js"
+            ],
+            "omittedFiles": []
+          },
+          "findings": [
+            {
+              "title": "Incomplete Prototype Pollution Defense Allowing Bypass via 'constructor'",
+              "severity": "high",
+              "file": "ini.js",
+              "line_start": 14,
+              "line_end": 17,
+              "ruleId": "CHECKLIST-CWE-1321",
+              "cwe": "CWE-1321",
+              "type": "Prototype Pollution",
+              "recommendation": "Block 'constructor' and 'prototype' in addition to '__proto__', or create the container object with a null prototype using Object.create(null) and defend against prototype property access paths."
+            }
+          ],
+          "latencyMs": 133245,
+          "executionStatus": "success"
+        },
+        "claude": {
+          "name": "claude",
+          "source": "claude",
+          "role": "claude",
+          "providerIdentity": {
+            "provider": "claude",
+            "family": "anthropic",
+            "model": "claude-5.5-sonnet",
+            "transport": "cli",
+            "runId": "run-TF-OSS-002-claude"
+          },
+          "coverage": {
+            "coveredFiles": [
+              "ini.js"
+            ],
+            "omittedFiles": []
+          },
+          "findings": [
+            {
+              "title": "Prototype pollution guard only matches the exact section name '__proto__'; 'constructor' and dotted-path sections are not covered",
+              "severity": "high",
+              "file": "ini.js",
+              "line_start": 13,
+              "line_end": 16,
+              "ruleId": "CHECKLIST-CWE-1321",
+              "cwe": "CWE-1321",
+              "type": "INCOMPLETE-FIX",
+              "recommendation": "Block '__proto__', 'constructor' and 'prototype' as section names. Also check every segment of a dotted section name such as '[__proto__.x]' or '[constructor.prototype]' wherever section names are split or walked. Create section containers with Object.create(null), or use Object.prototype.hasOwnProperty.call(out, section) instead of 'out[section] || {}', which returns the inherited Object function for 'constructor'. The diff does not show any later dot-splitting or nesting pass, so confirm in the full ini.js that no such pass can reach Object.prototype."
+            }
+          ],
+          "latencyMs": 20070,
+          "executionStatus": "success"
+        },
+        "codex": {
+          "name": "codex",
+          "source": "codex",
+          "role": "codex",
+          "providerIdentity": {
+            "provider": "codex",
+            "family": "openai",
+            "model": "gpt-6.1-sol",
+            "transport": "cli",
+            "runId": "run-TF-OSS-002-codex"
+          },
+          "coverage": {
+            "coveredFiles": [
+              "ini.js"
+            ],
+            "omittedFiles": []
+          },
+          "findings": [],
+          "latencyMs": 20225,
+          "executionStatus": "empty"
+        }
+      },
+      "consensus": {
+        "verdict": "needs-attention",
+        "quorumReached": true,
+        "totalFindings": 1,
+        "selectedReportIds": [
+          "ev:d5727900-1324-4495-9bab-9720c09cfded:agy",
+          "ev:d5727900-1324-4495-9bab-9720c09cfded:claude",
+          "ev:d5727900-1324-4495-9bab-9720c09cfded:codex"
+        ],
+        "consensusProof": "Consensus reached: Blocking vulnerabilities identified by sentry quorum (ev:d5727900-1324-4495-9bab-9720c09cfded:agy, ev:d5727900-1324-4495-9bab-9720c09cfded:claude, ev:d5727900-1324-4495-9bab-9720c09cfded:codex)."
+      }
+    },
+    {
+      "caseId": "TF-OSS-003",
+      "title": "Prototype Pollution in JSON-Patch constructor/prototype path",
+      "name": "fast-json-patch",
+      "cve": "CVE-2021-4279",
+      "cwe": "CWE-1321",
+      "riskTier": 1,
+      "category": "vulnerable",
+      "status": "incomplete",
+      "incomplete": true,
+      "latencyMs": 180037,
+      "plan": {
+        "mode": "tri-party",
+        "reason": "benchmark-tri-party-quorum"
+      },
+      "actualGateDecision": "block",
+      "expectedGateDecision": "block",
+      "passed": true,
+      "detectionPass": true,
+      "gatePolicyPass": true,
+      "immutabilityPass": true,
+      "actualFindings": [
+        {
+          "title": "Prototype-pollution guard is incomplete: bare 'constructor' and the final path segment are not blocked",
+          "severity": "high",
+          "file": "src/core.js",
+          "line_start": 8,
+          "line_end": 10,
+          "ruleId": "CHECKLIST-CWE-1321",
+          "cwe": "CWE-1321",
+          "type": "prototype-pollution",
+          "recommendation": "Reject '__proto__', 'constructor' and 'prototype' as a standalone denylist for every path segment, including the last one (the loop only runs to keys.length - 1). Better, use Object.prototype.hasOwnProperty.call(obj, key) for every traversal step and for the final assignment, and create containers with Object.create(null). Apply the same validation to any 'from' path used by move/copy and to get/remove helpers.",
+          "sources": [
+            "claude",
+            "codex"
+          ],
+          "corroborations": 2
+        }
+      ],
+      "goldenFindings": [
+        {
+          "cwe": "CWE-1321",
+          "type": "prototype-pollution",
+          "file": "src/core.js",
+          "line": 9,
+          "severity": "high",
+          "rationale": "Unvalidated constructor/prototype path components allow prototype attribute mutation"
+        }
+      ],
+      "evalResult": {
+        "totalGoldens": 1,
+        "caughtGoldens": 1,
+        "claimedFindingsCount": 1,
+        "recallRate": "100.0%",
+        "passed": true
+      },
+      "reports": {
+        "agy": {
+          "name": "agy",
+          "source": "agy",
+          "role": "agy",
+          "providerIdentity": {
+            "provider": "agy",
+            "family": "google",
+            "model": "gemini-3.8-flash",
+            "transport": "cli",
+            "runId": "run-TF-OSS-003-agy"
+          },
+          "coverage": {
+            "coveredFiles": [],
+            "omittedFiles": []
+          },
+          "error": "Process terminated: timeout",
+          "latencyMs": 180037,
+          "executionStatus": "timeout"
+        },
+        "claude": {
+          "name": "claude",
+          "source": "claude",
+          "role": "claude",
+          "providerIdentity": {
+            "provider": "claude",
+            "family": "anthropic",
+            "model": "claude-5.5-sonnet",
+            "transport": "cli",
+            "runId": "run-TF-OSS-003-claude"
+          },
+          "coverage": {
+            "coveredFiles": [
+              "src/core.js"
+            ],
+            "omittedFiles": []
+          },
+          "findings": [
+            {
+              "title": "Prototype-pollution guard is incomplete: bare 'constructor' and the final path segment are not blocked",
+              "severity": "high",
+              "file": "src/core.js",
+              "line_start": 8,
+              "line_end": 10,
+              "ruleId": "CHECKLIST-CWE-1321",
+              "cwe": "CWE-1321",
+              "type": "prototype-pollution",
+              "recommendation": "Reject '__proto__', 'constructor' and 'prototype' as a standalone denylist for every path segment, including the last one (the loop only runs to keys.length - 1). Better, use Object.prototype.hasOwnProperty.call(obj, key) for every traversal step and for the final assignment, and create containers with Object.create(null). Apply the same validation to any 'from' path used by move/copy and to get/remove helpers."
+            }
+          ],
+          "latencyMs": 28078,
+          "executionStatus": "success"
+        },
+        "codex": {
+          "name": "codex",
+          "source": "codex",
+          "role": "codex",
+          "providerIdentity": {
+            "provider": "codex",
+            "family": "openai",
+            "model": "gpt-6.1-sol",
+            "transport": "cli",
+            "runId": "run-TF-OSS-003-codex"
+          },
+          "coverage": {
+            "coveredFiles": [
+              "src/core.js"
+            ],
+            "omittedFiles": []
+          },
+          "findings": [
+            {
+              "title": "Prototype guard still permits inherited constructor traversal",
+              "severity": "high",
+              "file": "src/core.js",
+              "line_start": 8,
+              "line_end": 12,
+              "ruleId": "CHECKLIST-CWE-1321",
+              "cwe": "CWE-1321",
+              "type": "security",
+              "recommendation": "Reject '__proto__', 'constructor', and 'prototype' in every decoded path segment, including the final segment, before accessing document properties. The path '/constructor/polluted' currently passes this guard and traverses from an ordinary document object into the shared Object constructor."
+            }
+          ],
+          "latencyMs": 38727,
+          "executionStatus": "success"
+        }
+      },
+      "consensus": {
+        "verdict": "needs-attention",
+        "quorumReached": true,
+        "totalFindings": 1,
+        "selectedReportIds": [
+          "ev:7b28988c-e3b9-49cd-9a7f-6d47492ced0f:claude",
+          "ev:7b28988c-e3b9-49cd-9a7f-6d47492ced0f:codex"
+        ],
+        "consensusProof": "Consensus reached: Blocking vulnerabilities identified by sentry quorum (ev:7b28988c-e3b9-49cd-9a7f-6d47492ced0f:claude, ev:7b28988c-e3b9-49cd-9a7f-6d47492ced0f:codex)."
+      }
+    },
+    {
+      "caseId": "TF-OSS-004",
+      "title": "ReDoS via greedy whitespace regex in semver",
+      "name": "semver",
+      "cve": "CVE-2022-25883",
+      "cwe": "CWE-1333",
+      "riskTier": 1,
+      "category": "vulnerable",
+      "status": "reviewed-with-findings",
+      "incomplete": false,
+      "latencyMs": 24945,
+      "plan": {
+        "mode": "tri-party",
+        "reason": "benchmark-tri-party-quorum"
+      },
+      "actualGateDecision": "block",
+      "expectedGateDecision": "block",
+      "passed": true,
+      "detectionPass": true,
+      "gatePolicyPass": true,
+      "immutabilityPass": true,
+      "actualFindings": [
+        {
+          "title": "cleanVersion now rejects inputs with more than one leading or trailing whitespace character",
+          "severity": "low",
+          "file": "internal/re.js",
+          "line_start": 6,
+          "line_end": 9,
+          "ruleId": "BEHAVIOR-REGRESSION-WHITESPACE",
+          "cwe": "CWE-1333",
+          "type": "behavioral-regression",
+          "recommendation": "The original `^\\s*...\\s*$` is anchored and has no nested quantifiers, so it is not exploitable for ReDoS. Narrowing the whitespace to `\\s{0,1}` is not needed for security and changes behavior. Inputs such as '  1.2.3', '1.2.3\\n\\n' or '\\t 1.2.3' used to be accepted and now return null. Either restore `\\s*`, or trim the input first and add a length cap (for example `str.length <= 256`) before matching. If the stricter behavior is intended, add tests for it and check the callers.",
+          "sources": [
+            "claude"
+          ],
+          "corroborations": 1
+        },
+        {
+          "title": "Whitespace limit rejects previously accepted version strings",
+          "severity": "low",
+          "file": "internal/re.js",
+          "line_start": 6,
+          "line_end": 6,
+          "recommendation": "Trim surrounding whitespace before matching an anchored version regex without whitespace quantifiers. Preserve acceptance of inputs such as \"  1.2.3\" and \"1.2.3  \", which now return null instead of \"1.2.3\".",
+          "sources": [
+            "codex"
+          ],
+          "corroborations": 1
+        }
+      ],
+      "goldenFindings": [
+        {
+          "cwe": "CWE-1333",
+          "type": "redos",
+          "file": "internal/re.js",
+          "line": 4,
+          "severity": "high",
+          "rationale": "Greedy whitespace quantifier in version parsing regex causes ReDoS"
+        }
+      ],
+      "evalResult": {
+        "totalGoldens": 1,
+        "caughtGoldens": 1,
+        "claimedFindingsCount": 1,
+        "recallRate": "100.0%",
+        "passed": true
+      },
+      "reports": {
+        "agy": {
+          "name": "agy",
+          "source": "agy",
+          "role": "agy",
+          "providerIdentity": {
+            "provider": "agy",
+            "family": "google",
+            "model": "gemini-3.8-flash",
+            "transport": "cli",
+            "runId": "run-TF-OSS-004-agy"
+          },
+          "coverage": {
+            "coveredFiles": [
+              "internal/re.js"
+            ],
+            "omittedFiles": []
+          },
+          "findings": [],
+          "latencyMs": 24552,
+          "executionStatus": "empty"
+        },
+        "claude": {
+          "name": "claude",
+          "source": "claude",
+          "role": "claude",
+          "providerIdentity": {
+            "provider": "claude",
+            "family": "anthropic",
+            "model": "claude-5.5-sonnet",
+            "transport": "cli",
+            "runId": "run-TF-OSS-004-claude"
+          },
+          "coverage": {
+            "coveredFiles": [
+              "internal/re.js"
+            ],
+            "omittedFiles": []
+          },
+          "findings": [
+            {
+              "title": "cleanVersion now rejects inputs with more than one leading or trailing whitespace character",
+              "severity": "low",
+              "file": "internal/re.js",
+              "line_start": 6,
+              "line_end": 9,
+              "ruleId": "BEHAVIOR-REGRESSION-WHITESPACE",
+              "cwe": "CWE-1333",
+              "type": "behavioral-regression",
+              "recommendation": "The original `^\\s*...\\s*$` is anchored and has no nested quantifiers, so it is not exploitable for ReDoS. Narrowing the whitespace to `\\s{0,1}` is not needed for security and changes behavior. Inputs such as '  1.2.3', '1.2.3\\n\\n' or '\\t 1.2.3' used to be accepted and now return null. Either restore `\\s*`, or trim the input first and add a length cap (for example `str.length <= 256`) before matching. If the stricter behavior is intended, add tests for it and check the callers."
+            }
+          ],
+          "latencyMs": 15927,
+          "executionStatus": "success"
+        },
+        "codex": {
+          "name": "codex",
+          "source": "codex",
+          "role": "codex",
+          "providerIdentity": {
+            "provider": "codex",
+            "family": "openai",
+            "model": "gpt-6.1-sol",
+            "transport": "cli",
+            "runId": "run-TF-OSS-004-codex"
+          },
+          "coverage": {
+            "coveredFiles": [
+              "internal/re.js"
+            ],
+            "omittedFiles": []
+          },
+          "findings": [
+            {
+              "title": "Whitespace limit rejects previously accepted version strings",
+              "severity": "low",
+              "file": "internal/re.js",
+              "line_start": 6,
+              "line_end": 6,
+              "recommendation": "Trim surrounding whitespace before matching an anchored version regex without whitespace quantifiers. Preserve acceptance of inputs such as \"  1.2.3\" and \"1.2.3  \", which now return null instead of \"1.2.3\"."
+            }
+          ],
+          "latencyMs": 24927,
+          "executionStatus": "success"
+        }
+      },
+      "consensus": {
+        "verdict": "warning",
+        "quorumReached": true,
+        "totalFindings": 2,
+        "selectedReportIds": [
+          "ev:ef2b82ff-3985-426c-b655-1abae7f48eeb:agy",
+          "ev:ef2b82ff-3985-426c-b655-1abae7f48eeb:claude",
+          "ev:ef2b82ff-3985-426c-b655-1abae7f48eeb:codex"
+        ],
+        "consensusProof": "Consensus reached: Clean diff or non-blocking suggestions from quorum (ev:ef2b82ff-3985-426c-b655-1abae7f48eeb:agy, ev:ef2b82ff-3985-426c-b655-1abae7f48eeb:claude, ev:ef2b82ff-3985-426c-b655-1abae7f48eeb:codex)."
+      }
+    },
+    {
+      "caseId": "TF-OSS-005",
+      "title": "Server-Side Template Injection via outputFunctionName in ejs",
+      "name": "ejs",
+      "cve": "CVE-2022-29078",
+      "cwe": "CWE-94",
+      "riskTier": 1,
+      "category": "vulnerable",
+      "status": "clean",
+      "incomplete": false,
+      "latencyMs": 44399,
+      "plan": {
+        "mode": "tri-party",
+        "reason": "benchmark-tri-party-quorum"
+      },
+      "actualGateDecision": "approve",
+      "expectedGateDecision": "block",
+      "passed": false,
+      "detectionPass": false,
+      "gatePolicyPass": false,
+      "immutabilityPass": true,
+      "actualFindings": [],
+      "goldenFindings": [
+        {
+          "cwe": "CWE-94",
+          "type": "code-injection",
+          "file": "lib/ejs.js",
+          "line": 6,
+          "severity": "critical",
+          "rationale": "Unvalidated outputFunctionName identifier allows arbitrary statement interpolation and RCE"
+        }
+      ],
+      "evalResult": {
+        "totalGoldens": 1,
+        "caughtGoldens": 0,
+        "claimedFindingsCount": 0,
+        "recallRate": "0.0%",
+        "passed": false
+      },
+      "reports": {
+        "agy": {
+          "name": "agy",
+          "source": "agy",
+          "role": "agy",
+          "providerIdentity": {
+            "provider": "agy",
+            "family": "google",
+            "model": "gemini-3.8-flash",
+            "transport": "cli",
+            "runId": "run-TF-OSS-005-agy"
+          },
+          "coverage": {
+            "coveredFiles": [
+              "lib/ejs.js"
+            ],
+            "omittedFiles": []
+          },
+          "findings": [],
+          "latencyMs": 44399,
+          "executionStatus": "empty"
+        },
+        "claude": {
+          "name": "claude",
+          "source": "claude",
+          "role": "claude",
+          "providerIdentity": {
+            "provider": "claude",
+            "family": "anthropic",
+            "model": "claude-5.5-sonnet",
+            "transport": "cli",
+            "runId": "run-TF-OSS-005-claude"
+          },
+          "coverage": {
+            "coveredFiles": [
+              "lib/ejs.js"
+            ],
+            "omittedFiles": []
+          },
+          "findings": [],
+          "latencyMs": 12470,
+          "executionStatus": "empty"
+        },
+        "codex": {
+          "name": "codex",
+          "source": "codex",
+          "role": "codex",
+          "providerIdentity": {
+            "provider": "codex",
+            "family": "openai",
+            "model": "gpt-6.1-sol",
+            "transport": "cli",
+            "runId": "run-TF-OSS-005-codex"
+          },
+          "coverage": {
+            "coveredFiles": [
+              "lib/ejs.js"
+            ],
+            "omittedFiles": []
+          },
+          "findings": [],
+          "latencyMs": 15950,
+          "executionStatus": "empty"
+        }
+      },
+      "consensus": {
+        "verdict": "approve",
+        "quorumReached": true,
+        "totalFindings": 0,
+        "selectedReportIds": [
+          "ev:2d1a0d1c-418e-4698-8029-11dd94791862:agy",
+          "ev:2d1a0d1c-418e-4698-8029-11dd94791862:claude",
+          "ev:2d1a0d1c-418e-4698-8029-11dd94791862:codex"
+        ],
+        "consensusProof": "Consensus reached: Clean diff or non-blocking suggestions from quorum (ev:2d1a0d1c-418e-4698-8029-11dd94791862:agy, ev:2d1a0d1c-418e-4698-8029-11dd94791862:claude, ev:2d1a0d1c-418e-4698-8029-11dd94791862:codex)."
+      }
+    }
+  ],
+  "metrics": {
+    "totalCases": 5,
+    "vulnerableCasesCount": 5,
+    "cleanCasesCount": 0,
+    "totalGoldens": 5,
+    "caughtGoldens": 4,
+    "totalReportedFindings": 5,
+    "truePositives": 4,
+    "falsePositives": 1,
+    "falseBlocks": 0,
+    "recall": 0.8,
+    "precision": 0.8,
+    "falseBlockRate": null,
+    "incompleteCasesCount": 2,
+    "incompleteRate": 0.4,
+    "latency": {
+      "p50Ms": 44399,
+      "p95Ms": 180037,
+      "avgMs": 81342,
+      "minMs": 24086,
+      "maxMs": 180037
+    }
+  }
+}

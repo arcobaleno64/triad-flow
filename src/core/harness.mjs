@@ -288,10 +288,16 @@ export function evaluateGateDecision(consensus, options = {}) {
     };
   }
 
-  if (findings.length > 0 && options && options.strict) {
+  // Tier 1 (High-Risk) or Strict Mode: Any confirmed findings block merge
+  const isTier1 = options?.tier === 1;
+  const isStrict = Boolean(options && (options.strict || isTier1));
+
+  if (findings.length > 0 && isStrict) {
     return {
       decision: "block",
-      reason: `Strict mode enabled: ${findings.length} findings must be resolved.`,
+      reason: isTier1
+        ? `Tier 1 high-risk policy: ${findings.length} findings must be resolved before merge. Merge blocked.`
+        : `Strict mode enabled: ${findings.length} findings must be resolved.`,
       criticals: []
     };
   }

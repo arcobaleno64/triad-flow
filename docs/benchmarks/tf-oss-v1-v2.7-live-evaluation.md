@@ -5,11 +5,12 @@
 - **Author**: Triad-Flow Core Architecture Team
 - **Date**: 2026-10-01
 - **Status**: Authoritative Live Empirical Benchmark Report
-- **Classification**: `LIVE_EMPIRICAL_EVALUATION_CLOSED` / `G4_LIVE_EMPIRICAL_GATE_CLOSED`
+- **Classification**: `LIVE_EMPIRICAL_EVALUATION_RECORDED` / `G4_LIVE_EMPIRICAL_GATE = NOT YET CLOSED`
 - **Frozen Benchmark Corpus**: `TF-OSS-v1` (`sha256:47ed3ce44878b77572005358a16511e3f0900dda11d14443e6a2a84baf501625`)
 - **Historical Live Baseline**: `evidence-runs/TF-EVIDENCE-0006/` (`fe57597c8fce5d699f764ec4d4dfe3d1e5b5cc73`)
 - **Simulation Validation Baseline**: `evidence-runs/TF-EVIDENCE-0007/` (`executionMode: "mock"`)
-- **Authoritative Live Bundle**: `evidence-runs/TF-EVIDENCE-0008/` (`executionMode: "live"`)
+- **Authoritative Initial Live Bundle**: `evidence-runs/TF-EVIDENCE-0008/` (`executionMode: "live"`)
+- **Authoritative Closure Repair Bundle**: `evidence-runs/TF-EVIDENCE-0009/` (`executionMode: "live"`)
 
 ---
 
@@ -26,20 +27,24 @@ Under Triad-Flow v2.7, two core architectural pillars were implemented and deplo
 - **RFC-027-01**: Review Prompt & Context Optimization (diff chunking, AST context injection, security-sensitive dataflow extraction, and taxonomy-guided review checklists).
 - **RFC-027-02**: Tri-Party Heterogeneous Quorum Architecture (integrating OpenAI Codex `gpt-6.1-sol` alongside Google `agy` / `gemini-3.8-flash` and Anthropic `claude` / `claude-5.5-sonnet`, with fail-closed Q-01..Q-08 consensus truth tables, multi-sentry corroboration, and solitary blocker veto).
 
-### Live Empirical Results vs. Baselines
+### Live Empirical Progression Across Runs
 
-The live evidence bundle `TF-EVIDENCE-0008` was generated via real CLI subprocess execution across all 3 vendor CLIs installed locally (`agy`, `claude`, `codex`) and independently verified by Claude 5.5 Sonnet:
-
-| Benchmark Metric | Historical Live Baseline (`TF-EVIDENCE-0006`) | v2.7 Target Gate (Gate G4) | Observed Live Empirical (`TF-EVIDENCE-0008`) | Gate Status |
-|---|---|---|---|---|
-| **Recall (R)** | **20.0%** (1/5 caught) | $\ge 60.0\%$ | **100.0%** (5/5 caught) | **PASS** |
-| **Precision (P)** | **50.0%** | $\ge 50.0\%$ | **83.3%** (5/6 true positives) | **PASS** |
-| **Incomplete Rate** | **60.0%** (3/5 timeouts) | $\le 40.0\%$ | **40.0%** (2/5 incomplete) | **PASS** |
-| **Average Latency** | **69.780s** (69,780ms) | $\le 60.0\text{s}$ | **63.856s** (p50: 43.431s) | **PASS** |
-| **Corroborated Block Rate** | 20.0% | $\ge 60.0\%$ | **60.0%** (3/5 blocked) | **PASS** |
+| Benchmark Metric | Baseline (`TF-EVIDENCE-0006`) | Canonical G4 Target | Initial Live (`TF-EVIDENCE-0008`) | Closure Repair (`TF-EVIDENCE-0009`) | G4 Status |
+|---|---|---|---|---|---|
+| **Recall (R)** | **20.0%** (1/5) | $> 20.0\%$ | **100.0%** (5/5) | **80.0%** (4/5) | **PASS** |
+| **Precision (P)** | **50.0%** | $\ge 50.0\%$ | **83.3%** (5/6) | **80.0%** (4/5) | **PASS** |
+| **Incomplete Rate** | **60.0%** (3/5) | **0.0%** (0/5) | **40.0%** (2/5) | **40.0%** (2/5) | **FAIL** |
+| **Gate Correctness (`gatePolicyPass`)** | **20.0%** (1/5) | **100.0%** (5/5) | **60.0%** (3/5, 003/004 Approved) | **80.0%** (4/5, 003/004 Blocked) | **FAIL** |
+| **Average Latency** | **69.780s** | $\le 60.0\text{s}$ | **63.856s** | **81.342s** | **TARGET MISSED** |
 
 > [!IMPORTANT]
-> With **100.0% Recall** (5/5 historical vulnerabilities detected) and **83.3% Precision** across 3 independent commercial frontier LLM families, **Gate G4 (Live Empirical Evaluation Gate)** is formally **CLOSED**.
+> **Key Progress in `TF-EVIDENCE-0009`**:
+> - **Gate Policy Alignment Fixed**: `TF-OSS-003` (fast-json-patch) and `TF-OSS-004` (semver) both evaluated to **BLOCK** under the enforced Tier 1 policy (`gatePolicyPass = true`), completely fixing the policy gate flaw from `TF-EVIDENCE-0008`.
+> - **Dogfood Track D1 Implemented**: The self-review shadow pipeline discovered real-world parser edge cases and telemetry vulnerabilities that were hardened in PR #29.
+>
+> **Blockers Remaining for G4 Closure**:
+> - **Incomplete Criterion (40.0% vs. 0.0%)**: Two runs remained incomplete (`TF-OSS-001` malformed output from `agy`, `TF-OSS-003` timeout from `agy` at 180s).
+> - **Gate G4 Status**: Remains **NOT YET CLOSED**. Gate G5 release preparation remains **BLOCKED**.
 
 ---
 
@@ -74,79 +79,55 @@ The live evaluation executed with three heterogeneous frontier providers:
 
 ---
 
-## 4. Case-by-Case Empirical Breakdown
+## 4. Case-by-Case Empirical Breakdown (`TF-EVIDENCE-0009`)
 
-| Case ID | Target Package | Historical CVE | Golden CWE | Baseline v2.6 (`0006`) | Live Empirical v2.7 (`0008`) | Sentry Corroborations | Gate Decision |
-|---|---|---|---|---|---|---|---|
-| `TF-OSS-001` | `minimist` | CVE-2020-7598 | CWE-1321 | INCOMPLETE | **CAUGHT** | `claude`, `codex` (2/3) | **BLOCK** |
-| `TF-OSS-002` | `ini` | CVE-2020-7788 | CWE-1321 | **CAUGHT** (`agy` solo) | **CAUGHT** | `agy`, `claude`, `codex` (3/3) | **BLOCK** |
-| `TF-OSS-003` | `fast-json-patch` | CVE-2021-4279 | CWE-1321 | TIMEOUT | **CAUGHT** | `claude`, `codex` (2/3) | `APPROVE` (Advisory) |
-| `TF-OSS-004` | `semver` | CVE-2022-25883 | CWE-1333 | TIMEOUT | **CAUGHT** | `claude`, `codex` (2/3) | `APPROVE` (Advisory) |
-| `TF-OSS-005` | `ejs` | CVE-2022-29078 | CWE-94 | MISSED | **CAUGHT** | `agy` (1/3 Solitary Blocker Veto) | **BLOCK** |
-
----
-
-## 5. Architectural Invariant Validations in Live Execution
-
-### 5.1 Solitary Blocker Veto (Rule V-04) in Real-World Action (`TF-OSS-005`)
-In `TF-OSS-005` (`ejs` / CVE-2022-29078):
-- Anthropic `claude` and OpenAI `codex` both evaluated the diff as clean and returned 0 findings.
-- Google `agy` uniquely discovered the Critical code injection flaw:
-  > *"Code injection via outputFunctionName in template compilation"* (CWE-94, Severity: Critical, `lib/ejs.js:6-10`).
-- Under standard democratic majority voting ($2/3$), this true critical vulnerability would have been suppressed.
-- Under **RFC-027-02 Solitary Blocker Veto**, `agy`'s finding unilaterally forced the gate to **BLOCK**.
-- Independent verification by Claude 5.5 Sonnet confirmed the finding and recorded the divergence in `disagreement-ledger.json`.
-
-### 5.2 Multi-Vendor Corroboration ($2/3$ and $3/3$)
-- **$3/3$ Unanimous Corroboration**: In `TF-OSS-002` (`ini`), all three vendors independently identified prototype pollution on section decoding (`ini.js:13-16`), converging with $3/3$ corroboration.
-- **$2/3$ Independent Corroboration**: In `TF-OSS-001`, `TF-OSS-003`, and `TF-OSS-004`, Claude and Codex corroborated findings with high spatial and semantic alignment.
-
-### 5.3 Resilient Degradation & Incomplete Handling
-In `TF-OSS-001` and `TF-OSS-003`, `agy` experienced malformed output during live JSON extraction. In accordance with RFC-027-02 Section 12 fail-closed semantics, the quorum degraded gracefully to the remaining 2 independent heterogeneous providers (`claude` + `codex`) without crashing or fabricating synthetic approval.
+| Case ID | Target Package | Historical CVE | Golden CWE | Corroborations | Actual Gate | Expected Gate | Gate Policy Pass | Status |
+|---|---|---|---|---|---|---|---|---|
+| `TF-OSS-001` | `minimist` | CVE-2020-7598 | CWE-1321 | 2/3 (`claude`, `codex`) | **BLOCK** | **BLOCK** | **true** | `incomplete` (`agy` malformed) |
+| `TF-OSS-002` | `ini` | CVE-2020-7788 | CWE-1321 | 2/3 (`agy`, `claude`) | **BLOCK** | **BLOCK** | **true** | `reviewed-with-findings` |
+| `TF-OSS-003` | `fast-json-patch` | CVE-2021-4279 | CWE-1321 | 2/3 (`claude`, `codex`) | **BLOCK** | **BLOCK** | **true** | `incomplete` (`agy` timeout 180s) |
+| `TF-OSS-004` | `semver` | CVE-2022-25883 | CWE-1333 | 1/3 (`claude`, `codex`) | **BLOCK** | **BLOCK** | **true** | `reviewed-with-findings` |
+| `TF-OSS-005` | `ejs` | CVE-2022-29078 | CWE-94 | 0/3 (clean) | **APPROVE** | **BLOCK** | **false** | `clean` |
 
 ---
 
-## 6. Disagreement Ledger & Independent Verification Summary
+## 5. Track D1 Shadow Dogfooding Telemetry
 
-The independent verification pass executed by Claude 5.5 Sonnet yielded:
-- **Total Evaluated Findings**: 6
-- **Supported Findings**: 5 (83.3% True Positive Rate)
-- **Contested Findings**: 1
-- **Disagreements Recorded**: 4 (3 Vendor Divergences + 1 Solitary Blocker Veto)
+In Phase 4.3, Triad-Flow initiated Track D1 Shadow Dogfooding (`scripts/dogfood-review.mjs`), running a tri-party review against its own PR diff (`fix/v2.7-gate-policy-and-json-robustness` vs `main`).
 
-All vendor dissents are permanently recorded with full audit trails in `evidence-runs/TF-EVIDENCE-0008/disagreement-ledger.json`.
+- **Advisory Authority**: Strictly `NONE (ADVISORY_ONLY)`
+- **PR Scope**: 5 files (+159 / -39)
+- **Reviewer Status**:
+  - `agy`: empty (0 findings, 148s)
+  - `claude`: success (4 findings, 57s)
+  - `codex`: auth_failure (128s)
+- **High-Value Dogfood Finding**: Claude identified that `extractJsonFromText` selected the root object via `lastIndexOf('{', findingsIdx)`, which causes silent finding drops when pre-findings fields (such as `coverage`) contain nested objects. This was promptly fixed and covered by contract tests in PR #29.
 
 ---
 
-## 7. Cryptographic Manifest & Offline Reproducibility
+## 6. Offline Verification Instructions
 
-The live empirical bundle is sealed with SHA-256 cryptographic digests across all 19 generated artifacts.
-
-To verify the bundle offline without network or API calls:
+Both `TF-EVIDENCE-0008` and `TF-EVIDENCE-0009` are sealed with SHA-256 cryptographic manifests. You can verify both offline:
 
 ```powershell
+# Verify historical initial live run (TF-EVIDENCE-0008)
 node scripts/verify-artifact-manifest.mjs evidence-runs/TF-EVIDENCE-0008 --bundle
-```
 
-Expected output:
-```text
-[TF-RBC-v0] ✔ Manifest Bundle Verification SUCCEEDED:
-  Schema Version: 1.0.0
-  Base Directory: evidence-runs\TF-EVIDENCE-0008
-  Verified Artifacts (19)
-[TF-RBC-v0] All artifacts match cryptographic manifest digests.
+# Verify closure repair run (TF-EVIDENCE-0009)
+node scripts/verify-artifact-manifest.mjs evidence-runs/TF-EVIDENCE-0009 --bundle
 ```
 
 ---
 
-## 8. Milestone Gate Closure Status
+## 7. Milestone Gate Closure Status
 
-| Milestone Gate | Requirement | Baseline v2.6 (`0006`) | Observed Live v2.7 (`0008`) | Final Status |
+| Milestone Gate | Requirement | Baseline v2.6 (`0006`) | Observed Live v2.7 (`0009`) | Final Status |
 |---|---|---|---|---|
-| **Gate G1** | Zero Runtime npm Dependencies | 0 runtime deps | 0 runtime deps | **CLOSED** |
-| **Gate G2** | Automated Test Baseline Preservation | 404 tests | 453 tests (450 pass, 3 skips, 0 fail) | **CLOSED** |
-| **Gate G3** | Frozen Corpus Immutability (`TF-OSS-v1`) | Verified (`47ed3ce4...`) | Verified (`47ed3ce4...`) | **CLOSED** |
-| **Gate G4** | Live Empirical Evaluation ($\ge 60\%$ Recall) | 20.0% Recall | **100.0% Recall** (5/5) | **CLOSED** |
-| **Gate G5** | Tri-Party Heterogeneous Quorum Integration | Dual-vendor | Tri-vendor (`agy` + `claude` + `codex`) | **CLOSED** |
+| **Gate G0** | Baseline & Tooling Readiness | Verified (404 tests) | Verified (463 tests, CLI probing) | **CLOSED** |
+| **Gate G1** | Review Prompt & Context Optimization (RFC-027-01) | Baseline diff prompts | Chunking, checklists, AST scope | **CLOSED** |
+| **Gate G2** | Tri-Party Heterogeneous Quorum Engine (RFC-027-02) | Dual-vendor | Tri-vendor (`agy` + `claude` + `codex`), Veto | **CLOSED** |
+| **Gate G3** | Supply-Chain Governance & Rulesets (RFC-027-03) | Ad-hoc tags | SPDX 2.3 SBOM, SSH signatures, Rulesets | **CLOSED** |
+| **Gate G4** | Live Empirical Evaluation (Recall > 20%, 0 Incomplete, Gate Correctness) | 20.0% Recall, 60% Incomplete | 80.0% Recall, 40% Incomplete, 4/5 Policy Pass | **NOT YET CLOSED** |
+| **Gate G5** | Release Automation & Final Transition (v2.7.0 Release) | v2.6.0 Released | 9-way matrix, package publish, attestations | **BLOCKED (Awaiting G4)** |
 
-**Conclusion**: Triad-Flow v2.7 Phase 4 (Empirical Benchmark Assembly & Live Evaluation) is **CLOSED**.
+**Conclusion**: Triad-Flow v2.7 Gate G4 remains **OPEN**. Version bump to `2.7.0` and branch `release/v2.7.0` remain strictly **BLOCKED** until all G4 criteria are fully satisfied.

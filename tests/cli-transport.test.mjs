@@ -10,7 +10,7 @@ import {
   extractJsonFromText,
   buildReviewPrompt
 } from "../src/adapters/cli-transport.mjs";
-import { EXECUTION_STATUS } from "../src/adapters/provider-contract.mjs";
+import { EXECUTION_STATUS, validateProviderOutput } from "../src/adapters/provider-contract.mjs";
 import { orchestrateReview } from "../src/adapters/review-orchestrator.mjs";
 import { runCli, EXIT_CODES } from "../src/cli.mjs";
 
@@ -44,6 +44,49 @@ test("extractJsonFromText extracts JSON directly, from fences, or from surroundi
   assert.deepEqual(extractJsonFromText('Here is output:\n```json\n{"findings":[{"title":"issue"}]}\n```\nDone.'), { findings: [{ title: "issue" }] });
   assert.deepEqual(extractJsonFromText('Preamble {"findings":[{"title":"direct"}]} epilogue'), { findings: [{ title: "direct" }] });
   assert.equal(extractJsonFromText("garbage without json"), null);
+
+  // Robustness: trailing comma tolerance
+  assert.deepEqual(extractJsonFromText('{"findings":[{"title":"issue",}],}'), { findings: [{ title: "issue" }] });
+
+  // Robustness: string literals containing trailing comma patterns must NOT be mutated
+  const literalWithCommas = '{"findings":[{"title":"code snippet: { a: 1, } and [2, ]"}]}';
+  assert.deepEqual(extractJsonFromText(literalWithCommas), { findings: [{ title: "code snippet: { a: 1, } and [2, ]" }] });
+
+  // Robustness: preamble with braces and postamble with braces
+  const complexText = `
+  I analyzed the code. Note that options like { safe: true } were considered.
+  Here is the formal review:
+  {
+    "findings": [
+      {
+        "title": "Complex finding",
+        "severity": "high"
+      }
+    ],
+    "coverage": { "coveredFiles": ["index.js"], "omittedFiles": [] }
+  }
+  End of review. Context snippet: function() { return 1; }
+  `;
+  const complexParsed = extractJsonFromText(complexText);
+  assert.ok(complexParsed);
+  assert.equal(complexParsed.findings[0].title, "Complex finding");
+
+  // Robustness: coverage before findings with inner braces
+  const coverageFirstText = `
+  Here is review:
+  {
+    "coverage": {
+      "nested": { "inner": true },
+      "coveredFiles": ["index.js"]
+    },
+    "findings": [
+      { "title": "Coverage first", "severity": "high" }
+    ]
+  }
+  `;
+  const covFirstParsed = extractJsonFromText(coverageFirstText);
+  assert.ok(covFirstParsed);
+  assert.equal(covFirstParsed.findings[0].title, "Coverage first");
 });
 
 test("buildReviewPrompt includes ChangeSet metadata, file list, and diff", () => {
@@ -423,4 +466,20 @@ test("runCli review integrates reviewAdapters with real CLI execution and exit c
 
   assert.equal(exitCodeBlock, EXIT_CODES.GATE_BLOCKED);
   assert.match(stderr2.buffer, /Gate Decision: BLOCK/i);
+});
+
+test("validateProviderOutput enforces 4096-byte UTF-8 cap and redacts secrets in error", () => {
+  const multiByteStr = "測".repeat(2000); // 2000 CJK chars * 3 bytes = 6000 bytes > 4096
+  const out = validateProviderOutput({
+    executionStatus: EXECUTION_STATUS.ERROR,
+    rawOutput: multiByteStr,
+    error: "Failed with token: ghp_1234567890abcdefghijklmnopqrstuvwxyz"
+  });
+
+  assert.equal(out.ok, false);
+  assert.ok(out.rawOutput.endsWith(" ... [TRUNCATED]"));
+  const rawPrefix = out.rawOutput.slice(0, -(" ... [TRUNCATED]".length));
+  assert.ok(Buffer.byteLength(rawPrefix, "utf8") <= 4096);
+  assert.ok(!out.error.includes("ghp_"));
+  assert.ok(out.error.includes("[REDACTED_SECRET]"));
 });

@@ -1,0 +1,116 @@
+{
+  "schemaVersion": "1.0.0",
+  "verifiedAt": "2026-10-01T16:01:27.904Z",
+  "changeSetDigest": "sha256:6ad15a6e2d7ff34d433b1bab4a7e1c7caa2d9ec90f0885e20320c2a1224b0dd1",
+  "producer": {
+    "providerName": "tri-party-quorum",
+    "findingsCount": 1,
+    "findings": [
+      {
+        "title": "Incomplete prototype pollution fix: 'constructor' and 'prototype' path segments are not blocked",
+        "severity": "high",
+        "file": "index.js",
+        "line_start": 9,
+        "line_end": 11,
+        "ruleId": "CHECKLIST-CWE-1321",
+        "cwe": "CWE-1321",
+        "type": "PROTOTYPE-POLLUTION",
+        "recommendation": "Don't only compare against '__proto__'. In the traversal loop, reject 'constructor' and 'prototype' as well. Apply the check to the final key assignment too. Better still, only traverse own properties: use Object.prototype.hasOwnProperty.call(o, key), and create intermediate objects with Object.create(null). Alternatively, store the parsed values in a Map or a null-prototype object.",
+        "sources": [
+          "claude",
+          "codex"
+        ],
+        "corroborations": 2
+      }
+    ]
+  },
+  "verifier": {
+    "providerName": "claude",
+    "modelName": "claude-5.5-sonnet",
+    "actualModel": {
+      "source": "reported",
+      "value": "claude-5.5-sonnet"
+    },
+    "usage": {
+      "completionTokens": null,
+      "promptTokens": null,
+      "totalTokens": null,
+      "usageSource": "unavailable"
+    }
+  },
+  "evaluations": [
+    {
+      "findingId": "finding-1",
+      "verdict": "SUPPORTED",
+      "classification": "PARTIALLY_SUPPORTED",
+      "locatorAccurate": false,
+      "typeAccurate": true,
+      "severityAccurate": true,
+      "reasoning": "The diff only adds `if (key === '__proto__') return;` inside the traversal loop. It does not block 'constructor' or 'prototype'. A path like `constructor.prototype.x` still walks o['constructor'] (Function) and then o['prototype'] (Object.prototype) and assigns on it, so the pollution is still possible. This is the known incomplete fix for minimist (CVE-2020-7598 and the follow-up CVE-2021-44906). The finding also correctly notes that the final key assignment is not checked, so a final key of '__proto__' is unguarded. High severity is reasonable for CWE-1321. Locator: the changed line is at about line 9 and the finding spans lines 9-11. The hunk is only a few lines and the exact line numbers cannot be confirmed from the diff, so the locator is marked inaccurate, but the span covers the changed line.",
+      "dissent": "The diff only adds `if (key === '__proto__') return;` inside the traversal loop. It does not block 'constructor' or 'prototype'. A path like `constructor.prototype.x` still walks o['constructor'] (Function) and then o['prototype'] (Object.prototype) and assigns on it, so the pollution is still possible. This is the known incomplete fix for minimist (CVE-2020-7598 and the follow-up CVE-2021-44906). The finding also correctly notes that the final key assignment is not checked, so a final key of '__proto__' is unguarded. High severity is reasonable for CWE-1321. Locator: the changed line is at about line 9 and the finding spans lines 9-11. The hunk is only a few lines and the exact line numbers cannot be confirmed from the diff, so the locator is marked inaccurate, but the span covers the changed line."
+    }
+  ],
+  "verifierOmissions": [
+    {
+      "title": "Final-key assignment is not guarded against '__proto__'",
+      "severity": "high",
+      "file": "index.js",
+      "line_start": 9,
+      "line_end": 11,
+      "cwe": "CWE-1321",
+      "type": "PROTOTYPE-POLLUTION",
+      "recommendation": "The guard only covers intermediate keys (i < keys.length - 1). Apply the same denylist to the last key (keys[keys.length - 1]) before assigning. Better, use Object.create(null) or Map, or check Object.prototype.hasOwnProperty.call(o, key) for each segment.",
+      "id": "omission-1",
+      "classification": "MISSED_BY_PRODUCER"
+    },
+    {
+      "title": "Silent `return` drops the whole parse result",
+      "severity": "low",
+      "file": "index.js",
+      "line_start": 9,
+      "line_end": 9,
+      "cwe": "CWE-754",
+      "type": "IMPROPER-ERROR-HANDLING",
+      "recommendation": "`return` exits the whole parser function with undefined instead of skipping the malicious argument. Use `continue` or skip the key so the remaining valid arguments are still parsed, or throw an explicit error.",
+      "id": "omission-2",
+      "classification": "MISSED_BY_PRODUCER"
+    }
+  ],
+  "disagreementLedger": [
+    {
+      "findingId": "finding-1",
+      "producerFinding": {
+        "title": "Incomplete prototype pollution fix: 'constructor' and 'prototype' path segments are not blocked",
+        "severity": "high",
+        "file": "index.js",
+        "line_start": 9,
+        "line_end": 11,
+        "ruleId": "CHECKLIST-CWE-1321",
+        "cwe": "CWE-1321",
+        "type": "PROTOTYPE-POLLUTION",
+        "recommendation": "Don't only compare against '__proto__'. In the traversal loop, reject 'constructor' and 'prototype' as well. Apply the check to the final key assignment too. Better still, only traverse own properties: use Object.prototype.hasOwnProperty.call(o, key), and create intermediate objects with Object.create(null). Alternatively, store the parsed values in a Map or a null-prototype object.",
+        "sources": [
+          "claude",
+          "codex"
+        ],
+        "corroborations": 2
+      },
+      "verdict": "SUPPORTED",
+      "classification": "PARTIALLY_SUPPORTED",
+      "locatorAccurate": false,
+      "typeAccurate": true,
+      "severityAccurate": true,
+      "reasoning": "The diff only adds `if (key === '__proto__') return;` inside the traversal loop. It does not block 'constructor' or 'prototype'. A path like `constructor.prototype.x` still walks o['constructor'] (Function) and then o['prototype'] (Object.prototype) and assigns on it, so the pollution is still possible. This is the known incomplete fix for minimist (CVE-2020-7598 and the follow-up CVE-2021-44906). The finding also correctly notes that the final key assignment is not checked, so a final key of '__proto__' is unguarded. High severity is reasonable for CWE-1321. Locator: the changed line is at about line 9 and the finding spans lines 9-11. The hunk is only a few lines and the exact line numbers cannot be confirmed from the diff, so the locator is marked inaccurate, but the span covers the changed line.",
+      "dissent": "The diff only adds `if (key === '__proto__') return;` inside the traversal loop. It does not block 'constructor' or 'prototype'. A path like `constructor.prototype.x` still walks o['constructor'] (Function) and then o['prototype'] (Object.prototype) and assigns on it, so the pollution is still possible. This is the known incomplete fix for minimist (CVE-2020-7598 and the follow-up CVE-2021-44906). The finding also correctly notes that the final key assignment is not checked, so a final key of '__proto__' is unguarded. High severity is reasonable for CWE-1321. Locator: the changed line is at about line 9 and the finding spans lines 9-11. The hunk is only a few lines and the exact line numbers cannot be confirmed from the diff, so the locator is marked inaccurate, but the span covers the changed line."
+    }
+  ],
+  "summary": {
+    "totalEvaluated": 1,
+    "supportedCount": 1,
+    "partiallySupportedCount": 1,
+    "contestedCount": 0,
+    "insufficientEvidenceCount": 0,
+    "omissionsCount": 2
+  },
+  "ok": true
+}

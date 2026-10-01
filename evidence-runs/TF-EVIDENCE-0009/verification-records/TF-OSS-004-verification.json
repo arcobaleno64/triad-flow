@@ -1,0 +1,124 @@
+{
+  "schemaVersion": "1.0.0",
+  "verifiedAt": "2026-10-01T16:02:30.375Z",
+  "changeSetDigest": "sha256:167f2fd7dc8426afc06df7d23d037cf1d58c280dc5d062fd4d499c16c337ab0b",
+  "producer": {
+    "providerName": "tri-party-quorum",
+    "findingsCount": 2,
+    "findings": [
+      {
+        "title": "cleanVersion now rejects inputs with more than one leading or trailing whitespace character",
+        "severity": "low",
+        "file": "internal/re.js",
+        "line_start": 6,
+        "line_end": 9,
+        "ruleId": "BEHAVIOR-REGRESSION-WHITESPACE",
+        "cwe": "CWE-1333",
+        "type": "behavioral-regression",
+        "recommendation": "The original `^\\s*...\\s*$` is anchored and has no nested quantifiers, so it is not exploitable for ReDoS. Narrowing the whitespace to `\\s{0,1}` is not needed for security and changes behavior. Inputs such as '  1.2.3', '1.2.3\\n\\n' or '\\t 1.2.3' used to be accepted and now return null. Either restore `\\s*`, or trim the input first and add a length cap (for example `str.length <= 256`) before matching. If the stricter behavior is intended, add tests for it and check the callers.",
+        "sources": [
+          "claude"
+        ],
+        "corroborations": 1
+      },
+      {
+        "title": "Whitespace limit rejects previously accepted version strings",
+        "severity": "low",
+        "file": "internal/re.js",
+        "line_start": 6,
+        "line_end": 6,
+        "recommendation": "Trim surrounding whitespace before matching an anchored version regex without whitespace quantifiers. Preserve acceptance of inputs such as \"  1.2.3\" and \"1.2.3  \", which now return null instead of \"1.2.3\".",
+        "sources": [
+          "codex"
+        ],
+        "corroborations": 1
+      }
+    ]
+  },
+  "verifier": {
+    "providerName": "claude",
+    "modelName": "claude-5.5-sonnet",
+    "actualModel": {
+      "source": "reported",
+      "value": "claude-5.5-sonnet"
+    },
+    "usage": {
+      "completionTokens": null,
+      "promptTokens": null,
+      "totalTokens": null,
+      "usageSource": "unavailable"
+    }
+  },
+  "evaluations": [
+    {
+      "findingId": "finding-1",
+      "verdict": "SUPPORTED",
+      "classification": "PARTIALLY_SUPPORTED",
+      "locatorAccurate": true,
+      "typeAccurate": false,
+      "severityAccurate": true,
+      "reasoning": "The diff changes cleanVersion from re[0] (/^\\s*...\\s*$/) to safeRe[0] (/^\\s{0,1}...\\s{0,1}$/). Inputs with two or more leading or trailing whitespace characters, such as '  1.2.3' or '1.2.3\\n\\n', matched before and now return null. The behavioral regression is real and the low severity is reasonable. The locator is accurate: the changed lines are 6-9 in the new file, where safeRe is declared and used. The recommendation's point that the original anchored regex has no nested quantifiers and is not exploitable for ReDoS is correct. The CWE-1333 tag (ReDoS) is therefore a misclassification, because the finding itself says no ReDoS exists; the defect type 'behavioral-regression' is accurate. typeAccurate is false only because of the CWE mismatch. The diff does not show callers or tests, so the real-world impact is unknown, but the behavior change is directly visible.",
+      "dissent": "The diff changes cleanVersion from re[0] (/^\\s*...\\s*$/) to safeRe[0] (/^\\s{0,1}...\\s{0,1}$/). Inputs with two or more leading or trailing whitespace characters, such as '  1.2.3' or '1.2.3\\n\\n', matched before and now return null. The behavioral regression is real and the low severity is reasonable. The locator is accurate: the changed lines are 6-9 in the new file, where safeRe is declared and used. The recommendation's point that the original anchored regex has no nested quantifiers and is not exploitable for ReDoS is correct. The CWE-1333 tag (ReDoS) is therefore a misclassification, because the finding itself says no ReDoS exists; the defect type 'behavioral-regression' is accurate. typeAccurate is false only because of the CWE mismatch. The diff does not show callers or tests, so the real-world impact is unknown, but the behavior change is directly visible."
+    },
+    {
+      "findingId": "finding-2",
+      "verdict": "SUPPORTED",
+      "classification": "SUPPORTED",
+      "locatorAccurate": true,
+      "typeAccurate": true,
+      "severityAccurate": true,
+      "reasoning": "The new safeRe[0] limits leading and trailing whitespace to at most one character via \\s{0,1}. Inputs such as '  1.2.3' and '1.2.3  ' were accepted by the old re[0] with \\s* and now return null from cleanVersion. This matches the diff. The reported line 6 is within the changed hunk: it is the safeRe[0] definition in the new file, and line 8 is the changed match call. The locator is acceptable. The low severity is justified. The finding has no type or CWE field, so type accuracy is not contradicted. It substantially duplicates finding-1.",
+      "dissent": null
+    }
+  ],
+  "verifierOmissions": [
+    {
+      "title": "Unused re[0] and misleading comment left alongside the new safeRe",
+      "severity": "info",
+      "file": "internal/re.js",
+      "line_start": 3,
+      "line_end": 6,
+      "cwe": "",
+      "type": "maintainability",
+      "recommendation": "The original re[0] is still exported but no longer used by cleanVersion, and the comment still describes the old regex as ReDoS-prone. The anchored regex with \\s* is not exploitable, so the comment is misleading. Either remove the duplicate or document why both exist. Do not remove re[0] without checking external consumers of the export, per Hyrum's Law.",
+      "id": "omission-1",
+      "classification": "MISSED_BY_PRODUCER"
+    }
+  ],
+  "disagreementLedger": [
+    {
+      "findingId": "finding-1",
+      "producerFinding": {
+        "title": "cleanVersion now rejects inputs with more than one leading or trailing whitespace character",
+        "severity": "low",
+        "file": "internal/re.js",
+        "line_start": 6,
+        "line_end": 9,
+        "ruleId": "BEHAVIOR-REGRESSION-WHITESPACE",
+        "cwe": "CWE-1333",
+        "type": "behavioral-regression",
+        "recommendation": "The original `^\\s*...\\s*$` is anchored and has no nested quantifiers, so it is not exploitable for ReDoS. Narrowing the whitespace to `\\s{0,1}` is not needed for security and changes behavior. Inputs such as '  1.2.3', '1.2.3\\n\\n' or '\\t 1.2.3' used to be accepted and now return null. Either restore `\\s*`, or trim the input first and add a length cap (for example `str.length <= 256`) before matching. If the stricter behavior is intended, add tests for it and check the callers.",
+        "sources": [
+          "claude"
+        ],
+        "corroborations": 1
+      },
+      "verdict": "SUPPORTED",
+      "classification": "PARTIALLY_SUPPORTED",
+      "locatorAccurate": true,
+      "typeAccurate": false,
+      "severityAccurate": true,
+      "reasoning": "The diff changes cleanVersion from re[0] (/^\\s*...\\s*$/) to safeRe[0] (/^\\s{0,1}...\\s{0,1}$/). Inputs with two or more leading or trailing whitespace characters, such as '  1.2.3' or '1.2.3\\n\\n', matched before and now return null. The behavioral regression is real and the low severity is reasonable. The locator is accurate: the changed lines are 6-9 in the new file, where safeRe is declared and used. The recommendation's point that the original anchored regex has no nested quantifiers and is not exploitable for ReDoS is correct. The CWE-1333 tag (ReDoS) is therefore a misclassification, because the finding itself says no ReDoS exists; the defect type 'behavioral-regression' is accurate. typeAccurate is false only because of the CWE mismatch. The diff does not show callers or tests, so the real-world impact is unknown, but the behavior change is directly visible.",
+      "dissent": "The diff changes cleanVersion from re[0] (/^\\s*...\\s*$/) to safeRe[0] (/^\\s{0,1}...\\s{0,1}$/). Inputs with two or more leading or trailing whitespace characters, such as '  1.2.3' or '1.2.3\\n\\n', matched before and now return null. The behavioral regression is real and the low severity is reasonable. The locator is accurate: the changed lines are 6-9 in the new file, where safeRe is declared and used. The recommendation's point that the original anchored regex has no nested quantifiers and is not exploitable for ReDoS is correct. The CWE-1333 tag (ReDoS) is therefore a misclassification, because the finding itself says no ReDoS exists; the defect type 'behavioral-regression' is accurate. typeAccurate is false only because of the CWE mismatch. The diff does not show callers or tests, so the real-world impact is unknown, but the behavior change is directly visible."
+    }
+  ],
+  "summary": {
+    "totalEvaluated": 2,
+    "supportedCount": 2,
+    "partiallySupportedCount": 1,
+    "contestedCount": 0,
+    "insufficientEvidenceCount": 0,
+    "omissionsCount": 1
+  },
+  "ok": true
+}
