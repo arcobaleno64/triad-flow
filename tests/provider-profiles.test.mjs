@@ -92,8 +92,13 @@ test("resolveProviderProfile handles null, undefined, empty, and exact binary na
   assert.equal(legacyScan.profileStatus, "generic");
 
   const codexProfile = resolveProviderProfile("codex");
-  assert.equal(codexProfile.reviewProfileReady, false);
-  assert.equal(codexProfile.profileStatus, "generic");
+  assert.equal(codexProfile.reviewProfileReady, true);
+  assert.equal(codexProfile.profileStatus, "canonical");
+  assert.equal(codexProfile.family, "openai");
+
+  const genericProfile = resolveProviderProfile("generic-tool");
+  assert.equal(genericProfile.reviewProfileReady, false);
+  assert.equal(genericProfile.profileStatus, "generic");
 
   // 5. Array cloning ensures profile cannot be corrupted by mutations
   const p1 = resolveProviderProfile("agy");

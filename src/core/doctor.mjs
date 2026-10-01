@@ -190,12 +190,42 @@ export function evaluateQuorumReadiness(reviewers = [], options = {}) {
   );
 
   const all7PointsVerified = verifiedFamilies.length >= 2;
+  const triParty7PointsVerified = verifiedFamilies.length >= 3;
   const hasUnverifiedLive = trustedReviewers.some(r => r.readiness?.points?.point5_liveInvocationSucceeds?.status === "unverified");
 
   const require7Points = Boolean(options.require7Points);
   const isReady = require7Points ? all7PointsVerified : (trustedFamilies.length >= 2);
 
-  if (trustedFamilies.length >= 2) {
+  if (trustedFamilies.length >= 3) {
+    const names = trustedFamilies.map(getFamilyDisplayName);
+    const summary = all7PointsVerified
+      ? `TRI_PARTY_QUORUM_READY (${names.join(" + ")}) [All 7 points verified]`
+      : `TRI_PARTY_QUORUM_READY (${names.join(" + ")})`;
+    const note = all7PointsVerified
+      ? "all 7 provider readiness points verified across tri-party quorum"
+      : (hasUnverifiedLive
+          ? "version check only; operational review readiness requires authenticated probe (live probe: unverified)"
+          : "version check only; operational review readiness requires authenticated probe");
+
+    return {
+      activeReviewers: activeReviewers.map(r => r.id || r.command || "unknown"),
+      all7PointsVerified,
+      canRunTriPartyQuorum: true,
+      canRunDualQuorum: true,
+      canRunSingle: true,
+      families: trustedFamilies,
+      familyNames: names,
+      hasUnverifiedLive,
+      note,
+      operationalReady: all7PointsVerified,
+      ready: isReady,
+      stage: all7PointsVerified ? "READY" : "PROFILED",
+      status: QUORUM_STATUS.TRI_PARTY_QUORUM_READY,
+      summary
+    };
+  }
+
+  if (trustedFamilies.length === 2) {
     const names = trustedFamilies.map(getFamilyDisplayName);
     const summary = all7PointsVerified
       ? `BINARY_QUORUM_READY (${names.join(" + ")}) [All 7 points verified]`
@@ -209,6 +239,7 @@ export function evaluateQuorumReadiness(reviewers = [], options = {}) {
     return {
       activeReviewers: activeReviewers.map(r => r.id || r.command || "unknown"),
       all7PointsVerified,
+      canRunTriPartyQuorum: false,
       canRunDualQuorum: true,
       canRunSingle: true,
       families: trustedFamilies,
@@ -232,6 +263,7 @@ export function evaluateQuorumReadiness(reviewers = [], options = {}) {
     return {
       activeReviewers: activeReviewers.map(r => r.id || r.command || "unknown"),
       all7PointsVerified: false,
+      canRunTriPartyQuorum: false,
       canRunDualQuorum: false,
       canRunSingle: true,
       families: trustedFamilies,
@@ -249,6 +281,7 @@ export function evaluateQuorumReadiness(reviewers = [], options = {}) {
   return {
     activeReviewers: activeReviewers.map(r => r.id || r.command || "unknown"),
     all7PointsVerified: false,
+    canRunTriPartyQuorum: false,
     canRunDualQuorum: false,
     canRunSingle: false,
     families: [],

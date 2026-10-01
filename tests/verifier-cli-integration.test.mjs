@@ -30,7 +30,7 @@ import { runCli, EXIT_CODES } from "../src/cli.mjs";
 
 const execFileAsync = promisify(execFile);
 
-test("validateVerifierCommand: accepts canonical providers (claude, agy)", () => {
+test("validateVerifierCommand: accepts canonical providers (claude, agy, codex)", () => {
   const claudeProfile = validateVerifierCommand("claude");
   assert.equal(claudeProfile.id, "claude");
   assert.equal(claudeProfile.profileStatus, "canonical");
@@ -38,6 +38,10 @@ test("validateVerifierCommand: accepts canonical providers (claude, agy)", () =>
   const agyProfile = validateVerifierCommand("agy");
   assert.equal(agyProfile.id, "agy");
   assert.equal(agyProfile.profileStatus, "canonical");
+
+  const codexProfile = validateVerifierCommand("codex");
+  assert.equal(codexProfile.id, "codex");
+  assert.equal(codexProfile.profileStatus, "canonical");
 });
 
 test("validateVerifierCommand: rejects arbitrary shell strings, spaces, and CLI flags", () => {
@@ -68,7 +72,7 @@ test("validateVerifierCommand: rejects arbitrary shell strings, spaces, and CLI 
 });
 
 test("validateVerifierCommand: rejects non-canonical or generic provider profiles", () => {
-  const nonCanonical = ["codex", "gemini-cli", "bash", "python", "custom-script"];
+  const nonCanonical = ["generic-tool", "gemini-cli", "bash", "python", "custom-script"];
   for (const name of nonCanonical) {
     assert.throws(
       () => validateVerifierCommand(name),
@@ -102,7 +106,7 @@ test("CLI Script Integration: scripts/run-real-benchmark.mjs rejects invalid or 
   // Case 2: Non-canonical provider
   await assert.rejects(
     async () => {
-      await execFileAsync(process.execPath, [benchScript, "--verify-with=codex"]);
+      await execFileAsync(process.execPath, [benchScript, "--verify-with=generic-tool"]);
     },
     (err) => {
       assert.equal(err.code, 1);

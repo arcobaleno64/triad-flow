@@ -253,8 +253,13 @@ export function issueConsensusFromEvidence({
   const trustedCapability = deepFreeze({
     verdict: semantic.value.verdict,
     quorumReached: semantic.value.quorumReached,
+    quorumResult: {
+      quorumReached: semantic.value.quorumReached,
+      selectedReportIds: semantic.value.selectedReportIds
+    },
     totalFindings: semantic.value.totalFindings,
     findings: semantic.value.findings,
+    deduplicatedFindings: semantic.value.findings,
     selectedReportIds: semantic.value.selectedReportIds,
     consensusProof: semantic.value.consensusProof
   });

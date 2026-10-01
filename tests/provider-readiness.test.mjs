@@ -56,7 +56,7 @@ import {
   createMockCorpusAdapters
 } from "./fixtures/real-corpus-fixtures.mjs";
 
-test("Point 3: Canonical profile matched for agy and claude; generic for codex and unpromoted tools", () => {
+test("Point 3: Canonical profile matched for agy, claude, and codex; generic for unpromoted tools", () => {
   const agyRes = verifyProviderReadiness("agy", { live: false });
   assert.equal(agyRes.points.point3_canonicalProfileMatched.pass, true);
   assert.equal(agyRes.points.point3_canonicalProfileMatched.profileStatus, "canonical");
@@ -70,9 +70,10 @@ test("Point 3: Canonical profile matched for agy and claude; generic for codex a
   assert.equal(claudeRes.points.point3_canonicalProfileMatched.family, "anthropic");
 
   const codexRes = verifyProviderReadiness("codex", { live: false });
-  assert.equal(codexRes.points.point3_canonicalProfileMatched.pass, false);
-  assert.equal(codexRes.points.point3_canonicalProfileMatched.profileStatus, "generic");
-  assert.match(codexRes.points.point3_canonicalProfileMatched.error, /expected 'canonical'/i);
+  assert.equal(codexRes.points.point3_canonicalProfileMatched.pass, true);
+  assert.equal(codexRes.points.point3_canonicalProfileMatched.profileStatus, "canonical");
+  assert.equal(codexRes.points.point3_canonicalProfileMatched.id, "codex");
+  assert.equal(codexRes.points.point3_canonicalProfileMatched.family, "openai");
 
   const customRes = verifyProviderReadiness("custom-tool", { live: false });
   assert.equal(customRes.points.point3_canonicalProfileMatched.pass, false);
@@ -93,10 +94,16 @@ test("Point 4: Mandatory safety args verified (cannot be stripped or overridden)
     "--tools="
   ]);
 
-  // Non-canonical generic tool has no mandatory safety args
   const codexRes = verifyProviderReadiness("codex", { live: false });
-  assert.equal(codexRes.points.point4_mandatorySafetyArgsVerified.pass, false);
-  assert.match(codexRes.points.point4_mandatorySafetyArgsVerified.error, /no mandatory safety args defined/i);
+  assert.equal(codexRes.points.point4_mandatorySafetyArgsVerified.pass, true);
+  assert.deepEqual(codexRes.points.point4_mandatorySafetyArgsVerified.mandatorySafetyArgs, [
+    "--sandbox=read-only"
+  ]);
+
+  // Non-canonical generic tool has no mandatory safety args
+  const genericRes = verifyProviderReadiness("generic-tool", { live: false });
+  assert.equal(genericRes.points.point4_mandatorySafetyArgsVerified.pass, false);
+  assert.match(genericRes.points.point4_mandatorySafetyArgsVerified.error, /no mandatory safety args defined/i);
 });
 
 test("Point 1 & Point 2: Binary detected and semver parsed accurately via mock execFn", () => {

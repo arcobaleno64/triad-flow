@@ -86,8 +86,8 @@ test("Test 1: probeInstalledReviewers supports custom mock execFn and parses ver
   assert.equal(codex.available, false);
   assert.equal(codex.family, "openai");
   assert.equal(codex.version, null);
-  assert.equal(codex.reviewProfileReady, false);
-  assert.equal(codex.profileStatus, "generic");
+  assert.equal(codex.reviewProfileReady, true);
+  assert.equal(codex.profileStatus, "canonical");
   assert.match(codex.error, /ENOENT/);
 });
 
@@ -144,22 +144,22 @@ test("Test 2: evaluateQuorumReadiness accurately classifies STANDALONE, PARTIAL,
   assert.deepEqual(resDual.familyNames, ["Google", "Anthropic"]);
   assert.equal(resDual.summary, "BINARY_QUORUM_READY (Google + Anthropic)");
 
-  // 4. Generic fallback profile (e.g. Codex) does NOT count toward dual quorum
-  const resAgyCodex = evaluateQuorumReadiness([
+  // 4. Generic fallback profile (e.g. generic-tool) does NOT count toward dual quorum
+  const resAgyGeneric = evaluateQuorumReadiness([
     { id: "agy", family: "google", installed: true, available: true },
-    { id: "codex", family: "openai", installed: true, available: true }
+    { id: "generic-tool", family: "openai", installed: true, available: true }
   ]);
-  assert.equal(resAgyCodex.status, QUORUM_STATUS.PARTIAL);
-  assert.equal(resAgyCodex.ready, false);
-  assert.equal(resAgyCodex.canRunDualQuorum, false);
-  assert.equal(resAgyCodex.canRunSingle, true);
-  assert.deepEqual(resAgyCodex.families, ["google"]);
+  assert.equal(resAgyGeneric.status, QUORUM_STATUS.PARTIAL);
+  assert.equal(resAgyGeneric.ready, false);
+  assert.equal(resAgyGeneric.canRunDualQuorum, false);
+  assert.equal(resAgyGeneric.canRunSingle, true);
+  assert.deepEqual(resAgyGeneric.families, ["google"]);
 
-  // 5. Dual quorum satisfied by canonical profiles (agy + claude) even if generic Codex is also present
+  // 5. Dual quorum satisfied by canonical profiles (agy + claude) even if generic-tool is also present
   const resTripleWithGeneric = evaluateQuorumReadiness([
     { id: "agy", family: "google", installed: true, available: true },
     { id: "claude", family: "anthropic", installed: true, available: true },
-    { id: "codex", family: "openai", installed: true, available: true }
+    { id: "generic-tool", family: "openai", installed: true, available: true }
   ]);
   assert.equal(resTripleWithGeneric.status, QUORUM_STATUS.BINARY_QUORUM_READY);
   assert.equal(resTripleWithGeneric.ready, true);
@@ -167,33 +167,36 @@ test("Test 2: evaluateQuorumReadiness accurately classifies STANDALONE, PARTIAL,
   assert.deepEqual(resTripleWithGeneric.families, ["google", "anthropic"]);
   assert.equal(resTripleWithGeneric.summary, "BINARY_QUORUM_READY (Google + Anthropic)");
 
-  // 6. READY with 3 distinct families when all 3 have reviewProfileReady: true
+  // 6. TRI_PARTY_QUORUM_READY with 3 distinct families when all 3 have reviewProfileReady: true
   const resTripleCanonical = evaluateQuorumReadiness([
     { id: "agy", family: "google", installed: true, available: true, reviewProfileReady: true },
     { id: "claude", family: "anthropic", installed: true, available: true, reviewProfileReady: true },
-    { id: "custom-openai", family: "openai", installed: true, available: true, reviewProfileReady: true }
+    { id: "codex", family: "openai", installed: true, available: true, reviewProfileReady: true }
   ]);
-  assert.equal(resTripleCanonical.status, QUORUM_STATUS.BINARY_QUORUM_READY);
+  assert.equal(resTripleCanonical.status, QUORUM_STATUS.TRI_PARTY_QUORUM_READY);
   assert.equal(resTripleCanonical.ready, true);
   assert.equal(resTripleCanonical.stage, "PROFILED");
+  assert.equal(resTripleCanonical.canRunTriPartyQuorum, true);
+  assert.equal(resTripleCanonical.canRunDualQuorum, true);
   assert.deepEqual(resTripleCanonical.families, ["google", "anthropic", "openai"]);
-  assert.equal(resTripleCanonical.summary, "BINARY_QUORUM_READY (Google + Anthropic + OpenAI)");
+  assert.equal(resTripleCanonical.summary, "TRI_PARTY_QUORUM_READY (Google + Anthropic + OpenAI)");
 
-  // 7. Generic-only reviewer (e.g. only Codex active) results in STANDALONE while retaining activeReviewers
-  const resCodexOnly = evaluateQuorumReadiness([
-    { id: "codex", family: "openai", installed: true, available: true }
+  // 7. Generic-only reviewer (e.g. only generic-tool active) results in STANDALONE while retaining activeReviewers
+  const resGenericOnly = evaluateQuorumReadiness([
+    { id: "generic-tool", family: "openai", installed: true, available: true }
   ]);
-  assert.equal(resCodexOnly.status, QUORUM_STATUS.STANDALONE);
-  assert.equal(resCodexOnly.ready, false);
-  assert.equal(resCodexOnly.canRunDualQuorum, false);
-  assert.equal(resCodexOnly.canRunSingle, false);
-  assert.deepEqual(resCodexOnly.activeReviewers, ["codex"]);
-  assert.deepEqual(resCodexOnly.families, []);
+  assert.equal(resGenericOnly.status, QUORUM_STATUS.STANDALONE);
+  assert.equal(resGenericOnly.ready, false);
+  assert.equal(resGenericOnly.canRunDualQuorum, false);
+  assert.equal(resGenericOnly.canRunSingle, false);
+  assert.deepEqual(resGenericOnly.activeReviewers, ["generic-tool"]);
+  assert.deepEqual(resGenericOnly.families, []);
 
   // 8. isReviewerProfileReady accurately evaluates canonical vs generic profiles
   assert.equal(isReviewerProfileReady({ id: "agy" }), true);
   assert.equal(isReviewerProfileReady({ id: "claude" }), true);
-  assert.equal(isReviewerProfileReady({ id: "codex" }), false);
+  assert.equal(isReviewerProfileReady({ id: "codex" }), true);
+  assert.equal(isReviewerProfileReady({ id: "generic-tool" }), false);
   assert.equal(isReviewerProfileReady({ id: "custom", reviewProfileReady: true }), true);
   assert.equal(isReviewerProfileReady({ id: "custom", reviewProfileReady: false }), false);
 });
