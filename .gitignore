@@ -21,4 +21,5 @@ scratch/
 
 # Immutable evidence bundles
 !evidence-runs/**
-
+# Subagent teamwork logs
+.agents/
