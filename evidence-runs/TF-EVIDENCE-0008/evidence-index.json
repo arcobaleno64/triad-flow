@@ -1,0 +1,97 @@
+{
+  "schemaVersion": "1.0.0",
+  "bundleId": "TF-EVIDENCE-0008",
+  "totalFiles": 18,
+  "files": [
+    {
+      "path": "README-EVIDENCE.md",
+      "sizeBytes": 2906,
+      "sha256": "sha256:c1f01695037b9344d895ef9f80358f69a6857417f8843a0b4a472253b1a62bd6"
+    },
+    {
+      "path": "audit-receipt.json",
+      "sizeBytes": 2523,
+      "sha256": "sha256:20ddc1fca9b278b6f8e979b1b472e904f4c3a2977e8607677903f041d232ee95"
+    },
+    {
+      "path": "benchmark-results.json",
+      "sizeBytes": 33478,
+      "sha256": "sha256:473a9148905f4d43ac4a7d405435d3cff32f83e31ede93176ae70255ac7ad2a8"
+    },
+    {
+      "path": "corpus-identity.json",
+      "sizeBytes": 663,
+      "sha256": "sha256:06a0ea0793adb5b05fa42459fd9b4d6e6f553203fc2ffd42f8282785c5d72add"
+    },
+    {
+      "path": "disagreement-ledger.json",
+      "sizeBytes": 4293,
+      "sha256": "sha256:249fb3065a73309401f0d2daae4a06f83e56aa4f948bd45ad74f4299e0bea242"
+    },
+    {
+      "path": "release-identity.json",
+      "sizeBytes": 2064,
+      "sha256": "sha256:ba19d1f53fc6e76ad98ea87be14d553b849f16c9fceba3ff17ee552ca5cea925"
+    },
+    {
+      "path": "verification-records/TF-OSS-001-verification.json",
+      "sizeBytes": 3425,
+      "sha256": "sha256:06d616d9b0d3b0d9fbc64823bbc254fbdf4d333530157ead0b8d9ab75b48edf0"
+    },
+    {
+      "path": "verification-records/TF-OSS-002-verification.json",
+      "sizeBytes": 8554,
+      "sha256": "sha256:cbf79983a0352dbd77d3f0906f1f771a098c10bed8268907b14a584b85bd8bbc"
+    },
+    {
+      "path": "verification-records/TF-OSS-003-verification.json",
+      "sizeBytes": 4138,
+      "sha256": "sha256:72fbbc1f758bd16ae1df2733bf85b0b8a0cfc4a8b00d811b0aad905bf45174ac"
+    },
+    {
+      "path": "verification-records/TF-OSS-004-verification.json",
+      "sizeBytes": 5336,
+      "sha256": "sha256:4f7c312707b5ef6ccc91cfa47495fb1c742c139266cd03baf5037fad5cb2b607"
+    },
+    {
+      "path": "verification-records/TF-OSS-005-verification.json",
+      "sizeBytes": 6521,
+      "sha256": "sha256:4ccec05dfd999e7276ab438cec05d8957ee8c6a2670fd99d5e5f7de0c8febc3d"
+    },
+    {
+      "path": "verification-records/verification-record.json",
+      "sizeBytes": 32390,
+      "sha256": "sha256:3b829207f6225074efffedcf321ebf9e4874e800bb3454fad2d38740821df57e"
+    },
+    {
+      "path": "verification/TF-OSS-001-verification.json",
+      "sizeBytes": 3425,
+      "sha256": "sha256:06d616d9b0d3b0d9fbc64823bbc254fbdf4d333530157ead0b8d9ab75b48edf0"
+    },
+    {
+      "path": "verification/TF-OSS-002-verification.json",
+      "sizeBytes": 8554,
+      "sha256": "sha256:cbf79983a0352dbd77d3f0906f1f771a098c10bed8268907b14a584b85bd8bbc"
+    },
+    {
+      "path": "verification/TF-OSS-003-verification.json",
+      "sizeBytes": 4138,
+      "sha256": "sha256:72fbbc1f758bd16ae1df2733bf85b0b8a0cfc4a8b00d811b0aad905bf45174ac"
+    },
+    {
+      "path": "verification/TF-OSS-004-verification.json",
+      "sizeBytes": 5336,
+      "sha256": "sha256:4f7c312707b5ef6ccc91cfa47495fb1c742c139266cd03baf5037fad5cb2b607"
+    },
+    {
+      "path": "verification/TF-OSS-005-verification.json",
+      "sizeBytes": 6521,
+      "sha256": "sha256:4ccec05dfd999e7276ab438cec05d8957ee8c6a2670fd99d5e5f7de0c8febc3d"
+    },
+    {
+      "path": "verification/verification-record.json",
+      "sizeBytes": 32390,
+      "sha256": "sha256:3b829207f6225074efffedcf321ebf9e4874e800bb3454fad2d38740821df57e"
+    }
+  ]
+}

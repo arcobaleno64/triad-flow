@@ -1,0 +1,87 @@
+{
+  "identity": {
+    "caseDigests": {
+      "TF-OSS-001": "sha256:c520d0f6ad9a3e9553426c4bb20578995d12425df4931c24fe8e99759c903914",
+      "TF-OSS-002": "sha256:1586be7b815652fd1ab477d623c1f9df5c8ce7b6337a4ef2292bd5b38b7180f7",
+      "TF-OSS-003": "sha256:f0d9241de553560e3576c15d77cf1f0a42cbc6df917c579b28ae8219e6535c28",
+      "TF-OSS-004": "sha256:5dc8195324d977d05bf20e340f08c41f0ff2a5036ebd03288bd235488365e672",
+      "TF-OSS-005": "sha256:294ad0c2b7383e86a45782e3928425f8fba2e6b181b1bd773c47f372af9f6071"
+    },
+    "corpusDigest": "sha256:47ed3ce44878b77572005358a16511e3f0900dda11d14443e6a2a84baf501625",
+    "corpusVersion": "TF-OSS-v1"
+  },
+  "providerProvenance": {
+    "agy": {
+      "actualModel": {
+        "source": "reported",
+        "value": "gemini-3.8-flash"
+      },
+      "completionTokens": null,
+      "modelName": "gemini-3.8-flash",
+      "promptTokens": null,
+      "providerName": "agy",
+      "totalTokens": null,
+      "usageSource": "unavailable",
+      "version": "v1.2.14",
+      "reviewProfileReady": true
+    },
+    "claude": {
+      "actualModel": {
+        "source": "reported",
+        "value": "claude-5.5-sonnet"
+      },
+      "completionTokens": null,
+      "modelName": "claude-5.5-sonnet",
+      "promptTokens": null,
+      "providerName": "claude",
+      "totalTokens": null,
+      "usageSource": "unavailable",
+      "version": "v2.1.285",
+      "reviewProfileReady": true
+    },
+    "codex": {
+      "actualModel": {
+        "source": "reported",
+        "value": "gpt-6.1-sol"
+      },
+      "completionTokens": null,
+      "modelName": "gpt-6.1-sol",
+      "promptTokens": null,
+      "providerName": "codex",
+      "totalTokens": null,
+      "usageSource": "unavailable",
+      "version": "v0.4.0",
+      "reviewProfileReady": true
+    }
+  },
+  "results": {
+    "mode": "tri-party",
+    "totalCases": 5,
+    "vulnerableCasesCount": 5,
+    "cleanCasesCount": 0,
+    "recall": 1,
+    "precision": 0.833,
+    "falseBlockRate": null,
+    "latency": {
+      "avgMs": 63856,
+      "p50Ms": 43431,
+      "p95Ms": 177432
+    }
+  },
+  "run": {
+    "environment": {
+      "arch": "x64",
+      "nodeVersion": "v24.14.1",
+      "platform": "win32"
+    },
+    "finishedAt": "2026-10-01T14:52:00.462Z",
+    "runId": "run-oss-v2.7-TF-EVIDENCE-0008-1790866320463",
+    "startedAt": "2026-10-01T14:46:38.407Z"
+  },
+  "schemaVersion": "1.0.0",
+  "systemProvenance": {
+    "branch": "main",
+    "commitSha": "bbe0ebed90cb5333089c0897cdab93186d78dbbd",
+    "triadFlowVersion": "2.5.1"
+  }
+}

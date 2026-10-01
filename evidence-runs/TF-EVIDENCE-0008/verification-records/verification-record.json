@@ -1,0 +1,542 @@
+{
+  "schemaVersion": "1.0.0",
+  "verifiedAt": "2026-10-01T14:53:33.777Z",
+  "producer": {
+    "providerName": "tri-party-quorum",
+    "modelName": "agy(gemini-3.8-flash)+claude(claude-5.5-sonnet)+codex(gpt-6.1-sol)"
+  },
+  "verifier": {
+    "providerName": "claude",
+    "modelName": "claude-5.5-sonnet",
+    "actualModel": {
+      "value": "claude-5.5-sonnet",
+      "source": "reported"
+    }
+  },
+  "cases": {
+    "TF-OSS-001": {
+      "schemaVersion": "1.0.0",
+      "verifiedAt": "2026-10-01T14:52:18.448Z",
+      "changeSetDigest": "sha256:6ad15a6e2d7ff34d433b1bab4a7e1c7caa2d9ec90f0885e20320c2a1224b0dd1",
+      "producer": {
+        "providerName": "tri-party-quorum",
+        "findingsCount": 1,
+        "findings": [
+          {
+            "title": "Prototype pollution still reachable via constructor.prototype path",
+            "severity": "high",
+            "file": "index.js",
+            "line_start": 9,
+            "line_end": 11,
+            "ruleId": "CHECKLIST-CWE-1321",
+            "cwe": "CWE-1321",
+            "type": "prototype-pollution",
+            "recommendation": "Also block 'constructor' and 'prototype' when walking intermediate keys, for example `if (key === '__proto__' || key === 'constructor' || key === 'prototype') return;`. Better still, only traverse own properties (`Object.prototype.hasOwnProperty.call(o, key)`) or create containers with `Object.create(null)`. Apply the same guard to the final key assigned after the loop.",
+            "sources": [
+              "claude",
+              "codex"
+            ],
+            "corroborations": 2
+          }
+        ]
+      },
+      "verifier": {
+        "providerName": "claude",
+        "modelName": "claude-5.5-sonnet",
+        "actualModel": {
+          "source": "reported",
+          "value": "claude-5.5-sonnet"
+        },
+        "usage": {
+          "completionTokens": null,
+          "promptTokens": null,
+          "totalTokens": null,
+          "usageSource": "unavailable"
+        }
+      },
+      "evaluations": [
+        {
+          "findingId": "finding-1",
+          "verdict": "SUPPORTED",
+          "classification": "SUPPORTED",
+          "locatorAccurate": true,
+          "typeAccurate": true,
+          "severityAccurate": true,
+          "reasoning": "新增的守衛只攔截 key === '__proto__'。走訪迴圈（第 9 至 11 行）仍對其他 key 執行 `if (o[key] === undefined) o[key] = {}; o = o[key];`。輸入路徑 `constructor.prototype.x` 的走法如下：obj['constructor'] 已存在，值是 Object 函式，所以 o 變成 Object；接著 o['prototype'] 是 Object.prototype，所以 o 變成 Object.prototype；最後迴圈後的賦值寫入 Object.prototype.x，造成全域原型污染。這就是 CWE-1321，該路徑在修補後依然可達。行號對應：第 9 行是新增的守衛，第 10、11 行是未受保護的走訪邏輯，定位正確。這個缺陷可遠端觸發，影響所有物件，評為 high 合理。建議的修補方向（封鎖 constructor 與 prototype、改走 own property 或使用 Object.create(null)）也正確。",
+          "dissent": null
+        }
+      ],
+      "verifierOmissions": [
+        {
+          "title": "迴圈後的最終 key 賦值未受守衛保護（diff 外，需另行確認）",
+          "severity": "low",
+          "file": "index.js",
+          "line_start": 12,
+          "line_end": 12,
+          "cwe": "CWE-1321",
+          "type": "prototype-pollution",
+          "recommendation": "diff 只在迴圈內擋 '__proto__'。迴圈結束後對 keys 最後一段的賦值（例如 `o[lastKey] = value`）不在 diff 內，無法確認是否有相同檢查。請對最終 key 套用同一組禁用清單（__proto__、constructor、prototype），並在 setKey 層級統一檢查。",
+          "id": "omission-1",
+          "classification": "MISSED_BY_PRODUCER"
+        }
+      ],
+      "disagreementLedger": [],
+      "summary": {
+        "totalEvaluated": 1,
+        "supportedCount": 1,
+        "partiallySupportedCount": 0,
+        "contestedCount": 0,
+        "insufficientEvidenceCount": 0,
+        "omissionsCount": 1
+      },
+      "ok": true
+    },
+    "TF-OSS-002": {
+      "schemaVersion": "1.0.0",
+      "verifiedAt": "2026-10-01T14:52:36.731Z",
+      "changeSetDigest": "sha256:0c29940910fb90a6f65f7126c6dfdf18222b1f011109a3296ef3bc91f0d9657d",
+      "producer": {
+        "providerName": "tri-party-quorum",
+        "findingsCount": 1,
+        "findings": [
+          {
+            "title": "Incomplete Prototype Pollution Protection via Section Name",
+            "severity": "high",
+            "file": "ini.js",
+            "line_start": 13,
+            "line_end": 16,
+            "ruleId": "CHECKLIST-CWE-1321",
+            "cwe": "CWE-1321",
+            "type": "Prototype Pollution",
+            "recommendation": "Strictly block 'constructor' and 'prototype' in addition to '__proto__', or validate section names against an allowlist and ensure objects are initialized with Object.create(null) or guarded against prototype traversal.",
+            "sources": [
+              "agy",
+              "claude",
+              "codex"
+            ],
+            "corroborations": 3
+          }
+        ]
+      },
+      "verifier": {
+        "providerName": "claude",
+        "modelName": "claude-5.5-sonnet",
+        "actualModel": {
+          "source": "reported",
+          "value": "claude-5.5-sonnet"
+        },
+        "usage": {
+          "completionTokens": null,
+          "promptTokens": null,
+          "totalTokens": null,
+          "usageSource": "unavailable"
+        }
+      },
+      "evaluations": [
+        {
+          "findingId": "finding-1",
+          "verdict": "SUPPORTED",
+          "classification": "PARTIALLY_SUPPORTED",
+          "locatorAccurate": true,
+          "typeAccurate": true,
+          "severityAccurate": false,
+          "reasoning": "The diff only special-cases section === '__proto__'. Every other section name still goes through `p = out[section] = out[section] || {}`, which reads inherited properties. For `[constructor]`, `out['constructor']` is the inherited `Object` function and is truthy, so `p` becomes `Object`. Any `key=value` line that follows is then written onto the global `Object` constructor function, which is a global mutation driven by untrusted input. Inherited names such as `[toString]` and `[hasOwnProperty]` have the same problem, because `p` becomes an inherited function and gets written to. The lines 13-16 locator covers the new guard and the following assignment, so it is accurate. The finding is weaker than stated in two ways. First, 'prototype' is not exploitable as a section name: `out['prototype']` is undefined on a plain object, so it just creates an own property. Second, writing to `Object` itself does not pollute `Object.prototype` and does not reach instances. Reaching `Object.prototype` would take a second traversal step (`constructor.prototype`), and the diff shows no dotted-path handling or key-level nesting. The key-assignment code outside the diff context was not visible, so I could not confirm that. The CWE-1321 classification is reasonable (improperly controlled modification of object prototype attributes), though the impact is narrower than 'prototype pollution' implies. 'High' looks overstated, and 'medium' fits better.",
+          "dissent": "The diff only special-cases section === '__proto__'. Every other section name still goes through `p = out[section] = out[section] || {}`, which reads inherited properties. For `[constructor]`, `out['constructor']` is the inherited `Object` function and is truthy, so `p` becomes `Object`. Any `key=value` line that follows is then written onto the global `Object` constructor function, which is a global mutation driven by untrusted input. Inherited names such as `[toString]` and `[hasOwnProperty]` have the same problem, because `p` becomes an inherited function and gets written to. The lines 13-16 locator covers the new guard and the following assignment, so it is accurate. The finding is weaker than stated in two ways. First, 'prototype' is not exploitable as a section name: `out['prototype']` is undefined on a plain object, so it just creates an own property. Second, writing to `Object` itself does not pollute `Object.prototype` and does not reach instances. Reaching `Object.prototype` would take a second traversal step (`constructor.prototype`), and the diff shows no dotted-path handling or key-level nesting. The key-assignment code outside the diff context was not visible, so I could not confirm that. The CWE-1321 classification is reasonable (improperly controlled modification of object prototype attributes), though the impact is narrower than 'prototype pollution' implies. 'High' looks overstated, and 'medium' fits better."
+        }
+      ],
+      "verifierOmissions": [],
+      "disagreementLedger": [
+        {
+          "findingId": "finding-1",
+          "producerFinding": {
+            "title": "Incomplete Prototype Pollution Protection via Section Name",
+            "severity": "high",
+            "file": "ini.js",
+            "line_start": 13,
+            "line_end": 16,
+            "ruleId": "CHECKLIST-CWE-1321",
+            "cwe": "CWE-1321",
+            "type": "Prototype Pollution",
+            "recommendation": "Strictly block 'constructor' and 'prototype' in addition to '__proto__', or validate section names against an allowlist and ensure objects are initialized with Object.create(null) or guarded against prototype traversal.",
+            "sources": [
+              "agy",
+              "claude",
+              "codex"
+            ],
+            "corroborations": 3
+          },
+          "verdict": "SUPPORTED",
+          "classification": "PARTIALLY_SUPPORTED",
+          "locatorAccurate": true,
+          "typeAccurate": true,
+          "severityAccurate": false,
+          "reasoning": "The diff only special-cases section === '__proto__'. Every other section name still goes through `p = out[section] = out[section] || {}`, which reads inherited properties. For `[constructor]`, `out['constructor']` is the inherited `Object` function and is truthy, so `p` becomes `Object`. Any `key=value` line that follows is then written onto the global `Object` constructor function, which is a global mutation driven by untrusted input. Inherited names such as `[toString]` and `[hasOwnProperty]` have the same problem, because `p` becomes an inherited function and gets written to. The lines 13-16 locator covers the new guard and the following assignment, so it is accurate. The finding is weaker than stated in two ways. First, 'prototype' is not exploitable as a section name: `out['prototype']` is undefined on a plain object, so it just creates an own property. Second, writing to `Object` itself does not pollute `Object.prototype` and does not reach instances. Reaching `Object.prototype` would take a second traversal step (`constructor.prototype`), and the diff shows no dotted-path handling or key-level nesting. The key-assignment code outside the diff context was not visible, so I could not confirm that. The CWE-1321 classification is reasonable (improperly controlled modification of object prototype attributes), though the impact is narrower than 'prototype pollution' implies. 'High' looks overstated, and 'medium' fits better.",
+          "dissent": "The diff only special-cases section === '__proto__'. Every other section name still goes through `p = out[section] = out[section] || {}`, which reads inherited properties. For `[constructor]`, `out['constructor']` is the inherited `Object` function and is truthy, so `p` becomes `Object`. Any `key=value` line that follows is then written onto the global `Object` constructor function, which is a global mutation driven by untrusted input. Inherited names such as `[toString]` and `[hasOwnProperty]` have the same problem, because `p` becomes an inherited function and gets written to. The lines 13-16 locator covers the new guard and the following assignment, so it is accurate. The finding is weaker than stated in two ways. First, 'prototype' is not exploitable as a section name: `out['prototype']` is undefined on a plain object, so it just creates an own property. Second, writing to `Object` itself does not pollute `Object.prototype` and does not reach instances. Reaching `Object.prototype` would take a second traversal step (`constructor.prototype`), and the diff shows no dotted-path handling or key-level nesting. The key-assignment code outside the diff context was not visible, so I could not confirm that. The CWE-1321 classification is reasonable (improperly controlled modification of object prototype attributes), though the impact is narrower than 'prototype pollution' implies. 'High' looks overstated, and 'medium' fits better."
+        }
+      ],
+      "summary": {
+        "totalEvaluated": 1,
+        "supportedCount": 1,
+        "partiallySupportedCount": 1,
+        "contestedCount": 0,
+        "insufficientEvidenceCount": 0,
+        "omissionsCount": 0
+      },
+      "ok": true
+    },
+    "TF-OSS-003": {
+      "schemaVersion": "1.0.0",
+      "verifiedAt": "2026-10-01T14:52:55.950Z",
+      "changeSetDigest": "sha256:06899edec052dfbeec830934b8e325091458b4cbf4156f3341c3465a643aa009",
+      "producer": {
+        "providerName": "tri-party-quorum",
+        "findingsCount": 1,
+        "findings": [
+          {
+            "title": "The prototype guard skips the final path segment, so '__proto__' can still be assigned as a leaf key",
+            "severity": "medium",
+            "file": "src/core.js",
+            "line_start": 6,
+            "line_end": 10,
+            "ruleId": "CHECKLIST-CWE-1321",
+            "cwe": "CWE-1321",
+            "type": "INCOMPLETE-MITIGATION",
+            "recommendation": "Run the banned-key check on every segment, including keys[keys.length - 1], and do it before the loop and before any read or write. Better still, reject '__proto__', 'constructor' and 'prototype' outright in any position. Also use Object.prototype.hasOwnProperty.call(obj, key) instead of obj[key] === undefined, and create intermediate containers with Object.create(null) or only write to own properties. The loop runs to keys.length - 1, so a path such as '/a/__proto__' with an object value reaches the final assignment (outside this diff) with key '__proto__'. That assignment calls the __proto__ setter and replaces the prototype of the target object with attacker-controlled data. For path '/__proto__' the loop does not run at all, so the document's own prototype can be swapped.",
+            "sources": [
+              "claude",
+              "codex"
+            ],
+            "corroborations": 2
+          }
+        ]
+      },
+      "verifier": {
+        "providerName": "claude",
+        "modelName": "claude-5.5-sonnet",
+        "actualModel": {
+          "source": "reported",
+          "value": "claude-5.5-sonnet"
+        },
+        "usage": {
+          "completionTokens": null,
+          "promptTokens": null,
+          "totalTokens": null,
+          "usageSource": "unavailable"
+        }
+      },
+      "evaluations": [
+        {
+          "findingId": "finding-1",
+          "verdict": "SUPPORTED",
+          "classification": "SUPPORTED",
+          "locatorAccurate": true,
+          "typeAccurate": true,
+          "severityAccurate": true,
+          "reasoning": "The hunk context shows the loop bound `i < keys.length - 1`, so the new `__proto__` guard never runs on the last path segment. A path like '/a/__proto__' or '/__proto__' therefore reaches the final assignment, which sits outside the diff, with `__proto__` as the key. For '/__proto__' the loop does not run at all. Assigning an object to `obj['__proto__']` invokes the prototype setter, so the guard is only partly effective, which fits CWE-1321 and INCOMPLETE-MITIGATION. The effect is limited to replacing the prototype of the target object or document. It does not reach Object.prototype. Medium severity is reasonable. The cited lines 6-10 cover the loop and the added check. The final-assignment behavior is inferred from the unchanged code rather than shown in the diff, but the loop bound is visible in the hunk context.",
+          "dissent": null
+        }
+      ],
+      "verifierOmissions": [
+        {
+          "title": "'constructor' is not banned as an intermediate or leaf key, so the Object constructor can still be mutated",
+          "severity": "low",
+          "file": "src/core.js",
+          "line_start": 8,
+          "line_end": 11,
+          "cwe": "CWE-1321",
+          "type": "INCOMPLETE-MITIGATION",
+          "recommendation": "Reject 'constructor' in any path position, or only traverse own properties using Object.prototype.hasOwnProperty.call(obj, key). A path such as '/constructor/x' resolves obj['constructor'] to the Object function through the inherited lookup. The code then writes attacker-chosen properties onto it, which pollutes a global shared object. The guard only throws for 'prototype' when it directly follows 'constructor' (the `i > 0` condition), and it does nothing for inherited keys such as 'constructor' itself.",
+          "id": "omission-1",
+          "classification": "MISSED_BY_PRODUCER"
+        }
+      ],
+      "disagreementLedger": [],
+      "summary": {
+        "totalEvaluated": 1,
+        "supportedCount": 1,
+        "partiallySupportedCount": 0,
+        "contestedCount": 0,
+        "insufficientEvidenceCount": 0,
+        "omissionsCount": 1
+      },
+      "ok": true
+    },
+    "TF-OSS-004": {
+      "schemaVersion": "1.0.0",
+      "verifiedAt": "2026-10-01T14:53:11.165Z",
+      "changeSetDigest": "sha256:167f2fd7dc8426afc06df7d23d037cf1d58c280dc5d062fd4d499c16c337ab0b",
+      "producer": {
+        "providerName": "tri-party-quorum",
+        "findingsCount": 2,
+        "findings": [
+          {
+            "title": "cleanVersion 對含多個前後空白的輸入改為回傳 null(行為回歸)",
+            "severity": "low",
+            "file": "internal/re.js",
+            "line_start": 6,
+            "line_end": 9,
+            "ruleId": "CHECKLIST-CWE-1333",
+            "cwe": "CWE-1333",
+            "type": "behavioral-regression",
+            "recommendation": "原 regex `^\\s*...\\s*$` 的 `\\s*` 與相鄰的 `[0-9]+` 字元集互不重疊,且以 `^` 錨定,匹配時間為線性,並非 ReDoS。把 `\\s*` 改成 `\\s{0,1}` 並沒有消除實際風險,卻讓 `\"  1.2.3\"`、`\"1.2.3  \"` 這類輸入從通過變成 null。請還原為 `re[0]`;若要防禦過長輸入,改在比對前加輸入長度上限(例如 `str.length <= 256`),並補上多個空白輸入的回歸測試。",
+            "sources": [
+              "claude"
+            ],
+            "corroborations": 1
+          },
+          {
+            "title": "Whitespace restriction rejects previously accepted versions",
+            "severity": "low",
+            "file": "internal/re.js",
+            "line_start": 6,
+            "line_end": 6,
+            "recommendation": "Preserve arbitrary surrounding whitespace by trimming the input before matching an anchored version regex. Verify that inputs such as \" 1.2.3 \" and \"  1.2.3  \" both return \"1.2.3\". The original anchored regex has no nested or overlapping quantifiers that establish a ReDoS vulnerability.",
+            "sources": [
+              "codex"
+            ],
+            "corroborations": 1
+          }
+        ]
+      },
+      "verifier": {
+        "providerName": "claude",
+        "modelName": "claude-5.5-sonnet",
+        "actualModel": {
+          "source": "reported",
+          "value": "claude-5.5-sonnet"
+        },
+        "usage": {
+          "completionTokens": null,
+          "promptTokens": null,
+          "totalTokens": null,
+          "usageSource": "unavailable"
+        }
+      },
+      "evaluations": [
+        {
+          "findingId": "finding-1",
+          "verdict": "SUPPORTED",
+          "classification": "SUPPORTED",
+          "locatorAccurate": true,
+          "typeAccurate": true,
+          "severityAccurate": true,
+          "reasoning": "The diff changes cleanVersion from re[0] (/^\\s*...\\s*$/) to safeRe[0] (/^\\s{0,1}...\\s{0,1}$/). Inputs with two or more leading or trailing whitespace characters, such as \"  1.2.3\" or \"1.2.3  \", matched before and now return null. The behavior change is real. The original regex is anchored with ^ and its \\s* sits next to the digit class [0-9]+, whose character set does not overlap with whitespace. Matching is therefore linear, not a ReDoS, so the CWE-1333 label from the checklist rule is a misattribution of risk, and the finding says so itself. The locator (lines 6-9) covers the safeRe definition and the changed match line, since the diff starts at line 1 and the new lines fall in that range. Low severity is reasonable: the impact is limited to rejecting whitespace-padded versions, with no security impact. The type is 'behavioral-regression', which is accurate. The CWE tag comes from the rule ID, but the finding's reasoning corrects it.",
+          "dissent": null
+        },
+        {
+          "findingId": "finding-2",
+          "verdict": "SUPPORTED",
+          "classification": "SUPPORTED",
+          "locatorAccurate": true,
+          "typeAccurate": true,
+          "severityAccurate": true,
+          "reasoning": "This is the same defect as finding-1. The match call moved from re[0] to safeRe[0] with \\s{0,1}, so versions padded with more than one whitespace character are no longer accepted. Line 6 is the changed match line in the new file: line 1 is 'const re = [];', line 2 is 'const safeRe = [];', line 5 is the safeRe[0] definition, and line 6 is blank. By the post-change numbering the locator is slightly imprecise. The change on the hunk's '-const match' line falls at about line 9 in the new file, and the safeRe definition is at line 6. Line 6 does match the safeRe[0] definition, which is the root cause of the restriction, so the locator is acceptable. Low severity is justified. The finding does not give a type or CWE, which is not an error. Its recommendation (trim before matching) is a valid fix, and it also correctly notes that the original regex has no ReDoS.",
+          "dissent": null
+        }
+      ],
+      "verifierOmissions": [
+        {
+          "title": "Misleading comment and unused vulnerable regex left exported",
+          "severity": "info",
+          "file": "internal/re.js",
+          "line_start": 3,
+          "line_end": 6,
+          "cwe": "CWE-1333",
+          "type": "maintainability",
+          "recommendation": "The comment 'Base regex with greedy whitespace prone to ReDoS' on re[0] is inaccurate, because the anchored regex is linear. The old re is still exported alongside safeRe, so consumers see two inconsistent regexes. Remove the duplicate, or restore re[0] as the single source of truth, and correct the comment.",
+          "id": "omission-1",
+          "classification": "MISSED_BY_PRODUCER"
+        }
+      ],
+      "disagreementLedger": [],
+      "summary": {
+        "totalEvaluated": 2,
+        "supportedCount": 2,
+        "partiallySupportedCount": 0,
+        "contestedCount": 0,
+        "insufficientEvidenceCount": 0,
+        "omissionsCount": 1
+      },
+      "ok": true
+    },
+    "TF-OSS-005": {
+      "schemaVersion": "1.0.0",
+      "verifiedAt": "2026-10-01T14:53:33.776Z",
+      "changeSetDigest": "sha256:d4871325615b2521ffbc7c48418809de77f8ba768c036338c0e7a648668ed561",
+      "producer": {
+        "providerName": "tri-party-quorum",
+        "findingsCount": 1,
+        "findings": [
+          {
+            "title": "Code injection via outputFunctionName in template compilation",
+            "severity": "critical",
+            "file": "lib/ejs.js",
+            "line_start": 6,
+            "line_end": 10,
+            "ruleId": "CHECKLIST-CWE-94",
+            "cwe": "CWE-94",
+            "type": "code-injection",
+            "recommendation": "Validate that opts.outputFunctionName is a primitive string, reject JavaScript reserved words, and ensure non-string objects with mutable toString coercion cannot bypass validation before dynamic statement interpolation into the function body.",
+            "sources": [
+              "agy"
+            ],
+            "corroborations": 1
+          }
+        ]
+      },
+      "verifier": {
+        "providerName": "claude",
+        "modelName": "claude-5.5-sonnet",
+        "actualModel": {
+          "source": "reported",
+          "value": "claude-5.5-sonnet"
+        },
+        "usage": {
+          "completionTokens": null,
+          "promptTokens": null,
+          "totalTokens": null,
+          "usageSource": "unavailable"
+        }
+      },
+      "evaluations": [
+        {
+          "findingId": "finding-1",
+          "verdict": "CONTESTED",
+          "classification": "CONTRADICTED",
+          "locatorAccurate": true,
+          "typeAccurate": true,
+          "severityAccurate": false,
+          "reasoning": "The diff adds the mitigation for this finding. The regex /^[a-zA-Z_$][0-9a-zA-Z_$]*$/ is applied before the interpolation at new lines 7-10, and it throws on any string that is not a plain identifier. For string inputs, which include values from JSON-based prototype pollution, `;`, quotes, newlines and whitespace are all rejected. JS `$` without the `m` flag does not match before a trailing newline, so there is no newline bypass. Reserved words such as `if` would cause a SyntaxError at compile time, not injection, so rejecting them is hardening and not a security requirement. The locator is accurate: new lines 6-10 cover the guarded block and the interpolation. A narrow residual exists. A non-string object with a stateful toString() can return a valid identifier when RegExp.test coerces it and a payload when the string concatenation coerces it again (TOCTOU). That needs attacker-controlled live JS objects, not JSON data, so it does not justify 'critical' against the post-change code. The finding describes the pre-fix state and ignores the fix present in the diff.",
+          "dissent": "The reported critical code injection is addressed by the identifier validation in this diff. Only a non-string, stateful-toString object bypass remains. That is a low-to-medium residual, not a critical unmitigated injection."
+        }
+      ],
+      "verifierOmissions": [
+        {
+          "title": "TOCTOU bypass of identifier validation via stateful toString coercion",
+          "severity": "medium",
+          "file": "lib/ejs.js",
+          "line_start": 7,
+          "line_end": 10,
+          "cwe": "CWE-367",
+          "type": "toctou-validation-bypass",
+          "recommendation": "Require typeof opts.outputFunctionName === 'string', or copy it once with String(...) into a local variable. Validate that local variable and use the same variable in the concatenation.",
+          "id": "omission-1",
+          "classification": "MISSED_BY_PRODUCER"
+        },
+        {
+          "title": "Template is concatenated unescaped into a string literal in the generated function body",
+          "severity": "high",
+          "file": "lib/ejs.js",
+          "line_start": 12,
+          "line_end": 12,
+          "cwe": "CWE-94",
+          "type": "code-injection",
+          "recommendation": "Do not interpolate the template into code. Escape quotes, backslashes and newlines, or parse the template into safe segments. Treat untrusted templates as code execution. This line is unchanged context in the diff and pre-existing, so it was not introduced by this change.",
+          "id": "omission-2",
+          "classification": "MISSED_BY_PRODUCER"
+        }
+      ],
+      "disagreementLedger": [
+        {
+          "findingId": "finding-1",
+          "producerFinding": {
+            "title": "Code injection via outputFunctionName in template compilation",
+            "severity": "critical",
+            "file": "lib/ejs.js",
+            "line_start": 6,
+            "line_end": 10,
+            "ruleId": "CHECKLIST-CWE-94",
+            "cwe": "CWE-94",
+            "type": "code-injection",
+            "recommendation": "Validate that opts.outputFunctionName is a primitive string, reject JavaScript reserved words, and ensure non-string objects with mutable toString coercion cannot bypass validation before dynamic statement interpolation into the function body.",
+            "sources": [
+              "agy"
+            ],
+            "corroborations": 1
+          },
+          "verdict": "CONTESTED",
+          "classification": "CONTRADICTED",
+          "locatorAccurate": true,
+          "typeAccurate": true,
+          "severityAccurate": false,
+          "reasoning": "The diff adds the mitigation for this finding. The regex /^[a-zA-Z_$][0-9a-zA-Z_$]*$/ is applied before the interpolation at new lines 7-10, and it throws on any string that is not a plain identifier. For string inputs, which include values from JSON-based prototype pollution, `;`, quotes, newlines and whitespace are all rejected. JS `$` without the `m` flag does not match before a trailing newline, so there is no newline bypass. Reserved words such as `if` would cause a SyntaxError at compile time, not injection, so rejecting them is hardening and not a security requirement. The locator is accurate: new lines 6-10 cover the guarded block and the interpolation. A narrow residual exists. A non-string object with a stateful toString() can return a valid identifier when RegExp.test coerces it and a payload when the string concatenation coerces it again (TOCTOU). That needs attacker-controlled live JS objects, not JSON data, so it does not justify 'critical' against the post-change code. The finding describes the pre-fix state and ignores the fix present in the diff.",
+          "dissent": "The reported critical code injection is addressed by the identifier validation in this diff. Only a non-string, stateful-toString object bypass remains. That is a low-to-medium residual, not a critical unmitigated injection."
+        }
+      ],
+      "summary": {
+        "totalEvaluated": 1,
+        "supportedCount": 0,
+        "partiallySupportedCount": 0,
+        "contestedCount": 1,
+        "insufficientEvidenceCount": 0,
+        "omissionsCount": 2
+      },
+      "ok": true
+    }
+  },
+  "disagreementLedger": [
+    {
+      "caseId": "TF-OSS-001",
+      "type": "VENDOR_DIVERGENCE",
+      "finding": "Prototype pollution still reachable via constructor.prototype path",
+      "severity": "high",
+      "vendorSplit": {
+        "agy": "clean",
+        "claude": "vulnerable",
+        "codex": "vulnerable"
+      },
+      "disposition": "BLOCK",
+      "rationale": "2-of-3 majority corroborated finding, satisfying corroboration quorum."
+    },
+    {
+      "caseId": "TF-OSS-003",
+      "type": "VENDOR_DIVERGENCE",
+      "finding": "The prototype guard skips the final path segment, so '__proto__' can still be assigned as a leaf key",
+      "severity": "medium",
+      "vendorSplit": {
+        "agy": "clean",
+        "claude": "vulnerable",
+        "codex": "vulnerable"
+      },
+      "disposition": "APPROVE",
+      "rationale": "2-of-3 majority corroborated finding, satisfying corroboration quorum."
+    },
+    {
+      "caseId": "TF-OSS-004",
+      "type": "SOLITARY_BLOCKER_VETO",
+      "sentry": "codex",
+      "finding": "cleanVersion 對含多個前後空白的輸入改為回傳 null(行為回歸)",
+      "severity": "low",
+      "vendorSplit": {
+        "agy": "clean",
+        "claude": "vulnerable",
+        "codex": "vulnerable"
+      },
+      "disposition": "APPROVE",
+      "rationale": "Sentry uniquely caught vulnerability. Solitary blocker veto enforced by RFC-027-02."
+    },
+    {
+      "caseId": "TF-OSS-005",
+      "type": "SOLITARY_BLOCKER_VETO",
+      "sentry": "agy",
+      "finding": "Code injection via outputFunctionName in template compilation",
+      "severity": "critical",
+      "vendorSplit": {
+        "agy": "vulnerable",
+        "claude": "clean",
+        "codex": "clean"
+      },
+      "disposition": "BLOCK",
+      "rationale": "agy uniquely caught vulnerability. Solitary blocker veto enforced by RFC-027-02."
+    }
+  ],
+  "summary": {
+    "totalCases": 5,
+    "totalEvaluated": 6,
+    "supportedCount": 5,
+    "partiallySupportedCount": 1,
+    "contestedCount": 1,
+    "insufficientEvidenceCount": 0,
+    "omissionsCount": 5
+  }
+}

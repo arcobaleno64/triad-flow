@@ -1,0 +1,134 @@
+{
+  "schemaVersion": "1.0.0",
+  "verifiedAt": "2026-10-01T14:53:33.777Z",
+  "producer": {
+    "providerName": "tri-party-quorum",
+    "runId": "run-oss-v2.7-TF-EVIDENCE-0008-1790866320463",
+    "commitSha": "bbe0ebed90cb5333089c0897cdab93186d78dbbd"
+  },
+  "verifier": {
+    "providerName": "claude",
+    "modelName": "claude-5.5-sonnet"
+  },
+  "summary": {
+    "totalCases": 5,
+    "totalEvaluated": 6,
+    "supportedCount": 5,
+    "partiallySupportedCount": 1,
+    "contestedCount": 1,
+    "insufficientEvidenceCount": 0,
+    "omissionsCount": 5
+  },
+  "ledger": [
+    {
+      "caseId": "TF-OSS-001",
+      "type": "VENDOR_DIVERGENCE",
+      "finding": "Prototype pollution still reachable via constructor.prototype path",
+      "severity": "high",
+      "vendorSplit": {
+        "agy": "clean",
+        "claude": "vulnerable",
+        "codex": "vulnerable"
+      },
+      "disposition": "BLOCK",
+      "rationale": "2-of-3 majority corroborated finding, satisfying corroboration quorum."
+    },
+    {
+      "caseId": "TF-OSS-003",
+      "type": "VENDOR_DIVERGENCE",
+      "finding": "The prototype guard skips the final path segment, so '__proto__' can still be assigned as a leaf key",
+      "severity": "medium",
+      "vendorSplit": {
+        "agy": "clean",
+        "claude": "vulnerable",
+        "codex": "vulnerable"
+      },
+      "disposition": "APPROVE",
+      "rationale": "2-of-3 majority corroborated finding, satisfying corroboration quorum."
+    },
+    {
+      "caseId": "TF-OSS-004",
+      "type": "SOLITARY_BLOCKER_VETO",
+      "sentry": "codex",
+      "finding": "cleanVersion 對含多個前後空白的輸入改為回傳 null(行為回歸)",
+      "severity": "low",
+      "vendorSplit": {
+        "agy": "clean",
+        "claude": "vulnerable",
+        "codex": "vulnerable"
+      },
+      "disposition": "APPROVE",
+      "rationale": "Sentry uniquely caught vulnerability. Solitary blocker veto enforced by RFC-027-02."
+    },
+    {
+      "caseId": "TF-OSS-005",
+      "type": "SOLITARY_BLOCKER_VETO",
+      "sentry": "agy",
+      "finding": "Code injection via outputFunctionName in template compilation",
+      "severity": "critical",
+      "vendorSplit": {
+        "agy": "vulnerable",
+        "claude": "clean",
+        "codex": "clean"
+      },
+      "disposition": "BLOCK",
+      "rationale": "agy uniquely caught vulnerability. Solitary blocker veto enforced by RFC-027-02."
+    }
+  ],
+  "triPartyEntries": [
+    {
+      "caseId": "TF-OSS-001",
+      "type": "VENDOR_DIVERGENCE",
+      "finding": "Prototype pollution still reachable via constructor.prototype path",
+      "severity": "high",
+      "vendorSplit": {
+        "agy": "clean",
+        "claude": "vulnerable",
+        "codex": "vulnerable"
+      },
+      "disposition": "BLOCK",
+      "rationale": "2-of-3 majority corroborated finding, satisfying corroboration quorum."
+    },
+    {
+      "caseId": "TF-OSS-003",
+      "type": "VENDOR_DIVERGENCE",
+      "finding": "The prototype guard skips the final path segment, so '__proto__' can still be assigned as a leaf key",
+      "severity": "medium",
+      "vendorSplit": {
+        "agy": "clean",
+        "claude": "vulnerable",
+        "codex": "vulnerable"
+      },
+      "disposition": "APPROVE",
+      "rationale": "2-of-3 majority corroborated finding, satisfying corroboration quorum."
+    },
+    {
+      "caseId": "TF-OSS-004",
+      "type": "SOLITARY_BLOCKER_VETO",
+      "sentry": "codex",
+      "finding": "cleanVersion 對含多個前後空白的輸入改為回傳 null(行為回歸)",
+      "severity": "low",
+      "vendorSplit": {
+        "agy": "clean",
+        "claude": "vulnerable",
+        "codex": "vulnerable"
+      },
+      "disposition": "APPROVE",
+      "rationale": "Sentry uniquely caught vulnerability. Solitary blocker veto enforced by RFC-027-02."
+    },
+    {
+      "caseId": "TF-OSS-005",
+      "type": "SOLITARY_BLOCKER_VETO",
+      "sentry": "agy",
+      "finding": "Code injection via outputFunctionName in template compilation",
+      "severity": "critical",
+      "vendorSplit": {
+        "agy": "vulnerable",
+        "claude": "clean",
+        "codex": "clean"
+      },
+      "disposition": "BLOCK",
+      "rationale": "agy uniquely caught vulnerability. Solitary blocker veto enforced by RFC-027-02."
+    }
+  ]
+}

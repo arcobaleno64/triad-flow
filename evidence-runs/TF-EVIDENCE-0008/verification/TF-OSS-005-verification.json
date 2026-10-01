@@ -1,0 +1,114 @@
+{
+  "schemaVersion": "1.0.0",
+  "verifiedAt": "2026-10-01T14:53:33.776Z",
+  "changeSetDigest": "sha256:d4871325615b2521ffbc7c48418809de77f8ba768c036338c0e7a648668ed561",
+  "producer": {
+    "providerName": "tri-party-quorum",
+    "findingsCount": 1,
+    "findings": [
+      {
+        "title": "Code injection via outputFunctionName in template compilation",
+        "severity": "critical",
+        "file": "lib/ejs.js",
+        "line_start": 6,
+        "line_end": 10,
+        "ruleId": "CHECKLIST-CWE-94",
+        "cwe": "CWE-94",
+        "type": "code-injection",
+        "recommendation": "Validate that opts.outputFunctionName is a primitive string, reject JavaScript reserved words, and ensure non-string objects with mutable toString coercion cannot bypass validation before dynamic statement interpolation into the function body.",
+        "sources": [
+          "agy"
+        ],
+        "corroborations": 1
+      }
+    ]
+  },
+  "verifier": {
+    "providerName": "claude",
+    "modelName": "claude-5.5-sonnet",
+    "actualModel": {
+      "source": "reported",
+      "value": "claude-5.5-sonnet"
+    },
+    "usage": {
+      "completionTokens": null,
+      "promptTokens": null,
+      "totalTokens": null,
+      "usageSource": "unavailable"
+    }
+  },
+  "evaluations": [
+    {
+      "findingId": "finding-1",
+      "verdict": "CONTESTED",
+      "classification": "CONTRADICTED",
+      "locatorAccurate": true,
+      "typeAccurate": true,
+      "severityAccurate": false,
+      "reasoning": "The diff adds the mitigation for this finding. The regex /^[a-zA-Z_$][0-9a-zA-Z_$]*$/ is applied before the interpolation at new lines 7-10, and it throws on any string that is not a plain identifier. For string inputs, which include values from JSON-based prototype pollution, `;`, quotes, newlines and whitespace are all rejected. JS `$` without the `m` flag does not match before a trailing newline, so there is no newline bypass. Reserved words such as `if` would cause a SyntaxError at compile time, not injection, so rejecting them is hardening and not a security requirement. The locator is accurate: new lines 6-10 cover the guarded block and the interpolation. A narrow residual exists. A non-string object with a stateful toString() can return a valid identifier when RegExp.test coerces it and a payload when the string concatenation coerces it again (TOCTOU). That needs attacker-controlled live JS objects, not JSON data, so it does not justify 'critical' against the post-change code. The finding describes the pre-fix state and ignores the fix present in the diff.",
+      "dissent": "The reported critical code injection is addressed by the identifier validation in this diff. Only a non-string, stateful-toString object bypass remains. That is a low-to-medium residual, not a critical unmitigated injection."
+    }
+  ],
+  "verifierOmissions": [
+    {
+      "title": "TOCTOU bypass of identifier validation via stateful toString coercion",
+      "severity": "medium",
+      "file": "lib/ejs.js",
+      "line_start": 7,
+      "line_end": 10,
+      "cwe": "CWE-367",
+      "type": "toctou-validation-bypass",
+      "recommendation": "Require typeof opts.outputFunctionName === 'string', or copy it once with String(...) into a local variable. Validate that local variable and use the same variable in the concatenation.",
+      "id": "omission-1",
+      "classification": "MISSED_BY_PRODUCER"
+    },
+    {
+      "title": "Template is concatenated unescaped into a string literal in the generated function body",
+      "severity": "high",
+      "file": "lib/ejs.js",
+      "line_start": 12,
+      "line_end": 12,
+      "cwe": "CWE-94",
+      "type": "code-injection",
+      "recommendation": "Do not interpolate the template into code. Escape quotes, backslashes and newlines, or parse the template into safe segments. Treat untrusted templates as code execution. This line is unchanged context in the diff and pre-existing, so it was not introduced by this change.",
+      "id": "omission-2",
+      "classification": "MISSED_BY_PRODUCER"
+    }
+  ],
+  "disagreementLedger": [
+    {
+      "findingId": "finding-1",
+      "producerFinding": {
+        "title": "Code injection via outputFunctionName in template compilation",
+        "severity": "critical",
+        "file": "lib/ejs.js",
+        "line_start": 6,
+        "line_end": 10,
+        "ruleId": "CHECKLIST-CWE-94",
+        "cwe": "CWE-94",
+        "type": "code-injection",
+        "recommendation": "Validate that opts.outputFunctionName is a primitive string, reject JavaScript reserved words, and ensure non-string objects with mutable toString coercion cannot bypass validation before dynamic statement interpolation into the function body.",
+        "sources": [
+          "agy"
+        ],
+        "corroborations": 1
+      },
+      "verdict": "CONTESTED",
+      "classification": "CONTRADICTED",
+      "locatorAccurate": true,
+      "typeAccurate": true,
+      "severityAccurate": false,
+      "reasoning": "The diff adds the mitigation for this finding. The regex /^[a-zA-Z_$][0-9a-zA-Z_$]*$/ is applied before the interpolation at new lines 7-10, and it throws on any string that is not a plain identifier. For string inputs, which include values from JSON-based prototype pollution, `;`, quotes, newlines and whitespace are all rejected. JS `$` without the `m` flag does not match before a trailing newline, so there is no newline bypass. Reserved words such as `if` would cause a SyntaxError at compile time, not injection, so rejecting them is hardening and not a security requirement. The locator is accurate: new lines 6-10 cover the guarded block and the interpolation. A narrow residual exists. A non-string object with a stateful toString() can return a valid identifier when RegExp.test coerces it and a payload when the string concatenation coerces it again (TOCTOU). That needs attacker-controlled live JS objects, not JSON data, so it does not justify 'critical' against the post-change code. The finding describes the pre-fix state and ignores the fix present in the diff.",
+      "dissent": "The reported critical code injection is addressed by the identifier validation in this diff. Only a non-string, stateful-toString object bypass remains. That is a low-to-medium residual, not a critical unmitigated injection."
+    }
+  ],
+  "summary": {
+    "totalEvaluated": 1,
+    "supportedCount": 0,
+    "partiallySupportedCount": 0,
+    "contestedCount": 1,
+    "insufficientEvidenceCount": 0,
+    "omissionsCount": 2
+  },
+  "ok": true
+}
