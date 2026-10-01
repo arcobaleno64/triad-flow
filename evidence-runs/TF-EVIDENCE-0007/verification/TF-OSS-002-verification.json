@@ -1,0 +1,63 @@
+{
+  "schemaVersion": "1.0.0",
+  "verifiedAt": "2026-10-01T07:23:41.254Z",
+  "changeSetDigest": "sha256:0c29940910fb90a6f65f7126c6dfdf18222b1f011109a3296ef3bc91f0d9657d",
+  "producer": {
+    "providerName": "tri-party-quorum",
+    "findingsCount": 1,
+    "findings": [
+      {
+        "title": "Detected prototype-pollution (CWE-1321) in ini",
+        "severity": "high",
+        "file": "ini.js",
+        "line_start": 14,
+        "line_end": 14,
+        "cwe": "CWE-1321",
+        "type": "prototype-pollution",
+        "recommendation": "Unsanitized section key allows __proto__ property injection during INI decoding",
+        "sources": [
+          "claude",
+          "codex"
+        ],
+        "corroborations": 2
+      }
+    ]
+  },
+  "verifier": {
+    "providerName": "claude",
+    "modelName": "claude-mock",
+    "actualModel": {
+      "source": "runtime",
+      "value": "claude-mock-v1"
+    },
+    "usage": {
+      "completionTokens": 50,
+      "promptTokens": 100,
+      "totalTokens": 150,
+      "usageSource": "authoritative"
+    }
+  },
+  "evaluations": [
+    {
+      "findingId": "finding-1",
+      "verdict": "SUPPORTED",
+      "classification": "SUPPORTED",
+      "locatorAccurate": true,
+      "typeAccurate": true,
+      "severityAccurate": true,
+      "reasoning": "Offline mock verifier verified finding 'finding-1' against changeSet diff.",
+      "dissent": null
+    }
+  ],
+  "verifierOmissions": [],
+  "disagreementLedger": [],
+  "summary": {
+    "totalEvaluated": 1,
+    "supportedCount": 1,
+    "partiallySupportedCount": 0,
+    "contestedCount": 0,
+    "insufficientEvidenceCount": 0,
+    "omissionsCount": 0
+  },
+  "ok": true
+}

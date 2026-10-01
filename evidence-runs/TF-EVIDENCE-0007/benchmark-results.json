@@ -1,0 +1,755 @@
+{
+  "framework": "Triad-Flow Real-World OSS Corpus v1 (TF-OSS-v1)",
+  "corpus": "oss",
+  "milestone": "v2.7.0",
+  "mode": "tri-party",
+  "executionMode": "mock",
+  "workspaceMode": "physical",
+  "timestamp": "2026-10-01T07:23:41.252Z",
+  "totalCases": 5,
+  "caseResults": [
+    {
+      "caseId": "TF-OSS-001",
+      "title": "Prototype Pollution in minimist argument parsing",
+      "riskTier": 1,
+      "category": "vulnerable",
+      "status": "reviewed-with-findings",
+      "latencyMs": 18450,
+      "plan": {
+        "mode": "tri-party",
+        "reason": "benchmark-tri-party-quorum"
+      },
+      "actualGateDecision": "block",
+      "expectedGateDecision": "block",
+      "passed": true,
+      "detectionPass": true,
+      "gatePolicyPass": true,
+      "immutabilityPass": true,
+      "actualFindings": [
+        {
+          "title": "Detected prototype-pollution (CWE-1321) in minimist",
+          "severity": "high",
+          "file": "index.js",
+          "line_start": 9,
+          "line_end": 9,
+          "cwe": "CWE-1321",
+          "type": "prototype-pollution",
+          "recommendation": "Direct traversal of __proto__ key allows remote attackers to pollute Object.prototype",
+          "sources": [
+            "agy",
+            "claude",
+            "codex"
+          ],
+          "corroborations": 3
+        }
+      ],
+      "goldenFindings": [
+        {
+          "cwe": "CWE-1321",
+          "type": "prototype-pollution",
+          "file": "index.js",
+          "line": 9,
+          "severity": "medium",
+          "rationale": "Direct traversal of __proto__ key allows remote attackers to pollute Object.prototype"
+        }
+      ],
+      "evalResult": {
+        "totalGoldens": 1,
+        "caughtGoldens": 1,
+        "claimedFindingsCount": 1,
+        "recallRate": "100.0%",
+        "passed": true
+      },
+      "reports": {
+        "agy": {
+          "name": "agy",
+          "source": "agy",
+          "role": "agy",
+          "providerIdentity": {
+            "provider": "agy",
+            "family": "google",
+            "model": "gemini-3.8-flash",
+            "transport": "cli",
+            "runId": "run-TF-OSS-001-agy"
+          },
+          "coverage": {
+            "coveredFiles": [
+              "index.js"
+            ],
+            "omittedFiles": []
+          },
+          "findings": [
+            {
+              "title": "Detected prototype-pollution (CWE-1321) in minimist",
+              "severity": "high",
+              "file": "index.js",
+              "line_start": 9,
+              "line_end": 9,
+              "cwe": "CWE-1321",
+              "type": "prototype-pollution",
+              "recommendation": "Direct traversal of __proto__ key allows remote attackers to pollute Object.prototype"
+            }
+          ]
+        },
+        "claude": {
+          "name": "claude",
+          "source": "claude",
+          "role": "claude",
+          "providerIdentity": {
+            "provider": "claude",
+            "family": "anthropic",
+            "model": "claude-5.5-sonnet",
+            "transport": "cli",
+            "runId": "run-TF-OSS-001-claude"
+          },
+          "coverage": {
+            "coveredFiles": [
+              "index.js"
+            ],
+            "omittedFiles": []
+          },
+          "findings": [
+            {
+              "title": "Detected prototype-pollution (CWE-1321) in minimist",
+              "severity": "high",
+              "file": "index.js",
+              "line_start": 9,
+              "line_end": 9,
+              "cwe": "CWE-1321",
+              "type": "prototype-pollution",
+              "recommendation": "Direct traversal of __proto__ key allows remote attackers to pollute Object.prototype"
+            }
+          ]
+        },
+        "codex": {
+          "name": "codex",
+          "source": "codex",
+          "role": "codex",
+          "providerIdentity": {
+            "provider": "codex",
+            "family": "openai",
+            "model": "gpt-6.1-sol",
+            "transport": "cli",
+            "runId": "run-TF-OSS-001-codex"
+          },
+          "coverage": {
+            "coveredFiles": [
+              "index.js"
+            ],
+            "omittedFiles": []
+          },
+          "findings": [
+            {
+              "title": "Detected prototype-pollution (CWE-1321) in minimist",
+              "severity": "high",
+              "file": "index.js",
+              "line_start": 9,
+              "line_end": 9,
+              "cwe": "CWE-1321",
+              "type": "prototype-pollution",
+              "recommendation": "Direct traversal of __proto__ key allows remote attackers to pollute Object.prototype"
+            }
+          ]
+        }
+      },
+      "consensus": {
+        "verdict": "needs-attention",
+        "quorumReached": true,
+        "totalFindings": 1,
+        "selectedReportIds": [
+          "ev:a22a91b7-d657-4665-8602-d6174bd5890d:agy",
+          "ev:a22a91b7-d657-4665-8602-d6174bd5890d:claude",
+          "ev:a22a91b7-d657-4665-8602-d6174bd5890d:codex"
+        ],
+        "consensusProof": "Consensus reached: Blocking vulnerabilities identified by sentry quorum (ev:a22a91b7-d657-4665-8602-d6174bd5890d:agy, ev:a22a91b7-d657-4665-8602-d6174bd5890d:claude, ev:a22a91b7-d657-4665-8602-d6174bd5890d:codex)."
+      }
+    },
+    {
+      "caseId": "TF-OSS-002",
+      "title": "Prototype Pollution in ini file section decoding",
+      "riskTier": 1,
+      "category": "vulnerable",
+      "status": "reviewed-with-findings",
+      "latencyMs": 22100,
+      "plan": {
+        "mode": "tri-party",
+        "reason": "benchmark-tri-party-quorum"
+      },
+      "actualGateDecision": "block",
+      "expectedGateDecision": "block",
+      "passed": true,
+      "detectionPass": true,
+      "gatePolicyPass": true,
+      "immutabilityPass": true,
+      "actualFindings": [
+        {
+          "title": "Detected prototype-pollution (CWE-1321) in ini",
+          "severity": "high",
+          "file": "ini.js",
+          "line_start": 14,
+          "line_end": 14,
+          "cwe": "CWE-1321",
+          "type": "prototype-pollution",
+          "recommendation": "Unsanitized section key allows __proto__ property injection during INI decoding",
+          "sources": [
+            "claude",
+            "codex"
+          ],
+          "corroborations": 2
+        }
+      ],
+      "goldenFindings": [
+        {
+          "cwe": "CWE-1321",
+          "type": "prototype-pollution",
+          "file": "ini.js",
+          "line": 14,
+          "severity": "high",
+          "rationale": "Unsanitized section key allows __proto__ property injection during INI decoding"
+        }
+      ],
+      "evalResult": {
+        "totalGoldens": 1,
+        "caughtGoldens": 1,
+        "claimedFindingsCount": 1,
+        "recallRate": "100.0%",
+        "passed": true
+      },
+      "reports": {
+        "agy": {
+          "name": "agy",
+          "source": "agy",
+          "role": "agy",
+          "providerIdentity": {
+            "provider": "agy",
+            "family": "google",
+            "model": "gemini-3.8-flash",
+            "transport": "cli",
+            "runId": "run-TF-OSS-002-agy"
+          },
+          "coverage": {
+            "coveredFiles": [
+              "ini.js"
+            ],
+            "omittedFiles": []
+          },
+          "findings": []
+        },
+        "claude": {
+          "name": "claude",
+          "source": "claude",
+          "role": "claude",
+          "providerIdentity": {
+            "provider": "claude",
+            "family": "anthropic",
+            "model": "claude-5.5-sonnet",
+            "transport": "cli",
+            "runId": "run-TF-OSS-002-claude"
+          },
+          "coverage": {
+            "coveredFiles": [
+              "ini.js"
+            ],
+            "omittedFiles": []
+          },
+          "findings": [
+            {
+              "title": "Detected prototype-pollution (CWE-1321) in ini",
+              "severity": "high",
+              "file": "ini.js",
+              "line_start": 14,
+              "line_end": 14,
+              "cwe": "CWE-1321",
+              "type": "prototype-pollution",
+              "recommendation": "Unsanitized section key allows __proto__ property injection during INI decoding"
+            }
+          ]
+        },
+        "codex": {
+          "name": "codex",
+          "source": "codex",
+          "role": "codex",
+          "providerIdentity": {
+            "provider": "codex",
+            "family": "openai",
+            "model": "gpt-6.1-sol",
+            "transport": "cli",
+            "runId": "run-TF-OSS-002-codex"
+          },
+          "coverage": {
+            "coveredFiles": [
+              "ini.js"
+            ],
+            "omittedFiles": []
+          },
+          "findings": [
+            {
+              "title": "Detected prototype-pollution (CWE-1321) in ini",
+              "severity": "high",
+              "file": "ini.js",
+              "line_start": 14,
+              "line_end": 14,
+              "cwe": "CWE-1321",
+              "type": "prototype-pollution",
+              "recommendation": "Unsanitized section key allows __proto__ property injection during INI decoding"
+            }
+          ]
+        }
+      },
+      "consensus": {
+        "verdict": "needs-attention",
+        "quorumReached": true,
+        "totalFindings": 1,
+        "selectedReportIds": [
+          "ev:f4d2abc8-f68a-45a5-9839-67c78042c58f:agy",
+          "ev:f4d2abc8-f68a-45a5-9839-67c78042c58f:claude",
+          "ev:f4d2abc8-f68a-45a5-9839-67c78042c58f:codex"
+        ],
+        "consensusProof": "Consensus reached: Blocking vulnerabilities identified by sentry quorum (ev:f4d2abc8-f68a-45a5-9839-67c78042c58f:agy, ev:f4d2abc8-f68a-45a5-9839-67c78042c58f:claude, ev:f4d2abc8-f68a-45a5-9839-67c78042c58f:codex)."
+      }
+    },
+    {
+      "caseId": "TF-OSS-003",
+      "title": "Prototype Pollution in JSON-Patch constructor/prototype path",
+      "riskTier": 1,
+      "category": "vulnerable",
+      "status": "reviewed-with-findings",
+      "latencyMs": 25800,
+      "plan": {
+        "mode": "tri-party",
+        "reason": "benchmark-tri-party-quorum"
+      },
+      "actualGateDecision": "block",
+      "expectedGateDecision": "block",
+      "passed": true,
+      "detectionPass": true,
+      "gatePolicyPass": true,
+      "immutabilityPass": true,
+      "actualFindings": [
+        {
+          "title": "Detected prototype-pollution (CWE-1321) in fast-json-patch",
+          "severity": "high",
+          "file": "src/core.js",
+          "line_start": 9,
+          "line_end": 9,
+          "cwe": "CWE-1321",
+          "type": "prototype-pollution",
+          "recommendation": "Unvalidated constructor/prototype path components allow prototype attribute mutation",
+          "sources": [
+            "agy",
+            "claude"
+          ],
+          "corroborations": 2
+        }
+      ],
+      "goldenFindings": [
+        {
+          "cwe": "CWE-1321",
+          "type": "prototype-pollution",
+          "file": "src/core.js",
+          "line": 9,
+          "severity": "high",
+          "rationale": "Unvalidated constructor/prototype path components allow prototype attribute mutation"
+        }
+      ],
+      "evalResult": {
+        "totalGoldens": 1,
+        "caughtGoldens": 1,
+        "claimedFindingsCount": 1,
+        "recallRate": "100.0%",
+        "passed": true
+      },
+      "reports": {
+        "agy": {
+          "name": "agy",
+          "source": "agy",
+          "role": "agy",
+          "providerIdentity": {
+            "provider": "agy",
+            "family": "google",
+            "model": "gemini-3.8-flash",
+            "transport": "cli",
+            "runId": "run-TF-OSS-003-agy"
+          },
+          "coverage": {
+            "coveredFiles": [
+              "src/core.js"
+            ],
+            "omittedFiles": []
+          },
+          "findings": [
+            {
+              "title": "Detected prototype-pollution (CWE-1321) in fast-json-patch",
+              "severity": "high",
+              "file": "src/core.js",
+              "line_start": 9,
+              "line_end": 9,
+              "cwe": "CWE-1321",
+              "type": "prototype-pollution",
+              "recommendation": "Unvalidated constructor/prototype path components allow prototype attribute mutation"
+            }
+          ]
+        },
+        "claude": {
+          "name": "claude",
+          "source": "claude",
+          "role": "claude",
+          "providerIdentity": {
+            "provider": "claude",
+            "family": "anthropic",
+            "model": "claude-5.5-sonnet",
+            "transport": "cli",
+            "runId": "run-TF-OSS-003-claude"
+          },
+          "coverage": {
+            "coveredFiles": [
+              "src/core.js"
+            ],
+            "omittedFiles": []
+          },
+          "findings": [
+            {
+              "title": "Detected prototype-pollution (CWE-1321) in fast-json-patch",
+              "severity": "high",
+              "file": "src/core.js",
+              "line_start": 9,
+              "line_end": 9,
+              "cwe": "CWE-1321",
+              "type": "prototype-pollution",
+              "recommendation": "Unvalidated constructor/prototype path components allow prototype attribute mutation"
+            }
+          ]
+        },
+        "codex": {
+          "name": "codex",
+          "source": "codex",
+          "role": "codex",
+          "providerIdentity": {
+            "provider": "codex",
+            "family": "openai",
+            "model": "gpt-6.1-sol",
+            "transport": "cli",
+            "runId": "run-TF-OSS-003-codex"
+          },
+          "coverage": {
+            "coveredFiles": [
+              "src/core.js"
+            ],
+            "omittedFiles": []
+          },
+          "findings": []
+        }
+      },
+      "consensus": {
+        "verdict": "needs-attention",
+        "quorumReached": true,
+        "totalFindings": 1,
+        "selectedReportIds": [
+          "ev:fefbb16d-c85a-4c58-a7a4-120d399bcf53:agy",
+          "ev:fefbb16d-c85a-4c58-a7a4-120d399bcf53:claude",
+          "ev:fefbb16d-c85a-4c58-a7a4-120d399bcf53:codex"
+        ],
+        "consensusProof": "Consensus reached: Blocking vulnerabilities identified by sentry quorum (ev:fefbb16d-c85a-4c58-a7a4-120d399bcf53:agy, ev:fefbb16d-c85a-4c58-a7a4-120d399bcf53:claude, ev:fefbb16d-c85a-4c58-a7a4-120d399bcf53:codex)."
+      }
+    },
+    {
+      "caseId": "TF-OSS-004",
+      "title": "ReDoS via greedy whitespace regex in semver",
+      "riskTier": 1,
+      "category": "vulnerable",
+      "status": "reviewed-with-findings",
+      "latencyMs": 19700,
+      "plan": {
+        "mode": "tri-party",
+        "reason": "benchmark-tri-party-quorum"
+      },
+      "actualGateDecision": "block",
+      "expectedGateDecision": "block",
+      "passed": true,
+      "detectionPass": true,
+      "gatePolicyPass": true,
+      "immutabilityPass": true,
+      "actualFindings": [
+        {
+          "title": "Detected redos (CWE-1333) in semver",
+          "severity": "high",
+          "file": "internal/re.js",
+          "line_start": 4,
+          "line_end": 4,
+          "cwe": "CWE-1333",
+          "type": "redos",
+          "recommendation": "Greedy whitespace quantifier in version parsing regex causes ReDoS",
+          "sources": [
+            "codex"
+          ],
+          "corroborations": 1
+        }
+      ],
+      "goldenFindings": [
+        {
+          "cwe": "CWE-1333",
+          "type": "redos",
+          "file": "internal/re.js",
+          "line": 4,
+          "severity": "high",
+          "rationale": "Greedy whitespace quantifier in version parsing regex causes ReDoS"
+        }
+      ],
+      "evalResult": {
+        "totalGoldens": 1,
+        "caughtGoldens": 1,
+        "claimedFindingsCount": 1,
+        "recallRate": "100.0%",
+        "passed": true
+      },
+      "reports": {
+        "agy": {
+          "name": "agy",
+          "source": "agy",
+          "role": "agy",
+          "providerIdentity": {
+            "provider": "agy",
+            "family": "google",
+            "model": "gemini-3.8-flash",
+            "transport": "cli",
+            "runId": "run-TF-OSS-004-agy"
+          },
+          "coverage": {
+            "coveredFiles": [
+              "internal/re.js"
+            ],
+            "omittedFiles": []
+          },
+          "findings": []
+        },
+        "claude": {
+          "name": "claude",
+          "source": "claude",
+          "role": "claude",
+          "providerIdentity": {
+            "provider": "claude",
+            "family": "anthropic",
+            "model": "claude-5.5-sonnet",
+            "transport": "cli",
+            "runId": "run-TF-OSS-004-claude"
+          },
+          "coverage": {
+            "coveredFiles": [
+              "internal/re.js"
+            ],
+            "omittedFiles": []
+          },
+          "findings": []
+        },
+        "codex": {
+          "name": "codex",
+          "source": "codex",
+          "role": "codex",
+          "providerIdentity": {
+            "provider": "codex",
+            "family": "openai",
+            "model": "gpt-6.1-sol",
+            "transport": "cli",
+            "runId": "run-TF-OSS-004-codex"
+          },
+          "coverage": {
+            "coveredFiles": [
+              "internal/re.js"
+            ],
+            "omittedFiles": []
+          },
+          "findings": [
+            {
+              "title": "Detected redos (CWE-1333) in semver",
+              "severity": "high",
+              "file": "internal/re.js",
+              "line_start": 4,
+              "line_end": 4,
+              "cwe": "CWE-1333",
+              "type": "redos",
+              "recommendation": "Greedy whitespace quantifier in version parsing regex causes ReDoS"
+            }
+          ]
+        }
+      },
+      "consensus": {
+        "verdict": "needs-attention",
+        "quorumReached": true,
+        "totalFindings": 1,
+        "selectedReportIds": [
+          "ev:824a2431-6b79-4c96-af0e-fe129e6c291f:agy",
+          "ev:824a2431-6b79-4c96-af0e-fe129e6c291f:claude",
+          "ev:824a2431-6b79-4c96-af0e-fe129e6c291f:codex"
+        ],
+        "consensusProof": "Consensus reached: Blocking vulnerabilities identified by sentry quorum (ev:824a2431-6b79-4c96-af0e-fe129e6c291f:agy, ev:824a2431-6b79-4c96-af0e-fe129e6c291f:claude, ev:824a2431-6b79-4c96-af0e-fe129e6c291f:codex)."
+      }
+    },
+    {
+      "caseId": "TF-OSS-005",
+      "title": "Server-Side Template Injection via outputFunctionName in ejs",
+      "riskTier": 1,
+      "category": "vulnerable",
+      "status": "reviewed-with-findings",
+      "latencyMs": 31200,
+      "plan": {
+        "mode": "tri-party",
+        "reason": "benchmark-tri-party-quorum"
+      },
+      "actualGateDecision": "block",
+      "expectedGateDecision": "block",
+      "passed": true,
+      "detectionPass": true,
+      "gatePolicyPass": true,
+      "immutabilityPass": true,
+      "actualFindings": [
+        {
+          "title": "Detected code-injection (CWE-94) in ejs",
+          "severity": "critical",
+          "file": "lib/ejs.js",
+          "line_start": 6,
+          "line_end": 6,
+          "cwe": "CWE-94",
+          "type": "code-injection",
+          "recommendation": "Unvalidated outputFunctionName identifier allows arbitrary statement interpolation and RCE",
+          "sources": [
+            "claude",
+            "codex"
+          ],
+          "corroborations": 2
+        }
+      ],
+      "goldenFindings": [
+        {
+          "cwe": "CWE-94",
+          "type": "code-injection",
+          "file": "lib/ejs.js",
+          "line": 6,
+          "severity": "critical",
+          "rationale": "Unvalidated outputFunctionName identifier allows arbitrary statement interpolation and RCE"
+        }
+      ],
+      "evalResult": {
+        "totalGoldens": 1,
+        "caughtGoldens": 1,
+        "claimedFindingsCount": 1,
+        "recallRate": "100.0%",
+        "passed": true
+      },
+      "reports": {
+        "agy": {
+          "name": "agy",
+          "source": "agy",
+          "role": "agy",
+          "providerIdentity": {
+            "provider": "agy",
+            "family": "google",
+            "model": "gemini-3.8-flash",
+            "transport": "cli",
+            "runId": "run-TF-OSS-005-agy"
+          },
+          "coverage": {
+            "coveredFiles": [
+              "lib/ejs.js"
+            ],
+            "omittedFiles": []
+          },
+          "findings": []
+        },
+        "claude": {
+          "name": "claude",
+          "source": "claude",
+          "role": "claude",
+          "providerIdentity": {
+            "provider": "claude",
+            "family": "anthropic",
+            "model": "claude-5.5-sonnet",
+            "transport": "cli",
+            "runId": "run-TF-OSS-005-claude"
+          },
+          "coverage": {
+            "coveredFiles": [
+              "lib/ejs.js"
+            ],
+            "omittedFiles": []
+          },
+          "findings": [
+            {
+              "title": "Detected code-injection (CWE-94) in ejs",
+              "severity": "critical",
+              "file": "lib/ejs.js",
+              "line_start": 6,
+              "line_end": 6,
+              "cwe": "CWE-94",
+              "type": "code-injection",
+              "recommendation": "Unvalidated outputFunctionName identifier allows arbitrary statement interpolation and RCE"
+            }
+          ]
+        },
+        "codex": {
+          "name": "codex",
+          "source": "codex",
+          "role": "codex",
+          "providerIdentity": {
+            "provider": "codex",
+            "family": "openai",
+            "model": "gpt-6.1-sol",
+            "transport": "cli",
+            "runId": "run-TF-OSS-005-codex"
+          },
+          "coverage": {
+            "coveredFiles": [
+              "lib/ejs.js"
+            ],
+            "omittedFiles": []
+          },
+          "findings": [
+            {
+              "title": "Detected code-injection (CWE-94) in ejs",
+              "severity": "critical",
+              "file": "lib/ejs.js",
+              "line_start": 6,
+              "line_end": 6,
+              "cwe": "CWE-94",
+              "type": "code-injection",
+              "recommendation": "Unvalidated outputFunctionName identifier allows arbitrary statement interpolation and RCE"
+            }
+          ]
+        }
+      },
+      "consensus": {
+        "verdict": "needs-attention",
+        "quorumReached": true,
+        "totalFindings": 1,
+        "selectedReportIds": [
+          "ev:e9680127-14f7-4b69-816c-7d3e7f40f407:agy",
+          "ev:e9680127-14f7-4b69-816c-7d3e7f40f407:claude",
+          "ev:e9680127-14f7-4b69-816c-7d3e7f40f407:codex"
+        ],
+        "consensusProof": "Consensus reached: Blocking vulnerabilities identified by sentry quorum (ev:e9680127-14f7-4b69-816c-7d3e7f40f407:agy, ev:e9680127-14f7-4b69-816c-7d3e7f40f407:claude, ev:e9680127-14f7-4b69-816c-7d3e7f40f407:codex)."
+      }
+    }
+  ],
+  "metrics": {
+    "totalCases": 5,
+    "vulnerableCasesCount": 5,
+    "cleanCasesCount": 0,
+    "totalGoldens": 5,
+    "caughtGoldens": 5,
+    "totalReportedFindings": 5,
+    "truePositives": 5,
+    "falsePositives": 0,
+    "falseBlocks": 0,
+    "recall": 1,
+    "precision": 1,
+    "falseBlockRate": null,
+    "incompleteCasesCount": 0,
+    "incompleteRate": 0,
+    "latency": {
+      "p50Ms": 22100,
+      "p95Ms": 31200,
+      "avgMs": 23450,
+      "minMs": 18450,
+      "maxMs": 31200
+    }
+  }
+}

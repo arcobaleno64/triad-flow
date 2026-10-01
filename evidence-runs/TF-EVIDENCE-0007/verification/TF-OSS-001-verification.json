@@ -1,0 +1,64 @@
+{
+  "schemaVersion": "1.0.0",
+  "verifiedAt": "2026-10-01T07:23:41.253Z",
+  "changeSetDigest": "sha256:6ad15a6e2d7ff34d433b1bab4a7e1c7caa2d9ec90f0885e20320c2a1224b0dd1",
+  "producer": {
+    "providerName": "tri-party-quorum",
+    "findingsCount": 1,
+    "findings": [
+      {
+        "title": "Detected prototype-pollution (CWE-1321) in minimist",
+        "severity": "high",
+        "file": "index.js",
+        "line_start": 9,
+        "line_end": 9,
+        "cwe": "CWE-1321",
+        "type": "prototype-pollution",
+        "recommendation": "Direct traversal of __proto__ key allows remote attackers to pollute Object.prototype",
+        "sources": [
+          "agy",
+          "claude",
+          "codex"
+        ],
+        "corroborations": 3
+      }
+    ]
+  },
+  "verifier": {
+    "providerName": "claude",
+    "modelName": "claude-mock",
+    "actualModel": {
+      "source": "runtime",
+      "value": "claude-mock-v1"
+    },
+    "usage": {
+      "completionTokens": 50,
+      "promptTokens": 100,
+      "totalTokens": 150,
+      "usageSource": "authoritative"
+    }
+  },
+  "evaluations": [
+    {
+      "findingId": "finding-1",
+      "verdict": "SUPPORTED",
+      "classification": "SUPPORTED",
+      "locatorAccurate": true,
+      "typeAccurate": true,
+      "severityAccurate": true,
+      "reasoning": "Offline mock verifier verified finding 'finding-1' against changeSet diff.",
+      "dissent": null
+    }
+  ],
+  "verifierOmissions": [],
+  "disagreementLedger": [],
+  "summary": {
+    "totalEvaluated": 1,
+    "supportedCount": 1,
+    "partiallySupportedCount": 0,
+    "contestedCount": 0,
+    "insufficientEvidenceCount": 0,
+    "omissionsCount": 0
+  },
+  "ok": true
+}

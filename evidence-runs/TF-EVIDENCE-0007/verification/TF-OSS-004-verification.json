@@ -1,0 +1,62 @@
+{
+  "schemaVersion": "1.0.0",
+  "verifiedAt": "2026-10-01T07:23:41.255Z",
+  "changeSetDigest": "sha256:167f2fd7dc8426afc06df7d23d037cf1d58c280dc5d062fd4d499c16c337ab0b",
+  "producer": {
+    "providerName": "tri-party-quorum",
+    "findingsCount": 1,
+    "findings": [
+      {
+        "title": "Detected redos (CWE-1333) in semver",
+        "severity": "high",
+        "file": "internal/re.js",
+        "line_start": 4,
+        "line_end": 4,
+        "cwe": "CWE-1333",
+        "type": "redos",
+        "recommendation": "Greedy whitespace quantifier in version parsing regex causes ReDoS",
+        "sources": [
+          "codex"
+        ],
+        "corroborations": 1
+      }
+    ]
+  },
+  "verifier": {
+    "providerName": "claude",
+    "modelName": "claude-mock",
+    "actualModel": {
+      "source": "runtime",
+      "value": "claude-mock-v1"
+    },
+    "usage": {
+      "completionTokens": 50,
+      "promptTokens": 100,
+      "totalTokens": 150,
+      "usageSource": "authoritative"
+    }
+  },
+  "evaluations": [
+    {
+      "findingId": "finding-1",
+      "verdict": "SUPPORTED",
+      "classification": "SUPPORTED",
+      "locatorAccurate": true,
+      "typeAccurate": true,
+      "severityAccurate": true,
+      "reasoning": "Offline mock verifier verified finding 'finding-1' against changeSet diff.",
+      "dissent": null
+    }
+  ],
+  "verifierOmissions": [],
+  "disagreementLedger": [],
+  "summary": {
+    "totalEvaluated": 1,
+    "supportedCount": 1,
+    "partiallySupportedCount": 0,
+    "contestedCount": 0,
+    "insufficientEvidenceCount": 0,
+    "omissionsCount": 0
+  },
+  "ok": true
+}

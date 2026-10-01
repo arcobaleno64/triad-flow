@@ -1,0 +1,132 @@
+{
+  "schemaVersion": "1.0.0",
+  "verifiedAt": "2026-10-01T07:23:41.256Z",
+  "producer": {
+    "providerName": "tri-party-quorum",
+    "runId": "run-oss-v2.7-1790839421252",
+    "commitSha": "1cd70ebb40e1a1e3f39d21139d3dcf6c98ff682a"
+  },
+  "verifier": {
+    "providerName": "claude",
+    "modelName": "claude-5.5-sonnet"
+  },
+  "summary": {
+    "totalCases": 5,
+    "totalEvaluated": 5,
+    "supportedCount": 5,
+    "partiallySupportedCount": 0,
+    "contestedCount": 0,
+    "insufficientEvidenceCount": 0,
+    "omissionsCount": 0
+  },
+  "ledger": [
+    {
+      "caseId": "TF-OSS-002",
+      "type": "VENDOR_DIVERGENCE",
+      "finding": "Detected prototype-pollution (CWE-1321) in ini",
+      "severity": "high",
+      "vendorSplit": {
+        "agy": "clean",
+        "claude": "vulnerable",
+        "codex": "vulnerable"
+      },
+      "disposition": "BLOCK",
+      "rationale": "2-of-3 majority corroborated finding, satisfying corroboration quorum."
+    },
+    {
+      "caseId": "TF-OSS-003",
+      "type": "VENDOR_DIVERGENCE",
+      "finding": "Detected prototype-pollution (CWE-1321) in fast-json-patch",
+      "severity": "high",
+      "vendorSplit": {
+        "agy": "vulnerable",
+        "claude": "vulnerable",
+        "codex": "clean"
+      },
+      "disposition": "BLOCK",
+      "rationale": "2-of-3 majority corroborated finding, satisfying corroboration quorum."
+    },
+    {
+      "caseId": "TF-OSS-004",
+      "type": "SOLITARY_BLOCKER_VETO",
+      "sentry": "codex",
+      "finding": "Detected redos (CWE-1333) in semver",
+      "severity": "high",
+      "vendorSplit": {
+        "agy": "clean",
+        "claude": "clean",
+        "codex": "vulnerable"
+      },
+      "disposition": "BLOCK",
+      "rationale": "OpenAI Codex uniquely caught catastrophic ReDoS regex (CWE-1333). Solitary blocker veto enforced by RFC-027-02."
+    },
+    {
+      "caseId": "TF-OSS-005",
+      "type": "VENDOR_DIVERGENCE",
+      "finding": "Detected code-injection (CWE-94) in ejs",
+      "severity": "critical",
+      "vendorSplit": {
+        "agy": "clean",
+        "claude": "vulnerable",
+        "codex": "vulnerable"
+      },
+      "disposition": "BLOCK",
+      "rationale": "2-of-3 majority corroborated finding, satisfying corroboration quorum."
+    }
+  ],
+  "triPartyEntries": [
+    {
+      "caseId": "TF-OSS-002",
+      "type": "VENDOR_DIVERGENCE",
+      "finding": "Detected prototype-pollution (CWE-1321) in ini",
+      "severity": "high",
+      "vendorSplit": {
+        "agy": "clean",
+        "claude": "vulnerable",
+        "codex": "vulnerable"
+      },
+      "disposition": "BLOCK",
+      "rationale": "2-of-3 majority corroborated finding, satisfying corroboration quorum."
+    },
+    {
+      "caseId": "TF-OSS-003",
+      "type": "VENDOR_DIVERGENCE",
+      "finding": "Detected prototype-pollution (CWE-1321) in fast-json-patch",
+      "severity": "high",
+      "vendorSplit": {
+        "agy": "vulnerable",
+        "claude": "vulnerable",
+        "codex": "clean"
+      },
+      "disposition": "BLOCK",
+      "rationale": "2-of-3 majority corroborated finding, satisfying corroboration quorum."
+    },
+    {
+      "caseId": "TF-OSS-004",
+      "type": "SOLITARY_BLOCKER_VETO",
+      "sentry": "codex",
+      "finding": "Detected redos (CWE-1333) in semver",
+      "severity": "high",
+      "vendorSplit": {
+        "agy": "clean",
+        "claude": "clean",
+        "codex": "vulnerable"
+      },
+      "disposition": "BLOCK",
+      "rationale": "OpenAI Codex uniquely caught catastrophic ReDoS regex (CWE-1333). Solitary blocker veto enforced by RFC-027-02."
+    },
+    {
+      "caseId": "TF-OSS-005",
+      "type": "VENDOR_DIVERGENCE",
+      "finding": "Detected code-injection (CWE-94) in ejs",
+      "severity": "critical",
+      "vendorSplit": {
+        "agy": "clean",
+        "claude": "vulnerable",
+        "codex": "vulnerable"
+      },
+      "disposition": "BLOCK",
+      "rationale": "2-of-3 majority corroborated finding, satisfying corroboration quorum."
+    }
+  ]
+}
