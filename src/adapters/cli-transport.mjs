@@ -35,62 +35,19 @@ const AUTH_ERROR_PATTERNS = [
   /permission denied/i
 ];
 
-/**
- * Builds the canonical read-only prompt for the CLI reviewer.
- */
-export function buildReviewPrompt(changeSet, role = "macro", limits = DEFAULT_LIMITS) {
-  const maxBytes = limits.maxInputBytes || DEFAULT_LIMITS.maxInputBytes;
-  let hunks = changeSet.diffHunks || "";
-  let truncatedNotice = "";
+import {
+  buildReviewPrompt,
+  buildEvidenceReviewPrompt,
+  TAXONOMY_CHECKLISTS,
+  selectChecklists
+} from "./review-prompts.mjs";
 
-  if (Buffer.byteLength(hunks, "utf8") > maxBytes) {
-    hunks = hunks.slice(0, maxBytes);
-    truncatedNotice = `\n[NOTE: Diff truncated at ${maxBytes} bytes limit]\n`;
-  }
-
-  const fileList = (changeSet.files || []).map(f => `  - ${f.path} (+${f.additions || 0}, -${f.deletions || 0})`).join("\n");
-
-  return [
-    `You are a strict read-only code review sentry (${role} role).`,
-    `Review the following code changes for security vulnerabilities, bugs, and defects.`,
-    ``,
-    `Scope: ${changeSet.scopeMode || "working-tree"}`,
-    `Content Digest: ${changeSet.contentDigest || "none"}`,
-    `Files Changed:`,
-    fileList,
-    truncatedNotice,
-    `Diff:`,
-    `\`\`\``,
-    hunks,
-    `\`\`\``,
-    ``,
-    `Respond ONLY with a JSON object in this exact format, with no preamble or commentary:`,
-    `{`,
-    `  "findings": [`,
-    `    {`,
-    `      "title": "Concise issue title",`,
-    `      "severity": "critical|high|medium|low|info",`,
-    `      "file": "path/to/file",`,
-    `      "line_start": 1,`,
-    `      "line_end": 1,`,
-    `      "recommendation": "Actionable fix instruction",`,
-    `      "ruleId": "RULE-ID-OPTIONAL",`,
-    `      "cwe": "CWE-OPTIONAL",`,
-    `      "type": "TYPE-OPTIONAL"`,
-    `    }`,
-    `  ],`,
-    `  "coverage": {`,
-    `    "coveredFiles": ["path/to/file"],`,
-    `    "omittedFiles": []`,
-    `  },`,
-    `  "usage": {`,
-    `    "promptTokens": null,`,
-    `    "completionTokens": null,`,
-    `    "totalTokens": null`,
-    `  }`,
-    `}`
-  ].join("\n");
-}
+export {
+  buildReviewPrompt,
+  buildEvidenceReviewPrompt,
+  TAXONOMY_CHECKLISTS,
+  selectChecklists
+};
 
 export class CliReviewAdapter {
   constructor(options = {}) {
