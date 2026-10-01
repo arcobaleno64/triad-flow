@@ -33,20 +33,20 @@ export const TAXONOMY_CHECKLISTS = Object.freeze({
   CODE_INJECTION: Object.freeze({
     id: "CHECKLIST-CWE-94",
     cwe: "CWE-94",
-    title: "Code Injection & Template Execution (CWE-94 / CWE-74)",
+    title: "Dynamic Function Construction & Template Compilation (CWE-94 / CWE-74)",
     rules: Object.freeze([
-      "Check dynamic code evaluation: eval(), new Function(), vm.runInContext().",
-      "Verify template engine options (e.g. outputFunctionName, client compile flags).",
-      "Inspect serialization and deserialization routines accepting untrusted strings.",
-      "Check if user-controlled variables influence function construction or execution."
+      "Inspect dynamic function construction: Function constructor, eval(), and execution scopes.",
+      "Verify template compilation options (e.g. outputFunctionName, client compile flags).",
+      "Inspect serialization and deserialization routines handling untrusted structures.",
+      "Check string concatenation or interpolation into dynamically constructed function bodies (e.g. template options like outputFunctionName interpolated into new Function or eval). Even if partial regex validation is added, inspect whether identifier interpolation into executable code remains vulnerable or bypassable."
     ])
   }),
   COMMAND_INJECTION: Object.freeze({
     id: "CHECKLIST-CWE-78",
     cwe: "CWE-78",
-    title: "Command & Shell Injection (CWE-78)",
+    title: "Process Execution & Command Argument Construction (CWE-78)",
     rules: Object.freeze([
-      "Verify child_process calls (exec, spawn, execSync, fork).",
+      "Verify child_process calls (exec, spawn, execFile, fork).",
       "Check if 'shell: true' is passed with user-influenced arguments.",
       "Inspect unquoted string concatenation in command lines.",
       "Verify that arguments are passed as discrete array elements without shell interpolation."
@@ -55,7 +55,7 @@ export const TAXONOMY_CHECKLISTS = Object.freeze({
   PATH_TRAVERSAL: Object.freeze({
     id: "CHECKLIST-CWE-22",
     cwe: "CWE-22",
-    title: "Path Traversal & Insecure Filesystem Access (CWE-22)",
+    title: "Filesystem Path Resolution & Boundary Containment (CWE-22)",
     rules: Object.freeze([
       "Inspect path.join and path.resolve with untrusted segments.",
       "Check for directory traversal sequences ('..', '%2e%2e').",
@@ -268,12 +268,12 @@ export function buildEvidenceReviewPrompt(changeSet, role = "macro", limits = DE
     `\`\`\``,
     ``,
     `[SEVERITY CALIBRATION & CLASSIFICATION CONTRACT]`,
-    `Calibrate finding severity strictly based on exploitability, impact, and standard taxonomy guidelines:`,
-    `- critical: Remote code execution (RCE), arbitrary command execution, template engine code injection (CWE-94 / CWE-74), authentication bypass.`,
-    `- high: Prototype pollution (CWE-1321), unvalidated prototype/constructor traversal, severe ReDoS (CWE-1333) with catastrophic backtracking on untrusted inputs, SQL/command injection (CWE-78), path traversal (CWE-22).`,
-    `- medium: Moderate denial-of-service without exponential blowup, information disclosure, unhandled exception in core flow.`,
+    `Calibrate finding severity strictly based on impact and taxonomy guidelines:`,
+    `- critical: Direct system compromise, arbitrary command execution, dynamic function code evaluation (CWE-94), or authentication bypass.`,
+    `- high: Security boundary bypass, prototype pollution (CWE-1321), unvalidated prototype/constructor traversal, severe ReDoS (CWE-1333) with catastrophic backtracking on untrusted inputs, command construction flaw (CWE-78), or path traversal (CWE-22).`,
+    `- medium: Moderate denial-of-service without exponential blowup, information disclosure, or unhandled exceptions in core flow.`,
     `- low: Minor code hygiene, behavioral regression without security impact.`,
-    `- MANDATORY: Any verified security flaw matching the assigned checklists (e.g. Prototype Pollution CWE-1321, ReDoS CWE-1333, Code Injection CWE-94) that permits attacker-controlled execution, prototype alteration, or catastrophic denial of service (severe ReDoS / resource exhaustion) MUST be assigned 'high' or 'critical'. Never downgrade confirmed checklist security vulnerabilities to 'low' or 'info'.`,
+    `- MANDATORY: Any verified flaw matching the assigned checklists (e.g. Prototype Pollution CWE-1321, ReDoS CWE-1333, Dynamic Function Construction CWE-94) that permits prototype alteration or catastrophic resource exhaustion MUST be assigned 'high' or 'critical'. Never downgrade confirmed checklist vulnerabilities to 'low' or 'info'.`,
     ``,
     `[RESPONSE FORMAT SPECIFICATION]`,
     `Respond ONLY with a JSON object in this exact format, with no preamble or commentary:`,
