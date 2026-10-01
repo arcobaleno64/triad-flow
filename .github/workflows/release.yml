@@ -31,16 +31,21 @@ jobs:
             echo "::error::Tag v$tag does not match package.json version $pkg. Run 'npm run bump-version $tag' before tagging." >&2
             exit 1
           fi
-      - name: Assert the tag is on main
+      - name: Assert the tag is reachable from main or release branch
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          status="$(gh api "repos/${GITHUB_REPOSITORY}/compare/main...${GITHUB_REF_NAME}" -q .status)"
+          status="$(gh api "repos/${GITHUB_REPOSITORY}/compare/main...${GITHUB_REF_NAME}" -q .status 2>/dev/null || echo "not_found")"
           case "$status" in
-            identical|behind) ;;
+            identical|behind) exit 0 ;;
+          esac
+          rel_branch="release/${GITHUB_REF_NAME}"
+          rel_status="$(gh api "repos/${GITHUB_REPOSITORY}/compare/${rel_branch}...${GITHUB_REF_NAME}" -q .status 2>/dev/null || echo "not_found")"
+          case "$rel_status" in
+            identical|behind) exit 0 ;;
             *)
-              echo "::error::$GITHUB_REF_NAME is not reachable from main (compare status: $status)." >&2
+              echo "::error::$GITHUB_REF_NAME is not reachable from main (compare status: $status) or $rel_branch (compare status: $rel_status)." >&2
               exit 1
               ;;
           esac
