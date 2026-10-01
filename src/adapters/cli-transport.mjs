@@ -37,6 +37,13 @@ const AUTH_ERROR_PATTERNS = [
   /permission denied/i
 ];
 
+const PROVIDER_REFUSAL_PATTERNS = [
+  /blocked by Gemini(?:'s)? filters/i,
+  /safety filters?/i,
+  /content policy/i,
+  /model refused/i
+];
+
 import {
   buildReviewPrompt,
   buildEvidenceReviewPrompt,
@@ -330,6 +337,14 @@ export class CliReviewAdapter {
             }, context));
             return;
           }
+          if (PROVIDER_REFUSAL_PATTERNS.some(p => p.test(outputToParse))) {
+            resolve(validateProviderOutput({
+              executionStatus: EXECUTION_STATUS.ERROR,
+              rawOutput: outputToParse.slice(0, 1000),
+              error: `Provider safety/content filter refusal detected: ${outputToParse.slice(0, 300).trim()}`
+            }, context));
+            return;
+          }
           resolve(validateProviderOutput({
             executionStatus: EXECUTION_STATUS.MALFORMED_OUTPUT,
             rawOutput: outputToParse.slice(0, 1000),
@@ -400,6 +415,13 @@ export class CliReviewAdapter {
         return validateProviderOutput({
           executionStatus: EXECUTION_STATUS.AUTH_FAILURE,
           error: `Authentication failure detected in CLI reviewer output: ${outputToParse.trim()}`
+        }, context);
+      }
+      if (PROVIDER_REFUSAL_PATTERNS.some(p => p.test(outputToParse))) {
+        return validateProviderOutput({
+          executionStatus: EXECUTION_STATUS.ERROR,
+          rawOutput: outputToParse.slice(0, 1000),
+          error: `Provider safety/content filter refusal detected: ${outputToParse.slice(0, 300).trim()}`
         }, context);
       }
       return validateProviderOutput({

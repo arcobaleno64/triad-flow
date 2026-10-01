@@ -235,6 +235,26 @@ test("CliReviewAdapter (Acceptance 6: 格式錯誤 Malformed Output)", async () 
   assert.equal(res.executionStatus, EXECUTION_STATUS.MALFORMED_OUTPUT);
 });
 
+test("CliReviewAdapter: detects provider refusal/content filter and classifies as ERROR", async () => {
+  const cs = makeChangeSet();
+  const mockExec = async () => ({
+    code: 0,
+    stdout: "This request was blocked by Gemini's filters. They can occasionally trigger by mistake on safe coding..."
+  });
+
+  const adapter = new CliReviewAdapter({ execFn: mockExec });
+  const res = await adapter.executeReview({
+    runId: "run-refusal-01",
+    role: "macro",
+    changeSet: cs,
+    policyId: "SINGLE_SENTRY"
+  });
+
+  assert.equal(res.ok, false);
+  assert.equal(res.executionStatus, EXECUTION_STATUS.ERROR);
+  assert.match(res.error, /Provider safety\/content filter refusal detected/);
+});
+
 test("CliReviewAdapter (Acceptance 7: 過大回應 Payload Too Large)", async () => {
   const cs = makeChangeSet();
   const hugeOutput = "A".repeat(1024 * 1024); // 1 MB string
