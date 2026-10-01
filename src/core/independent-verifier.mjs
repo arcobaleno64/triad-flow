@@ -1299,12 +1299,12 @@ export function validateVerifierCommand(verifyWith) {
     throw new Error("Invalid verifier: command must be a non-empty string.");
   }
   if (/[\s"'`;&|()<>$]/.test(verifyWith) || verifyWith.startsWith("-")) {
-    throw new Error(`Invalid verifier: '${verifyWith}' contains disallowed characters, spaces, or CLI flags. Must be a single canonical provider identifier (e.g. 'claude' or 'agy').`);
+    throw new Error(`Invalid verifier: '${verifyWith}' contains disallowed characters, spaces, or CLI flags. Must be a single canonical provider identifier (e.g. 'claude', 'agy', or 'codex').`);
   }
   const trimmed = verifyWith.trim();
   const profile = resolveProviderProfile(trimmed);
   if (profile.profileStatus !== "canonical") {
-    throw new Error(`Invalid verifier: '${trimmed}' does not resolve to a canonical provider profile (status: '${profile.profileStatus}'). Supported canonical providers: agy, claude.`);
+    throw new Error(`Invalid verifier: '${trimmed}' does not resolve to a canonical provider profile (status: '${profile.profileStatus}'). Supported canonical providers: agy, claude, codex.`);
   }
   return profile;
 }

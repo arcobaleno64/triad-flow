@@ -87,6 +87,125 @@ export const QuorumPolicies = {
     };
   },
 
+  TRI_PARTY_HETEROGENEOUS: (metadataMap = {}, policyOptions = {}) => {
+    const familyRecords = new Map();
+    const unavailableProviders = [];
+    let unknownFamilyFound = false;
+    let unknownReason = "";
+    let duplicateFamilyFound = false;
+    let duplicateReason = "";
+
+    for (const [id, rec] of Object.entries(metadataMap)) {
+      const source = rec.provider || rec.source || id;
+      const family = resolveCanonicalProviderFamily(rec.family, source);
+
+      if (!rec.healthy) {
+        unavailableProviders.push({
+          id,
+          provider: source,
+          family,
+          reason: rec.error || "UNAVAILABLE"
+        });
+        continue;
+      }
+
+      if (family === "unknown") {
+        unknownFamilyFound = true;
+        unknownReason = `Quorum Failure: Provider '${source}' family cannot be verified under Default-Deny policy.`;
+        continue;
+      }
+
+      if (familyRecords.has(family)) {
+        duplicateFamilyFound = true;
+        duplicateReason = `Quorum Failure: Sentries lack provider-family diversity (multiple sentries belong to '${family}').`;
+        continue;
+      }
+
+      familyRecords.set(family, rec);
+    }
+
+    if (unknownFamilyFound && familyRecords.size < 2) {
+      return {
+        quorumReached: false,
+        topology: "QUORUM_FAILED",
+        selectedReportIds: [],
+        reason: unknownReason
+      };
+    }
+
+    if (duplicateFamilyFound && familyRecords.size < 2) {
+      return {
+        quorumReached: false,
+        topology: "QUORUM_FAILED",
+        selectedReportIds: [],
+        reason: duplicateReason
+      };
+    }
+
+    const healthyCount = familyRecords.size;
+    const healthyIds = Array.from(familyRecords.values()).map(r => r.id);
+
+    // Q-01: 3 of 3 Nominal
+    if (healthyCount >= 3) {
+      return {
+        quorumReached: true,
+        topology: "3_OF_3_NOMINAL",
+        selectedReportIds: healthyIds.slice(0, 3),
+        unavailableProviders,
+        reason: null
+      };
+    }
+
+    // Q-02, Q-03, Q-04: 2 of 3 Degraded
+    if (healthyCount === 2) {
+      return {
+        quorumReached: true,
+        topology: "2_OF_3_DEGRADED",
+        selectedReportIds: healthyIds,
+        unavailableProviders,
+        reason: null
+      };
+    }
+
+    // Q-05, Q-06, Q-07: 1 of 3 Single Sentry
+    if (healthyCount === 1) {
+      const isHighRisk = Boolean(
+        policyOptions.tier === 1 ||
+        policyOptions.risk === "high" ||
+        policyOptions.mode === "hierarchical" ||
+        (policyOptions.totalLines !== undefined && policyOptions.totalLines >= 50) ||
+        policyOptions.hasSecurityFiles
+      );
+
+      if (isHighRisk) {
+        return {
+          quorumReached: false,
+          topology: "QUORUM_FAILED",
+          selectedReportIds: [],
+          unavailableProviders,
+          reason: "Quorum Failure: High-risk Tier 1 changesets require at least 2 healthy heterogeneous sentries (Fail-Closed)."
+        };
+      }
+
+      return {
+        quorumReached: true,
+        topology: "1_OF_3_SINGLE_SENTRY",
+        selectedReportIds: healthyIds,
+        unavailableProviders,
+        reason: null
+      };
+    }
+
+    // Q-08: 0 of 3
+    return {
+      quorumReached: false,
+      topology: "QUORUM_FAILED",
+      selectedReportIds: [],
+      unavailableProviders,
+      reason: "Quorum Failure: All review providers are unhealthy or unavailable."
+    };
+  },
+
   SINGLE_SENTRY: (metadataMap = {}, policyOptions = "macro") => {
     const designatedRole = (typeof policyOptions === "string" ? policyOptions : (policyOptions?.designatedRole || policyOptions?.requiredRole)) || "macro";
     let target = null;
@@ -142,14 +261,25 @@ export function aggregateConsensus(reportsInput, ...rest) {
   let rawReports = {};
   let options = {};
 
-  if (
+  const isPositionalSentryReport = Boolean(
+    reportsInput &&
+    (Array.isArray(reportsInput.findings) || typeof reportsInput.error === "string")
+  );
+  const secondArgIsSentryReport = Boolean(
+    rest[0] &&
+    typeof rest[0] === "object" &&
+    (Array.isArray(rest[0].findings) || typeof rest[0].error === "string")
+  );
+
+  const isMapForm = Boolean(
     reportsInput &&
     typeof reportsInput === "object" &&
     !Array.isArray(reportsInput) &&
-    !reportsInput.findings &&
-    !reportsInput.error &&
-    (reportsInput.macro || reportsInput.micro || rest.length === 0)
-  ) {
+    !isPositionalSentryReport &&
+    !secondArgIsSentryReport
+  );
+
+  if (isMapForm) {
     rawReports = reportsInput;
     options = rest[0] || {};
   } else {
@@ -165,16 +295,29 @@ export function aggregateConsensus(reportsInput, ...rest) {
   const validatedReportsMap = new Map();
   const metadataMap = {};
 
-  // 2. Invariant (PR-05): Strict Heterogeneity Reference Check
+  // 2. Invariant (RFC-027-02): Pairwise Object Reference Equality & Sybil Defense
   if (rawReports && typeof rawReports === "object") {
-    if (rawReports.macro && rawReports.micro && rawReports.macro === rawReports.micro) {
-      return issueConsensusFromEvidence({
-        validatedReportsMap,
-        quorumResult: { quorumReached: false, selectedReportIds: [] },
-        invocationNonce,
-        verdict: "error",
-        consensusProof: "Consensus aborted: Heterogeneity violation. Macro and micro roles point to identical object reference."
-      });
+    const reportKeys = Object.keys(rawReports);
+    for (let i = 0; i < reportKeys.length; i++) {
+      for (let j = i + 1; j < reportKeys.length; j++) {
+        const k1 = reportKeys[i];
+        const k2 = reportKeys[j];
+        if (
+          rawReports[k1] &&
+          rawReports[k2] &&
+          typeof rawReports[k1] === "object" &&
+          typeof rawReports[k2] === "object" &&
+          rawReports[k1] === rawReports[k2]
+        ) {
+          return issueConsensusFromEvidence({
+            validatedReportsMap,
+            quorumResult: { quorumReached: false, selectedReportIds: [] },
+            invocationNonce,
+            verdict: "error",
+            consensusProof: `Consensus aborted: Heterogeneity violation / Sybil inflation rejected. Roles '${k1}' and '${k2}' point to identical object reference.`
+          });
+        }
+      }
     }
   }
 
@@ -313,35 +456,63 @@ export function aggregateConsensus(reportsInput, ...rest) {
   }
 
   // 5. Finding Deduplication (Highest severity preservation & distinct sentry corroboration)
-  const findingsMap = new Map();
+  const deduplicatedList = [];
+
+  const extractCweToken = (f) => {
+    const rawCwe = String(f.cwe || "").trim();
+    const numMatch = rawCwe.match(/^(?:CWE[-_]?)?(\d+)$/i);
+    if (numMatch) return `cwe-${numMatch[1]}`;
+    const inText = `${rawCwe} ${f.title || ""} ${f.type || ""}`.match(/\bCWE[-_]?(\d+)\b/i);
+    if (inText) return `cwe-${inText[1]}`;
+    if (f.type) return String(f.type).toLowerCase().replace(/[^a-z0-9_-]/g, "-").slice(0, 24);
+    return (f.title || "issue").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 16);
+  };
+
   for (const { finding: f, source } of collectedFindings) {
-    const key = `${f.file}:${f.line_start}:${f.title}`.toLowerCase();
-    const incomingSev = f.severity;
+    const normFile = (f.file || f.path || "root").toLowerCase().replace(/\\/g, "/");
+    const lineStart = Math.max(1, Number(f.line_start || f.line) || 1);
+    const cweToken = extractCweToken(f);
+    const incomingSev = (f.severity || "info").toLowerCase();
     const incomingWeight = SEVERITY_WEIGHTS[incomingSev] ?? 0;
 
-    if (!findingsMap.has(key)) {
-      findingsMap.set(key, {
+    let matched = null;
+    for (const existing of deduplicatedList) {
+      const existingFile = (existing.file || existing.path || "root").toLowerCase().replace(/\\/g, "/");
+      const existingCwe = extractCweToken(existing);
+      const existingLine = Math.max(1, Number(existing.line_start || existing.line) || 1);
+
+      const exactTitle = (existing.title || "").toLowerCase().trim() === (f.title || "").toLowerCase().trim();
+      const sameLocatorAndCwe = (existingFile === normFile && existingCwe === cweToken && Math.abs(existingLine - lineStart) <= 15);
+      const exactSameKey = (existingFile === normFile && existingLine === lineStart && exactTitle);
+
+      if (sameLocatorAndCwe || exactSameKey) {
+        matched = existing;
+        break;
+      }
+    }
+
+    if (!matched) {
+      deduplicatedList.push({
         ...f,
         sources: [source],
         corroborations: 1
       });
     } else {
-      const existing = findingsMap.get(key);
-      if (!existing.sources.includes(source)) {
-        existing.sources.push(source);
-        existing.corroborations = existing.sources.length;
+      if (!matched.sources.includes(source)) {
+        matched.sources.push(source);
+        matched.corroborations = matched.sources.length;
       }
-      const currentWeight = SEVERITY_WEIGHTS[existing.severity] ?? 0;
+      const currentWeight = SEVERITY_WEIGHTS[matched.severity] ?? 0;
       if (incomingWeight > currentWeight) {
-        existing.severity = incomingSev;
+        matched.severity = incomingSev;
       }
-      if (!existing.ruleId && f.ruleId) existing.ruleId = f.ruleId;
-      if (!existing.cwe && f.cwe) existing.cwe = f.cwe;
-      if (!existing.type && f.type) existing.type = f.type;
+      if (!matched.ruleId && f.ruleId) matched.ruleId = f.ruleId;
+      if (!matched.cwe && f.cwe) matched.cwe = f.cwe;
+      if (!matched.type && f.type) matched.type = f.type;
     }
   }
 
-  const deduplicated = Array.from(findingsMap.values());
+  const deduplicated = deduplicatedList;
   const hasBlockers = hasBlockingFindings(deduplicated);
   const verdict = hasBlockers ? "needs-attention" : (deduplicated.length > 0 ? "warning" : "approve");
   const consensusProof = hasBlockers

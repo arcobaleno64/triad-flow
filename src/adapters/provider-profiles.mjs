@@ -5,6 +5,7 @@
  * Enforces mandatory read-only flags, family classification, and safe invocation defaults.
  */
 
+import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { getProviderFamily } from "../core/benchmark-pilot.mjs";
@@ -40,8 +41,36 @@ export const PROVIDER_PROFILES = Object.freeze({
     readOnlyFlags: Object.freeze(["--tools="]),
     inputChannel: "argv",
     supportsStdin: true
+  }),
+  codex: Object.freeze({
+    id: "codex",
+    command: "codex",
+    family: "openai",
+    model: "gpt-6.1-sol",
+    reviewProfileReady: true,
+    profileStatus: "canonical",
+    baseArgs: Object.freeze(["exec", "--ephemeral", "--color", "never"]),
+    mandatorySafetyArgs: Object.freeze(["--sandbox=read-only"]),
+    args: Object.freeze(["exec", "--sandbox=read-only", "--ephemeral", "--color", "never"]),
+    readOnlyFlags: Object.freeze(["--sandbox=read-only"]),
+    inputChannel: "stdin",
+    supportsStdin: true,
+    outputChannel: "file",
+    outputFileFlag: "-o",
+    envAllowlist: Object.freeze([
+      "PATH", "SYSTEMROOT", "TEMP", "TMP", "USERPROFILE",
+      "HOME", "APPDATA", "LOCALAPPDATA", "OPENAI_API_KEY", "CODEX_HOME"
+    ])
   })
 });
+
+export const CodexProfileSchema = PROVIDER_PROFILES.codex;
+
+export const PROHIBITED_ARGS = Object.freeze([
+  "--dangerously-bypass-approvals-and-sandbox",
+  "--approve-for-me",
+  "apply"
+]);
 
 /**
  * Assembles provider execution arguments by merging baseArgs, mandatorySafetyArgs, and userArgs.
@@ -73,12 +102,17 @@ export function assembleProviderArgs(profile = {}, userArgs) {
     ? [...userArgs]
     : (typeof userArgs === "string" ? [userArgs] : []);
 
-  // Filter out any user args that attempt to conflict with/override mandatory flags
-  // Neutralizes both key=val (e.g. --mode=code) and space-separated tokens (e.g. --mode code, --tools bash)
   const filteredUser = [];
   for (let i = 0; i < rawUser.length; i++) {
     const arg = rawUser[i];
     if (!arg || typeof arg !== "string") continue;
+    if (PROHIBITED_ARGS.includes(arg)) continue;
+    if (arg === "-s" && i + 1 < rawUser.length && !String(rawUser[i + 1]).startsWith("-")) {
+      i++;
+      continue;
+    }
+    if (arg.startsWith("-s=")) continue;
+
     let skip = false;
     for (const m of mandatory) {
       const flagKey = m.includes("=") ? m.split("=")[0] : m;
@@ -112,6 +146,87 @@ export function assembleProviderArgs(profile = {}, userArgs) {
 }
 
 /**
+ * Resolves the native binary executable on Windows to circumvent Node.js CVE-2024-27980 (EINVAL)
+ * and DEP0190 security deprecation warnings.
+ *
+ * @param {string} [commandOrName="codex"]
+ * @param {object} [options={}]
+ * @returns {{ command: string, prefixArgs?: string[], useShell: boolean, resolvedType: string }}
+ */
+export function resolveNativeWindowsBinary(commandOrName = "codex", options = {}) {
+  if (process.platform !== "win32") {
+    return { command: commandOrName, useShell: false, resolvedType: "NATIVE_POSIX" };
+  }
+
+  const base = path.basename(commandOrName).toLowerCase().replace(/\.(exe|cmd|bat)$/i, "");
+  if (base !== "codex") {
+    return { command: commandOrName, useShell: false, resolvedType: "DEFAULT" };
+  }
+
+  const workspaceRoot = options.workspaceRoot || process.cwd();
+  const candidates = [
+    path.join(workspaceRoot, "node_modules/@openai/codex/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe"),
+    process.env.APPDATA ? path.join(process.env.APPDATA, "npm/node_modules/@openai/codex/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe") : null,
+    process.env.USERPROFILE ? path.join(process.env.USERPROFILE, ".codex/bin/codex.exe") : null
+  ].filter(Boolean);
+
+  for (const candidatePath of candidates) {
+    if (fs.existsSync(candidatePath)) {
+      try {
+        if (fs.statSync(candidatePath).isFile()) {
+          return { command: candidatePath, useShell: false, resolvedType: "NATIVE_EXE" };
+        }
+      } catch {}
+    }
+  }
+
+  // Node script fallback
+  const jsCandidates = [
+    process.env.APPDATA ? path.join(process.env.APPDATA, "npm/node_modules/@openai/codex/bin/codex.js") : null,
+    path.join(workspaceRoot, "node_modules/@openai/codex/bin/codex.js")
+  ].filter(Boolean);
+
+  for (const jsEntry of jsCandidates) {
+    if (fs.existsSync(jsEntry)) {
+      return {
+        command: process.execPath,
+        prefixArgs: [jsEntry],
+        useShell: false,
+        resolvedType: "NODE_SCRIPT"
+      };
+    }
+  }
+
+  return { command: "codex", useShell: false, resolvedType: "PATH_LOOKUP" };
+}
+
+function formatResolvedProfile(profile, cmd) {
+  let nativeRes = undefined;
+  if (process.platform === "win32" && profile.id === "codex") {
+    nativeRes = resolveNativeWindowsBinary(cmd);
+  }
+
+  return {
+    id: profile.id,
+    command: cmd,
+    family: profile.family,
+    model: profile.model || undefined,
+    reviewProfileReady: profile.reviewProfileReady ?? true,
+    profileStatus: profile.profileStatus ?? "canonical",
+    baseArgs: [...(profile.baseArgs || [])],
+    mandatorySafetyArgs: [...(profile.mandatorySafetyArgs || [])],
+    args: [...(profile.args || [])],
+    readOnlyFlags: [...(profile.readOnlyFlags || [])],
+    inputChannel: profile.inputChannel,
+    supportsStdin: profile.supportsStdin,
+    outputChannel: profile.outputChannel || "stdout",
+    outputFileFlag: profile.outputFileFlag || null,
+    envAllowlist: profile.envAllowlist ? [...profile.envAllowlist] : null,
+    nativeResolution: nativeRes
+  };
+}
+
+/**
  * Resolves a command string or name to its canonical provider profile.
  *
  * @param {string} commandOrName - Command string, binary name, or path.
@@ -120,57 +235,20 @@ export function assembleProviderArgs(profile = {}, userArgs) {
 export function resolveProviderProfile(commandOrName = "") {
   if (!commandOrName || typeof commandOrName !== "string") {
     const defaultProfile = PROVIDER_PROFILES.agy;
-    return {
-      id: defaultProfile.id,
-      command: defaultProfile.command,
-      family: defaultProfile.family,
-      reviewProfileReady: defaultProfile.reviewProfileReady ?? true,
-      profileStatus: defaultProfile.profileStatus ?? "canonical",
-      baseArgs: [...defaultProfile.baseArgs],
-      mandatorySafetyArgs: [...defaultProfile.mandatorySafetyArgs],
-      args: [...defaultProfile.args],
-      readOnlyFlags: [...defaultProfile.readOnlyFlags],
-      inputChannel: defaultProfile.inputChannel,
-      supportsStdin: defaultProfile.supportsStdin
-    };
+    return formatResolvedProfile(defaultProfile, defaultProfile.command);
   }
 
   const trimmed = commandOrName.trim();
   const base = path.basename(trimmed).toLowerCase().replace(/\.exe$/i, "");
 
   if (PROVIDER_PROFILES[base]) {
-    const profile = PROVIDER_PROFILES[base];
-    return {
-      id: profile.id,
-      command: trimmed,
-      family: profile.family,
-      reviewProfileReady: profile.reviewProfileReady ?? true,
-      profileStatus: profile.profileStatus ?? "canonical",
-      baseArgs: [...profile.baseArgs],
-      mandatorySafetyArgs: [...profile.mandatorySafetyArgs],
-      args: [...profile.args],
-      readOnlyFlags: [...profile.readOnlyFlags],
-      inputChannel: profile.inputChannel,
-      supportsStdin: profile.supportsStdin
-    };
+    return formatResolvedProfile(PROVIDER_PROFILES[base], trimmed);
   }
 
   for (const [key, profile] of Object.entries(PROVIDER_PROFILES)) {
     const pattern = new RegExp(`(^|[^a-z0-9])${key}([^a-z0-9]|$)`, "i");
     if (pattern.test(base)) {
-      return {
-        id: profile.id,
-        command: trimmed,
-        family: profile.family,
-        reviewProfileReady: profile.reviewProfileReady ?? true,
-        profileStatus: profile.profileStatus ?? "canonical",
-        baseArgs: [...profile.baseArgs],
-        mandatorySafetyArgs: [...profile.mandatorySafetyArgs],
-        args: [...profile.args],
-        readOnlyFlags: [...profile.readOnlyFlags],
-        inputChannel: profile.inputChannel,
-        supportsStdin: profile.supportsStdin
-      };
+      return formatResolvedProfile(profile, trimmed);
     }
   }
 
@@ -185,7 +263,10 @@ export function resolveProviderProfile(commandOrName = "") {
     args: ["--print"],
     readOnlyFlags: [],
     inputChannel: "argv",
-    supportsStdin: true
+    supportsStdin: true,
+    outputChannel: "stdout",
+    outputFileFlag: null,
+    envAllowlist: null
   };
 }
 
@@ -308,7 +389,8 @@ export function verifyProviderReadiness(providerName = "agy", options = {}) {
       if (typeof options.execFn === "function") {
         verExec = options.execFn(command, ["--version"], { cwd, timeout: timeoutMs });
       } else {
-        verExec = spawnSync(command, ["--version"], {
+        const spawnTarget = profile?.nativeResolution?.command || command;
+        verExec = spawnSync(spawnTarget, ["--version"], {
           cwd,
           encoding: "utf8",
           timeout: timeoutMs,
@@ -438,7 +520,8 @@ export function verifyProviderReadiness(providerName = "agy", options = {}) {
       } else {
         const benignPrompt = 'Respond ONLY with a JSON object: {"findings":[],"coverage":{"coveredFiles":[],"omittedFiles":[]},"usage":{"promptTokens":null,"completionTokens":null,"totalTokens":null}}';
         const probeArgs = [...assembleProviderArgs(profile), benignPrompt];
-        probeRes = spawnSync(command, probeArgs, {
+        const spawnTarget = profile?.nativeResolution?.command || command;
+        probeRes = spawnSync(spawnTarget, probeArgs, {
           cwd,
           encoding: "utf8",
           timeout: timeoutMs,

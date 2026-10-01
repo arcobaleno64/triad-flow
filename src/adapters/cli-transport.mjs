@@ -7,6 +7,8 @@
  */
 
 import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { spawn } from "node:child_process";
 import {
   EXECUTION_STATUS,
@@ -108,18 +110,51 @@ export class CliReviewAdapter {
       }, context);
     }
 
+    // Determine temp file for file-based output channels
+    let tempOutputFile = null;
+    if (this.profile?.outputChannel === "file" && this.profile?.outputFileFlag) {
+      tempOutputFile = path.join(
+        os.tmpdir(),
+        `tf-review-${this.profile.id}-${Date.now()}-${Math.random().toString(36).slice(2)}.json`
+      );
+    }
+
+    // Scrub env if envAllowlist is defined
+    let effectiveEnv = this.env || process.env;
+    if (this.profile?.envAllowlist && Array.isArray(this.profile.envAllowlist)) {
+      const allowedSet = new Set(this.profile.envAllowlist);
+      effectiveEnv = {};
+      for (const [k, v] of Object.entries(this.env || process.env)) {
+        if (allowedSet.has(k)) {
+          effectiveEnv[k] = v;
+        }
+      }
+    }
+
     // Use injected execution function if provided (e.g. for mock unit tests)
     if (this.execFn) {
       try {
+        const injectedArgs = tempOutputFile
+          ? [...this.args, this.profile.outputFileFlag, tempOutputFile, prompt]
+          : [...this.args, prompt];
         const res = await this.execFn({
           command: this.command,
-          args: [...this.args, prompt],
+          args: injectedArgs,
           prompt,
           input,
-          cwd: effectiveCwd
+          cwd: effectiveCwd,
+          env: effectiveEnv,
+          outputFile: tempOutputFile
         });
-        return this._processResult(res, context, input.limits);
+        const processed = this._processResult(res, context, input.limits, tempOutputFile);
+        if (tempOutputFile && fs.existsSync(tempOutputFile)) {
+          try { fs.unlinkSync(tempOutputFile); } catch {}
+        }
+        return processed;
       } catch (err) {
+        if (tempOutputFile && fs.existsSync(tempOutputFile)) {
+          try { fs.unlinkSync(tempOutputFile); } catch {}
+        }
         return validateProviderOutput({
           executionStatus: EXECUTION_STATUS.ERROR,
           error: err?.message || String(err)
@@ -163,7 +198,10 @@ export class CliReviewAdapter {
         return;
       }
 
-      const childArgs = useStdin ? [...this.args] : [...this.args, prompt];
+      let childArgs = useStdin ? [...this.args] : [...this.args, prompt];
+      if (tempOutputFile) {
+        childArgs.push(this.profile.outputFileFlag, tempOutputFile);
+      }
 
       let child;
       try {
@@ -172,9 +210,12 @@ export class CliReviewAdapter {
           shell: false,
           windowsHide: true,
           stdio: [useStdin ? "pipe" : "ignore", "pipe", "pipe"],
-          ...(this.env ? { env: this.env } : {})
+          env: effectiveEnv
         });
       } catch (spawnErr) {
+        if (tempOutputFile && fs.existsSync(tempOutputFile)) {
+          try { fs.unlinkSync(tempOutputFile); } catch {}
+        }
         resolve(validateProviderOutput({
           executionStatus: EXECUTION_STATUS.ERROR,
           error: `CLI transport spawn error: ${spawnErr.message}`
@@ -224,6 +265,9 @@ export class CliReviewAdapter {
       child.on("error", (err) => {
         clearTimeout(timer);
         if (input.signal) input.signal.removeEventListener("abort", abortHandler);
+        if (tempOutputFile && fs.existsSync(tempOutputFile)) {
+          try { fs.unlinkSync(tempOutputFile); } catch {}
+        }
 
         resolve(validateProviderOutput({
           executionStatus: EXECUTION_STATUS.ERROR,
@@ -234,6 +278,16 @@ export class CliReviewAdapter {
       child.on("close", (code) => {
         clearTimeout(timer);
         if (input.signal) input.signal.removeEventListener("abort", abortHandler);
+
+        let fileOutputContent = null;
+        if (tempOutputFile && fs.existsSync(tempOutputFile)) {
+          try {
+            fileOutputContent = fs.readFileSync(tempOutputFile, "utf8");
+          } catch {}
+          try {
+            fs.unlinkSync(tempOutputFile);
+          } catch {}
+        }
 
         if (killedReason) {
           resolve(validateProviderOutput({
@@ -265,19 +319,20 @@ export class CliReviewAdapter {
           return;
         }
 
-        // 3. Try to extract JSON from stdout
-        const parsed = extractJsonFromText(stdout);
+        // 3. Try to extract JSON from fileOutput or stdout
+        const outputToParse = fileOutputContent || stdout;
+        const parsed = extractJsonFromText(outputToParse);
         if (!parsed) {
-          if (AUTH_ERROR_PATTERNS.some(p => p.test(stdout))) {
+          if (AUTH_ERROR_PATTERNS.some(p => p.test(outputToParse))) {
             resolve(validateProviderOutput({
               executionStatus: EXECUTION_STATUS.AUTH_FAILURE,
-              error: `Authentication failure detected in CLI reviewer output: ${stdout.trim()}`
+              error: `Authentication failure detected in CLI reviewer output: ${outputToParse.trim()}`
             }, context));
             return;
           }
           resolve(validateProviderOutput({
             executionStatus: EXECUTION_STATUS.MALFORMED_OUTPUT,
-            rawOutput: stdout.slice(0, 1000),
+            rawOutput: outputToParse.slice(0, 1000),
             error: "Failed to extract valid JSON findings from CLI reviewer output."
           }, context));
           return;
@@ -288,7 +343,7 @@ export class CliReviewAdapter {
     });
   }
 
-  _processResult(res, context, limits) {
+  _processResult(res, context, limits, tempOutputFile) {
     if (res && res.executionStatus && res.executionStatus !== EXECUTION_STATUS.SUCCESS && res.executionStatus !== EXECUTION_STATUS.EMPTY) {
       return validateProviderOutput(res, context);
     }
@@ -305,6 +360,17 @@ export class CliReviewAdapter {
       }, context);
     }
 
+    let fileContent = null;
+    if (res && typeof res.fileOutput === "string") {
+      fileContent = res.fileOutput;
+    } else if (tempOutputFile && fs.existsSync(tempOutputFile)) {
+      try {
+        fileContent = fs.readFileSync(tempOutputFile, "utf8");
+      } catch {}
+    }
+
+    const outputToParse = fileContent !== null ? fileContent : (res?.stdout || "");
+
     if (res && typeof res.stdout === "string") {
       if (Buffer.byteLength(res.stdout, "utf8") > limits.maxOutputBytes) {
         return validateProviderOutput({
@@ -312,38 +378,36 @@ export class CliReviewAdapter {
           error: `Output exceeded maxOutputBytes (${limits.maxOutputBytes})`
         }, context);
       }
-
-      if (res.stderr && Buffer.byteLength(res.stderr, "utf8") > limits.maxOutputBytes) {
-        return validateProviderOutput({
-          executionStatus: EXECUTION_STATUS.PAYLOAD_TOO_LARGE,
-          error: `Stderr exceeded maxOutputBytes (${limits.maxOutputBytes})`
-        }, context);
-      }
-
-      if (res.stderr && AUTH_ERROR_PATTERNS.some(p => p.test(res.stderr))) {
-        return validateProviderOutput({
-          executionStatus: EXECUTION_STATUS.AUTH_FAILURE,
-          error: `Authentication failure detected in CLI reviewer output: ${res.stderr.trim()}`
-        }, context);
-      }
-
-      const parsed = extractJsonFromText(res.stdout);
-      if (!parsed) {
-        if (AUTH_ERROR_PATTERNS.some(p => p.test(res.stdout))) {
-          return validateProviderOutput({
-            executionStatus: EXECUTION_STATUS.AUTH_FAILURE,
-            error: `Authentication failure detected in CLI reviewer output: ${res.stdout.trim()}`
-          }, context);
-        }
-        return validateProviderOutput({
-          executionStatus: EXECUTION_STATUS.MALFORMED_OUTPUT,
-          error: "Failed to parse JSON from CLI stdout."
-        }, context);
-      }
-      return validateProviderOutput(parsed, context);
     }
 
-    return validateProviderOutput(res, context);
+    if (res?.stderr && Buffer.byteLength(res.stderr, "utf8") > limits.maxOutputBytes) {
+      return validateProviderOutput({
+        executionStatus: EXECUTION_STATUS.PAYLOAD_TOO_LARGE,
+        error: `Stderr exceeded maxOutputBytes (${limits.maxOutputBytes})`
+      }, context);
+    }
+
+    if (res?.stderr && AUTH_ERROR_PATTERNS.some(p => p.test(res.stderr))) {
+      return validateProviderOutput({
+        executionStatus: EXECUTION_STATUS.AUTH_FAILURE,
+        error: `Authentication failure detected in CLI reviewer output: ${res.stderr.trim()}`
+      }, context);
+    }
+
+    const parsed = extractJsonFromText(outputToParse);
+    if (!parsed) {
+      if (AUTH_ERROR_PATTERNS.some(p => p.test(outputToParse))) {
+        return validateProviderOutput({
+          executionStatus: EXECUTION_STATUS.AUTH_FAILURE,
+          error: `Authentication failure detected in CLI reviewer output: ${outputToParse.trim()}`
+        }, context);
+      }
+      return validateProviderOutput({
+        executionStatus: EXECUTION_STATUS.MALFORMED_OUTPUT,
+        error: "Failed to parse JSON from CLI stdout."
+      }, context);
+    }
+    return validateProviderOutput(parsed, context);
   }
 }
 
