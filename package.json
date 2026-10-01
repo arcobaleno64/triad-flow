@@ -34,7 +34,8 @@
     "evidence:0003": "node scripts/assemble-evidence-0003.mjs",
     "evidence:0004": "node scripts/assemble-evidence-0004.mjs",
     "evidence:0006": "node scripts/assemble-evidence-0006.mjs",
-    "evidence:0007": "node scripts/assemble-evidence-0007.mjs"
+    "evidence:0007": "node scripts/assemble-evidence-0007.mjs",
+    "evidence:0008": "node scripts/assemble-evidence-0008.mjs"
   },
   "keywords": [
     "multi-agent",
