@@ -5,7 +5,7 @@
 - **Author**: Triad-Flow Core Architecture Team
 - **Date**: 2026-10-01
 - **Status**: Authoritative Live Empirical Benchmark Report
-- **Classification**: `LIVE_EMPIRICAL_EVALUATION_CLOSED` / `G4_LIVE_EMPIRICAL_GATE_CLOSED`
+- **Classification**: `LIVE_EMPIRICAL_EVALUATION_RECORDED` / `G4_LIVE_EMPIRICAL_GATE = NOT YET CLOSED`
 - **Frozen Benchmark Corpus**: `TF-OSS-v1` (`sha256:47ed3ce44878b77572005358a16511e3f0900dda11d14443e6a2a84baf501625`)
 - **Historical Live Baseline**: `evidence-runs/TF-EVIDENCE-0006/` (`fe57597c8fce5d699f764ec4d4dfe3d1e5b5cc73`)
 - **Simulation Validation Baseline**: `evidence-runs/TF-EVIDENCE-0007/` (`executionMode: "mock"`)
@@ -30,16 +30,21 @@ Under Triad-Flow v2.7, two core architectural pillars were implemented and deplo
 
 The live evidence bundle `TF-EVIDENCE-0008` was generated via real CLI subprocess execution across all 3 vendor CLIs installed locally (`agy`, `claude`, `codex`) and independently verified by Claude 5.5 Sonnet:
 
-| Benchmark Metric | Historical Live Baseline (`TF-EVIDENCE-0006`) | v2.7 Target Gate (Gate G4) | Observed Live Empirical (`TF-EVIDENCE-0008`) | Gate Status |
+| Benchmark Metric | Historical Live Baseline (`TF-EVIDENCE-0006`) | Canonical Roadmap Target (Gate G4) | Observed Live Empirical (`TF-EVIDENCE-0008`) | Gate Status |
 |---|---|---|---|---|
-| **Recall (R)** | **20.0%** (1/5 caught) | $\ge 60.0\%$ | **100.0%** (5/5 caught) | **PASS** |
+| **Recall (R)** | **20.0%** (1/5 caught) | $> 20.0\%$ | **100.0%** (5/5 caught) | **PASS** |
 | **Precision (P)** | **50.0%** | $\ge 50.0\%$ | **83.3%** (5/6 true positives) | **PASS** |
-| **Incomplete Rate** | **60.0%** (3/5 timeouts) | $\le 40.0\%$ | **40.0%** (2/5 incomplete) | **PASS** |
-| **Average Latency** | **69.780s** (69,780ms) | $\le 60.0\text{s}$ | **63.856s** (p50: 43.431s) | **PASS** |
-| **Corroborated Block Rate** | 20.0% | $\ge 60.0\%$ | **60.0%** (3/5 blocked) | **PASS** |
+| **Incomplete Rate** | **60.0%** (3/5 timeouts) | **0.0%** (0/5 incomplete) | **40.0%** (2/5 incomplete) | **FAIL (Target Missed)** |
+| **Average Latency** | **69.780s** (69,780ms) | $\le 60.0\text{s}$ | **63.856s** (p50: 43.431s) | **TARGET MISSED** |
+| **Gate Correctness (`gatePolicyPass`)** | 20.0% (1/5 blocked) | **100.0%** (5/5 blocked) | **60.0%** (3/5 blocked) | **FAIL (TF-OSS-003/004 Approved)** |
 
-> [!IMPORTANT]
-> With **100.0% Recall** (5/5 historical vulnerabilities detected) and **83.3% Precision** across 3 independent commercial frontier LLM families, **Gate G4 (Live Empirical Evaluation Gate)** is formally **CLOSED**.
+> [!WARNING]
+> While `TF-EVIDENCE-0008` achieved **100.0% Recall** (5/5 vulnerabilities detected), it **does not close Gate G4**:
+> 1. **Incomplete Runs (40.0% vs. 0% target)**: `agy` returned malformed output in `TF-OSS-001` and `TF-OSS-003`.
+> 2. **Gate Policy Divergence**: `TF-OSS-003` and `TF-OSS-004` received `actualGateDecision: "approve"` despite detecting vulnerabilities (`expectedGateDecision: "block"`).
+> 3. **Latency Target Missed**: Average latency (63.856s) exceeded the 60.0s target.
+>
+> Gate G4 remains **NOT YET CLOSED** pending Phase 4.3 closure correction and a subsequent clean empirical run (`TF-EVIDENCE-0009`).
 
 ---
 
@@ -143,10 +148,11 @@ Expected output:
 
 | Milestone Gate | Requirement | Baseline v2.6 (`0006`) | Observed Live v2.7 (`0008`) | Final Status |
 |---|---|---|---|---|
-| **Gate G1** | Zero Runtime npm Dependencies | 0 runtime deps | 0 runtime deps | **CLOSED** |
-| **Gate G2** | Automated Test Baseline Preservation | 404 tests | 453 tests (450 pass, 3 skips, 0 fail) | **CLOSED** |
-| **Gate G3** | Frozen Corpus Immutability (`TF-OSS-v1`) | Verified (`47ed3ce4...`) | Verified (`47ed3ce4...`) | **CLOSED** |
-| **Gate G4** | Live Empirical Evaluation ($\ge 60\%$ Recall) | 20.0% Recall | **100.0% Recall** (5/5) | **CLOSED** |
-| **Gate G5** | Tri-Party Heterogeneous Quorum Integration | Dual-vendor | Tri-vendor (`agy` + `claude` + `codex`) | **CLOSED** |
+| **Gate G0** | Baseline & Tooling Readiness | Verified (404 tests) | Verified (453 tests, CLI probing) | **CLOSED** |
+| **Gate G1** | Review Prompt & Context Optimization (RFC-027-01) | Baseline diff prompts | Chunking, checklists, AST scope | **CLOSED** |
+| **Gate G2** | Tri-Party Heterogeneous Quorum Engine (RFC-027-02) | Dual-vendor | Tri-vendor (`agy` + `claude` + `codex`), Veto | **CLOSED** |
+| **Gate G3** | Supply-Chain Governance & Rulesets (RFC-027-03) | Ad-hoc tags | SPDX 2.3 SBOM, SSH signatures, Rulesets | **CLOSED** |
+| **Gate G4** | Live Empirical Evaluation (Recall > 20%, 0 Incomplete, Gate Correctness) | 20.0% Recall, 60% Incomplete | 100% Recall, 40% Incomplete, 2 Gate Divergences | **NOT YET CLOSED** |
+| **Gate G5** | Release Automation & Final Transition (v2.7.0 Release) | v2.6.0 Released | 9-way matrix, package publish, attestations | **BLOCKED (Awaiting G4)** |
 
-**Conclusion**: Triad-Flow v2.7 Phase 4 (Empirical Benchmark Assembly & Live Evaluation) is **CLOSED**.
+**Conclusion**: Triad-Flow v2.7 Gate G4 remains **OPEN**. Phase 4.3 Closure Correction is required to resolve incomplete runs and gate policy correctness before attempting Gate G5.
