@@ -15,7 +15,7 @@ export const TAXONOMY_CHECKLISTS = Object.freeze({
     rules: Object.freeze([
       "Check object assignment loops (e.g. merge, clone, setPath, defaults).",
       "Verify that '__proto__', 'constructor', and 'prototype' are strictly blocked.",
-      "Check if filtering only '__proto__' allows bypass via 'constructor.prototype'.",
+      "Verify both '__proto__' and 'constructor.prototype' property access paths are defended.",
       "Inspect recursive path segment splitting on untrusted input keys."
     ])
   }),
