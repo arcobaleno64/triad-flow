@@ -63,6 +63,10 @@ import {
   resolveProviderProfile
 } from "../src/adapters/cli-transport.mjs";
 
+import {
+  verifyProviderReadiness
+} from "../src/adapters/provider-profiles.mjs";
+
 import { aggregateConsensus } from "../src/core/loop.mjs";
 import { evaluateGateDecision } from "../src/core/harness.mjs";
 import { verifyHeldOutBaseline, normalizeCanonicalPath } from "../src/core/scoring.mjs";
@@ -434,20 +438,17 @@ export async function assembleEvidence0009(userOptions = {}) {
     console.log(`==================================================================================\n`);
   }
 
-  // Ensure clean target directories to prevent stale artifact accumulation
+  // Ensure clean target directory to prevent stale artifact accumulation
+  if (fs.existsSync(bundleDir)) {
+    for (const item of fs.readdirSync(bundleDir)) {
+      try {
+        fs.rmSync(path.join(bundleDir, item), { recursive: true, force: true });
+      } catch {}
+    }
+  }
   fs.mkdirSync(bundleDir, { recursive: true });
   const recordsDir = path.join(bundleDir, "verification-records");
   const verifDir = path.join(bundleDir, "verification");
-  if (fs.existsSync(recordsDir)) {
-    for (const f of fs.readdirSync(recordsDir)) {
-      try { fs.unlinkSync(path.join(recordsDir, f)); } catch {}
-    }
-  }
-  if (fs.existsSync(verifDir)) {
-    for (const f of fs.readdirSync(verifDir)) {
-      try { fs.unlinkSync(path.join(verifDir, f)); } catch {}
-    }
-  }
   fs.mkdirSync(recordsDir, { recursive: true });
   fs.mkdirSync(verifDir, { recursive: true });
 
@@ -562,136 +563,146 @@ export async function assembleEvidence0009(userOptions = {}) {
     if (log) console.log(`  → Case [${i + 1}/${targetCases.length}] ${caseDef.id}: ${caseDef.name} (${caseDef.cve} / ${caseDef.cwe})`);
 
     const workspace = createOssCaseWorkspace(caseDef, { virtual: false });
-    workspace.assertImmutability();
+    try {
+      workspace.assertImmutability();
 
-    const changeSet = workspace.changeSet;
-    const t0 = Date.now();
+      const changeSet = workspace.changeSet;
+      const t0 = Date.now();
 
-    const signal = userOptions.signal || null;
+      const signal = userOptions.signal || null;
 
-    // Measure wall-clock latency per provider invocation
-    const tAgy0 = Date.now();
-    const pAgy = reviewAdapters.agy.executeReview({
-      runId: `run-${caseDef.id}-agy`,
-      role: "agy",
-      changeSet,
-      policyId: "TRI_PARTY_HETEROGENEOUS",
-      timeoutMs,
-      signal
-    }).then(res => ({ res, latencyMs: Date.now() - tAgy0 }));
+      // Measure wall-clock latency per provider invocation
+      const tAgy0 = Date.now();
+      const pAgy = reviewAdapters.agy.executeReview({
+        runId: `run-${caseDef.id}-agy`,
+        role: "agy",
+        changeSet,
+        policyId: "TRI_PARTY_HETEROGENEOUS",
+        timeoutMs,
+        signal
+      }).then(res => ({ res, latencyMs: Date.now() - tAgy0 }));
 
-    const tClaude0 = Date.now();
-    const pClaude = reviewAdapters.claude.executeReview({
-      runId: `run-${caseDef.id}-claude`,
-      role: "claude",
-      changeSet,
-      policyId: "TRI_PARTY_HETEROGENEOUS",
-      timeoutMs,
-      signal
-    }).then(res => ({ res, latencyMs: Date.now() - tClaude0 }));
+      const tClaude0 = Date.now();
+      const pClaude = reviewAdapters.claude.executeReview({
+        runId: `run-${caseDef.id}-claude`,
+        role: "claude",
+        changeSet,
+        policyId: "TRI_PARTY_HETEROGENEOUS",
+        timeoutMs,
+        signal
+      }).then(res => ({ res, latencyMs: Date.now() - tClaude0 }));
 
-    const tCodex0 = Date.now();
-    const pCodex = reviewAdapters.codex.executeReview({
-      runId: `run-${caseDef.id}-codex`,
-      role: "codex",
-      changeSet,
-      policyId: "TRI_PARTY_HETEROGENEOUS",
-      timeoutMs,
-      signal
-    }).then(res => ({ res, latencyMs: Date.now() - tCodex0 }));
+      const tCodex0 = Date.now();
+      const pCodex = reviewAdapters.codex.executeReview({
+        runId: `run-${caseDef.id}-codex`,
+        role: "codex",
+        changeSet,
+        policyId: "TRI_PARTY_HETEROGENEOUS",
+        timeoutMs,
+        signal
+      }).then(res => ({ res, latencyMs: Date.now() - tCodex0 }));
 
-    const [agyOut, claudeOut, codexOut] = await Promise.all([pAgy, pClaude, pCodex]);
-    const wallClockDur = Date.now() - t0;
+      const [agyOut, claudeOut, codexOut] = await Promise.all([pAgy, pClaude, pCodex]);
+      const wallClockDur = Date.now() - t0;
 
-    const rawReports = {
-      agy: {
-        ...convertProviderResultToSentryReport(agyOut.res, "agy"),
-        latencyMs: agyOut.latencyMs,
-        executionStatus: agyOut.res?.executionStatus || "unknown"
-      },
-      claude: {
-        ...convertProviderResultToSentryReport(claudeOut.res, "claude"),
-        latencyMs: claudeOut.latencyMs,
-        executionStatus: claudeOut.res?.executionStatus || "unknown"
-      },
-      codex: {
-        ...convertProviderResultToSentryReport(codexOut.res, "codex"),
-        latencyMs: codexOut.latencyMs,
-        executionStatus: codexOut.res?.executionStatus || "unknown"
+      const rawReports = {
+        agy: {
+          ...convertProviderResultToSentryReport(agyOut.res, "agy"),
+          latencyMs: agyOut.latencyMs,
+          executionStatus: agyOut.res?.executionStatus || "unknown"
+        },
+        claude: {
+          ...convertProviderResultToSentryReport(claudeOut.res, "claude"),
+          latencyMs: claudeOut.latencyMs,
+          executionStatus: claudeOut.res?.executionStatus || "unknown"
+        },
+        codex: {
+          ...convertProviderResultToSentryReport(codexOut.res, "codex"),
+          latencyMs: codexOut.latencyMs,
+          executionStatus: codexOut.res?.executionStatus || "unknown"
+        }
+      };
+
+      // Aggregate tri-party consensus with fail-closed Q-01..Q-08 rules
+      const consensus = aggregateConsensus(rawReports, {
+        policy: "TRI_PARTY_HETEROGENEOUS",
+        tier: caseDef.riskTier || 1
+      });
+
+      // Enforce Tier 1 high-risk policy gate: any findings block merge
+      const gate = evaluateGateDecision(consensus, {
+        tier: caseDef.riskTier || 1,
+        strict: true
+      });
+
+      const actualFindings = [...(consensus.findings || [])];
+      const goldenFindings = caseDef.goldenFindings || [];
+      const evalResult = verifyHeldOutBaseline(actualFindings, goldenFindings, workspace.dir);
+
+      workspace.assertImmutability();
+
+      const caseLatency = isMock
+        ? (defaultMockLatencies[caseIndex >= 0 ? caseIndex : 0] || 20000)
+        : wallClockDur;
+
+      const hasFailure = [agyOut.res, claudeOut.res, codexOut.res].some(
+        r => !r || !r.ok || !["success", "empty"].includes(r.executionStatus)
+      );
+      const isIncomplete = !consensus.quorumReached || hasFailure;
+      const status = isIncomplete
+        ? "incomplete"
+        : (actualFindings.length > 0 ? "reviewed-with-findings" : "clean");
+
+      const caseRes = {
+        caseId: caseDef.id,
+        title: caseDef.title,
+        name: caseDef.name,
+        cve: caseDef.cve,
+        cwe: caseDef.cwe,
+        riskTier: caseDef.riskTier,
+        category: caseDef.category,
+        status,
+        incomplete: isIncomplete,
+        latencyMs: caseLatency,
+        plan: { mode: "tri-party", reason: "benchmark-tri-party-quorum" },
+        actualGateDecision: gate.decision,
+        expectedGateDecision: caseDef.expectedGateDecision,
+        passed: !isIncomplete && evalResult.passed && gate.decision === caseDef.expectedGateDecision,
+        detectionPass: evalResult.caughtGoldens === goldenFindings.length,
+        gatePolicyPass: gate.decision === caseDef.expectedGateDecision,
+        immutabilityPass: true,
+        actualFindings,
+        goldenFindings,
+        evalResult: {
+          totalGoldens: evalResult.totalGoldens,
+          caughtGoldens: evalResult.caughtGoldens,
+          claimedFindingsCount: evalResult.claimedFindingsCount,
+          recallRate: evalResult.recallRate,
+          passed: evalResult.passed
+        },
+        reports: rawReports,
+        consensus: {
+          verdict: consensus.verdict,
+          quorumReached: consensus.quorumReached,
+          totalFindings: consensus.totalFindings,
+          selectedReportIds: consensus.selectedReportIds,
+          consensusProof: consensus.consensusProof
+        }
+      };
+
+      if (log) {
+        console.log(`    Status: ${caseRes.status} | Incomplete: ${isIncomplete} | Latency: ${caseLatency}ms | Gate: ${gate.decision.toUpperCase()} | Caught: ${evalResult.caughtGoldens}/${evalResult.totalGoldens} | Findings: ${actualFindings.length}`);
       }
-    };
-
-    // Aggregate tri-party consensus with fail-closed Q-01..Q-08 rules
-    const consensus = aggregateConsensus(rawReports, {
-      policy: "TRI_PARTY_HETEROGENEOUS",
-      tier: caseDef.riskTier || 1
-    });
-
-    // Enforce Tier 1 high-risk policy gate: any findings block merge
-    const gate = evaluateGateDecision(consensus, {
-      tier: caseDef.riskTier || 1,
-      strict: true
-    });
-
-    const actualFindings = [...(consensus.findings || [])];
-    const goldenFindings = caseDef.goldenFindings || [];
-    const evalResult = verifyHeldOutBaseline(actualFindings, goldenFindings, workspace.dir);
-
-    workspace.assertImmutability();
-
-    const caseLatency = isMock
-      ? (defaultMockLatencies[caseIndex >= 0 ? caseIndex : 0] || 20000)
-      : wallClockDur;
-
-    const hasFailure = [agyOut.res, claudeOut.res, codexOut.res].some(
-      r => !r || !r.ok || r.executionStatus === "timeout" || r.executionStatus === "error" || r.executionStatus === "auth_failure" || r.executionStatus === "malformed_output"
-    );
-    const isIncomplete = !consensus.quorumReached || hasFailure;
-    const status = isIncomplete
-      ? "incomplete"
-      : (actualFindings.length > 0 ? "reviewed-with-findings" : "clean");
-
-    const caseRes = {
-      caseId: caseDef.id,
-      title: caseDef.title,
-      name: caseDef.name,
-      cve: caseDef.cve,
-      cwe: caseDef.cwe,
-      riskTier: caseDef.riskTier,
-      category: caseDef.category,
-      status,
-      incomplete: isIncomplete,
-      latencyMs: caseLatency,
-      plan: { mode: "tri-party", reason: "benchmark-tri-party-quorum" },
-      actualGateDecision: gate.decision,
-      expectedGateDecision: caseDef.expectedGateDecision,
-      passed: evalResult.passed && gate.decision === caseDef.expectedGateDecision,
-      detectionPass: evalResult.caughtGoldens === goldenFindings.length,
-      gatePolicyPass: gate.decision === caseDef.expectedGateDecision,
-      immutabilityPass: true,
-      actualFindings,
-      goldenFindings,
-      evalResult: {
-        totalGoldens: evalResult.totalGoldens,
-        caughtGoldens: evalResult.caughtGoldens,
-        claimedFindingsCount: evalResult.claimedFindingsCount,
-        recallRate: evalResult.recallRate,
-        passed: evalResult.passed
-      },
-      reports: rawReports,
-      consensus: {
-        verdict: consensus.verdict,
-        quorumReached: consensus.quorumReached,
-        totalFindings: consensus.totalFindings,
-        selectedReportIds: consensus.selectedReportIds,
-        consensusProof: consensus.consensusProof
+      caseResults.push(caseRes);
+    } finally {
+      if (workspace && typeof workspace.cleanup === "function") {
+        try {
+          workspace.cleanup();
+        } catch (cleanupErr) {
+          if (log) console.warn(`  ⚠ Failed to cleanup workspace for ${caseDef.id}:`, cleanupErr.message);
+        }
       }
-    };
-
-    if (log) {
-      console.log(`    Status: ${caseRes.status} | Incomplete: ${isIncomplete} | Latency: ${caseLatency}ms | Gate: ${gate.decision.toUpperCase()} | Caught: ${evalResult.caughtGoldens}/${evalResult.totalGoldens} | Findings: ${actualFindings.length}`);
     }
-    caseResults.push(caseRes);
   }
 
   const runEndTime = new Date().toISOString();
@@ -812,25 +823,31 @@ export async function assembleEvidence0009(userOptions = {}) {
       console.log(`    Evaluations: ${rec.evaluations.length} | Supported: ${rec.summary.supportedCount} | Contested: ${rec.summary.contestedCount} | Omissions: ${rec.verifierOmissions.length}`);
     }
 
-    // Disagreement ledger recording vendor agreements and solitary dissents
+    // Disagreement ledger recording vendor agreements, finding divergence, and solitary dissents
     const reports = c.reports || {};
-    const agyCount = reports.agy?.findings?.length || 0;
-    const claudeCount = reports.claude?.findings?.length || 0;
-    const codexCount = reports.codex?.findings?.length || 0;
+    const agyFindings = reports.agy?.findings || [];
+    const claudeFindings = reports.claude?.findings || [];
+    const codexFindings = reports.codex?.findings || [];
+    const agyCount = agyFindings.length;
+    const claudeCount = claudeFindings.length;
+    const codexCount = codexFindings.length;
 
-    const hasDivergence = !(
-      (agyCount > 0 && claudeCount > 0 && codexCount > 0) ||
-      (agyCount === 0 && claudeCount === 0 && codexCount === 0)
-    );
+    const countMismatch = !(agyCount === claudeCount && claudeCount === codexCount);
+    const hasUncorroboratedFinding = c.actualFindings.some(f => (f.corroborations || f.sources?.length || 1) < 3);
+    const hasProviderAbsence = (agyCount > 0 || claudeCount > 0 || codexCount > 0) &&
+      !(agyCount > 0 && claudeCount > 0 && codexCount > 0);
+
+    const hasDivergence = countMismatch || hasUncorroboratedFinding || hasProviderAbsence;
 
     if (hasDivergence) {
+      const solitaryFindings = c.actualFindings.filter(f => (f.corroborations || f.sources?.length || 1) === 1);
       const solitarySentry = agyCount > 0 && claudeCount === 0 && codexCount === 0 ? "agy"
         : claudeCount > 0 && agyCount === 0 && codexCount === 0 ? "claude"
         : codexCount > 0 && agyCount === 0 && claudeCount === 0 ? "codex"
-        : null;
+        : (solitaryFindings[0]?.sources?.[0] || null);
 
-      const isSolitaryBlocker = solitarySentry !== null && c.actualGateDecision === "block";
-      const reportedFinding = c.actualFindings[0] ||
+      const isSolitaryBlocker = (solitarySentry !== null || solitaryFindings.length > 0) && c.actualGateDecision === "block";
+      const reportedFinding = solitaryFindings[0] || c.actualFindings[0] ||
         reports.agy?.findings?.[0] ||
         reports.claude?.findings?.[0] ||
         reports.codex?.findings?.[0];
@@ -916,43 +933,99 @@ export async function assembleEvidence0009(userOptions = {}) {
 
   // 5. Build Audit Receipt & Release Identity
   if (log) console.log("\n[5/6] Generating audit receipt and release identity...");
+
+  let agyVersion = null;
+  let claudeVersion = null;
+  let codexVersion = null;
+
+  if (isLive) {
+    try {
+      const agyCap = verifyProviderReadiness("agy");
+      agyVersion = agyCap?.points?.point2_versionParsed?.version || (agyCap?.points?.point1_binaryDetected?.pass ? "detected" : null);
+    } catch {}
+    try {
+      const claudeCap = verifyProviderReadiness("claude");
+      claudeVersion = claudeCap?.points?.point2_versionParsed?.version || (claudeCap?.points?.point1_binaryDetected?.pass ? "detected" : null);
+    } catch {}
+    try {
+      const codexCap = verifyProviderReadiness("codex");
+      codexVersion = codexCap?.points?.point2_versionParsed?.version || (codexCap?.points?.point1_binaryDetected?.pass ? "detected" : null);
+    } catch {}
+  }
+
+  const providerProvenance = isLive ? {
+    agy: {
+      providerName: "agy",
+      modelName: "gemini-3.8-flash",
+      actualModel: { value: "gemini-3.8-flash", source: "configured" },
+      version: agyVersion || "unavailable",
+      promptTokens: null,
+      completionTokens: null,
+      totalTokens: null,
+      usageSource: "unavailable",
+      reviewProfileReady: Boolean(agyVersion)
+    },
+    claude: {
+      providerName: "claude",
+      modelName: "claude-5.5-sonnet",
+      actualModel: { value: "claude-5.5-sonnet", source: "configured" },
+      version: claudeVersion || "unavailable",
+      promptTokens: null,
+      completionTokens: null,
+      totalTokens: null,
+      usageSource: "unavailable",
+      reviewProfileReady: Boolean(claudeVersion)
+    },
+    codex: {
+      providerName: "codex",
+      modelName: "gpt-6.1-sol",
+      actualModel: { value: "gpt-6.1-sol", source: "configured" },
+      version: codexVersion || "unavailable",
+      promptTokens: null,
+      completionTokens: null,
+      totalTokens: null,
+      usageSource: "unavailable",
+      reviewProfileReady: Boolean(codexVersion)
+    }
+  } : {
+    agy: {
+      providerName: "agy",
+      modelName: "gemini-3.8-flash",
+      actualModel: { value: "gemini-3.8-flash", source: "simulated" },
+      version: "v1.2.14-mock",
+      promptTokens: null,
+      completionTokens: null,
+      totalTokens: null,
+      usageSource: "unavailable",
+      reviewProfileReady: true
+    },
+    claude: {
+      providerName: "claude",
+      modelName: "claude-5.5-sonnet",
+      actualModel: { value: "claude-5.5-sonnet", source: "simulated" },
+      version: "v2.1.286-mock",
+      promptTokens: null,
+      completionTokens: null,
+      totalTokens: null,
+      usageSource: "unavailable",
+      reviewProfileReady: true
+    },
+    codex: {
+      providerName: "codex",
+      modelName: "gpt-6.1-sol",
+      actualModel: { value: "gpt-6.1-sol", source: "simulated" },
+      version: "v0.159.2-mock",
+      promptTokens: null,
+      completionTokens: null,
+      totalTokens: null,
+      usageSource: "unavailable",
+      reviewProfileReady: true
+    }
+  };
+
   const auditReceipt = buildAuditReceipt({
     identity: corpusIdentity,
-    providerProvenance: {
-      agy: {
-        providerName: "agy",
-        modelName: "gemini-3.8-flash",
-        actualModel: { value: "gemini-3.8-flash", source: "reported" },
-        version: "v1.2.14",
-        promptTokens: null,
-        completionTokens: null,
-        totalTokens: null,
-        usageSource: "unavailable",
-        reviewProfileReady: true
-      },
-      claude: {
-        providerName: "claude",
-        modelName: "claude-5.5-sonnet",
-        actualModel: { value: "claude-5.5-sonnet", source: "reported" },
-        version: "v2.1.286",
-        promptTokens: null,
-        completionTokens: null,
-        totalTokens: null,
-        usageSource: "unavailable",
-        reviewProfileReady: true
-      },
-      codex: {
-        providerName: "codex",
-        modelName: "gpt-6.1-sol",
-        actualModel: { value: "gpt-6.1-sol", source: "reported" },
-        version: "v0.159.2",
-        promptTokens: null,
-        completionTokens: null,
-        totalTokens: null,
-        usageSource: "unavailable",
-        reviewProfileReady: true
-      }
-    },
+    providerProvenance,
     results: {
       mode: "tri-party",
       totalCases: caseResults.length,
@@ -1039,12 +1112,13 @@ export async function assembleEvidence0009(userOptions = {}) {
   if (log) console.log(`  ✔ Generated ${path.relative(process.cwd(), releasePath)}`);
 
   // Build README-EVIDENCE.md
-  const recallGate = recall > 0.20 ? "PASS" : "FAIL";
-  const precisionGate = precision >= 0.50 ? "PASS" : "FAIL";
-  const incompleteGate = incompleteCasesCount === 0 ? "PASS" : "FAIL";
-  const latencyGate = avgMs <= 60000 ? "PASS" : "TARGET MISSED";
+  const isFullCorpusRun = caseResults.length === TF_OSS_CORPUS_V1_CASES.length;
+  const recallGate = isFullCorpusRun ? (recall > 0.20 ? "PASS" : "FAIL") : "PARTIAL (NON-AUTHORITATIVE)";
+  const precisionGate = isFullCorpusRun ? (precision >= 0.50 ? "PASS" : "FAIL") : "PARTIAL (NON-AUTHORITATIVE)";
+  const incompleteGate = isFullCorpusRun ? (incompleteCasesCount === 0 ? "PASS" : "FAIL") : "PARTIAL (NON-AUTHORITATIVE)";
+  const latencyGate = isFullCorpusRun ? (avgMs <= 60000 ? "PASS" : "TARGET MISSED") : "PARTIAL (NON-AUTHORITATIVE)";
   const gatePolicyCount = caseResults.filter(c => c.gatePolicyPass).length;
-  const gatePolicyGate = gatePolicyCount === caseResults.length ? "PASS" : "FAIL";
+  const gatePolicyGate = isFullCorpusRun ? (gatePolicyCount === TF_OSS_CORPUS_V1_CASES.length ? "PASS" : "FAIL") : "PARTIAL (NON-AUTHORITATIVE)";
 
   const readmeContent = [
     `# Triad-Flow Immutable Evidence Bundle: ${BUNDLE_ID}`,
@@ -1073,13 +1147,13 @@ export async function assembleEvidence0009(userOptions = {}) {
     ...caseResults.map(c => `| \`${c.caseId}\` | ${c.name || c.caseId} | ${c.cve || "N/A"} | ${c.cwe || c.goldenFindings[0]?.cwe || "N/A"} | ${c.actualFindings.length > 0 ? (c.actualFindings[0]?.corroborations || 1) : 0}/3 | \`${(c.actualGateDecision || "UNKNOWN").toUpperCase()}\` | \`${c.status}\` | ${c.evalResult.caughtGoldens}/${c.evalResult.totalGoldens} | ${c.latencyMs}ms |`),
     ``,
     `### Key Benchmark Metrics vs Canonical Roadmap Gate G4`,
-    `| Metric | Historical Baseline (TF-EVIDENCE-0006) | G4 Target Criterion | Observed (${BUNDLE_ID}) | Gate Status |`,
-    `|---|---|---|---|---|`,
-    `| **Recall (R)** | 20.0% (1/5) | > 20.0% | **${(recall * 100).toFixed(1)}%** (${caughtGoldens}/${totalGoldens}) | **${recallGate}** |`,
-    `| **Precision (P)** | 50.0% | >= 50.0% | **${(precision * 100).toFixed(1)}%** (${truePositives}/${precisionDenom}) | **${precisionGate}** |`,
-    `| **Incomplete Rate** | 60.0% (3/5) | 0.0% (0/5) | **${(incompleteRate * 100).toFixed(1)}%** (${incompleteCasesCount}/${caseResults.length}) | **${incompleteGate}** |`,
-    `| **Gate Policy Pass** | 20.0% (1/5) | 100.0% (5/5) | **${((gatePolicyCount / caseResults.length) * 100).toFixed(1)}%** (${gatePolicyCount}/${caseResults.length}) | **${gatePolicyGate}** |`,
-    `| **Average Latency** | 69.780s | <= 60.000s | **${(avgMs / 1000).toFixed(3)}s** (${avgMs}ms) | **${latencyGate}** |`,
+    `| Metric | Historical Baseline (TF-EVIDENCE-0006) | G4 Strict Acceptance Criterion | v2.7 Milestone Target | Observed (${BUNDLE_ID}) | Gate Status |`,
+    `|---|---|---|---|---|---|`,
+    `| **Recall (R)** | 20.0% (1/5) | > 20.0% | >= 60.0% | **${(recall * 100).toFixed(1)}%** (${caughtGoldens}/${totalGoldens}) | **${recallGate}** |`,
+    `| **Precision (P)** | 50.0% | >= 50.0% | >= 50.0% | **${(precision * 100).toFixed(1)}%** (${truePositives}/${precisionDenom}) | **${precisionGate}** |`,
+    `| **Incomplete Rate** | 60.0% (3/5) | 0.0% (0/5) | 0.0% (0/5) | **${(incompleteRate * 100).toFixed(1)}%** (${incompleteCasesCount}/${caseResults.length}) | **${incompleteGate}** |`,
+    `| **Gate Policy Pass** | 20.0% (1/5) | 100.0% (5/5) | 100.0% (5/5) | **${((gatePolicyCount / caseResults.length) * 100).toFixed(1)}%** (${gatePolicyCount}/${caseResults.length}) | **${gatePolicyGate}** |`,
+    `| **Average Latency** | 69.780s | <= 60.000s | <= 60.000s | **${(avgMs / 1000).toFixed(3)}s** (${avgMs}ms) | **${latencyGate}** |`,
     ``,
     `## Independent Verification Summary`,
     `- **Verifier**: Anthropic \`claude\` (\`claude-5.5-sonnet\`)`,
@@ -1145,6 +1219,8 @@ export async function assembleEvidence0009(userOptions = {}) {
       bundleType: "evidence-bundle",
       commitSha: releaseDoc.commitSha,
       corpusDigest: corpusDoc.corpusDigest,
+      receiptDigest: manifestArtifacts["audit-receipt.json"] || null,
+      resultsDigest: manifestArtifacts["benchmark-results.json"] || null,
       sealedAt: releaseDoc.sealedAt,
       runId: runId
     }

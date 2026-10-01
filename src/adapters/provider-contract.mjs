@@ -110,8 +110,25 @@ function sanitizeRawOutput(raw) {
   const str = typeof raw === "string" ? raw : (typeof raw === "object" ? JSON.stringify(raw) : String(raw));
   const MAX_RAW_OUTPUT_BYTES = 4096;
   const redacted = redactSecrets(str);
-  if (redacted.length > MAX_RAW_OUTPUT_BYTES) {
-    return redacted.slice(0, MAX_RAW_OUTPUT_BYTES) + " ... [TRUNCATED]";
+  const buf = Buffer.from(redacted, "utf8");
+  if (buf.length > MAX_RAW_OUTPUT_BYTES) {
+    let end = MAX_RAW_OUTPUT_BYTES;
+    let seqStart = end;
+    while (seqStart > 0 && (buf[seqStart] & 0xC0) === 0x80) {
+      seqStart--;
+    }
+    if (seqStart >= 0 && seqStart < buf.length) {
+      const lead = buf[seqStart];
+      let seqLen = 1;
+      if ((lead & 0xE0) === 0xC0) seqLen = 2;
+      else if ((lead & 0xF0) === 0xE0) seqLen = 3;
+      else if ((lead & 0xF8) === 0xF0) seqLen = 4;
+
+      if (seqStart + seqLen > MAX_RAW_OUTPUT_BYTES) {
+        end = seqStart;
+      }
+    }
+    return buf.subarray(0, end).toString("utf8") + " ... [TRUNCATED]";
   }
   return redacted;
 }
@@ -130,7 +147,7 @@ function sanitizeRawOutput(raw) {
       usage: null,
       providerIdentity: Object.freeze(providerIdentity),
       rawOutput: sanitizeRawOutput(rawOutput.rawOutput),
-      error: rawOutput.error ? String(rawOutput.error) : `Execution terminated with status '${status}'.`
+      error: rawOutput.error ? redactSecrets(String(rawOutput.error)) : `Execution terminated with status '${status}'.`
     });
   }
 

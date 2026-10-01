@@ -10,7 +10,7 @@ import {
   extractJsonFromText,
   buildReviewPrompt
 } from "../src/adapters/cli-transport.mjs";
-import { EXECUTION_STATUS } from "../src/adapters/provider-contract.mjs";
+import { EXECUTION_STATUS, validateProviderOutput } from "../src/adapters/provider-contract.mjs";
 import { orchestrateReview } from "../src/adapters/review-orchestrator.mjs";
 import { runCli, EXIT_CODES } from "../src/cli.mjs";
 
@@ -466,4 +466,20 @@ test("runCli review integrates reviewAdapters with real CLI execution and exit c
 
   assert.equal(exitCodeBlock, EXIT_CODES.GATE_BLOCKED);
   assert.match(stderr2.buffer, /Gate Decision: BLOCK/i);
+});
+
+test("validateProviderOutput enforces 4096-byte UTF-8 cap and redacts secrets in error", () => {
+  const multiByteStr = "測".repeat(2000); // 2000 CJK chars * 3 bytes = 6000 bytes > 4096
+  const out = validateProviderOutput({
+    executionStatus: EXECUTION_STATUS.ERROR,
+    rawOutput: multiByteStr,
+    error: "Failed with token: ghp_1234567890abcdefghijklmnopqrstuvwxyz"
+  });
+
+  assert.equal(out.ok, false);
+  assert.ok(out.rawOutput.endsWith(" ... [TRUNCATED]"));
+  const rawPrefix = out.rawOutput.slice(0, -(" ... [TRUNCATED]".length));
+  assert.ok(Buffer.byteLength(rawPrefix, "utf8") <= 4096);
+  assert.ok(!out.error.includes("ghp_"));
+  assert.ok(out.error.includes("[REDACTED_SECRET]"));
 });

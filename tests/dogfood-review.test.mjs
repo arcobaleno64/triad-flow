@@ -12,6 +12,7 @@ import { spawnSync } from "node:child_process";
 import {
   parseArgs,
   runDogfoodReview,
+  classifyDogfoodFileRisk,
   getCurrentCommitSha,
   getCurrentBranch
 } from "../scripts/dogfood-review.mjs";
@@ -63,6 +64,10 @@ test("Dogfood Contract 2: runDogfoodReview in mock mode executes and generates d
     assert.ok(onDisk.providerTelemetry.claude);
     assert.ok(onDisk.providerTelemetry.codex);
     assert.equal(onDisk.advisoryGate.effectiveMergeAuthority, "NONE");
+    assert.equal(onDisk.advisoryGate.mergeBlockedInProduction, false);
+    assert.equal(typeof onDisk.advisoryGate.simulatedGateBlock, "boolean");
+    assert.ok(typeof onDisk.telemetryMetrics.totalDurationMs === "number");
+    assert.ok(typeof onDisk.telemetryMetrics.reviewerPhaseDurationMs === "number");
   } finally {
     try {
       fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -79,4 +84,20 @@ test("Dogfood Contract 3: CLI Subprocess --help displays usage and exits 0", () 
   assert.ok(res.stdout.includes("Shadow Dogfood Review"));
   assert.ok(res.stdout.includes("--live"));
   assert.ok(res.stdout.includes("--mock"));
+});
+
+test("Dogfood Contract 4: parseArgs rejects unknown CLI arguments and invalid timeouts", () => {
+  assert.throws(() => parseArgs(["--livee"]), /Unknown argument: '--livee'/);
+  assert.throws(() => parseArgs(["--timeout", "abc"]), /Invalid --timeout value: 'abc'/);
+  assert.throws(() => parseArgs(["--timeout=-10"]), /Invalid --timeout value: '-10'/);
+  assert.throws(() => parseArgs(["--base"]), /Missing value for --base/);
+});
+
+test("Dogfood Contract 5: classifyDogfoodFileRisk classifies security paths as Tier 1", () => {
+  assert.equal(classifyDogfoodFileRisk(".github/workflows/ci.yml"), 1);
+  assert.equal(classifyDogfoodFileRisk("src/core/harness.mjs"), 1);
+  assert.equal(classifyDogfoodFileRisk("src/adapters/provider-contract.mjs"), 1);
+  assert.equal(classifyDogfoodFileRisk("scripts/bump-version.mjs"), 1);
+  assert.equal(classifyDogfoodFileRisk("docs/README.md"), 2);
+  assert.equal(classifyDogfoodFileRisk("src/utils/formatter.js"), 2);
 });

@@ -78,21 +78,45 @@ export function parseArgs(argv = process.argv.slice(2)) {
     } else if (arg === "--mock") {
       options.mock = true;
     } else if (arg === "--base") {
+      if (i + 1 >= argv.length || argv[i + 1].startsWith("-")) {
+        throw new Error("Missing value for --base");
+      }
       options.base = argv[++i];
     } else if (arg.startsWith("--base=")) {
       options.base = arg.slice("--base=".length);
     } else if (arg === "--head") {
+      if (i + 1 >= argv.length || argv[i + 1].startsWith("-")) {
+        throw new Error("Missing value for --head");
+      }
       options.head = argv[++i];
     } else if (arg.startsWith("--head=")) {
       options.head = arg.slice("--head=".length);
     } else if (arg === "--out") {
+      if (i + 1 >= argv.length || argv[i + 1].startsWith("-")) {
+        throw new Error("Missing value for --out");
+      }
       options.out = argv[++i];
     } else if (arg.startsWith("--out=")) {
       options.out = arg.slice("--out=".length);
     } else if (arg === "--timeout") {
-      options.timeoutMs = parseInt(argv[++i], 10);
+      if (i + 1 >= argv.length || argv[i + 1].startsWith("-")) {
+        throw new Error("Missing value for --timeout");
+      }
+      const val = argv[++i];
+      const parsed = parseInt(val, 10);
+      if (isNaN(parsed) || parsed <= 0) {
+        throw new Error(`Invalid --timeout value: '${val}'. Must be a positive integer.`);
+      }
+      options.timeoutMs = parsed;
     } else if (arg.startsWith("--timeout=")) {
-      options.timeoutMs = parseInt(arg.slice("--timeout=".length), 10);
+      const val = arg.slice("--timeout=".length);
+      const parsed = parseInt(val, 10);
+      if (isNaN(parsed) || parsed <= 0) {
+        throw new Error(`Invalid --timeout value: '${val}'. Must be a positive integer.`);
+      }
+      options.timeoutMs = parsed;
+    } else {
+      throw new Error(`Unknown argument: '${arg}'`);
     }
   }
 
@@ -173,6 +197,29 @@ function createMockDogfoodAdapters(changeSet) {
 }
 
 /**
+ * Classifies file risk tier based on sensitivity and architectural boundaries.
+ */
+export function classifyDogfoodFileRisk(filePath) {
+  if (!filePath) return 2;
+  const normalized = String(filePath).replace(/\\/g, "/").toLowerCase();
+  const tier1Patterns = [
+    /^\.github\/workflows\//,
+    /^src\/core\//,
+    /^src\/adapters\//,
+    /^src\/auth\//,
+    /^src\/crypto\//,
+    /^src\/security\//,
+    /^scripts\/bump-version\.mjs/,
+    /^scripts\/release-verify\.mjs/,
+    /auth|crypto|secret|token|credential|permission/i
+  ];
+  if (tier1Patterns.some(p => p.test(normalized))) {
+    return 1;
+  }
+  return 2;
+}
+
+/**
  * Executes Track D1 Shadow Dogfood Review.
  */
 export async function runDogfoodReview(userOptions = {}) {
@@ -218,17 +265,22 @@ export async function runDogfoodReview(userOptions = {}) {
     throw new Error(`Failed to capture ChangeSet: ${changeSet?.error?.message || "Unknown Git inspection failure"}`);
   }
 
-  const files = changeSet.files || [];
+  const rawFiles = changeSet.files || [];
+  const files = rawFiles.map(f => ({
+    ...f,
+    riskTier: f.riskTier || classifyDogfoodFileRisk(f.path)
+  }));
   if (log) {
     console.log(`  ✔ Changed files: ${files.length}`);
     console.log(`  ✔ Total additions: +${changeSet.totalAdditions} / deletions: -${changeSet.totalDeletions}`);
     for (const f of files.slice(0, 10)) {
-      console.log(`    • ${f.path} (+${f.additions || 0}/-${f.deletions || 0}, Tier ${f.riskTier || 2})`);
+      console.log(`    • ${f.path} (+${f.additions || 0}/-${f.deletions || 0}, Tier ${f.riskTier})`);
     }
     if (files.length > 10) console.log(`    ... and ${files.length - 10} more files`);
   }
 
-  const hasTier1 = files.some(f => f.riskTier === 1);
+  const totalChangedLines = (changeSet.totalAdditions || 0) + (changeSet.totalDeletions || 0);
+  const hasTier1 = files.some(f => f.riskTier === 1) || totalChangedLines >= 50;
   const diffTier = hasTier1 ? 1 : 2;
 
   // 2. Configure Tri-Party Reviewers
@@ -324,7 +376,7 @@ export async function runDogfoodReview(userOptions = {}) {
   }).then(res => ({ res, latencyMs: Date.now() - tCodex0 }));
 
   const [agyOut, claudeOut, codexOut] = await Promise.all([pAgy, pClaude, pCodex]);
-  const totalDurationMs = Date.now() - t0;
+  const reviewerPhaseDurationMs = Date.now() - t0;
 
   const rawReports = {
     agy: {
@@ -392,10 +444,15 @@ export async function runDogfoodReview(userOptions = {}) {
     );
   }
 
-  const malformedCount = [rawReports.agy, rawReports.claude, rawReports.codex].filter(r => r.executionStatus === "malformed_output").length;
-  const timeoutCount = [rawReports.agy, rawReports.claude, rawReports.codex].filter(r => r.executionStatus === "timeout").length;
-  const authFailureCount = [rawReports.agy, rawReports.claude, rawReports.codex].filter(r => r.executionStatus === "auth_failure").length;
-  const isExecutionComplete = consensus.quorumReached && malformedCount === 0 && timeoutCount === 0 && authFailureCount === 0;
+  const totalDurationMs = Date.now() - t0;
+
+  const providerOutputs = [rawReports.agy, rawReports.claude, rawReports.codex];
+  const malformedCount = providerOutputs.filter(r => r.executionStatus === "malformed_output").length;
+  const timeoutCount = providerOutputs.filter(r => r.executionStatus === "timeout").length;
+  const authFailureCount = providerOutputs.filter(r => r.executionStatus === "auth_failure").length;
+  const otherFailureCount = providerOutputs.filter(r => !["success", "empty"].includes(r.executionStatus)).length;
+  const allProvidersSucceeded = providerOutputs.every(r => ["success", "empty"].includes(r.executionStatus));
+  const isExecutionComplete = consensus.quorumReached && allProvidersSucceeded;
 
   const dogfoodDoc = {
     schemaVersion: "1.0.0",
@@ -457,15 +514,18 @@ export async function runDogfoodReview(userOptions = {}) {
       decision: gate.decision,
       reason: gate.reason,
       effectiveMergeAuthority: "NONE",
-      mergeBlockedInProduction: gate.decision === "block"
+      simulatedGateBlock: gate.decision === "block",
+      mergeBlockedInProduction: false
     },
     telemetryMetrics: {
       totalDurationMs,
+      reviewerPhaseDurationMs,
       avgProviderLatencyMs: Math.round((agyOut.latencyMs + claudeOut.latencyMs + codexOut.latencyMs) / 3),
       executionComplete: isExecutionComplete,
       malformedOutputCount: malformedCount,
       timeoutCount,
-      authFailureCount
+      authFailureCount,
+      otherFailureCount
     },
     verificationRecord
   };
