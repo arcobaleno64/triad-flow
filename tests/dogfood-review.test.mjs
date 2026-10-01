@@ -38,8 +38,16 @@ test("Dogfood Contract 2: runDogfoodReview in mock mode executes and generates d
   try {
     const report = await runDogfoodReview({
       mock: true,
-      base: "main",
-      head: "HEAD",
+      changeSet: {
+        ok: true,
+        schemaVersion: "1.0.0",
+        repository: "test",
+        totalFiles: 1,
+        totalAdditions: 10,
+        totalDeletions: 2,
+        files: [{ path: "src/index.js", additions: 10, deletions: 2, riskTier: 2 }],
+        diffHunks: "+ const a = 1;"
+      },
       out: tmpOut,
       log: false
     });

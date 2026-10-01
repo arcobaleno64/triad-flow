@@ -1,0 +1,61 @@
+{
+  "schemaVersion": "1.0.0",
+  "verifiedAt": "2026-10-01T16:02:47.393Z",
+  "changeSetDigest": "sha256:d4871325615b2521ffbc7c48418809de77f8ba768c036338c0e7a648668ed561",
+  "producer": {
+    "providerName": "tri-party-quorum",
+    "findingsCount": 0,
+    "findings": []
+  },
+  "verifier": {
+    "providerName": "claude",
+    "modelName": "claude-5.5-sonnet",
+    "actualModel": {
+      "source": "reported",
+      "value": "claude-5.5-sonnet"
+    },
+    "usage": {
+      "completionTokens": null,
+      "promptTokens": null,
+      "totalTokens": null,
+      "usageSource": "unavailable"
+    }
+  },
+  "evaluations": [],
+  "verifierOmissions": [
+    {
+      "title": "Template string is concatenated into generated code without escaping (code injection / broken string literal)",
+      "severity": "medium",
+      "file": "lib/ejs.js",
+      "line_start": 12,
+      "line_end": 12,
+      "cwe": "CWE-94",
+      "type": "CODE-INJECTION",
+      "recommendation": "This line is unchanged context, so it is not a regression from this diff. The identifier check only closes the outputFunctionName injection path. The `template` argument is still placed inside a double-quoted JS string with no escaping. A template containing `\"`, a backslash or a newline breaks the literal, and with untrusted templates it allows arbitrary code execution. Escape the template, for example with JSON.stringify(template), or document that templates must be trusted. Add a regression test with a template such as `\"; process.exit(); \"`.",
+      "id": "omission-1",
+      "classification": "MISSED_BY_PRODUCER"
+    },
+    {
+      "title": "Identifier validation coerces non-string input and does not reject reserved words",
+      "severity": "low",
+      "file": "lib/ejs.js",
+      "line_start": 7,
+      "line_end": 7,
+      "cwe": "CWE-20",
+      "type": "INPUT-VALIDATION",
+      "recommendation": "RegExp.test() coerces its argument to a string. An object whose toString() returns different values on successive calls could pass validation and then yield a different string at concatenation on line 10 (TOCTOU). Add `typeof opts.outputFunctionName !== 'string'` to the check, or copy the value into a local string before testing and using it. The regex also accepts reserved words such as `if`, `class` and `var`. These cause a SyntaxError rather than injection, but the error message is unclear. Consider rejecting them explicitly.",
+      "id": "omission-2",
+      "classification": "MISSED_BY_PRODUCER"
+    }
+  ],
+  "disagreementLedger": [],
+  "summary": {
+    "totalEvaluated": 0,
+    "supportedCount": 0,
+    "partiallySupportedCount": 0,
+    "contestedCount": 0,
+    "insufficientEvidenceCount": 0,
+    "omissionsCount": 2
+  },
+  "ok": true
+}

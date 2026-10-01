@@ -1,0 +1,132 @@
+{
+  "schemaVersion": "1.0.0",
+  "verifiedAt": "2026-10-01T16:02:47.394Z",
+  "producer": {
+    "providerName": "tri-party-quorum",
+    "runId": "run-oss-v2.7-TF-EVIDENCE-0009-1790870476076",
+    "commitSha": "329b904dcf8ac987f3ca1fba0a2c3be9ee799874"
+  },
+  "verifier": {
+    "providerName": "claude",
+    "modelName": "claude-5.5-sonnet"
+  },
+  "summary": {
+    "totalCases": 5,
+    "totalEvaluated": 5,
+    "supportedCount": 3,
+    "partiallySupportedCount": 2,
+    "contestedCount": 1,
+    "insufficientEvidenceCount": 1,
+    "omissionsCount": 5
+  },
+  "ledger": [
+    {
+      "caseId": "TF-OSS-001",
+      "type": "VENDOR_DIVERGENCE",
+      "finding": "Incomplete prototype pollution fix: 'constructor' and 'prototype' path segments are not blocked",
+      "severity": "high",
+      "vendorSplit": {
+        "agy": "clean",
+        "claude": "vulnerable",
+        "codex": "vulnerable"
+      },
+      "disposition": "BLOCK",
+      "rationale": "2-of-3 majority corroborated finding, satisfying corroboration quorum."
+    },
+    {
+      "caseId": "TF-OSS-002",
+      "type": "VENDOR_DIVERGENCE",
+      "finding": "Incomplete Prototype Pollution Defense Allowing Bypass via 'constructor'",
+      "severity": "high",
+      "vendorSplit": {
+        "agy": "vulnerable",
+        "claude": "vulnerable",
+        "codex": "clean"
+      },
+      "disposition": "BLOCK",
+      "rationale": "2-of-3 majority corroborated finding, satisfying corroboration quorum."
+    },
+    {
+      "caseId": "TF-OSS-003",
+      "type": "VENDOR_DIVERGENCE",
+      "finding": "Prototype-pollution guard is incomplete: bare 'constructor' and the final path segment are not blocked",
+      "severity": "high",
+      "vendorSplit": {
+        "agy": "clean",
+        "claude": "vulnerable",
+        "codex": "vulnerable"
+      },
+      "disposition": "BLOCK",
+      "rationale": "2-of-3 majority corroborated finding, satisfying corroboration quorum."
+    },
+    {
+      "caseId": "TF-OSS-004",
+      "type": "SOLITARY_BLOCKER_VETO",
+      "sentry": "codex",
+      "finding": "cleanVersion now rejects inputs with more than one leading or trailing whitespace character",
+      "severity": "low",
+      "vendorSplit": {
+        "agy": "clean",
+        "claude": "vulnerable",
+        "codex": "vulnerable"
+      },
+      "disposition": "BLOCK",
+      "rationale": "Sentry uniquely caught vulnerability. Solitary blocker veto enforced by RFC-027-02."
+    }
+  ],
+  "triPartyEntries": [
+    {
+      "caseId": "TF-OSS-001",
+      "type": "VENDOR_DIVERGENCE",
+      "finding": "Incomplete prototype pollution fix: 'constructor' and 'prototype' path segments are not blocked",
+      "severity": "high",
+      "vendorSplit": {
+        "agy": "clean",
+        "claude": "vulnerable",
+        "codex": "vulnerable"
+      },
+      "disposition": "BLOCK",
+      "rationale": "2-of-3 majority corroborated finding, satisfying corroboration quorum."
+    },
+    {
+      "caseId": "TF-OSS-002",
+      "type": "VENDOR_DIVERGENCE",
+      "finding": "Incomplete Prototype Pollution Defense Allowing Bypass via 'constructor'",
+      "severity": "high",
+      "vendorSplit": {
+        "agy": "vulnerable",
+        "claude": "vulnerable",
+        "codex": "clean"
+      },
+      "disposition": "BLOCK",
+      "rationale": "2-of-3 majority corroborated finding, satisfying corroboration quorum."
+    },
+    {
+      "caseId": "TF-OSS-003",
+      "type": "VENDOR_DIVERGENCE",
+      "finding": "Prototype-pollution guard is incomplete: bare 'constructor' and the final path segment are not blocked",
+      "severity": "high",
+      "vendorSplit": {
+        "agy": "clean",
+        "claude": "vulnerable",
+        "codex": "vulnerable"
+      },
+      "disposition": "BLOCK",
+      "rationale": "2-of-3 majority corroborated finding, satisfying corroboration quorum."
+    },
+    {
+      "caseId": "TF-OSS-004",
+      "type": "SOLITARY_BLOCKER_VETO",
+      "sentry": "codex",
+      "finding": "cleanVersion now rejects inputs with more than one leading or trailing whitespace character",
+      "severity": "low",
+      "vendorSplit": {
+        "agy": "clean",
+        "claude": "vulnerable",
+        "codex": "vulnerable"
+      },
+      "disposition": "BLOCK",
+      "rationale": "Sentry uniquely caught vulnerability. Solitary blocker veto enforced by RFC-027-02."
+    }
+  ]
+}

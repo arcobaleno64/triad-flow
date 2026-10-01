@@ -1,0 +1,91 @@
+{
+  "schemaVersion": "1.0.0",
+  "verifiedAt": "2026-10-01T16:01:49.316Z",
+  "changeSetDigest": "sha256:0c29940910fb90a6f65f7126c6dfdf18222b1f011109a3296ef3bc91f0d9657d",
+  "producer": {
+    "providerName": "tri-party-quorum",
+    "findingsCount": 1,
+    "findings": [
+      {
+        "title": "Incomplete Prototype Pollution Defense Allowing Bypass via 'constructor'",
+        "severity": "high",
+        "file": "ini.js",
+        "line_start": 14,
+        "line_end": 17,
+        "ruleId": "CHECKLIST-CWE-1321",
+        "cwe": "CWE-1321",
+        "type": "Prototype Pollution",
+        "recommendation": "Block 'constructor' and 'prototype' in addition to '__proto__', or create the container object with a null prototype using Object.create(null) and defend against prototype property access paths.",
+        "sources": [
+          "agy",
+          "claude"
+        ],
+        "corroborations": 2
+      }
+    ]
+  },
+  "verifier": {
+    "providerName": "claude",
+    "modelName": "claude-5.5-sonnet",
+    "actualModel": {
+      "source": "reported",
+      "value": "claude-5.5-sonnet"
+    },
+    "usage": {
+      "completionTokens": null,
+      "promptTokens": null,
+      "totalTokens": null,
+      "usageSource": "unavailable"
+    }
+  },
+  "evaluations": [
+    {
+      "findingId": "finding-1",
+      "verdict": "INSUFFICIENT_EVIDENCE",
+      "classification": "UNVERIFIABLE",
+      "locatorAccurate": true,
+      "typeAccurate": true,
+      "severityAccurate": false,
+      "reasoning": "The diff shows that only the exact string '__proto__' is guarded. For '[constructor]', `out[section] || {}` finds the inherited `Object` function, so `p` points at it. That much of the finding is grounded, and it applies equally to other inherited names such as 'hasOwnProperty' and 'toString'. It does not show Object.prototype pollution, though. Writing `p[key] = value` on the `Object` function sets properties on the constructor itself, not on the shared prototype. Assigning to `Object.prototype` is silently ignored because the property is non-writable. A real prototype-pollution path would need dotted-path or nested-key splitting, such as 'constructor.prototype.x', and the diff doesn't show the key-handling code. Without that code, 'high' severity and a confirmed CWE-1321 exploit cannot be established. The finding is therefore plausible but unproven. Locator: the added lines are 13-16 and the vulnerable `p = out[section] || {}` line is 17, so the reported range 14-17 overlaps the relevant code. The defect type is a loosely accurate description of the incomplete denylist, i.e. inherited-property lookup.",
+      "dissent": "The diff shows that only the exact string '__proto__' is guarded. For '[constructor]', `out[section] || {}` finds the inherited `Object` function, so `p` points at it. That much of the finding is grounded, and it applies equally to other inherited names such as 'hasOwnProperty' and 'toString'. It does not show Object.prototype pollution, though. Writing `p[key] = value` on the `Object` function sets properties on the constructor itself, not on the shared prototype. Assigning to `Object.prototype` is silently ignored because the property is non-writable. A real prototype-pollution path would need dotted-path or nested-key splitting, such as 'constructor.prototype.x', and the diff doesn't show the key-handling code. Without that code, 'high' severity and a confirmed CWE-1321 exploit cannot be established. The finding is therefore plausible but unproven. Locator: the added lines are 13-16 and the vulnerable `p = out[section] || {}` line is 17, so the reported range 14-17 overlaps the relevant code. The defect type is a loosely accurate description of the incomplete denylist, i.e. inherited-property lookup."
+    }
+  ],
+  "verifierOmissions": [],
+  "disagreementLedger": [
+    {
+      "findingId": "finding-1",
+      "producerFinding": {
+        "title": "Incomplete Prototype Pollution Defense Allowing Bypass via 'constructor'",
+        "severity": "high",
+        "file": "ini.js",
+        "line_start": 14,
+        "line_end": 17,
+        "ruleId": "CHECKLIST-CWE-1321",
+        "cwe": "CWE-1321",
+        "type": "Prototype Pollution",
+        "recommendation": "Block 'constructor' and 'prototype' in addition to '__proto__', or create the container object with a null prototype using Object.create(null) and defend against prototype property access paths.",
+        "sources": [
+          "agy",
+          "claude"
+        ],
+        "corroborations": 2
+      },
+      "verdict": "INSUFFICIENT_EVIDENCE",
+      "classification": "UNVERIFIABLE",
+      "locatorAccurate": true,
+      "typeAccurate": true,
+      "severityAccurate": false,
+      "reasoning": "The diff shows that only the exact string '__proto__' is guarded. For '[constructor]', `out[section] || {}` finds the inherited `Object` function, so `p` points at it. That much of the finding is grounded, and it applies equally to other inherited names such as 'hasOwnProperty' and 'toString'. It does not show Object.prototype pollution, though. Writing `p[key] = value` on the `Object` function sets properties on the constructor itself, not on the shared prototype. Assigning to `Object.prototype` is silently ignored because the property is non-writable. A real prototype-pollution path would need dotted-path or nested-key splitting, such as 'constructor.prototype.x', and the diff doesn't show the key-handling code. Without that code, 'high' severity and a confirmed CWE-1321 exploit cannot be established. The finding is therefore plausible but unproven. Locator: the added lines are 13-16 and the vulnerable `p = out[section] || {}` line is 17, so the reported range 14-17 overlaps the relevant code. The defect type is a loosely accurate description of the incomplete denylist, i.e. inherited-property lookup.",
+      "dissent": "The diff shows that only the exact string '__proto__' is guarded. For '[constructor]', `out[section] || {}` finds the inherited `Object` function, so `p` points at it. That much of the finding is grounded, and it applies equally to other inherited names such as 'hasOwnProperty' and 'toString'. It does not show Object.prototype pollution, though. Writing `p[key] = value` on the `Object` function sets properties on the constructor itself, not on the shared prototype. Assigning to `Object.prototype` is silently ignored because the property is non-writable. A real prototype-pollution path would need dotted-path or nested-key splitting, such as 'constructor.prototype.x', and the diff doesn't show the key-handling code. Without that code, 'high' severity and a confirmed CWE-1321 exploit cannot be established. The finding is therefore plausible but unproven. Locator: the added lines are 13-16 and the vulnerable `p = out[section] || {}` line is 17, so the reported range 14-17 overlaps the relevant code. The defect type is a loosely accurate description of the incomplete denylist, i.e. inherited-property lookup."
+    }
+  ],
+  "summary": {
+    "totalEvaluated": 1,
+    "supportedCount": 0,
+    "partiallySupportedCount": 0,
+    "contestedCount": 0,
+    "insufficientEvidenceCount": 1,
+    "omissionsCount": 0
+  },
+  "ok": true
+}

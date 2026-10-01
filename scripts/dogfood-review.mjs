@@ -197,8 +197,22 @@ export async function runDogfoodReview(userOptions = {}) {
   }
 
   // 1. Capture Git ChangeSet
-  if (log) console.log(`[1/5] Inspecting Git changes between '${base}' and '${head}'...`);
-  const changeSet = buildChangeSet(process.cwd(), { base, head });
+  let changeSet = userOptions.changeSet || null;
+  if (!changeSet) {
+    if (log) console.log(`[1/5] Inspecting Git changes between '${base}' and '${head}'...`);
+    let resolvedBase = base;
+    try {
+      execFileSync("git", ["rev-parse", "--verify", base], { stdio: "ignore" });
+    } catch {
+      try {
+        execFileSync("git", ["rev-parse", "--verify", `origin/${base}`], { stdio: "ignore" });
+        resolvedBase = `origin/${base}`;
+      } catch {
+        resolvedBase = "HEAD";
+      }
+    }
+    changeSet = buildChangeSet(process.cwd(), { base: resolvedBase, head });
+  }
 
   if (!changeSet || !changeSet.ok) {
     throw new Error(`Failed to capture ChangeSet: ${changeSet?.error?.message || "Unknown Git inspection failure"}`);

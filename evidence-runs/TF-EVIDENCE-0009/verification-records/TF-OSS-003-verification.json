@@ -1,0 +1,91 @@
+{
+  "schemaVersion": "1.0.0",
+  "verifiedAt": "2026-10-01T16:02:16.810Z",
+  "changeSetDigest": "sha256:06899edec052dfbeec830934b8e325091458b4cbf4156f3341c3465a643aa009",
+  "producer": {
+    "providerName": "tri-party-quorum",
+    "findingsCount": 1,
+    "findings": [
+      {
+        "title": "Prototype-pollution guard is incomplete: bare 'constructor' and the final path segment are not blocked",
+        "severity": "high",
+        "file": "src/core.js",
+        "line_start": 8,
+        "line_end": 10,
+        "ruleId": "CHECKLIST-CWE-1321",
+        "cwe": "CWE-1321",
+        "type": "prototype-pollution",
+        "recommendation": "Reject '__proto__', 'constructor' and 'prototype' as a standalone denylist for every path segment, including the last one (the loop only runs to keys.length - 1). Better, use Object.prototype.hasOwnProperty.call(obj, key) for every traversal step and for the final assignment, and create containers with Object.create(null). Apply the same validation to any 'from' path used by move/copy and to get/remove helpers.",
+        "sources": [
+          "claude",
+          "codex"
+        ],
+        "corroborations": 2
+      }
+    ]
+  },
+  "verifier": {
+    "providerName": "claude",
+    "modelName": "claude-5.5-sonnet",
+    "actualModel": {
+      "source": "reported",
+      "value": "claude-5.5-sonnet"
+    },
+    "usage": {
+      "completionTokens": null,
+      "promptTokens": null,
+      "totalTokens": null,
+      "usageSource": "unavailable"
+    }
+  },
+  "evaluations": [
+    {
+      "findingId": "finding-1",
+      "verdict": "CONTESTED",
+      "classification": "CONTRADICTED",
+      "locatorAccurate": true,
+      "typeAccurate": true,
+      "severityAccurate": false,
+      "reasoning": "Locator: the added guard sits at diff lines 8-10, so this is accurate. Factual premise: the diff does not block a bare 'constructor' segment, and the loop runs only to keys.length - 1, so the final segment is not checked by this guard. Both observations are true. The finding's conclusion, a high-severity incomplete guard that allows prototype pollution, is not supported. Tracing the guard shows that the realistic Object.prototype pollution paths are covered. '/__proto__/x' is rejected at i=0. '/constructor/prototype/x' is rejected at i=1, because 'prototype' follows 'constructor'. The same holds for deeper paths like '/constructor/prototype/x/y'. The final-segment cases the producer worries about do not reach Object.prototype. A final '__proto__' (e.g. '/__proto__' or '/a/__proto__') only reassigns the prototype of that one parent object. A final 'prototype' after 'constructor' (path '/constructor/prototype') is an assignment to Object.prototype, which is non-writable, so it is silently ignored or throws in strict mode. A bare 'constructor' traversal ('/constructor/x') could add a static property to the Object function. That is a real but much narrower global-state tampering issue, and it does not affect instances. The finding gives no concrete exploit chain from the diff. The recommended 'from' path validation for move/copy and the get/remove helpers cannot be evaluated because none of that code appears in this diff. Severity 'high' is overstated, and 'low' or 'medium' hardening would fit better.",
+      "dissent": "The finding claims the guard allows prototype pollution, but the diff blocks the known Object.prototype routes (__proto__, and constructor followed by prototype) at every traversed segment. The missing final-segment check and the unblocked bare 'constructor' only allow per-object prototype reassignment or a write to Object's own static properties, not pollution of Object.prototype. No exploit chain is shown. The claims about move/copy 'from' and get/remove cannot be checked against this diff. 'High' is not justified."
+    }
+  ],
+  "verifierOmissions": [],
+  "disagreementLedger": [
+    {
+      "findingId": "finding-1",
+      "producerFinding": {
+        "title": "Prototype-pollution guard is incomplete: bare 'constructor' and the final path segment are not blocked",
+        "severity": "high",
+        "file": "src/core.js",
+        "line_start": 8,
+        "line_end": 10,
+        "ruleId": "CHECKLIST-CWE-1321",
+        "cwe": "CWE-1321",
+        "type": "prototype-pollution",
+        "recommendation": "Reject '__proto__', 'constructor' and 'prototype' as a standalone denylist for every path segment, including the last one (the loop only runs to keys.length - 1). Better, use Object.prototype.hasOwnProperty.call(obj, key) for every traversal step and for the final assignment, and create containers with Object.create(null). Apply the same validation to any 'from' path used by move/copy and to get/remove helpers.",
+        "sources": [
+          "claude",
+          "codex"
+        ],
+        "corroborations": 2
+      },
+      "verdict": "CONTESTED",
+      "classification": "CONTRADICTED",
+      "locatorAccurate": true,
+      "typeAccurate": true,
+      "severityAccurate": false,
+      "reasoning": "Locator: the added guard sits at diff lines 8-10, so this is accurate. Factual premise: the diff does not block a bare 'constructor' segment, and the loop runs only to keys.length - 1, so the final segment is not checked by this guard. Both observations are true. The finding's conclusion, a high-severity incomplete guard that allows prototype pollution, is not supported. Tracing the guard shows that the realistic Object.prototype pollution paths are covered. '/__proto__/x' is rejected at i=0. '/constructor/prototype/x' is rejected at i=1, because 'prototype' follows 'constructor'. The same holds for deeper paths like '/constructor/prototype/x/y'. The final-segment cases the producer worries about do not reach Object.prototype. A final '__proto__' (e.g. '/__proto__' or '/a/__proto__') only reassigns the prototype of that one parent object. A final 'prototype' after 'constructor' (path '/constructor/prototype') is an assignment to Object.prototype, which is non-writable, so it is silently ignored or throws in strict mode. A bare 'constructor' traversal ('/constructor/x') could add a static property to the Object function. That is a real but much narrower global-state tampering issue, and it does not affect instances. The finding gives no concrete exploit chain from the diff. The recommended 'from' path validation for move/copy and the get/remove helpers cannot be evaluated because none of that code appears in this diff. Severity 'high' is overstated, and 'low' or 'medium' hardening would fit better.",
+      "dissent": "The finding claims the guard allows prototype pollution, but the diff blocks the known Object.prototype routes (__proto__, and constructor followed by prototype) at every traversed segment. The missing final-segment check and the unblocked bare 'constructor' only allow per-object prototype reassignment or a write to Object's own static properties, not pollution of Object.prototype. No exploit chain is shown. The claims about move/copy 'from' and get/remove cannot be checked against this diff. 'High' is not justified."
+    }
+  ],
+  "summary": {
+    "totalEvaluated": 1,
+    "supportedCount": 0,
+    "partiallySupportedCount": 0,
+    "contestedCount": 1,
+    "insufficientEvidenceCount": 0,
+    "omissionsCount": 0
+  },
+  "ok": true
+}
