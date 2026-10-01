@@ -1,0 +1,63 @@
+{
+  "schemaVersion": "1.0.0",
+  "verifiedAt": "2026-10-01T07:23:41.255Z",
+  "changeSetDigest": "sha256:06899edec052dfbeec830934b8e325091458b4cbf4156f3341c3465a643aa009",
+  "producer": {
+    "providerName": "tri-party-quorum",
+    "findingsCount": 1,
+    "findings": [
+      {
+        "title": "Detected prototype-pollution (CWE-1321) in fast-json-patch",
+        "severity": "high",
+        "file": "src/core.js",
+        "line_start": 9,
+        "line_end": 9,
+        "cwe": "CWE-1321",
+        "type": "prototype-pollution",
+        "recommendation": "Unvalidated constructor/prototype path components allow prototype attribute mutation",
+        "sources": [
+          "agy",
+          "claude"
+        ],
+        "corroborations": 2
+      }
+    ]
+  },
+  "verifier": {
+    "providerName": "claude",
+    "modelName": "claude-mock",
+    "actualModel": {
+      "source": "runtime",
+      "value": "claude-mock-v1"
+    },
+    "usage": {
+      "completionTokens": 50,
+      "promptTokens": 100,
+      "totalTokens": 150,
+      "usageSource": "authoritative"
+    }
+  },
+  "evaluations": [
+    {
+      "findingId": "finding-1",
+      "verdict": "SUPPORTED",
+      "classification": "SUPPORTED",
+      "locatorAccurate": true,
+      "typeAccurate": true,
+      "severityAccurate": true,
+      "reasoning": "Offline mock verifier verified finding 'finding-1' against changeSet diff.",
+      "dissent": null
+    }
+  ],
+  "verifierOmissions": [],
+  "disagreementLedger": [],
+  "summary": {
+    "totalEvaluated": 1,
+    "supportedCount": 1,
+    "partiallySupportedCount": 0,
+    "contestedCount": 0,
+    "insufficientEvidenceCount": 0,
+    "omissionsCount": 0
+  },
+  "ok": true
+}

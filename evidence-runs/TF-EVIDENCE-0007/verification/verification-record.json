@@ -1,0 +1,397 @@
+{
+  "schemaVersion": "1.0.0",
+  "verifiedAt": "2026-10-01T07:23:41.256Z",
+  "producer": {
+    "providerName": "tri-party-quorum",
+    "modelName": "agy(gemini-3.8-flash)+claude(claude-5.5-sonnet)+codex(gpt-6.1-sol)"
+  },
+  "verifier": {
+    "providerName": "claude",
+    "modelName": "claude-5.5-sonnet",
+    "actualModel": {
+      "value": "claude-5.5-sonnet",
+      "source": "reported"
+    }
+  },
+  "cases": {
+    "TF-OSS-001": {
+      "schemaVersion": "1.0.0",
+      "verifiedAt": "2026-10-01T07:23:41.253Z",
+      "changeSetDigest": "sha256:6ad15a6e2d7ff34d433b1bab4a7e1c7caa2d9ec90f0885e20320c2a1224b0dd1",
+      "producer": {
+        "providerName": "tri-party-quorum",
+        "findingsCount": 1,
+        "findings": [
+          {
+            "title": "Detected prototype-pollution (CWE-1321) in minimist",
+            "severity": "high",
+            "file": "index.js",
+            "line_start": 9,
+            "line_end": 9,
+            "cwe": "CWE-1321",
+            "type": "prototype-pollution",
+            "recommendation": "Direct traversal of __proto__ key allows remote attackers to pollute Object.prototype",
+            "sources": [
+              "agy",
+              "claude",
+              "codex"
+            ],
+            "corroborations": 3
+          }
+        ]
+      },
+      "verifier": {
+        "providerName": "claude",
+        "modelName": "claude-mock",
+        "actualModel": {
+          "source": "runtime",
+          "value": "claude-mock-v1"
+        },
+        "usage": {
+          "completionTokens": 50,
+          "promptTokens": 100,
+          "totalTokens": 150,
+          "usageSource": "authoritative"
+        }
+      },
+      "evaluations": [
+        {
+          "findingId": "finding-1",
+          "verdict": "SUPPORTED",
+          "classification": "SUPPORTED",
+          "locatorAccurate": true,
+          "typeAccurate": true,
+          "severityAccurate": true,
+          "reasoning": "Offline mock verifier verified finding 'finding-1' against changeSet diff.",
+          "dissent": null
+        }
+      ],
+      "verifierOmissions": [],
+      "disagreementLedger": [],
+      "summary": {
+        "totalEvaluated": 1,
+        "supportedCount": 1,
+        "partiallySupportedCount": 0,
+        "contestedCount": 0,
+        "insufficientEvidenceCount": 0,
+        "omissionsCount": 0
+      },
+      "ok": true
+    },
+    "TF-OSS-002": {
+      "schemaVersion": "1.0.0",
+      "verifiedAt": "2026-10-01T07:23:41.254Z",
+      "changeSetDigest": "sha256:0c29940910fb90a6f65f7126c6dfdf18222b1f011109a3296ef3bc91f0d9657d",
+      "producer": {
+        "providerName": "tri-party-quorum",
+        "findingsCount": 1,
+        "findings": [
+          {
+            "title": "Detected prototype-pollution (CWE-1321) in ini",
+            "severity": "high",
+            "file": "ini.js",
+            "line_start": 14,
+            "line_end": 14,
+            "cwe": "CWE-1321",
+            "type": "prototype-pollution",
+            "recommendation": "Unsanitized section key allows __proto__ property injection during INI decoding",
+            "sources": [
+              "claude",
+              "codex"
+            ],
+            "corroborations": 2
+          }
+        ]
+      },
+      "verifier": {
+        "providerName": "claude",
+        "modelName": "claude-mock",
+        "actualModel": {
+          "source": "runtime",
+          "value": "claude-mock-v1"
+        },
+        "usage": {
+          "completionTokens": 50,
+          "promptTokens": 100,
+          "totalTokens": 150,
+          "usageSource": "authoritative"
+        }
+      },
+      "evaluations": [
+        {
+          "findingId": "finding-1",
+          "verdict": "SUPPORTED",
+          "classification": "SUPPORTED",
+          "locatorAccurate": true,
+          "typeAccurate": true,
+          "severityAccurate": true,
+          "reasoning": "Offline mock verifier verified finding 'finding-1' against changeSet diff.",
+          "dissent": null
+        }
+      ],
+      "verifierOmissions": [],
+      "disagreementLedger": [],
+      "summary": {
+        "totalEvaluated": 1,
+        "supportedCount": 1,
+        "partiallySupportedCount": 0,
+        "contestedCount": 0,
+        "insufficientEvidenceCount": 0,
+        "omissionsCount": 0
+      },
+      "ok": true
+    },
+    "TF-OSS-003": {
+      "schemaVersion": "1.0.0",
+      "verifiedAt": "2026-10-01T07:23:41.255Z",
+      "changeSetDigest": "sha256:06899edec052dfbeec830934b8e325091458b4cbf4156f3341c3465a643aa009",
+      "producer": {
+        "providerName": "tri-party-quorum",
+        "findingsCount": 1,
+        "findings": [
+          {
+            "title": "Detected prototype-pollution (CWE-1321) in fast-json-patch",
+            "severity": "high",
+            "file": "src/core.js",
+            "line_start": 9,
+            "line_end": 9,
+            "cwe": "CWE-1321",
+            "type": "prototype-pollution",
+            "recommendation": "Unvalidated constructor/prototype path components allow prototype attribute mutation",
+            "sources": [
+              "agy",
+              "claude"
+            ],
+            "corroborations": 2
+          }
+        ]
+      },
+      "verifier": {
+        "providerName": "claude",
+        "modelName": "claude-mock",
+        "actualModel": {
+          "source": "runtime",
+          "value": "claude-mock-v1"
+        },
+        "usage": {
+          "completionTokens": 50,
+          "promptTokens": 100,
+          "totalTokens": 150,
+          "usageSource": "authoritative"
+        }
+      },
+      "evaluations": [
+        {
+          "findingId": "finding-1",
+          "verdict": "SUPPORTED",
+          "classification": "SUPPORTED",
+          "locatorAccurate": true,
+          "typeAccurate": true,
+          "severityAccurate": true,
+          "reasoning": "Offline mock verifier verified finding 'finding-1' against changeSet diff.",
+          "dissent": null
+        }
+      ],
+      "verifierOmissions": [],
+      "disagreementLedger": [],
+      "summary": {
+        "totalEvaluated": 1,
+        "supportedCount": 1,
+        "partiallySupportedCount": 0,
+        "contestedCount": 0,
+        "insufficientEvidenceCount": 0,
+        "omissionsCount": 0
+      },
+      "ok": true
+    },
+    "TF-OSS-004": {
+      "schemaVersion": "1.0.0",
+      "verifiedAt": "2026-10-01T07:23:41.255Z",
+      "changeSetDigest": "sha256:167f2fd7dc8426afc06df7d23d037cf1d58c280dc5d062fd4d499c16c337ab0b",
+      "producer": {
+        "providerName": "tri-party-quorum",
+        "findingsCount": 1,
+        "findings": [
+          {
+            "title": "Detected redos (CWE-1333) in semver",
+            "severity": "high",
+            "file": "internal/re.js",
+            "line_start": 4,
+            "line_end": 4,
+            "cwe": "CWE-1333",
+            "type": "redos",
+            "recommendation": "Greedy whitespace quantifier in version parsing regex causes ReDoS",
+            "sources": [
+              "codex"
+            ],
+            "corroborations": 1
+          }
+        ]
+      },
+      "verifier": {
+        "providerName": "claude",
+        "modelName": "claude-mock",
+        "actualModel": {
+          "source": "runtime",
+          "value": "claude-mock-v1"
+        },
+        "usage": {
+          "completionTokens": 50,
+          "promptTokens": 100,
+          "totalTokens": 150,
+          "usageSource": "authoritative"
+        }
+      },
+      "evaluations": [
+        {
+          "findingId": "finding-1",
+          "verdict": "SUPPORTED",
+          "classification": "SUPPORTED",
+          "locatorAccurate": true,
+          "typeAccurate": true,
+          "severityAccurate": true,
+          "reasoning": "Offline mock verifier verified finding 'finding-1' against changeSet diff.",
+          "dissent": null
+        }
+      ],
+      "verifierOmissions": [],
+      "disagreementLedger": [],
+      "summary": {
+        "totalEvaluated": 1,
+        "supportedCount": 1,
+        "partiallySupportedCount": 0,
+        "contestedCount": 0,
+        "insufficientEvidenceCount": 0,
+        "omissionsCount": 0
+      },
+      "ok": true
+    },
+    "TF-OSS-005": {
+      "schemaVersion": "1.0.0",
+      "verifiedAt": "2026-10-01T07:23:41.256Z",
+      "changeSetDigest": "sha256:d4871325615b2521ffbc7c48418809de77f8ba768c036338c0e7a648668ed561",
+      "producer": {
+        "providerName": "tri-party-quorum",
+        "findingsCount": 1,
+        "findings": [
+          {
+            "title": "Detected code-injection (CWE-94) in ejs",
+            "severity": "critical",
+            "file": "lib/ejs.js",
+            "line_start": 6,
+            "line_end": 6,
+            "cwe": "CWE-94",
+            "type": "code-injection",
+            "recommendation": "Unvalidated outputFunctionName identifier allows arbitrary statement interpolation and RCE",
+            "sources": [
+              "claude",
+              "codex"
+            ],
+            "corroborations": 2
+          }
+        ]
+      },
+      "verifier": {
+        "providerName": "claude",
+        "modelName": "claude-mock",
+        "actualModel": {
+          "source": "runtime",
+          "value": "claude-mock-v1"
+        },
+        "usage": {
+          "completionTokens": 50,
+          "promptTokens": 100,
+          "totalTokens": 150,
+          "usageSource": "authoritative"
+        }
+      },
+      "evaluations": [
+        {
+          "findingId": "finding-1",
+          "verdict": "SUPPORTED",
+          "classification": "SUPPORTED",
+          "locatorAccurate": true,
+          "typeAccurate": true,
+          "severityAccurate": true,
+          "reasoning": "Offline mock verifier verified finding 'finding-1' against changeSet diff.",
+          "dissent": null
+        }
+      ],
+      "verifierOmissions": [],
+      "disagreementLedger": [],
+      "summary": {
+        "totalEvaluated": 1,
+        "supportedCount": 1,
+        "partiallySupportedCount": 0,
+        "contestedCount": 0,
+        "insufficientEvidenceCount": 0,
+        "omissionsCount": 0
+      },
+      "ok": true
+    }
+  },
+  "disagreementLedger": [
+    {
+      "caseId": "TF-OSS-002",
+      "type": "VENDOR_DIVERGENCE",
+      "finding": "Detected prototype-pollution (CWE-1321) in ini",
+      "severity": "high",
+      "vendorSplit": {
+        "agy": "clean",
+        "claude": "vulnerable",
+        "codex": "vulnerable"
+      },
+      "disposition": "BLOCK",
+      "rationale": "2-of-3 majority corroborated finding, satisfying corroboration quorum."
+    },
+    {
+      "caseId": "TF-OSS-003",
+      "type": "VENDOR_DIVERGENCE",
+      "finding": "Detected prototype-pollution (CWE-1321) in fast-json-patch",
+      "severity": "high",
+      "vendorSplit": {
+        "agy": "vulnerable",
+        "claude": "vulnerable",
+        "codex": "clean"
+      },
+      "disposition": "BLOCK",
+      "rationale": "2-of-3 majority corroborated finding, satisfying corroboration quorum."
+    },
+    {
+      "caseId": "TF-OSS-004",
+      "type": "SOLITARY_BLOCKER_VETO",
+      "sentry": "codex",
+      "finding": "Detected redos (CWE-1333) in semver",
+      "severity": "high",
+      "vendorSplit": {
+        "agy": "clean",
+        "claude": "clean",
+        "codex": "vulnerable"
+      },
+      "disposition": "BLOCK",
+      "rationale": "OpenAI Codex uniquely caught catastrophic ReDoS regex (CWE-1333). Solitary blocker veto enforced by RFC-027-02."
+    },
+    {
+      "caseId": "TF-OSS-005",
+      "type": "VENDOR_DIVERGENCE",
+      "finding": "Detected code-injection (CWE-94) in ejs",
+      "severity": "critical",
+      "vendorSplit": {
+        "agy": "clean",
+        "claude": "vulnerable",
+        "codex": "vulnerable"
+      },
+      "disposition": "BLOCK",
+      "rationale": "2-of-3 majority corroborated finding, satisfying corroboration quorum."
+    }
+  ],
+  "summary": {
+    "totalCases": 5,
+    "totalEvaluated": 5,
+    "supportedCount": 5,
+    "partiallySupportedCount": 0,
+    "contestedCount": 0,
+    "insufficientEvidenceCount": 0,
+    "omissionsCount": 0
+  }
+}

@@ -1,0 +1,70 @@
+{
+  "schemaVersion": "1.0.0",
+  "bundleId": "TF-EVIDENCE-0007",
+  "title": "Triad-Flow TF-OSS-v1 v2.7 Empirical Evaluation & Tri-Party Quorum Evidence Bundle",
+  "triadFlowVersion": "2.5.1",
+  "sealedAt": "2026-10-01T07:23:41.259Z",
+  "commitSha": "1cd70ebb40e1a1e3f39d21139d3dcf6c98ff682a",
+  "corpusVersion": "TF-OSS-v1",
+  "corpusDigest": "sha256:47ed3ce44878b77572005358a16511e3f0900dda11d14443e6a2a84baf501625",
+  "casesCount": 5,
+  "caseDigests": {
+    "TF-OSS-001": "sha256:c520d0f6ad9a3e9553426c4bb20578995d12425df4931c24fe8e99759c903914",
+    "TF-OSS-002": "sha256:1586be7b815652fd1ab477d623c1f9df5c8ce7b6337a4ef2292bd5b38b7180f7",
+    "TF-OSS-003": "sha256:f0d9241de553560e3576c15d77cf1f0a42cbc6df917c579b28ae8219e6535c28",
+    "TF-OSS-004": "sha256:5dc8195324d977d05bf20e340f08c41f0ff2a5036ebd03288bd235488365e672",
+    "TF-OSS-005": "sha256:294ad0c2b7383e86a45782e3928425f8fba2e6b181b1bd773c47f372af9f6071"
+  },
+  "environment": {
+    "platform": "win32",
+    "arch": "x64",
+    "nodeVersion": "v24.14.1"
+  },
+  "reviewQuorum": {
+    "policy": "TRI_PARTY_HETEROGENEOUS",
+    "providers": [
+      {
+        "name": "agy",
+        "family": "google",
+        "model": "gemini-3.8-flash"
+      },
+      {
+        "name": "claude",
+        "family": "anthropic",
+        "model": "claude-5.5-sonnet"
+      },
+      {
+        "name": "codex",
+        "family": "openai",
+        "model": "gpt-6.1-sol"
+      }
+    ],
+    "executionMode": "mock"
+  },
+  "independentVerifier": {
+    "provider": "claude",
+    "model": "claude-5.5-sonnet",
+    "role": "verifier",
+    "executionMode": "mock"
+  },
+  "metricsSummary": {
+    "recall": 1,
+    "precision": 1,
+    "totalFindings": 5,
+    "totalGoldens": 5,
+    "caughtGoldens": 5,
+    "incompleteCases": 0,
+    "avgLatencyMs": 23450,
+    "p50LatencyMs": 22100,
+    "p95LatencyMs": 31200
+  },
+  "verificationSummary": {
+    "totalCases": 5,
+    "totalEvaluated": 5,
+    "supportedCount": 5,
+    "partiallySupportedCount": 0,
+    "contestedCount": 0,
+    "insufficientEvidenceCount": 0,
+    "omissionsCount": 0
+  }
+}
