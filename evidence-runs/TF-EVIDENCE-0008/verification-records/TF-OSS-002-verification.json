@@ -1,0 +1,93 @@
+{
+  "schemaVersion": "1.0.0",
+  "verifiedAt": "2026-10-01T14:52:36.731Z",
+  "changeSetDigest": "sha256:0c29940910fb90a6f65f7126c6dfdf18222b1f011109a3296ef3bc91f0d9657d",
+  "producer": {
+    "providerName": "tri-party-quorum",
+    "findingsCount": 1,
+    "findings": [
+      {
+        "title": "Incomplete Prototype Pollution Protection via Section Name",
+        "severity": "high",
+        "file": "ini.js",
+        "line_start": 13,
+        "line_end": 16,
+        "ruleId": "CHECKLIST-CWE-1321",
+        "cwe": "CWE-1321",
+        "type": "Prototype Pollution",
+        "recommendation": "Strictly block 'constructor' and 'prototype' in addition to '__proto__', or validate section names against an allowlist and ensure objects are initialized with Object.create(null) or guarded against prototype traversal.",
+        "sources": [
+          "agy",
+          "claude",
+          "codex"
+        ],
+        "corroborations": 3
+      }
+    ]
+  },
+  "verifier": {
+    "providerName": "claude",
+    "modelName": "claude-5.5-sonnet",
+    "actualModel": {
+      "source": "reported",
+      "value": "claude-5.5-sonnet"
+    },
+    "usage": {
+      "completionTokens": null,
+      "promptTokens": null,
+      "totalTokens": null,
+      "usageSource": "unavailable"
+    }
+  },
+  "evaluations": [
+    {
+      "findingId": "finding-1",
+      "verdict": "SUPPORTED",
+      "classification": "PARTIALLY_SUPPORTED",
+      "locatorAccurate": true,
+      "typeAccurate": true,
+      "severityAccurate": false,
+      "reasoning": "The diff only special-cases section === '__proto__'. Every other section name still goes through `p = out[section] = out[section] || {}`, which reads inherited properties. For `[constructor]`, `out['constructor']` is the inherited `Object` function and is truthy, so `p` becomes `Object`. Any `key=value` line that follows is then written onto the global `Object` constructor function, which is a global mutation driven by untrusted input. Inherited names such as `[toString]` and `[hasOwnProperty]` have the same problem, because `p` becomes an inherited function and gets written to. The lines 13-16 locator covers the new guard and the following assignment, so it is accurate. The finding is weaker than stated in two ways. First, 'prototype' is not exploitable as a section name: `out['prototype']` is undefined on a plain object, so it just creates an own property. Second, writing to `Object` itself does not pollute `Object.prototype` and does not reach instances. Reaching `Object.prototype` would take a second traversal step (`constructor.prototype`), and the diff shows no dotted-path handling or key-level nesting. The key-assignment code outside the diff context was not visible, so I could not confirm that. The CWE-1321 classification is reasonable (improperly controlled modification of object prototype attributes), though the impact is narrower than 'prototype pollution' implies. 'High' looks overstated, and 'medium' fits better.",
+      "dissent": "The diff only special-cases section === '__proto__'. Every other section name still goes through `p = out[section] = out[section] || {}`, which reads inherited properties. For `[constructor]`, `out['constructor']` is the inherited `Object` function and is truthy, so `p` becomes `Object`. Any `key=value` line that follows is then written onto the global `Object` constructor function, which is a global mutation driven by untrusted input. Inherited names such as `[toString]` and `[hasOwnProperty]` have the same problem, because `p` becomes an inherited function and gets written to. The lines 13-16 locator covers the new guard and the following assignment, so it is accurate. The finding is weaker than stated in two ways. First, 'prototype' is not exploitable as a section name: `out['prototype']` is undefined on a plain object, so it just creates an own property. Second, writing to `Object` itself does not pollute `Object.prototype` and does not reach instances. Reaching `Object.prototype` would take a second traversal step (`constructor.prototype`), and the diff shows no dotted-path handling or key-level nesting. The key-assignment code outside the diff context was not visible, so I could not confirm that. The CWE-1321 classification is reasonable (improperly controlled modification of object prototype attributes), though the impact is narrower than 'prototype pollution' implies. 'High' looks overstated, and 'medium' fits better."
+    }
+  ],
+  "verifierOmissions": [],
+  "disagreementLedger": [
+    {
+      "findingId": "finding-1",
+      "producerFinding": {
+        "title": "Incomplete Prototype Pollution Protection via Section Name",
+        "severity": "high",
+        "file": "ini.js",
+        "line_start": 13,
+        "line_end": 16,
+        "ruleId": "CHECKLIST-CWE-1321",
+        "cwe": "CWE-1321",
+        "type": "Prototype Pollution",
+        "recommendation": "Strictly block 'constructor' and 'prototype' in addition to '__proto__', or validate section names against an allowlist and ensure objects are initialized with Object.create(null) or guarded against prototype traversal.",
+        "sources": [
+          "agy",
+          "claude",
+          "codex"
+        ],
+        "corroborations": 3
+      },
+      "verdict": "SUPPORTED",
+      "classification": "PARTIALLY_SUPPORTED",
+      "locatorAccurate": true,
+      "typeAccurate": true,
+      "severityAccurate": false,
+      "reasoning": "The diff only special-cases section === '__proto__'. Every other section name still goes through `p = out[section] = out[section] || {}`, which reads inherited properties. For `[constructor]`, `out['constructor']` is the inherited `Object` function and is truthy, so `p` becomes `Object`. Any `key=value` line that follows is then written onto the global `Object` constructor function, which is a global mutation driven by untrusted input. Inherited names such as `[toString]` and `[hasOwnProperty]` have the same problem, because `p` becomes an inherited function and gets written to. The lines 13-16 locator covers the new guard and the following assignment, so it is accurate. The finding is weaker than stated in two ways. First, 'prototype' is not exploitable as a section name: `out['prototype']` is undefined on a plain object, so it just creates an own property. Second, writing to `Object` itself does not pollute `Object.prototype` and does not reach instances. Reaching `Object.prototype` would take a second traversal step (`constructor.prototype`), and the diff shows no dotted-path handling or key-level nesting. The key-assignment code outside the diff context was not visible, so I could not confirm that. The CWE-1321 classification is reasonable (improperly controlled modification of object prototype attributes), though the impact is narrower than 'prototype pollution' implies. 'High' looks overstated, and 'medium' fits better.",
+      "dissent": "The diff only special-cases section === '__proto__'. Every other section name still goes through `p = out[section] = out[section] || {}`, which reads inherited properties. For `[constructor]`, `out['constructor']` is the inherited `Object` function and is truthy, so `p` becomes `Object`. Any `key=value` line that follows is then written onto the global `Object` constructor function, which is a global mutation driven by untrusted input. Inherited names such as `[toString]` and `[hasOwnProperty]` have the same problem, because `p` becomes an inherited function and gets written to. The lines 13-16 locator covers the new guard and the following assignment, so it is accurate. The finding is weaker than stated in two ways. First, 'prototype' is not exploitable as a section name: `out['prototype']` is undefined on a plain object, so it just creates an own property. Second, writing to `Object` itself does not pollute `Object.prototype` and does not reach instances. Reaching `Object.prototype` would take a second traversal step (`constructor.prototype`), and the diff shows no dotted-path handling or key-level nesting. The key-assignment code outside the diff context was not visible, so I could not confirm that. The CWE-1321 classification is reasonable (improperly controlled modification of object prototype attributes), though the impact is narrower than 'prototype pollution' implies. 'High' looks overstated, and 'medium' fits better."
+    }
+  ],
+  "summary": {
+    "totalEvaluated": 1,
+    "supportedCount": 1,
+    "partiallySupportedCount": 1,
+    "contestedCount": 0,
+    "insufficientEvidenceCount": 0,
+    "omissionsCount": 0
+  },
+  "ok": true
+}

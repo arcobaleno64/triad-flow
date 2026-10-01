@@ -1,0 +1,77 @@
+{
+  "schemaVersion": "1.0.0",
+  "verifiedAt": "2026-10-01T14:52:55.950Z",
+  "changeSetDigest": "sha256:06899edec052dfbeec830934b8e325091458b4cbf4156f3341c3465a643aa009",
+  "producer": {
+    "providerName": "tri-party-quorum",
+    "findingsCount": 1,
+    "findings": [
+      {
+        "title": "The prototype guard skips the final path segment, so '__proto__' can still be assigned as a leaf key",
+        "severity": "medium",
+        "file": "src/core.js",
+        "line_start": 6,
+        "line_end": 10,
+        "ruleId": "CHECKLIST-CWE-1321",
+        "cwe": "CWE-1321",
+        "type": "INCOMPLETE-MITIGATION",
+        "recommendation": "Run the banned-key check on every segment, including keys[keys.length - 1], and do it before the loop and before any read or write. Better still, reject '__proto__', 'constructor' and 'prototype' outright in any position. Also use Object.prototype.hasOwnProperty.call(obj, key) instead of obj[key] === undefined, and create intermediate containers with Object.create(null) or only write to own properties. The loop runs to keys.length - 1, so a path such as '/a/__proto__' with an object value reaches the final assignment (outside this diff) with key '__proto__'. That assignment calls the __proto__ setter and replaces the prototype of the target object with attacker-controlled data. For path '/__proto__' the loop does not run at all, so the document's own prototype can be swapped.",
+        "sources": [
+          "claude",
+          "codex"
+        ],
+        "corroborations": 2
+      }
+    ]
+  },
+  "verifier": {
+    "providerName": "claude",
+    "modelName": "claude-5.5-sonnet",
+    "actualModel": {
+      "source": "reported",
+      "value": "claude-5.5-sonnet"
+    },
+    "usage": {
+      "completionTokens": null,
+      "promptTokens": null,
+      "totalTokens": null,
+      "usageSource": "unavailable"
+    }
+  },
+  "evaluations": [
+    {
+      "findingId": "finding-1",
+      "verdict": "SUPPORTED",
+      "classification": "SUPPORTED",
+      "locatorAccurate": true,
+      "typeAccurate": true,
+      "severityAccurate": true,
+      "reasoning": "The hunk context shows the loop bound `i < keys.length - 1`, so the new `__proto__` guard never runs on the last path segment. A path like '/a/__proto__' or '/__proto__' therefore reaches the final assignment, which sits outside the diff, with `__proto__` as the key. For '/__proto__' the loop does not run at all. Assigning an object to `obj['__proto__']` invokes the prototype setter, so the guard is only partly effective, which fits CWE-1321 and INCOMPLETE-MITIGATION. The effect is limited to replacing the prototype of the target object or document. It does not reach Object.prototype. Medium severity is reasonable. The cited lines 6-10 cover the loop and the added check. The final-assignment behavior is inferred from the unchanged code rather than shown in the diff, but the loop bound is visible in the hunk context.",
+      "dissent": null
+    }
+  ],
+  "verifierOmissions": [
+    {
+      "title": "'constructor' is not banned as an intermediate or leaf key, so the Object constructor can still be mutated",
+      "severity": "low",
+      "file": "src/core.js",
+      "line_start": 8,
+      "line_end": 11,
+      "cwe": "CWE-1321",
+      "type": "INCOMPLETE-MITIGATION",
+      "recommendation": "Reject 'constructor' in any path position, or only traverse own properties using Object.prototype.hasOwnProperty.call(obj, key). A path such as '/constructor/x' resolves obj['constructor'] to the Object function through the inherited lookup. The code then writes attacker-chosen properties onto it, which pollutes a global shared object. The guard only throws for 'prototype' when it directly follows 'constructor' (the `i > 0` condition), and it does nothing for inherited keys such as 'constructor' itself.",
+      "id": "omission-1",
+      "classification": "MISSED_BY_PRODUCER"
+    }
+  ],
+  "disagreementLedger": [],
+  "summary": {
+    "totalEvaluated": 1,
+    "supportedCount": 1,
+    "partiallySupportedCount": 0,
+    "contestedCount": 0,
+    "insufficientEvidenceCount": 0,
+    "omissionsCount": 1
+  },
+  "ok": true
+}
