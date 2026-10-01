@@ -118,6 +118,7 @@ export function validateProviderOutput(rawOutput, inputContext = {}) {
       coverage: Object.freeze({ coveredFiles: Object.freeze([]), omittedFiles: Object.freeze([]) }),
       usage: null,
       providerIdentity: Object.freeze(providerIdentity),
+      rawOutput: rawOutput.rawOutput ? String(rawOutput.rawOutput) : undefined,
       error: rawOutput.error ? String(rawOutput.error) : `Execution terminated with status '${status}'.`
     });
   }
@@ -130,6 +131,7 @@ export function validateProviderOutput(rawOutput, inputContext = {}) {
       coverage: Object.freeze({ coveredFiles: Object.freeze([]), omittedFiles: Object.freeze([]) }),
       usage: null,
       providerIdentity: Object.freeze(providerIdentity),
+      rawOutput: typeof rawOutput === "string" ? rawOutput : undefined,
       error: "Provider output must be a non-null plain object."
     });
   }
@@ -279,8 +281,61 @@ export function convertProviderResultToSentryReport(result, roleName = "macro") 
   };
 }
 
+function tryParseJsonCandidate(str) {
+  if (!str || typeof str !== "string") return null;
+  const trimmed = str.trim();
+  if (!trimmed) return null;
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    // Try cleaning trailing commas: e.g. , } or , ]
+    try {
+      const sanitized = trimmed.replace(/,(\s*[}\]])/g, "$1");
+      return JSON.parse(sanitized);
+    } catch {
+      return null;
+    }
+  }
+}
+
+function findMatchingBrace(text, startIdx) {
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = startIdx; i < text.length; i++) {
+    const char = text[i];
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (char === '"') {
+      inString = true;
+      escaped = false;
+    } else if (char === "{" || char === "[") {
+      depth++;
+    } else if (char === "}" || char === "]") {
+      depth--;
+      if (depth === 0) {
+        return i;
+      }
+    }
+  }
+
+  return -1;
+}
+
 /**
- * Extracts a JSON string from raw text that may contain markdown code fences or pre/postambles.
+ * Extracts a JSON string from raw text that may contain markdown code fences, pre/postambles, or formatting quirks.
+ * Uses direct parsing, markdown fence extraction, and bracket-depth balancing.
  *
  * @param {string} text - Raw input text from reviewer CLI or model response
  * @returns {object|null} Parsed JSON object/array or null if not extractable
@@ -290,33 +345,56 @@ export function extractJsonFromText(text = "") {
   const trimmed = text.trim();
   if (!trimmed) return null;
 
-  // Try direct parse first
-  if ((trimmed.startsWith("{") && trimmed.endsWith("}")) || (trimmed.startsWith("[") && trimmed.endsWith("]"))) {
-    try {
-      return JSON.parse(trimmed);
-    } catch {
-      // Fall through to fence extraction
+  // 1. Direct parse attempt
+  const direct = tryParseJsonCandidate(trimmed);
+  if (direct && typeof direct === "object") return direct;
+
+  // 2. Extract from markdown code fences: ```json ... ``` or ``` ... ```
+  const fenceRegex = /```(?:json)?\s*([\s\S]*?)\s*```/gi;
+  let fenceMatch;
+  while ((fenceMatch = fenceRegex.exec(trimmed)) !== null) {
+    const candidate = fenceMatch[1];
+    const parsed = tryParseJsonCandidate(candidate);
+    if (parsed && typeof parsed === "object") return parsed;
+
+    // Inside fence, try bracket extraction
+    const firstBrace = candidate.indexOf("{");
+    if (firstBrace !== -1) {
+      const closing = findMatchingBrace(candidate, firstBrace);
+      if (closing !== -1) {
+        const sub = tryParseJsonCandidate(candidate.slice(firstBrace, closing + 1));
+        if (sub && typeof sub === "object") return sub;
+      }
     }
   }
 
-  // Extract from ```json ... ``` or ``` ... ```
-  const fenceMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
-  if (fenceMatch && fenceMatch[1]) {
-    try {
-      return JSON.parse(fenceMatch[1].trim());
-    } catch {
-      // Fall through
+  // 3. Bracket-balanced JSON extraction (prioritizing root containing "findings")
+  const findingsTokenIdx = trimmed.indexOf('"findings"');
+  if (findingsTokenIdx !== -1) {
+    // Scan backwards from "findings" to find its enclosing object root '{'
+    const openBrace = trimmed.lastIndexOf("{", findingsTokenIdx);
+    if (openBrace !== -1) {
+      const closeBrace = findMatchingBrace(trimmed, openBrace);
+      if (closeBrace !== -1) {
+        const candidate = tryParseJsonCandidate(trimmed.slice(openBrace, closeBrace + 1));
+        if (candidate && typeof candidate === "object") return candidate;
+      }
     }
   }
 
-  // Extract outermost balanced JSON object
+  // 4. Fallback: scan for any balanced '{' from beginning
   const startIdx = trimmed.indexOf("{");
-  const endIdx = trimmed.lastIndexOf("}");
-  if (startIdx !== -1 && endIdx > startIdx) {
-    try {
-      return JSON.parse(trimmed.slice(startIdx, endIdx + 1));
-    } catch {
-      return null;
+  if (startIdx !== -1) {
+    const closeBrace = findMatchingBrace(trimmed, startIdx);
+    if (closeBrace !== -1) {
+      const candidate = tryParseJsonCandidate(trimmed.slice(startIdx, closeBrace + 1));
+      if (candidate && typeof candidate === "object") return candidate;
+    }
+    // Also try outermost slice as last resort
+    const lastIdx = trimmed.lastIndexOf("}");
+    if (lastIdx > startIdx) {
+      const candidate = tryParseJsonCandidate(trimmed.slice(startIdx, lastIdx + 1));
+      if (candidate && typeof candidate === "object") return candidate;
     }
   }
 

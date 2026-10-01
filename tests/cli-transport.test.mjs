@@ -44,6 +44,28 @@ test("extractJsonFromText extracts JSON directly, from fences, or from surroundi
   assert.deepEqual(extractJsonFromText('Here is output:\n```json\n{"findings":[{"title":"issue"}]}\n```\nDone.'), { findings: [{ title: "issue" }] });
   assert.deepEqual(extractJsonFromText('Preamble {"findings":[{"title":"direct"}]} epilogue'), { findings: [{ title: "direct" }] });
   assert.equal(extractJsonFromText("garbage without json"), null);
+
+  // Robustness: trailing comma tolerance
+  assert.deepEqual(extractJsonFromText('{"findings":[{"title":"issue",}],}'), { findings: [{ title: "issue" }] });
+
+  // Robustness: preamble with braces and postamble with braces
+  const complexText = `
+  I analyzed the code. Note that options like { safe: true } were considered.
+  Here is the formal review:
+  {
+    "findings": [
+      {
+        "title": "Complex finding",
+        "severity": "high"
+      }
+    ],
+    "coverage": { "coveredFiles": ["index.js"], "omittedFiles": [] }
+  }
+  End of review. Context snippet: function() { return 1; }
+  `;
+  const complexParsed = extractJsonFromText(complexText);
+  assert.ok(complexParsed);
+  assert.equal(complexParsed.findings[0].title, "Complex finding");
 });
 
 test("buildReviewPrompt includes ChangeSet metadata, file list, and diff", () => {
