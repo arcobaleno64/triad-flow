@@ -98,3 +98,62 @@ test("Contract 4: Rejection of unsigned or untrusted tags under allowed_signers 
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 });
+
+test("Contract 5: 3-Target Version Lockstep verifies synchronized versions across manifests", () => {
+  const nodeCmd = process.execPath;
+  const bumpScript = path.resolve("scripts/bump-version.mjs");
+
+  // 1. Verify that current repository targets are in 100% lockstep
+  const checkRes = spawnSync(nodeCmd, [bumpScript, "--check"], {
+    encoding: "utf8",
+    windowsHide: true
+  });
+  assert.equal(checkRes.status, 0, `check-version failed: ${checkRes.stderr}`);
+  assert.match(checkRes.stdout, /All 3 version targets agree on/);
+});
+
+test("Contract 6: GitHub Ruleset specifications conform to RFC-027-03 requirements", () => {
+  const mainRulesetPath = path.resolve(".github/rulesets/main-branch-ruleset.json");
+  const tagRulesetPath = path.resolve(".github/rulesets/release-tag-ruleset.json");
+
+  assert.ok(fs.existsSync(mainRulesetPath), "main-branch-ruleset.json must exist");
+  assert.ok(fs.existsSync(tagRulesetPath), "release-tag-ruleset.json must exist");
+
+  const mainRuleset = JSON.parse(fs.readFileSync(mainRulesetPath, "utf8"));
+  assert.equal(mainRuleset.target, "branch");
+  assert.equal(mainRuleset.enforcement, "active");
+  assert.deepEqual(mainRuleset.bypass_actors, []);
+  assert.ok(mainRuleset.conditions.ref_name.include.includes("~DEFAULT_BRANCH"));
+
+  const mainRuleTypes = mainRuleset.rules.map(r => r.type);
+  assert.ok(mainRuleTypes.includes("deletion"), "Must prohibit branch deletion");
+  assert.ok(mainRuleTypes.includes("non_fast_forward"), "Must prohibit force-pushes");
+  assert.ok(mainRuleTypes.includes("required_linear_history"), "Must require linear history");
+  assert.ok(mainRuleTypes.includes("required_signatures"), "Must require signed commits");
+  assert.ok(mainRuleTypes.includes("pull_request"), "Must require pull requests");
+  assert.ok(mainRuleTypes.includes("required_status_checks"), "Must require status checks");
+
+  const tagRuleset = JSON.parse(fs.readFileSync(tagRulesetPath, "utf8"));
+  assert.equal(tagRuleset.target, "tag");
+  assert.equal(tagRuleset.enforcement, "active");
+  assert.deepEqual(tagRuleset.bypass_actors, []);
+  assert.ok(tagRuleset.conditions.ref_name.include.includes("refs/tags/v*"));
+
+  const tagRuleTypes = tagRuleset.rules.map(r => r.type);
+  assert.ok(tagRuleTypes.includes("deletion"), "Must prohibit tag deletion");
+  assert.ok(tagRuleTypes.includes("non_fast_forward"), "Must prohibit moving tags");
+  assert.ok(tagRuleTypes.includes("creation"), "Must restrict tag creation");
+});
+
+test("Contract 7: Package Runtime Dependency Boundary and Shebang Hygiene (RFC-027-03 Section 15.1)", () => {
+  const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
+  assert.deepEqual(pkg.dependencies || {}, {}, "package.json must contain exactly zero runtime dependencies");
+
+  // Check shebang hygiene for CLI entrypoint
+  const cliPath = path.resolve("bin/triad-flow.mjs");
+  const cliContent = fs.readFileSync(cliPath, "utf8");
+  const firstLine = cliContent.split("\n")[0];
+  assert.ok(firstLine.startsWith("#!/usr/bin/env node"), "CLI binary must have standard node shebang");
+  assert.ok(!firstLine.endsWith("\r"), "CLI shebang must not contain carriage return (\\r)");
+});
+
