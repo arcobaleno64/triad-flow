@@ -151,7 +151,81 @@ test("partitionChangeSetIntoChunks splits a single massive hunk when individual 
   for (const c of chunks) {
     assert.deepEqual(c.targetFiles, ["src/single-huge.js"]);
     assert.ok(c.diffHunks.startsWith("diff --git a/src/single-huge.js b/src/single-huge.js"));
-    assert.ok(Buffer.byteLength(c.diffHunks, "utf8") <= 350);
+    assert.ok(Buffer.byteLength(c.diffHunks, "utf8") <= 300, `Chunk size ${Buffer.byteLength(c.diffHunks, "utf8")} must not exceed maxChunkBytes 300`);
   }
 });
+
+test("partitionChangeSetIntoChunks tracks accurate line coordinates across split hunk fragments (Finding 1)", () => {
+  // 3 additions followed by 3 deletions followed by 3 context lines
+  const lines = [
+    "+ add_1",
+    "+ add_2",
+    "+ add_3",
+    "- del_1",
+    "- del_2",
+    "- del_3",
+    " ctx_1",
+    " ctx_2"
+  ];
+  const diff = [
+    "diff --git a/src/coords.js b/src/coords.js",
+    "--- a/src/coords.js",
+    "+++ b/src/coords.js",
+    "@@ -10,5 +20,5 @@ optionalSection",
+    lines.join("\n")
+  ].join("\n");
+
+  const cs = {
+    files: [{ path: "src/coords.js" }],
+    diffHunks: diff
+  };
+
+  // Small byte limit to force multiple fragments
+  const chunks = partitionChangeSetIntoChunks(cs, { maxChunkBytes: 70 });
+  assert.ok(chunks.length >= 2, `Expected multiple fragments, got ${chunks.length}`);
+
+  let expectedOld = 10;
+  let expectedNew = 20;
+
+  for (const c of chunks) {
+    const hunkMatch = c.diffHunks.match(/@@ -(\d+),(\d+) \+(\d+),(\d+) @@(.*)/);
+    assert.ok(hunkMatch, `Fragment must contain valid @@ header: ${c.diffHunks}`);
+    const oldStart = parseInt(hunkMatch[1], 10);
+    const oldCount = parseInt(hunkMatch[2], 10);
+    const newStart = parseInt(hunkMatch[3], 10);
+    const newCount = parseInt(hunkMatch[4], 10);
+
+    assert.equal(oldStart, expectedOld, `Fragment old start line mismatch`);
+    assert.equal(newStart, expectedNew, `Fragment new start line mismatch`);
+
+    expectedOld += oldCount;
+    expectedNew += newCount;
+  }
+});
+
+test("partitionChangeSetIntoChunks strictly enforces byte ceiling even with a single massive minified line (Finding 2)", () => {
+  // A single line of 2000 characters
+  const massiveLine = "+ const big = '" + "x".repeat(2000) + "';";
+  const diff = [
+    "diff --git a/src/minified.js b/src/minified.js",
+    "--- a/src/minified.js",
+    "+++ b/src/minified.js",
+    "@@ -1,1 +1,1 @@",
+    massiveLine
+  ].join("\n");
+
+  const cs = {
+    files: [{ path: "src/minified.js" }],
+    diffHunks: diff
+  };
+
+  const limit = 400;
+  const chunks = partitionChangeSetIntoChunks(cs, { maxChunkBytes: limit });
+  assert.ok(chunks.length >= 4, `Expected at least 4 chunks, got ${chunks.length}`);
+  for (const c of chunks) {
+    const size = Buffer.byteLength(c.diffHunks, "utf8");
+    assert.ok(size <= limit, `Chunk size ${size} must strictly not exceed ceiling ${limit}`);
+  }
+});
+
 

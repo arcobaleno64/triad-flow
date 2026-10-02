@@ -214,9 +214,28 @@ export function filterChangeSetExclusions(changeSet, excludedPaths = []) {
   const excludedFiles = [];
   const files = rawFiles.filter(f => {
     const rawPath = typeof f === "string" ? f : f?.path || "";
+    const rawOldPath = typeof f === "object" ? f?.oldPath : undefined;
     const decoded = decodeGitCStyleString(rawPath);
     const norm = path.normalize(decoded).replace(/\\/g, "/").replace(/^\.\//, "");
-    if (normalizedExclusions.has(norm)) {
+    const isExcludedDest = normalizedExclusions.has(norm);
+
+    let isExcludedSrc = isExcludedDest;
+    if (rawOldPath) {
+      const decodedOld = decodeGitCStyleString(rawOldPath);
+      const normOld = path.normalize(decodedOld).replace(/\\/g, "/").replace(/^\.\//, "");
+      isExcludedSrc = normalizedExclusions.has(normOld);
+    }
+
+    if (rawOldPath && norm !== rawOldPath) {
+      // Rename or copy: exclude only if BOTH source and destination are excluded
+      if (isExcludedDest && isExcludedSrc) {
+        excludedFiles.push(rawPath);
+        return false;
+      }
+      return true;
+    }
+
+    if (isExcludedDest) {
       excludedFiles.push(rawPath);
       return false;
     }

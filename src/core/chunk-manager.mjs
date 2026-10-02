@@ -244,35 +244,94 @@ export function partitionChangeSetIntoChunks(changeSet, options = {}) {
               subBytes = Buffer.byteLength(header, "utf8");
             }
 
-            // Split this oversized hunk by lines
+            // Split this oversized hunk by lines with accurate fragment coordinates and strict byte ceilings
             const lines = h.split("\n");
-            const hunkHeader = lines[0].startsWith("@@") ? lines[0] : "@@ -1,1 +1,1 @@";
+            const rawHunkHeader = lines[0].startsWith("@@") ? lines[0] : "@@ -1,1 +1,1 @@";
             const bodyLines = lines[0].startsWith("@@") ? lines.slice(1) : lines;
-            let currentLineGroup = [];
-            let currentGroupBytes = Buffer.byteLength(header + hunkHeader + "\n", "utf8");
 
-            for (const line of bodyLines) {
-              const lineBytes = Buffer.byteLength(line + "\n", "utf8");
-              if (currentGroupBytes + lineBytes > maxChunkBytes && currentLineGroup.length > 0) {
-                rawChunks.push({
-                  priorityTier: tier,
-                  targetFiles: [filePath],
-                  diffHunks: header + hunkHeader + "\n" + currentLineGroup.join("\n")
-                });
-                currentLineGroup = [line];
-                currentGroupBytes = Buffer.byteLength(header + hunkHeader + "\n" + line + "\n", "utf8");
-              } else {
-                currentLineGroup.push(line);
-                currentGroupBytes += lineBytes;
-              }
+            let origOldStart = 1;
+            let origNewStart = 1;
+            let sectionSuffix = "";
+            const headerMatch = rawHunkHeader.match(/^@@\s+-(\d+)(?:,(\d+))?\s+\+(\d+)(?:,(\d+))?\s+@@(.*)$/);
+            if (headerMatch) {
+              origOldStart = parseInt(headerMatch[1], 10);
+              origNewStart = parseInt(headerMatch[3], 10);
+              sectionSuffix = headerMatch[5] || "";
             }
-            if (currentLineGroup.length > 0) {
+
+            let curOldStart = origOldStart;
+            let curNewStart = origNewStart;
+            let curOldCount = 0;
+            let curNewCount = 0;
+            let currentLineGroup = [];
+            let currentGroupLinesBytes = 0;
+            const headerBytes = Buffer.byteLength(header, "utf8");
+            const maxPayloadBytes = Math.max(50, maxChunkBytes - headerBytes - 120);
+
+            const splitOversizedLine = (lineStr, maxBytes) => {
+              const slices = [];
+              let remaining = lineStr;
+              const prefix = (lineStr.startsWith("+") || lineStr.startsWith("-") || lineStr.startsWith(" "))
+                ? lineStr[0]
+                : "+";
+              while (Buffer.byteLength(remaining, "utf8") > maxBytes) {
+                let sliceLen = Math.floor(remaining.length * (maxBytes / Buffer.byteLength(remaining, "utf8")));
+                if (sliceLen < 1) sliceLen = 1;
+                while (Buffer.byteLength(remaining.slice(0, sliceLen), "utf8") > maxBytes && sliceLen > 1) {
+                  sliceLen--;
+                }
+                slices.push(remaining.slice(0, sliceLen));
+                remaining = prefix + remaining.slice(sliceLen);
+              }
+              if (remaining.length > 0) slices.push(remaining);
+              return slices;
+            };
+
+            const flushFragment = () => {
+              if (currentLineGroup.length === 0) return;
+              const fragHunkHeader = `@@ -${curOldStart},${curOldCount} +${curNewStart},${curNewCount} @@${sectionSuffix}`;
+              const chunkDiff = header + fragHunkHeader + "\n" + currentLineGroup.join("\n") + "\n";
               rawChunks.push({
                 priorityTier: tier,
                 targetFiles: [filePath],
-                diffHunks: header + hunkHeader + "\n" + currentLineGroup.join("\n")
+                diffHunks: chunkDiff
               });
+              curOldStart += curOldCount;
+              curNewStart += curNewCount;
+              curOldCount = 0;
+              curNewCount = 0;
+              currentLineGroup = [];
+              currentGroupLinesBytes = 0;
+            };
+
+            for (const rawLine of bodyLines) {
+              const subLines = Buffer.byteLength(rawLine, "utf8") > maxPayloadBytes
+                ? splitOversizedLine(rawLine, maxPayloadBytes)
+                : [rawLine];
+
+              for (const line of subLines) {
+                const lineBytes = Buffer.byteLength(line + "\n", "utf8");
+                const prospectiveFragHeader = `@@ -${curOldStart},${curOldCount + 1} +${curNewStart},${curNewCount + 1} @@${sectionSuffix}\n`;
+                const prospectiveBytes = headerBytes + Buffer.byteLength(prospectiveFragHeader, "utf8") +
+                  currentGroupLinesBytes + lineBytes;
+
+                if (prospectiveBytes > maxChunkBytes && currentLineGroup.length > 0) {
+                  flushFragment();
+                }
+
+                currentLineGroup.push(line);
+                currentGroupLinesBytes += lineBytes;
+                if (line.startsWith("+")) {
+                  curNewCount++;
+                } else if (line.startsWith("-")) {
+                  curOldCount++;
+                } else {
+                  curOldCount++;
+                  curNewCount++;
+                }
+              }
             }
+            flushFragment();
           } else if (subBytes + hBytes > maxChunkBytes && subHunks.length > 0) {
             rawChunks.push({
               priorityTier: tier,

@@ -13,6 +13,7 @@ import {
   parseArgs,
   runDogfoodReview,
   classifyDogfoodFileRisk,
+  filterChangeSetExclusions,
   getCurrentCommitSha,
   getCurrentBranch
 } from "../scripts/dogfood-review.mjs";
@@ -101,3 +102,48 @@ test("Dogfood Contract 5: classifyDogfoodFileRisk classifies security paths as T
   assert.equal(classifyDogfoodFileRisk("docs/README.md"), 2);
   assert.equal(classifyDogfoodFileRisk("src/utils/formatter.js"), 2);
 });
+
+test("Dogfood Contract 6: filterChangeSetExclusions handles renames symmetrically between files and diff (Finding 3)", () => {
+  // Case A: src/old.mjs renamed into excluded file dogfood-run.json
+  const renameDiff = [
+    "diff --git a/src/old.mjs b/dogfood-run.json",
+    "similarity index 90%",
+    "rename from src/old.mjs",
+    "rename to dogfood-run.json",
+    "--- a/src/old.mjs",
+    "+++ b/dogfood-run.json",
+    "@@ -1,2 +1,2 @@",
+    "- old content",
+    "+ new content"
+  ].join("\n");
+
+  const csRename = {
+    files: [
+      { path: "dogfood-run.json", oldPath: "src/old.mjs", additions: 1, deletions: 1 },
+      { path: "src/normal.js", additions: 5, deletions: 0 }
+    ],
+    diffHunks: renameDiff + "\n" + [
+      "diff --git a/src/normal.js b/src/normal.js",
+      "--- a/src/normal.js",
+      "+++ b/src/normal.js",
+      "@@ -1 +1 @@",
+      "+ console.log(1);"
+    ].join("\n")
+  };
+
+  const filtered = filterChangeSetExclusions(csRename, ["dogfood-run.json"]);
+  // Source src/old.mjs was not excluded, so both diff chunk and file entry must be retained!
+  assert.ok(filtered.diffHunks.includes("diff --git a/src/old.mjs b/dogfood-run.json"));
+  assert.equal(filtered.files.length, 2, "Retained rename must preserve file entry in files");
+  assert.equal(filtered.totalAdditions, 6);
+  assert.equal(filtered.totalDeletions, 1);
+
+  // Case B: Both source and destination in exclusion list
+  const filteredBoth = filterChangeSetExclusions(csRename, ["dogfood-run.json", "src/old.mjs"]);
+  assert.ok(!filteredBoth.diffHunks.includes("diff --git a/src/old.mjs b/dogfood-run.json"));
+  assert.equal(filteredBoth.files.length, 1);
+  assert.equal(filteredBoth.files[0].path, "src/normal.js");
+  assert.equal(filteredBoth.totalAdditions, 5);
+  assert.equal(filteredBoth.totalDeletions, 0);
+});
+
