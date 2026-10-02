@@ -1,46 +1,75 @@
 {
   "schemaVersion": "1.0.0",
-  "runId": "dogfood-1790869820606",
-  "timestamp": "2026-10-01T15:50:20.606Z",
+  "runId": "dogfood-1790910452610",
+  "timestamp": "2026-10-02T03:07:32.610Z",
   "track": "Track D1: SHADOW_DOGFOOD",
   "authority": "NONE (ADVISORY_ONLY)",
-  "triadFlowVersion": "2.5.1",
+  "triadFlowVersion": "2.7.0",
   "repository": {
-    "commitSha": "3baa24f70c9493f72cb25302daeabbb0bbb95b6f",
-    "branch": "fix/v2.7-gate-policy-and-json-robustness",
-    "base": "main",
+    "commitSha": "302d2ab0defba862b2c45d85471da705eb332f84",
+    "branch": "release/v2.7.0",
+    "base": "origin/main",
     "head": "HEAD"
   },
   "changeSetSummary": {
-    "totalFiles": 5,
-    "totalAdditions": 159,
-    "totalDeletions": 39,
-    "riskTier": 2,
+    "totalFiles": 9,
+    "totalAdditions": 104,
+    "totalDeletions": 35,
+    "riskTier": 1,
     "files": [
       {
+        "path": "CHANGELOG.md",
+        "additions": 43,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
         "path": "docs/benchmarks/tf-oss-v1-v2.7-live-evaluation.md",
-        "additions": 22,
-        "deletions": 16
+        "additions": 14,
+        "deletions": 12,
+        "riskTier": 2
       },
       {
-        "path": "src/adapters/provider-contract.mjs",
-        "additions": 99,
-        "deletions": 21
+        "path": "evidence-runs/TF-EVIDENCE-0010/README-EVIDENCE.md",
+        "additions": 20,
+        "deletions": 8,
+        "riskTier": 2
       },
       {
-        "path": "src/adapters/review-prompts.mjs",
-        "additions": 8,
-        "deletions": 0
+        "path": "evidence-runs/TF-EVIDENCE-0010/artifact-manifest.json",
+        "additions": 2,
+        "deletions": 2,
+        "riskTier": 2
+      },
+      {
+        "path": "evidence-runs/TF-EVIDENCE-0010/evidence-index.json",
+        "additions": 2,
+        "deletions": 2,
+        "riskTier": 2
+      },
+      {
+        "path": "package.json",
+        "additions": 1,
+        "deletions": 1,
+        "riskTier": 2
+      },
+      {
+        "path": "scripts/assemble-evidence-0010.mjs",
+        "additions": 20,
+        "deletions": 8,
+        "riskTier": 2
       },
       {
         "path": "src/core/harness.mjs",
-        "additions": 8,
-        "deletions": 2
+        "additions": 1,
+        "deletions": 1,
+        "riskTier": 1
       },
       {
-        "path": "tests/cli-transport.test.mjs",
-        "additions": 22,
-        "deletions": 0
+        "path": "src/core/review-run-report.mjs",
+        "additions": 1,
+        "deletions": 1,
+        "riskTier": 1
       }
     ]
   },
@@ -50,148 +79,124 @@
       "model": "gemini-3.8-flash",
       "executionStatus": "empty",
       "findingsCount": 0,
-      "latencyMs": 148250
+      "latencyMs": 24111
     },
     "claude": {
       "family": "anthropic",
       "model": "claude-5.5-sonnet",
       "executionStatus": "success",
-      "findingsCount": 4,
-      "latencyMs": 57774
+      "findingsCount": 2,
+      "latencyMs": 25762
     },
     "codex": {
       "family": "openai",
       "model": "gpt-6.1-sol",
-      "executionStatus": "auth_failure",
-      "findingsCount": 0,
-      "latencyMs": 128265
+      "executionStatus": "success",
+      "findingsCount": 1,
+      "latencyMs": 77328
     }
   },
   "consensus": {
-    "verdict": "needs-attention",
+    "verdict": "warning",
     "quorumReached": true,
-    "totalFindings": 4,
+    "totalFindings": 3,
     "findings": [
       {
-        "title": "extractJsonFromText 步驟 3 以 lastIndexOf('{') 選根物件，會回傳錯誤的子物件並靜默丟失 findings",
-        "severity": "high",
-        "file": "src/adapters/provider-contract.mjs",
-        "line": 372,
+        "title": "Evidence README hardcodes unconditional PASS for Corpus Immutability and Evidence Manifest",
+        "severity": "medium",
+        "file": "scripts/assemble-evidence-0010.mjs",
+        "line": 1154,
         "corroborations": 1,
         "sources": [
           "claude"
         ]
       },
       {
-        "title": "尾逗號清理的 regex 會改寫 JSON 字串值內部的內容",
-        "severity": "low",
-        "file": "src/adapters/provider-contract.mjs",
-        "line": 291,
+        "title": "Gate policy correctness removed from mandatory G4 criteria after results were observed",
+        "severity": "medium",
+        "file": "evidence-runs/TF-EVIDENCE-0010/README-EVIDENCE.md",
+        "line": 30,
         "corroborations": 1,
         "sources": [
           "claude"
         ]
       },
       {
-        "title": "失敗結果新增未經長度限制、未經遮蔽的 rawOutput，可能把機密帶進報告與日誌",
-        "severity": "low",
-        "file": "src/adapters/provider-contract.mjs",
-        "line": 121,
+        "title": "Generated evidence hardcodes historical outcomes for every run",
+        "severity": "medium",
+        "file": "scripts/assemble-evidence-0010.mjs",
+        "line": 1161,
         "corroborations": 1,
         "sources": [
-          "claude"
-        ]
-      },
-      {
-        "title": "嚴重度校準提示自相矛盾：medium 列有 DoS，MANDATORY 條款卻要求任何 DoS 一律為 high 或 critical",
-        "severity": "low",
-        "file": "src/adapters/review-prompts.mjs",
-        "line": 270,
-        "corroborations": 1,
-        "sources": [
-          "claude"
+          "codex"
         ]
       }
     ]
   },
   "advisoryGate": {
     "decision": "block",
-    "reason": "Found 1 critical/high severity findings. Merge blocked.",
+    "reason": "Tier 1 high-risk policy: 3 findings must be resolved before merge. Merge blocked.",
     "effectiveMergeAuthority": "NONE",
-    "mergeBlockedInProduction": true
+    "simulatedGateBlock": true,
+    "mergeBlockedInProduction": false
   },
   "telemetryMetrics": {
-    "totalDurationMs": 148250,
-    "avgProviderLatencyMs": 111430,
-    "executionComplete": false,
+    "totalDurationMs": 108877,
+    "reviewerPhaseDurationMs": 77385,
+    "avgProviderLatencyMs": 42400,
+    "executionComplete": true,
     "malformedOutputCount": 0,
     "timeoutCount": 0,
-    "authFailureCount": 1
+    "authFailureCount": 0,
+    "otherFailureCount": 0
   },
   "verificationRecord": {
     "schemaVersion": "1.0.0",
-    "verifiedAt": "2026-10-01T15:50:20.605Z",
-    "changeSetDigest": "sha256:45d9d2fef96ae0089dd19f90f46d28407a052e172263dfae43b1906ac4e295c5",
+    "verifiedAt": "2026-10-02T03:07:32.608Z",
+    "changeSetDigest": "sha256:1307bfd14ddd967486b9a8e2abe6dc2e6855325e76bd3ec2d3c9289b9b733be5",
     "producer": {
       "providerName": "tri-party-quorum",
-      "findingsCount": 4,
+      "findingsCount": 3,
       "findings": [
         {
-          "title": "extractJsonFromText 步驟 3 以 lastIndexOf('{') 選根物件，會回傳錯誤的子物件並靜默丟失 findings",
-          "severity": "high",
-          "file": "src/adapters/provider-contract.mjs",
-          "line_start": 372,
-          "line_end": 382,
-          "ruleId": "JSON-EXTRACT-WRONG-ROOT",
-          "cwe": "CWE-693",
-          "type": "fail-open-parsing",
-          "recommendation": "不要用最靠近 \"findings\" 的前一個 '{' 當根物件。改為從每個頂層 '{' 候選起算，用 findMatchingBrace 取得完整物件，再選出 JSON.parse 後own property 含 findings 陣列的那個。若回傳物件沒有 findings 陣列，必須視為解析失敗，不可當成零 findings。另外要補一條測試：根物件中 \"coverage\" 排在 \"findings\" 之前，且前言或後記含 \"findings\" 字樣。",
+          "title": "Evidence README hardcodes unconditional PASS for Corpus Immutability and Evidence Manifest",
+          "severity": "medium",
+          "file": "scripts/assemble-evidence-0010.mjs",
+          "line_start": 1154,
+          "line_end": 1155,
+          "ruleId": "TF-TRUTHFULNESS-HARDCODED-ATTESTATION",
+          "cwe": "CWE-345",
+          "type": "evidence-integrity",
+          "recommendation": "Compute these statuses from real checks. Compare the corpus digest against corpus-identity.json, and verify the manifest hashes against the on-disk artifacts. Render PASS or FAIL from the results. Do not emit literal 'Verified byte-for-byte unchanged' or 'Verified and sealed' strings. The same applies to the hardcoded 'TARGET MISSED' and 'cases 001..004 defended' in the Gate Policy row, and to the hardcoded TF-OSS-005 debt block. Derive them from caseResults.",
           "sources": [
             "claude"
           ],
           "corroborations": 1
         },
         {
-          "title": "尾逗號清理的 regex 會改寫 JSON 字串值內部的內容",
-          "severity": "low",
-          "file": "src/adapters/provider-contract.mjs",
-          "line_start": 291,
-          "line_end": 292,
-          "ruleId": "JSON-SANITIZE-STRING-MUTATION",
-          "cwe": "CWE-116",
-          "type": "data-integrity",
-          "recommendation": "不要對整段文字做 regex 取代。改用能略過字串字面值的小型掃描器，只移除字串外部的尾逗號。若不做，至少要在回報中標示該輸出經過修補。目前 evidenceSnippet 或 title 內含 ',}' 或 ',]' 的合法內容，在首次 parse 失敗後會被靜默竄改。",
+          "title": "Gate policy correctness removed from mandatory G4 criteria after results were observed",
+          "severity": "medium",
+          "file": "evidence-runs/TF-EVIDENCE-0010/README-EVIDENCE.md",
+          "line_start": 30,
+          "line_end": 49,
+          "ruleId": "TF-GOODHART-GOALPOST",
+          "type": "process-integrity",
+          "recommendation": "The prior sealed README listed Gate Policy Pass as a strict G4 criterion (100%, 5/5) and marked it FAIL at 80%. This diff moves it to 'Supplementary (Non-Blocking)' while keeping G4 'CLOSED'. Keep the originally pre-registered criteria. Either record an explicit, dated, approved amendment to the G4 definition, or leave G4 open with the documented debt. The same re-labeling appears in docs/benchmarks/tf-oss-v1-v2.7-live-evaluation.md and in the CHANGELOG, which says the TF-OSS-005 miss is not blocking.",
           "sources": [
             "claude"
           ],
           "corroborations": 1
         },
         {
-          "title": "失敗結果新增未經長度限制、未經遮蔽的 rawOutput，可能把機密帶進報告與日誌",
-          "severity": "low",
-          "file": "src/adapters/provider-contract.mjs",
-          "line_start": 121,
-          "line_end": 134,
-          "ruleId": "RAW-OUTPUT-UNREDACTED",
-          "cwe": "CWE-532",
-          "type": "information-disclosure",
-          "recommendation": "在 rawOutput 進入結果物件前，先套用專案既有的多模式機密遮蔽，並截斷到固定上限（例如 4 KB）。確認 SARIF 與報告產生器不會原樣輸出這個欄位，並補上相應測試。",
+          "title": "Generated evidence hardcodes historical outcomes for every run",
+          "severity": "medium",
+          "file": "scripts/assemble-evidence-0010.mjs",
+          "line_start": 1161,
+          "line_end": 1168,
+          "type": "incorrect-evidence-reporting",
+          "recommendation": "Derive the gate-policy status and defended case IDs from caseResults and gatePolicyGate. Emit the TF-OSS-005 limitation only when that evaluated case actually missed detection and approved. The default mock adapters detect TF-OSS-005, so the current template falsely reports a miss and TARGET MISSED even for a successful run; partial runs also report outcomes for unevaluated cases.",
           "sources": [
-            "claude"
-          ],
-          "corroborations": 1
-        },
-        {
-          "title": "嚴重度校準提示自相矛盾：medium 列有 DoS，MANDATORY 條款卻要求任何 DoS 一律為 high 或 critical",
-          "severity": "low",
-          "file": "src/adapters/review-prompts.mjs",
-          "line_start": 270,
-          "line_end": 276,
-          "ruleId": "PROMPT-SEVERITY-CONTRADICTION",
-          "type": "logic",
-          "recommendation": "統一 DoS 的分級準則：區分指數級回溯與線性放大。MANDATORY 條款只適用於已驗證且攻擊者可控的情形，並移除 'MUST be assigned high' 這種會系統性膨脹嚴重度的措辭。因為 tier 1 現在對任何 finding 都 block，嚴重度膨脹會直接放大誤擋。",
-          "sources": [
-            "claude"
+            "codex"
           ],
           "corroborations": 1
         }
@@ -219,7 +224,7 @@
         "locatorAccurate": true,
         "typeAccurate": true,
         "severityAccurate": true,
-        "reasoning": "步驟 3 用 trimmed.lastIndexOf('{', findingsTokenIdx) 選根物件。若根物件中 \"coverage\": {...} 排在 \"findings\" 之前，且前後有說明文字（因此步驟 1 的直接 parse 與步驟 2 的 fence 都失敗），最靠近 \"findings\" 的前一個 '{' 會是 coverage 子物件的起點。findMatchingBrace 會回傳該子物件的結尾，JSON.parse 成功，函式回傳 {coveredFiles, omittedFiles}，裡面沒有 findings 陣列。呼叫端看到的是沒有 findings 的物件，等於零 findings，而 Tier-1 gate 可能因此 approve。新增測試只涵蓋 \"findings\" 在 \"coverage\" 之前的順序，沒有涵蓋這個失敗情境。行號 372-382 對應步驟 3 區塊（註解到 closeBrace 檢查），位置正確。嚴重度 high 的依據是：解析錯誤不會報錯，而是靜默丟失 findings，造成 fail-open。CWE-693 是近似分類，但可接受。",
+        "reasoning": "新增的第 1154 行（Corpus Immutability）與第 1155 行（Evidence Manifest）在 template literal 中把觀察值寫死為 'Verified byte-for-byte unchanged' 與 'Verified and sealed'，狀態寫死為 **PASS**，並把 corpus digest 以字面值 sha256:47ed3ce4... 嵌入。diff 中沒有任何比對 corpus-identity.json 或驗證 manifest 雜湊的程式碼。相鄰的 Recall 與 Incomplete 列則由 recallGate 與 incompleteGate 計算得出。因此這兩列是無條件的證明聲明，不隨實際檢查結果改變。行號對得上，CWE-345（資料真實性驗證不足）與 medium 嚴重度都合理。finding 中提到的 'TARGET MISSED'、'cases 001..004 defended' 與 TF-OSS-005 債務區塊也確實寫死，但它們位於 1161–1168 行，與 finding-3 重疊。",
         "dissent": null
       },
       {
@@ -229,78 +234,53 @@
         "locatorAccurate": true,
         "typeAccurate": true,
         "severityAccurate": true,
-        "reasoning": "tryParseJsonCandidate 在第一次 JSON.parse 失敗後，對整段文字執行 replace(/,(\\s*[}\\]])/g, \"$1\")，沒有跳過字串字面值。若合法字串值（例如 evidenceSnippet 內含 \"a,}\" 或 \"x, ]\"）出現在其他位置語法錯誤的輸出中，內容會被靜默改寫。行號 291-292 是「Try cleaning」註解與 try 開頭，實際的 regex 位於其後一行（約 293），差一至兩行，但仍在同一個 catch 區塊內，可接受。low 的嚴重度合理，因為只有在首次 parse 失敗且字串內恰好含這類序列時才會發生。",
+        "reasoning": "舊版 README 的表格把 'Gate Policy Pass' 列在 'G4 Strict Acceptance Criterion' 欄，門檻為 100.0% (5/5)，實測 80% 判為 **FAIL**。新版將 G4 強制準則縮減為 Recall、Incomplete、Corpus Immutability、Evidence Manifest 四項，並把 Gate Policy Correctness 移到 'Supplementary (Non-Blocking for Gate G4)'，同時在 docs 與 CHANGELOG 中維持 G4 'CLOSED'。這是在結果已知後改動驗收條件。diff 內沒有日期化、經核准的 G4 定義修訂紀錄。README 第 30–49 行對應這段改動，行號正確。新增的 Corpus Immutability 與 Evidence Manifest 兩列都是寫死的 PASS，使強制準則更容易達成。process-integrity 的歸類與 medium 嚴重度合理。限制：舊版 docs 的 'Gate Correctness' 欄標為 'DEFENDED' 而非 FAIL，所以舊文件之間本來就不一致。但舊 README 明確標 FAIL，結論仍成立。",
         "dissent": null
       },
       {
         "findingId": "finding-3",
-        "verdict": "INSUFFICIENT_EVIDENCE",
-        "classification": "UNVERIFIABLE",
-        "locatorAccurate": true,
-        "typeAccurate": true,
-        "severityAccurate": true,
-        "reasoning": "diff 確實在兩個失敗回傳路徑（約第 121 行與第 134 行）新增 rawOutput 欄位，沒有長度上限，也沒有遮蔽，行號正確。但 diff 看不出這個欄位下游如何被使用：SARIF、報告產生器與日誌是否會原樣輸出，或其上游是否已做 redaction，都無法確認。專案宣稱有 multi-pattern secret redaction，但 diff 沒有顯示該機制是否套用在這條路徑。「帶進報告與日誌」這個核心主張缺乏 diff 證據，因此不能判定為 SUPPORTED，也不能駁回。新增欄位本身未經限制是事實，low 的嚴重度在潛在風險下合理。",
-        "dissent": "diff 確實在兩個失敗回傳路徑（約第 121 行與第 134 行）新增 rawOutput 欄位，沒有長度上限，也沒有遮蔽，行號正確。但 diff 看不出這個欄位下游如何被使用：SARIF、報告產生器與日誌是否會原樣輸出，或其上游是否已做 redaction，都無法確認。專案宣稱有 multi-pattern secret redaction，但 diff 沒有顯示該機制是否套用在這條路徑。「帶進報告與日誌」這個核心主張缺乏 diff 證據，因此不能判定為 SUPPORTED，也不能駁回。新增欄位本身未經限制是事實，low 的嚴重度在潛在風險下合理。"
-      },
-      {
-        "findingId": "finding-4",
         "verdict": "SUPPORTED",
         "classification": "SUPPORTED",
         "locatorAccurate": true,
         "typeAccurate": true,
         "severityAccurate": true,
-        "reasoning": "新增提示的 medium 列寫「Moderate denial-of-service without exponential blowup」，MANDATORY 條款卻寫任何已驗證且「permits ... denial of service」的安全缺陷 MUST 為 high 或 critical，兩者對 DoS 的分級互相矛盾。MANDATORY 條款限定於「matching the assigned checklists」，稍微縮小了衝突範圍，但沒有消除。harness.mjs 的變更確認 Tier 1 現在會對任何 finding 直接 block，所以嚴重度膨脹的影響是真實的。行號 270-276 對應新增的校準區塊，準確。low 的嚴重度合理，屬於提示品質問題。",
+        "reasoning": "第 1161–1168 行包含 Gate Policy 列寫死的 'cases 001..004 defended' 與 'TARGET MISSED'，以及寫死的 TF-OSS-005 債務區塊（Expected BLOCK / Actual APPROVE / 0/3 sentries 漏報）。這些都沒有從 caseResults 或 gatePolicyGate 取值。Latency 與 Precision 列仍使用計算出的變數，所以這個 generator 其餘部分是動態的。只要重跑結果與 0010 不同，輸出就會與實際結果不符，部分執行時也會對未評估的案例報告結果。finding 中另一個說法無法從 diff 確認：預設 mock adapters 會偵測 TF-OSS-005。diff 沒有 mock adapter 的程式碼，所以這一點只是推論。核心的硬編碼問題成立。medium 嚴重度可接受。與 finding-1 的建議部分重疊。",
         "dissent": null
       }
     ],
     "verifierOmissions": [
       {
-        "title": "Markdown fence 的非貪婪 regex 遇到 JSON 字串值內含 ``` 會截斷候選內容",
-        "severity": "low",
-        "file": "src/adapters/provider-contract.mjs",
-        "line_start": 353,
-        "line_end": 355,
-        "cwe": "CWE-20",
-        "type": "fail-open-parsing",
-        "recommendation": "fenceRegex /```(?:json)?\\s*([\\s\\S]*?)\\s*```/ 遇到 evidenceSnippet 等字串值內含 ``` 時，會在字串中間結束候選。這會讓 fence 內的整段 JSON parse 失敗，流程退到步驟 3，並連帶放大 finding-1 的錯誤根物件選擇風險。建議在 fence 內改以 findMatchingBrace 從第一個 '{' 起掃描，或讓 fence 掃描器感知字串。",
+        "title": "已封存的 evidence bundle 在封存後被修改，且只重算了部分雜湊",
+        "severity": "medium",
+        "file": "evidence-runs/TF-EVIDENCE-0010/artifact-manifest.json",
+        "line_start": 3,
+        "line_end": 8,
+        "cwe": "CWE-345",
+        "type": "evidence-integrity",
+        "recommendation": "封存後改動 README-EVIDENCE.md，使 artifact-manifest.json 與 evidence-index.json 內的雜湊、大小跟著變。diff 沒有顯示 audit-receipt.json 與 release-identity.json 是否參照這些雜湊並一併更新。請確認這些檔案沒有引用舊版 README 或 index 雜湊。同時在 bundle 內記錄修訂事由與日期，因為 README 的敘述性內容已改變，不只是格式。",
         "id": "omission-1",
+        "classification": "MISSED_BY_PRODUCER"
+      },
+      {
+        "title": "benchmark 文件移除 TF-EVIDENCE-0008／0009 的進展欄位，丟失歷史對照",
+        "severity": "low",
+        "file": "docs/benchmarks/tf-oss-v1-v2.7-live-evaluation.md",
+        "line_start": 31,
+        "line_end": 40,
+        "type": "documentation-truthfulness",
+        "recommendation": "原表格呈現 0008（Recall 100%、gate 003/004 被核准）與 0009 的中間結果，這些是 gate policy 缺陷與修復的證據。新版只留 baseline 與 0010。請保留這些欄位，或連結到對應 evidence 目錄。這樣能讓 Gate Correctness 退步為 80% 的脈絡仍可追溯。",
+        "id": "omission-2",
         "classification": "MISSED_BY_PRODUCER"
       }
     ],
-    "disagreementLedger": [
-      {
-        "findingId": "finding-3",
-        "producerFinding": {
-          "title": "失敗結果新增未經長度限制、未經遮蔽的 rawOutput，可能把機密帶進報告與日誌",
-          "severity": "low",
-          "file": "src/adapters/provider-contract.mjs",
-          "line_start": 121,
-          "line_end": 134,
-          "ruleId": "RAW-OUTPUT-UNREDACTED",
-          "cwe": "CWE-532",
-          "type": "information-disclosure",
-          "recommendation": "在 rawOutput 進入結果物件前，先套用專案既有的多模式機密遮蔽，並截斷到固定上限（例如 4 KB）。確認 SARIF 與報告產生器不會原樣輸出這個欄位，並補上相應測試。",
-          "sources": [
-            "claude"
-          ],
-          "corroborations": 1
-        },
-        "verdict": "INSUFFICIENT_EVIDENCE",
-        "classification": "UNVERIFIABLE",
-        "locatorAccurate": true,
-        "typeAccurate": true,
-        "severityAccurate": true,
-        "reasoning": "diff 確實在兩個失敗回傳路徑（約第 121 行與第 134 行）新增 rawOutput 欄位，沒有長度上限，也沒有遮蔽，行號正確。但 diff 看不出這個欄位下游如何被使用：SARIF、報告產生器與日誌是否會原樣輸出，或其上游是否已做 redaction，都無法確認。專案宣稱有 multi-pattern secret redaction，但 diff 沒有顯示該機制是否套用在這條路徑。「帶進報告與日誌」這個核心主張缺乏 diff 證據，因此不能判定為 SUPPORTED，也不能駁回。新增欄位本身未經限制是事實，low 的嚴重度在潛在風險下合理。",
-        "dissent": "diff 確實在兩個失敗回傳路徑（約第 121 行與第 134 行）新增 rawOutput 欄位，沒有長度上限，也沒有遮蔽，行號正確。但 diff 看不出這個欄位下游如何被使用：SARIF、報告產生器與日誌是否會原樣輸出，或其上游是否已做 redaction，都無法確認。專案宣稱有 multi-pattern secret redaction，但 diff 沒有顯示該機制是否套用在這條路徑。「帶進報告與日誌」這個核心主張缺乏 diff 證據，因此不能判定為 SUPPORTED，也不能駁回。新增欄位本身未經限制是事實，low 的嚴重度在潛在風險下合理。"
-      }
-    ],
+    "disagreementLedger": [],
     "summary": {
-      "totalEvaluated": 4,
+      "totalEvaluated": 3,
       "supportedCount": 3,
       "partiallySupportedCount": 0,
       "contestedCount": 0,
-      "insufficientEvidenceCount": 1,
-      "omissionsCount": 1
+      "insufficientEvidenceCount": 0,
+      "omissionsCount": 2
     },
     "ok": true
   }
