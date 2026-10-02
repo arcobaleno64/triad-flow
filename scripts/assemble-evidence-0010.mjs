@@ -353,7 +353,7 @@ export async function assembleEvidence0010(userOptions = {}) {
   const isMock = !userOptions.live;
   const isLive = Boolean(userOptions.live);
   const isDryRun = Boolean(userOptions.dryRun);
-  const timeoutMs = userOptions.timeoutMs || (isLive ? 360000 : 30000);
+  const timeoutMs = userOptions.timeoutMs || (isLive ? 600000 : 30000);
   const log = userOptions.log !== false;
 
   // Validate timeoutMs if explicitly provided
