@@ -145,3 +145,11 @@ node scripts/verify-artifact-manifest.mjs evidence-runs/TF-EVIDENCE-0010 --bundl
 | **Gate G5** | Release Automation & Final Transition (v2.7.0 Release) | v2.6.0 Released | 9-way matrix, package publish, attestations | **READY (Unblocked)** |
 
 **Conclusion**: Triad-Flow v2.7 Gate G4 is officially **CLOSED**. All Roadmap §4.4 empirical acceptance criteria (Recall > 20%, Incomplete = 0/5, corpus digest verified, manifest sealed) are fully and truthfully satisfied by `TF-EVIDENCE-0010`. Gate G5 (v2.7.0 formal release preparation) is now unblocked.
+ 
+---
+
+## 8. Known Limitations & Open Empirical Debt (v2.7.1)
+
+- **TF-OSS-005 (ejs CVE-2022-29078 / CWE-94)**: Expected BLOCK, actual APPROVE due to detection miss across all 3 sentries. Preserved truthfully in `TF-EVIDENCE-0010` and tracked for ongoing prompt/context tuning in v2.7.1.
+- **P2-1 (Oversized single-line coordinate inflation - v2.7.1 DEBT)**: Chunk partitioner splitting single oversized diff lines into synthetic lines may advance line coordinates. Documented as non-blocking v2.7.1 debt.
+- **P2-2 (POSIX literal backslash exclusion collision - v2.7.1 DEBT)**: Path normalization converts `\` to `/`, which on POSIX systems could collide with legal filename characters. Documented as non-blocking v2.7.1 debt.

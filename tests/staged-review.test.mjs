@@ -377,3 +377,269 @@ test("executeStagedReview enforces per-chunk coverage: later chunk returning emp
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 
+test("Regression P1-1 Test A: evaluateCoverageContract rejects file present in both coveredFiles and omittedFiles", () => {
+  const cs = {
+    files: [
+      { path: "src/normal.js" }
+    ]
+  };
+  const res = evaluateCoverageContract(cs, ["src/normal.js"], [
+    { file: "src/normal.js", code: COVERAGE_OMISSION_CODES.OUT_OF_SCOPE, reason: "Declared omitted" }
+  ]);
+  assert.equal(res.isComplete, false);
+  assert.ok(res.violations.some(v => v.includes("contradictory coverage declaration") && v.includes("src/normal.js")));
+});
+
+test("Regression P1-1 Test B: executeStagedReview rejects same chunk returning file in covered and omitted", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-staged-intra-contra-"));
+  const cs = {
+    scopeMode: "working-tree",
+    files: [{ path: "src/normal.js" }],
+    diffHunks: "diff --git a/src/normal.js b/src/normal.js\n@@ -1 +1 @@\n-old\n+new"
+  };
+
+  const contradictoryAdapter = {
+    providerName: "mock-agy",
+    executeReview: async () => ({
+      ok: true,
+      findings: [],
+      coverage: {
+        coveredFiles: ["src/normal.js"],
+        omittedFiles: [{ file: "src/normal.js", code: COVERAGE_OMISSION_CODES.OUT_OF_SCOPE, reason: "Scope exclusion" }]
+      }
+    })
+  };
+
+  const result = await executeStagedReview(cs, contradictoryAdapter, { cwd: tmpDir });
+  assert.equal(result.ok, false);
+  assert.equal(result.executionStatus, "incomplete");
+  assert.equal(result.coverage.isComplete, false);
+  assert.ok(result.violations.some(v => v.includes("contradictory coverage declaration")));
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+test("Regression P1-1 Test C: executeStagedReview rejects split file covered in chunk 1 but omitted in chunk 2", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-staged-cross-contra-"));
+  const cs = {
+    scopeMode: "revision-range",
+    files: [{ path: "src/split.js" }],
+    diffHunks: [
+      "diff --git a/src/split.js b/src/split.js\n--- a/src/split.js\n+++ b/src/split.js\n@@ -1,5 +1,10 @@\n+ // Hunk 1\n+ const a = 1;",
+      "@@ -100,5 +105,10 @@\n+ // Hunk 2\n+ const b = 2;"
+    ].join("\n")
+  };
+
+  let callCount = 0;
+  const splitContradictoryAdapter = {
+    providerName: "mock-claude",
+    executeReview: async () => {
+      callCount++;
+      if (callCount === 1) {
+        return {
+          ok: true,
+          findings: [],
+          coverage: { coveredFiles: ["src/split.js"], omittedFiles: [] }
+        };
+      }
+      return {
+        ok: true,
+        findings: [],
+        coverage: {
+          coveredFiles: [],
+          omittedFiles: [{ file: "src/split.js", code: COVERAGE_OMISSION_CODES.OUT_OF_SCOPE, reason: "Hunk 2 omitted" }]
+        }
+      };
+    }
+  };
+
+  const result = await executeStagedReview(cs, splitContradictoryAdapter, {
+    cwd: tmpDir,
+    maxChunkBytes: 100
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.executionStatus, "incomplete");
+  assert.equal(result.coverage.isComplete, false);
+  assert.ok(result.violations.some(v => v.includes("contradictory coverage declaration")));
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+test("Regression P1-2 Test D: Multi-chunk timeout allocation (T_total=120000, N=4 -> <=30000ms)", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-staged-timeout-d-"));
+  const cs = {
+    scopeMode: "working-tree",
+    files: [
+      { path: "src/f1.js" },
+      { path: "src/f2.js" },
+      { path: "src/f3.js" },
+      { path: "src/f4.js" }
+    ],
+    diffHunks: [
+      "diff --git a/src/f1.js b/src/f1.js\n@@ -1 +1 @@\n-old\n+new",
+      "diff --git a/src/f2.js b/src/f2.js\n@@ -1 +1 @@\n-old\n+new",
+      "diff --git a/src/f3.js b/src/f3.js\n@@ -1 +1 @@\n-old\n+new",
+      "diff --git a/src/f4.js b/src/f4.js\n@@ -1 +1 @@\n-old\n+new"
+    ].join("\n")
+  };
+
+  const recordedTimeouts = [];
+  const recordingAdapter = {
+    providerName: "mock-agy",
+    executeReview: async (params) => {
+      recordedTimeouts.push(params.timeoutMs);
+      const target = (params.changeSet.files || [])[0]?.path;
+      return {
+        ok: true,
+        findings: [],
+        coverage: { coveredFiles: target ? [target] : [], omittedFiles: [] }
+      };
+    }
+  };
+
+  const result = await executeStagedReview(cs, recordingAdapter, {
+    cwd: tmpDir,
+    timeoutMs: 120000,
+    maxChunkBytes: 50
+  });
+
+  assert.equal(recordedTimeouts.length, 4);
+  for (const t of recordedTimeouts) {
+    assert.ok(t <= 30000, `per-chunk timeout ${t} should be <= 30000ms`);
+  }
+  assert.equal(result.ok, true);
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+test("Regression P1-2 Test E: 60s ceiling (T_total=600000, N=2 -> per-chunk timeout <= 60000ms)", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-staged-timeout-e-"));
+  const cs = {
+    scopeMode: "working-tree",
+    files: [
+      { path: "src/f1.js" },
+      { path: "src/f2.js" }
+    ],
+    diffHunks: [
+      "diff --git a/src/f1.js b/src/f1.js\n@@ -1 +1 @@\n-old\n+new",
+      "diff --git a/src/f2.js b/src/f2.js\n@@ -1 +1 @@\n-old\n+new"
+    ].join("\n")
+  };
+
+  const recordedTimeouts = [];
+  const recordingAdapter = {
+    providerName: "mock-agy",
+    executeReview: async (params) => {
+      recordedTimeouts.push(params.timeoutMs);
+      const target = (params.changeSet.files || [])[0]?.path;
+      return {
+        ok: true,
+        findings: [],
+        coverage: { coveredFiles: target ? [target] : [], omittedFiles: [] }
+      };
+    }
+  };
+
+  const result = await executeStagedReview(cs, recordingAdapter, {
+    cwd: tmpDir,
+    timeoutMs: 600000,
+    maxChunkBytes: 50
+  });
+
+  assert.equal(recordedTimeouts.length, 2);
+  for (const t of recordedTimeouts) {
+    assert.equal(t, 60000, `per-chunk timeout ${t} must not exceed 60000ms ceiling`);
+  }
+  assert.equal(result.ok, true);
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+test("Regression P1-2 Test F: Global budget exhaustion marks later chunks uninvoked and omitted with TIMEOUT", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-staged-timeout-f-"));
+  const cs = {
+    scopeMode: "working-tree",
+    files: [
+      { path: "src/f1.js" },
+      { path: "src/f2.js" }
+    ],
+    diffHunks: [
+      "diff --git a/src/f1.js b/src/f1.js\n@@ -1 +1 @@\n-old\n+new",
+      "diff --git a/src/f2.js b/src/f2.js\n@@ -1 +1 @@\n-old\n+new"
+    ].join("\n")
+  };
+
+  let callCount = 0;
+  const slowAdapter = {
+    providerName: "mock-agy",
+    executeReview: async () => {
+      callCount++;
+      // Simulate chunk 0 taking 150ms when totalBudget is 100ms
+      await new Promise(r => setTimeout(r, 150));
+      return {
+        ok: true,
+        findings: [{ title: "Finding from chunk 1", severity: "high", file: "src/f1.js", line_start: 1, line_end: 1 }],
+        coverage: { coveredFiles: ["src/f1.js"], omittedFiles: [] }
+      };
+    }
+  };
+
+  const result = await executeStagedReview(cs, slowAdapter, {
+    cwd: tmpDir,
+    timeoutMs: 100, // Small budget exhausted by chunk 0
+    maxChunkBytes: 50
+  });
+
+  assert.equal(callCount, 1, "Chunk 2 must not be invoked after budget exhausted");
+  assert.equal(result.ok, false);
+  assert.equal(result.executionStatus, "incomplete");
+  const f2Omission = result.coverage.omittedFiles.find(o => o.file === "src/f2.js");
+  assert.ok(f2Omission, "src/f2.js must be in omittedFiles");
+  assert.equal(f2Omission.code, COVERAGE_OMISSION_CODES.TIMEOUT);
+  assert.equal(result.findings.length, 1, "Findings from chunk 0 must be salvaged");
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+test("Regression P1-2 Test G: Retry/deadline interaction prevents retry from exceeding timeout budget", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-staged-timeout-g-"));
+  const cs = {
+    scopeMode: "working-tree",
+    files: [{ path: "src/retry.js" }],
+    diffHunks: "diff --git a/src/retry.js b/src/retry.js\n@@ -1 +1 @@\n-old\n+new"
+  };
+
+  const retryAdapter = {
+    providerName: "mock-gemini",
+    executeReview: async (params) => {
+      // Simulate timeout when retry backoff (1000ms) would exceed remaining budget
+      if (params.timeoutMs < 500) {
+        return {
+          ok: false,
+          executionStatus: "timeout",
+          status: "timeout",
+          error: "Timeout budget exhausted during retry backoff"
+        };
+      }
+      return { ok: true, coverage: { coveredFiles: ["src/retry.js"], omittedFiles: [] } };
+    }
+  };
+
+  const startTime = Date.now();
+  const result = await executeStagedReview(cs, retryAdapter, {
+    cwd: tmpDir,
+    timeoutMs: 200 // Less than backoff sleep
+  });
+  const elapsed = Date.now() - startTime;
+
+  assert.ok(elapsed < 2000, `Execution elapsed (${elapsed}ms) must not escape global budget`);
+  assert.equal(result.ok, false);
+  assert.equal(result.executionStatus, "incomplete");
+  const omission = result.coverage.omittedFiles.find(o => o.file === "src/retry.js");
+  assert.ok(omission);
+  assert.equal(omission.code, COVERAGE_OMISSION_CODES.TIMEOUT);
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+

@@ -132,13 +132,55 @@ export class CliReviewAdapter {
       }
     }
 
+    const transportStart = Date.now();
+
     // Execute with retry on transient safety filter refusal
     for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
-      const result = await this._spawnAttempt(input, prompt, context, effectiveCwd, effectiveEnv);
+      const elapsedMs = Date.now() - transportStart;
+      if (typeof input.timeoutMs === "number" && input.timeoutMs > 0 && elapsedMs >= input.timeoutMs) {
+        return validateProviderOutput({
+          executionStatus: EXECUTION_STATUS.TIMEOUT,
+          error: `CLI reviewer exceeded timeout budget of ${input.timeoutMs}ms across retries.`
+        }, context);
+      }
+
+      const remainingMs = (typeof input.timeoutMs === "number" && input.timeoutMs > 0)
+        ? Math.max(1, input.timeoutMs - elapsedMs)
+        : undefined;
+      const attemptInput = (remainingMs !== undefined)
+        ? { ...input, timeoutMs: remainingMs }
+        : input;
+
+      const result = await this._spawnAttempt(attemptInput, prompt, context, effectiveCwd, effectiveEnv);
       const isRefusal = result.executionStatus === EXECUTION_STATUS.ERROR &&
         PROVIDER_REFUSAL_PATTERNS.some(p => p.test(result.error || ""));
       if (isRefusal && attempt < this.maxRetries && (!input.signal || !input.signal.aborted)) {
-        await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+        const sleepMs = 1000 * (attempt + 1);
+        const timeAfterSleep = (Date.now() - transportStart) + sleepMs;
+        if (typeof input.timeoutMs === "number" && input.timeoutMs > 0 && timeAfterSleep >= input.timeoutMs) {
+          return validateProviderOutput({
+            executionStatus: EXECUTION_STATUS.TIMEOUT,
+            error: `Timeout budget exhausted during retry backoff (${input.timeoutMs}ms limit)`
+          }, context);
+        }
+
+        if (input.signal) {
+          await new Promise((resolve) => {
+            const timer = setTimeout(resolve, sleepMs);
+            input.signal.addEventListener("abort", () => {
+              clearTimeout(timer);
+              resolve();
+            }, { once: true });
+          });
+          if (input.signal.aborted) {
+            return validateProviderOutput({
+              executionStatus: EXECUTION_STATUS.CANCELLED,
+              error: "Execution cancelled during retry backoff."
+            }, context);
+          }
+        } else {
+          await new Promise(r => setTimeout(r, sleepMs));
+        }
         continue;
       }
       return result;

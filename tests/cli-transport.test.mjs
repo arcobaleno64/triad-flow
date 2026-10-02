@@ -503,3 +503,36 @@ test("validateProviderOutput enforces 4096-byte UTF-8 cap and redacts secrets in
   assert.ok(!out.error.includes("ghp_"));
   assert.ok(out.error.includes("[REDACTED_SECRET]"));
 });
+
+test("CliReviewAdapter enforces timeoutMs budget across retries without sleeping past deadline", async () => {
+  let execAttempts = 0;
+  const adapter = new CliReviewAdapter({
+    command: "fake-provider",
+    args: [],
+    providerName: "fake-provider",
+    modelName: "fake-model",
+    family: "google", // maxRetries = 2
+    execFn: async () => {
+      execAttempts++;
+      return {
+        code: 0,
+        stdout: "This request was blocked by Gemini's filters."
+      };
+    }
+  });
+
+  const t0 = Date.now();
+  const res = await adapter.executeReview({
+    runId: "retry-deadline-test",
+    role: "macro",
+    policyId: "SINGLE_SENTRY",
+    timeoutMs: 50, // Much smaller than 1000ms retry backoff
+    changeSet: makeChangeSet([{ path: "src/a.js", additions: 1, deletions: 0 }])
+  });
+  const elapsed = Date.now() - t0;
+
+  assert.ok(elapsed < 800, `Execution should finish quickly without 1000ms sleep (took ${elapsed}ms)`);
+  assert.equal(res.ok, false);
+  assert.equal(res.executionStatus, EXECUTION_STATUS.TIMEOUT);
+  assert.match(res.error, /timeout budget/i);
+});

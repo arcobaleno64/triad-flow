@@ -38,6 +38,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Known Residual Debt & Governance Errata
 - **TF-OSS-005 (ejs CVE-2022-29078 / CWE-94)**: Expected BLOCK, actual APPROVE due to detection miss (0/3 sentries caught). Registered as open empirical debt for ongoing dogfooding and future benchmark hardening; non-blocking for G4.
 - **TF-EVIDENCE-0010 Sealed Preservation & G4 Authority**: Authoritative G4 acceptance criteria are defined by Roadmap §4.4 (Recall >20%, 0/5 incomplete, corpus digest verified, manifest sealed). Over-broad description of Gate Policy Pass (100%) in the historical draft README is documented via external governance erratum in `docs/benchmarks/tf-oss-v1-v2.7-live-evaluation.md`. Sealed historical bundle `TF-EVIDENCE-0010` is preserved byte-for-byte unchanged.
+- **P2-1 (Oversized single-line coordinate inflation - v2.7.1 DEBT)**: Splitting one physical diff line into multiple synthetic +/- lines can advance source coordinates and produce inaccurate locators. This is an edge-case correctness debt deferred to v2.7.1 to preserve narrow release repair scope.
+- **P2-2 (POSIX literal backslash exclusion collision - v2.7.1 DEBT)**: On POSIX filesystems, "\" is a legal filename character, whereas exclusion normalization collapses "\" into "/". Current release branch diffs do not exercise literal backslash paths; deferred to v2.7.1.
 
 ## [2.6.0] - 2026-10-01
 - Milestone baseline closure at commit `fe57597c8fce5d699f764ec4d4dfe3d1e5b5cc73`.
