@@ -233,7 +233,7 @@ export function filterChangeSetExclusions(changeSet, excludedPaths = []) {
   }
 
   const rawDigest = crypto.createHash("sha256").update(filteredDiffHunks, "utf8").digest("hex");
-  const contentDigest = `sha256:${rawDigest}`;
+  const contentDigest = rawDigest;
 
   return {
     ...changeSet,

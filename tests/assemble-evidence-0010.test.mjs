@@ -497,4 +497,5 @@ test("Contract 12: filterChangeSetExclusions strips exact outPath and dogfood-ru
   assert.equal(filtered.totalAdditions, 25);
   assert.equal(filtered.totalDeletions, 12);
   assert.notEqual(filtered.contentDigest, "sha256:olddigest");
+  assert.match(filtered.contentDigest, /^[a-f0-9]{64}$/i);
 });
