@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import {
   EXECUTION_STATUS,
+  COVERAGE_OMISSION_CODES,
   validateProviderInput,
   validateProviderOutput,
   convertProviderResultToSentryReport
@@ -193,4 +194,66 @@ test("validateProviderOutput normalizes paths in coveredFiles against changeSet"
   assert.equal(res.ok, true);
   assert.equal(res.coverage.coveredFiles.length, 1);
   assert.ok(res.coverage.coveredFiles[0].toLowerCase().includes("changelog.md"));
+});
+
+test("Regression 1: Missing omission code fails closed with MALFORMED_OUTPUT", () => {
+  const changeSet = makeValidChangeSet();
+  const raw = {
+    findings: [],
+    coverage: {
+      coveredFiles: [],
+      omittedFiles: [{ path: "src/calc.js", reason: "Omitted without code" }]
+    }
+  };
+  const res = validateProviderOutput(raw, { changeSet });
+  assert.equal(res.ok, false);
+  assert.equal(res.executionStatus, EXECUTION_STATUS.MALFORMED_OUTPUT);
+  assert.match(res.error, /omission requires an authorized code/i);
+});
+
+test("Regression 2: Unknown omission code fails closed with MALFORMED_OUTPUT", () => {
+  const changeSet = makeValidChangeSet();
+  const raw = {
+    findings: [],
+    coverage: {
+      coveredFiles: [],
+      omittedFiles: [{ path: "src/calc.js", code: "OMIT_UNKNOWN_CUSTOM", reason: "Custom reason" }]
+    }
+  };
+  const res = validateProviderOutput(raw, { changeSet });
+  assert.equal(res.ok, false);
+  assert.equal(res.executionStatus, EXECUTION_STATUS.MALFORMED_OUTPUT);
+  assert.match(res.error, /omission requires an authorized code/i);
+});
+
+test("Regression 2b: Missing or empty omission reason fails closed with MALFORMED_OUTPUT", () => {
+  const changeSet = makeValidChangeSet();
+  const raw = {
+    findings: [],
+    coverage: {
+      coveredFiles: [],
+      omittedFiles: [{ path: "src/calc.js", code: COVERAGE_OMISSION_CODES.OUT_OF_SCOPE, reason: "   " }]
+    }
+  };
+  const res = validateProviderOutput(raw, { changeSet });
+  assert.equal(res.ok, false);
+  assert.equal(res.executionStatus, EXECUTION_STATUS.MALFORMED_OUTPUT);
+  assert.match(res.error, /omission requires a non-empty string 'reason'/i);
+});
+
+test("Regression 3: Authorized omission code is preserved exactly through normalization", () => {
+  const changeSet = makeValidChangeSet();
+  const raw = {
+    findings: [],
+    coverage: {
+      coveredFiles: [],
+      omittedFiles: [{ path: "src/calc.js", code: COVERAGE_OMISSION_CODES.GENERATED, reason: "Auto-generated parser" }]
+    }
+  };
+  const res = validateProviderOutput(raw, { changeSet });
+  assert.equal(res.ok, true);
+  assert.equal(res.coverage.omittedFiles.length, 1);
+  assert.equal(res.coverage.omittedFiles[0].code, COVERAGE_OMISSION_CODES.GENERATED);
+  assert.equal(res.coverage.omittedFiles[0].reason, "Auto-generated parser");
+  assert.ok(res.coverage.omittedFiles[0].path.includes("src/calc.js") || res.coverage.omittedFiles[0].path.includes("src\\calc.js"));
 });

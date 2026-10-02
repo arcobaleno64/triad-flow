@@ -286,7 +286,7 @@ test("CliReviewAdapter (Acceptance 8: 部分覆蓋 Partial Coverage & Omitted Fi
       findings: [],
       coverage: {
         coveredFiles: ["src/sample.js"],
-        omittedFiles: [{ path: "src/large-binary.dat", reason: "Binary file skipped by reviewer" }]
+        omittedFiles: [{ path: "src/large-binary.dat", code: "OMIT_BINARY", reason: "Binary file skipped by reviewer" }]
       }
     })
   });

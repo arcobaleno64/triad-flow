@@ -9,6 +9,7 @@ import {
   CheckpointStore,
   executeStagedReview
 } from "../src/adapters/staged-review.mjs";
+import { CliReviewAdapter } from "../src/adapters/cli-transport.mjs";
 
 test("evaluateCoverageContract validates complete coverage and enforces Tier 1 fail-closed", () => {
   const cs = {
@@ -199,7 +200,7 @@ test("executeStagedReview rejects empty provider coverage with omission and fail
     executeReview: async () => ({
       ok: true,
       findings: [],
-      coverage: { coveredFiles: [], omittedFiles: [{ path: "src/auth/token.js", reason: "size limit" }] }
+      coverage: { coveredFiles: [], omittedFiles: [{ path: "src/auth/token.js", code: COVERAGE_OMISSION_CODES.SIZE_LIMIT, reason: "size limit" }] }
     })
   };
 
@@ -267,7 +268,7 @@ test("executeStagedReview ignores provider coverage claims outside chunk targetF
       findings: [],
       coverage: {
         coveredFiles: ["src/chunk1.js", "src/chunk2.js", "unrelated/secret.env"],
-        omittedFiles: [{ path: "unrelated/other.js", reason: "ignored" }]
+        omittedFiles: [{ path: "unrelated/other.js", code: COVERAGE_OMISSION_CODES.OUT_OF_SCOPE, reason: "ignored" }]
       }
     })
   };
@@ -639,6 +640,162 @@ test("Regression P1-2 Test G: Retry/deadline interaction prevents retry from exc
   const omission = result.coverage.omittedFiles.find(o => o.file === "src/retry.js");
   assert.ok(omission);
   assert.equal(omission.code, COVERAGE_OMISSION_CODES.TIMEOUT);
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+test("Regression 4: Mixed Tier-2 coverage with authorized omission satisfies coverage contract", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-staged-mixed-t2-"));
+  const cs = {
+    scopeMode: "working-tree",
+    files: [
+      { path: "src/normal1.js" }, // Tier 2
+      { path: "src/normal2.js" }  // Tier 2
+    ],
+    diffHunks: [
+      "diff --git a/src/normal1.js b/src/normal1.js\n--- a/src/normal1.js\n+++ b/src/normal1.js\n@@ -1,2 +1,3 @@\n+ const a = 1;",
+      "diff --git a/src/normal2.js b/src/normal2.js\n--- a/src/normal2.js\n+++ b/src/normal2.js\n@@ -1,2 +1,3 @@\n+ const b = 2;"
+    ].join("\n")
+  };
+
+  const mixedAdapter = {
+    providerName: "mock-provider",
+    executeReview: async () => ({
+      ok: true,
+      findings: [],
+      coverage: {
+        coveredFiles: ["src/normal1.js"],
+        omittedFiles: [
+          { path: "src/normal2.js", code: COVERAGE_OMISSION_CODES.GENERATED, reason: "Compiled bundle" }
+        ]
+      }
+    })
+  };
+
+  const result = await executeStagedReview(cs, mixedAdapter, { cwd: tmpDir });
+  assert.equal(result.ok, true);
+  assert.equal(result.executionStatus, "success");
+  assert.equal(result.coverage.isComplete, true);
+  assert.equal(result.coverage.coveredPercentage, 50);
+  assert.equal(result.coverage.omittedFiles.length, 1);
+  assert.equal(result.coverage.omittedFiles[0].code, COVERAGE_OMISSION_CODES.GENERATED);
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+test("Regression 5: Tier-1 source omission fails closed for every omission code", () => {
+  const cs = {
+    files: [
+      { path: "src/auth/token.js" }, // Tier 1 Critical
+      { path: "src/normal.js" }      // Tier 2
+    ]
+  };
+
+  // Test every single code in COVERAGE_OMISSION_CODES for Tier 1 file
+  for (const [codeKey, codeVal] of Object.entries(COVERAGE_OMISSION_CODES)) {
+    const res = evaluateCoverageContract(cs, ["src/normal.js"], [
+      { file: "src/auth/token.js", code: codeVal, reason: `Reason for ${codeKey}` }
+    ]);
+    assert.equal(res.isComplete, false, `Tier 1 file omission under ${codeKey} (${codeVal}) must fail closed`);
+    assert.ok(
+      res.violations.some(v => v.includes("Tier 1 (Critical)") && v.includes("src/auth/token.js")),
+      `Violation must mention Tier 1 (Critical) for code ${codeVal}`
+    );
+  }
+});
+
+test("Regression 6: Tier-2 source omission requires explicit authorized code + non-empty reason", () => {
+  const cs = {
+    files: [{ path: "src/normal.js" }] // Tier 2
+  };
+
+  // Missing code -> fails closed
+  const resMissingCode = evaluateCoverageContract(cs, [], [
+    { file: "src/normal.js", reason: "Valid reason without code" }
+  ]);
+  assert.equal(resMissingCode.isComplete, false);
+  assert.ok(resMissingCode.violations.some(v => v.includes("missing or unauthorized code")));
+
+  // Unknown/unauthorized code -> fails closed
+  const resUnknownCode = evaluateCoverageContract(cs, [], [
+    { file: "src/normal.js", code: "OMIT_UNKNOWN_CUSTOM", reason: "Valid reason with invalid code" }
+  ]);
+  assert.equal(resUnknownCode.isComplete, false);
+  assert.ok(resUnknownCode.violations.some(v => v.includes("missing or unauthorized code")));
+
+  // Empty reason -> fails closed
+  const resEmptyReason = evaluateCoverageContract(cs, [], [
+    { file: "src/normal.js", code: COVERAGE_OMISSION_CODES.OUT_OF_SCOPE, reason: "   " }
+  ]);
+  assert.equal(resEmptyReason.isComplete, false);
+  assert.ok(resEmptyReason.violations.some(v => v.includes("missing or empty reason")));
+
+  // Explicit authorized code + non-empty reason -> satisfies accounting
+  const resValid = evaluateCoverageContract(cs, [], [
+    { file: "src/normal.js", code: COVERAGE_OMISSION_CODES.OUT_OF_SCOPE, reason: "Scope exclusion confirmed" }
+  ]);
+  assert.equal(resValid.isComplete, true);
+  assert.equal(resValid.violations.length, 0);
+  assert.equal(resValid.coveredPercentage, 0);
+});
+
+test("Regression 7: Normalized CLI provider path preserves valid code and rejects missing code from staged evidence", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-staged-cli-path-"));
+  const cs = {
+    schemaVersion: "1.0.0",
+    contentDigest: "a".repeat(64),
+    scopeMode: "working-tree",
+    files: [
+      { path: "src/worker.js" }, // Tier 2
+      { path: "src/vendor.js" }  // Tier 2
+    ],
+    diffHunks: [
+      "diff --git a/src/worker.js b/src/worker.js\n--- a/src/worker.js\n+++ b/src/worker.js\n@@ -1,2 +1,3 @@\n+ const w = 1;",
+      "diff --git a/src/vendor.js b/src/vendor.js\n--- a/src/vendor.js\n+++ b/src/vendor.js\n@@ -1,2 +1,3 @@\n+ const v = 2;"
+    ].join("\n")
+  };
+
+  // Part A: Valid code survives complete path (CliReviewAdapter -> validateProviderOutput -> executeStagedReview)
+  const validExec = async () => ({
+    stdout: JSON.stringify({
+      findings: [],
+      coverage: {
+        coveredFiles: ["src/worker.js"],
+        omittedFiles: [
+          { path: "src/vendor.js", code: COVERAGE_OMISSION_CODES.GENERATED, reason: "Vendor bundle" }
+        ]
+      }
+    })
+  });
+  const validAdapter = new CliReviewAdapter({ execFn: validExec, providerName: "cli-macro" });
+  const validResult = await executeStagedReview(cs, validAdapter, { cwd: tmpDir });
+
+  assert.equal(validResult.ok, true, "Valid code must produce ok=true across complete pipeline");
+  assert.equal(validResult.executionStatus, "success");
+  assert.equal(validResult.coverage.isComplete, true);
+  const vendorOmission = validResult.coverage.omittedFiles.find(o => o.file.includes("vendor.js"));
+  assert.ok(vendorOmission, "vendor.js omission must exist");
+  assert.equal(vendorOmission.code, COVERAGE_OMISSION_CODES.GENERATED, "Authorized code must survive complete pipeline");
+  assert.equal(vendorOmission.reason, "Vendor bundle");
+
+  // Part B: Missing code in CLI output cannot become successful staged evidence
+  const missingCodeExec = async () => ({
+    stdout: JSON.stringify({
+      findings: [],
+      coverage: {
+        coveredFiles: ["src/worker.js"],
+        omittedFiles: [
+          { path: "src/vendor.js", reason: "Vendor bundle without code" }
+        ]
+      }
+    })
+  });
+  const missingCodeAdapter = new CliReviewAdapter({ execFn: missingCodeExec, providerName: "cli-macro" });
+  const missingCodeResult = await executeStagedReview(cs, missingCodeAdapter, { cwd: tmpDir });
+
+  assert.equal(missingCodeResult.ok, false, "Missing code must fail closed across complete pipeline");
+  assert.notEqual(missingCodeResult.executionStatus, "success");
+  assert.equal(missingCodeResult.coverage.isComplete, false);
 
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });

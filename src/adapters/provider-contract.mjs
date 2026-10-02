@@ -28,6 +28,17 @@ export const DEFAULT_LIMITS = Object.freeze({
   defaultTimeoutMs: 60 * 1000   // 60 seconds
 });
 
+export const COVERAGE_OMISSION_CODES = Object.freeze({
+  UNMODIFIED: "OMIT_UNMODIFIED",
+  SIZE_LIMIT: "OMIT_SIZE_LIMIT",
+  BINARY: "OMIT_BINARY",
+  GENERATED: "OMIT_GENERATED",
+  OUT_OF_SCOPE: "OMIT_OUT_OF_SCOPE",
+  TIMEOUT: "OMIT_TIMEOUT"
+});
+
+const ALLOWED_OMISSION_CODES = new Set(Object.values(COVERAGE_OMISSION_CODES));
+
 /**
  * Validates the input context passed to a provider adapter.
  */
@@ -255,10 +266,72 @@ function sanitizeRawOutput(raw) {
     .map(p => normalizeCanonicalPath(p));
 
   const rawOmitted = rawOutput.coverage.omittedFiles;
-  const omittedFiles = rawOmitted.map(o => ({
-    path: String(o?.path || o?.file || "unknown"),
-    reason: String(o?.reason || "unspecified")
-  }));
+  const omittedFiles = [];
+
+  for (let i = 0; i < rawOmitted.length; i++) {
+    const candidate = rawOmitted[i];
+    if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
+      return Object.freeze({
+        ok: false,
+        executionStatus: EXECUTION_STATUS.MALFORMED_OUTPUT,
+        findings: Object.freeze([]),
+        coverage: Object.freeze({ coveredFiles: Object.freeze([]), omittedFiles: Object.freeze([]) }),
+        usage: null,
+        providerIdentity: Object.freeze(providerIdentity),
+        error: `Malformed omission at index ${i}: omission must be a non-null plain object.`
+      });
+    }
+
+    const rawPath = typeof candidate.path === "string" && candidate.path.trim()
+      ? candidate.path.trim()
+      : (typeof candidate.file === "string" && candidate.file.trim() ? candidate.file.trim() : null);
+
+    if (!rawPath) {
+      return Object.freeze({
+        ok: false,
+        executionStatus: EXECUTION_STATUS.MALFORMED_OUTPUT,
+        findings: Object.freeze([]),
+        coverage: Object.freeze({ coveredFiles: Object.freeze([]), omittedFiles: Object.freeze([]) }),
+        usage: null,
+        providerIdentity: Object.freeze(providerIdentity),
+        error: `Malformed omission at index ${i}: omission requires a non-empty string 'path' or 'file'.`
+      });
+    }
+
+    const rawCode = typeof candidate.code === "string" ? candidate.code.trim() : "";
+    if (!rawCode || !ALLOWED_OMISSION_CODES.has(rawCode)) {
+      return Object.freeze({
+        ok: false,
+        executionStatus: EXECUTION_STATUS.MALFORMED_OUTPUT,
+        findings: Object.freeze([]),
+        coverage: Object.freeze({ coveredFiles: Object.freeze([]), omittedFiles: Object.freeze([]) }),
+        usage: null,
+        providerIdentity: Object.freeze(providerIdentity),
+        error: `Malformed omission at index ${i}: omission requires an authorized code from COVERAGE_OMISSION_CODES (received: '${candidate.code}').`
+      });
+    }
+
+    const rawReason = typeof candidate.reason === "string" ? candidate.reason.trim() : "";
+    if (!rawReason) {
+      return Object.freeze({
+        ok: false,
+        executionStatus: EXECUTION_STATUS.MALFORMED_OUTPUT,
+        findings: Object.freeze([]),
+        coverage: Object.freeze({ coveredFiles: Object.freeze([]), omittedFiles: Object.freeze([]) }),
+        usage: null,
+        providerIdentity: Object.freeze(providerIdentity),
+        error: `Malformed omission at index ${i}: omission requires a non-empty string 'reason'.`
+      });
+    }
+
+    const normPath = normalizeCanonicalPath(rawPath);
+    omittedFiles.push(Object.freeze({
+      path: normPath,
+      file: normPath,
+      code: rawCode,
+      reason: rawReason
+    }));
+  }
 
   // Usage validation
   let usage = null;

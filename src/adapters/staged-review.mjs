@@ -15,16 +15,10 @@ import { buildEvidenceReviewPrompt } from "./review-prompts.mjs";
 import { reconcileFindings } from "../core/reconciler.mjs";
 import { classifyFileRisk, RISK_TIERS } from "../core/graph-router.mjs";
 import { normalizeCanonicalPath } from "../core/scoring.mjs";
-import { EXECUTION_STATUS } from "./provider-contract.mjs";
+import { EXECUTION_STATUS, COVERAGE_OMISSION_CODES } from "./provider-contract.mjs";
 
-export const COVERAGE_OMISSION_CODES = Object.freeze({
-  UNMODIFIED: "OMIT_UNMODIFIED",
-  SIZE_LIMIT: "OMIT_SIZE_LIMIT",
-  BINARY: "OMIT_BINARY",
-  GENERATED: "OMIT_GENERATED",
-  OUT_OF_SCOPE: "OMIT_OUT_OF_SCOPE",
-  TIMEOUT: "OMIT_TIMEOUT"
-});
+export { COVERAGE_OMISSION_CODES };
+const ALLOWED_OMISSION_CODES = new Set(Object.values(COVERAGE_OMISSION_CODES));
 
 export const STAGED_REVIEW_STAGES = Object.freeze({
   STAGE_1_TRIAGE: "stage-1-triage",
@@ -44,17 +38,44 @@ export function evaluateCoverageContract(changeSet, coveredFiles = [], omittedFi
   const allFiles = (changeSet?.files || []).map(f => normalizeCanonicalPath(typeof f === "string" ? f : f.path));
   const coveredSet = new Set(coveredFiles.map(f => normalizeCanonicalPath(f)));
   const omittedMap = new Map();
-
-  for (const omit of omittedFiles) {
-    if (omit && typeof omit === "object") {
-      const omitFile = omit.file || omit.path || omit.target;
-      if (omitFile) {
-        omittedMap.set(normalizeCanonicalPath(omitFile), omit);
-      }
-    }
-  }
-
   const violations = [];
+
+  for (let i = 0; i < omittedFiles.length; i++) {
+    const omit = omittedFiles[i];
+    if (!omit || typeof omit !== "object" || Array.isArray(omit)) {
+      violations.push(`Omission entry at index ${i} must be a non-null plain object.`);
+      continue;
+    }
+    const omitFile = (typeof omit.file === "string" && omit.file.trim())
+      ? omit.file.trim()
+      : ((typeof omit.path === "string" && omit.path.trim())
+        ? omit.path.trim()
+        : (typeof omit.target === "string" ? omit.target.trim() : null));
+
+    if (!omitFile) {
+      violations.push(`Omission entry at index ${i} is missing a valid file path.`);
+      continue;
+    }
+
+    const norm = normalizeCanonicalPath(omitFile);
+    const code = typeof omit.code === "string" ? omit.code.trim() : "";
+    const reason = typeof omit.reason === "string" ? omit.reason.trim() : "";
+
+    if (!code || !ALLOWED_OMISSION_CODES.has(code)) {
+      violations.push(`File '${norm}' omission has missing or unauthorized code '${omit.code}'.`);
+    }
+
+    if (!reason) {
+      violations.push(`File '${norm}' omission has missing or empty reason.`);
+    }
+
+    omittedMap.set(norm, {
+      file: norm,
+      path: norm,
+      code: code || undefined,
+      reason: reason || undefined
+    });
+  }
 
   for (const f of allFiles) {
     const isCovered = coveredSet.has(f);
@@ -71,12 +92,10 @@ export function evaluateCoverageContract(changeSet, coveredFiles = [], omittedFi
       continue;
     }
 
-    // Tier 1 Check: Critical files MUST NOT be omitted under size limits or out-of-scope
+    // Tier 1 Check: Critical files MUST NOT be omitted under any code (Fail-Closed)
     const tier = classifyFileRisk(f);
     if (tier === RISK_TIERS.TIER_1_CRITICAL && omitRecord) {
-      if (omitRecord.code === COVERAGE_OMISSION_CODES.SIZE_LIMIT || omitRecord.code === COVERAGE_OMISSION_CODES.OUT_OF_SCOPE) {
-        violations.push(`Tier 1 (Critical) file '${f}' cannot be omitted under code '${omitRecord.code}' (Fail-Closed).`);
-      }
+      violations.push(`Tier 1 (Critical) file '${f}' cannot be omitted under code '${omitRecord.code || "unknown"}' (Fail-Closed).`);
     }
   }
 
@@ -361,15 +380,40 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
         }
         for (const omit of provOmitted) {
           if (omit && typeof omit === "object") {
-            const omitFile = omit.file || omit.path || omit.target || "unknown";
+            const omitFile = (typeof omit.file === "string" && omit.file.trim())
+              ? omit.file.trim()
+              : ((typeof omit.path === "string" && omit.path.trim())
+                ? omit.path.trim()
+                : (typeof omit.target === "string" ? omit.target.trim() : null));
+
+            if (!omitFile) continue;
             const norm = normalizeCanonicalPath(omitFile);
+
             if (chunkTargetSet.has(norm)) {
-              omittedInThisChunk.add(norm);
-              omittedObjectsInThisChunk.push({
-                file: norm,
-                code: omit.code || COVERAGE_OMISSION_CODES.OUT_OF_SCOPE,
-                reason: omit.reason || "Provider declared omission"
-              });
+              const code = typeof omit.code === "string" ? omit.code.trim() : "";
+              const reason = typeof omit.reason === "string" ? omit.reason.trim() : "";
+              const isValidCode = Boolean(code && ALLOWED_OMISSION_CODES.has(code));
+              const isValidReason = Boolean(reason && reason.length > 0);
+
+              if (isValidCode && isValidReason) {
+                omittedInThisChunk.add(norm);
+                omittedObjectsInThisChunk.push({
+                  file: norm,
+                  path: norm,
+                  code,
+                  reason
+                });
+              } else {
+                // Invalid omission: Do NOT synthesize OMIT_OUT_OF_SCOPE.
+                // Do not allow an invalid omission to count as covered/accounted in this chunk.
+                // Forward the omission object as-is so evaluateCoverageContract records the independent violation.
+                omittedObjectsInThisChunk.push({
+                  file: norm,
+                  path: norm,
+                  code: code || undefined,
+                  reason: reason || undefined
+                });
+              }
             }
           }
         }
@@ -384,7 +428,7 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
         const crossChunkContradictions = chunk.targetFiles.filter(tf => {
           const norm = normalizeCanonicalPath(tf);
           const wasCoveredPrior = coveredFiles.has(norm);
-          const wasOmittedPrior = omittedFiles.some(o => normalizeCanonicalPath(o.file) === norm);
+          const wasOmittedPrior = omittedFiles.some(o => normalizeCanonicalPath(o.file || o.path) === norm);
           return (omittedInThisChunk.has(norm) && wasCoveredPrior) ||
                  (coveredInThisChunk.has(norm) && wasOmittedPrior);
         });
@@ -431,11 +475,15 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
             chunkCoverageValid = true;
           } else {
             for (const utf of uncoveredInChunk) {
-              omittedFiles.push({
-                file: utf,
-                code: COVERAGE_OMISSION_CODES.OUT_OF_SCOPE,
-                reason: `File '${utf}' was not covered or declared omitted in chunk ${chunk.chunkId}`
-              });
+              const normUtf = normalizeCanonicalPath(utf);
+              if (!omittedObjectsInThisChunk.some(o => normalizeCanonicalPath(o.file || o.path) === normUtf)) {
+                omittedFiles.push({
+                  file: utf,
+                  path: utf,
+                  code: COVERAGE_OMISSION_CODES.OUT_OF_SCOPE,
+                  reason: `File '${utf}' was not covered or declared omitted in chunk ${chunk.chunkId}`
+                });
+              }
             }
           }
         }
@@ -551,7 +599,10 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
     },
     status: finalStatus,
     findings: reconciledFindings,
-    coverage: coverageEval.declaration,
+    coverage: {
+      ...coverageEval.declaration,
+      isComplete
+    },
     violations: coverageEval.violations,
     receipts: chunkReceipts
   };
