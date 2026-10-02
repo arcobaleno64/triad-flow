@@ -1127,17 +1127,27 @@ export async function assembleEvidence0010(userOptions = {}) {
   const defendedCasesDesc = defendedCases.length > 0 ? `cases ${defendedCases.join(", ")} defended` : "no cases defended";
   const gatePolicyStatus = isFullCorpusRun ? (gatePolicyCount === TF_OSS_CORPUS_V1_CASES.length ? "TARGET MET" : "TARGET MISSED") : "PARTIAL";
 
-  const debtCases = caseResults.filter(c => !c.gatePolicyPass || !c.detectionPass);
+  const debtCases = caseResults.filter(c => !c.gatePolicyPass || !c.detectionPass || c.incomplete);
   const debtSectionLines = [
     `### Known Empirical Debt & Residual Limitations`,
     ...(debtCases.length === 0
       ? [`None. All ${caseResults.length} evaluated case(s) satisfied expected detection and gate decisions.`]
-      : debtCases.map(dc => [
-          `- **${dc.caseId} (${dc.name || dc.caseId}${dc.cve ? ` ${dc.cve}` : ""}${dc.cwe ? ` / ${dc.cwe}` : ""})**:`,
-          `  - Expected Gate: \`${(dc.expectedGateDecision || "BLOCK").toUpperCase()}\` | Actual Gate: \`${(dc.actualGateDecision || "APPROVE").toUpperCase()}\``,
-          `  - Defect Detection: ${dc.detectionPass ? `caught (${dc.evalResult.caughtGoldens}/${dc.evalResult.totalGoldens} goldens)` : `missed (0/3 sentries caught)`}`,
-          `  - Classification: Honest residual defect; registered as empirical debt for Track D1 dogfooding and future benchmark hardening. Non-blocking for G4.`
-        ].join("\n"))
+      : debtCases.map(dc => {
+          const isIncomplete = Boolean(dc.incomplete);
+          const classification = isIncomplete
+            ? "Execution failure or timeout violating mandatory Roadmap §4.4 zero-incomplete criterion. G4-BLOCKING."
+            : "Honest residual defect; registered as empirical debt for Track D1 dogfooding and future benchmark hardening. Non-blocking for G4.";
+          const detectionDesc = isIncomplete
+            ? "incomplete execution (provider timeout, malformed output, or absence)"
+            : (dc.detectionPass ? `caught (${dc.evalResult?.caughtGoldens || 1}/${dc.evalResult?.totalGoldens || 1} goldens)` : `missed (0/3 sentries caught)`);
+
+          return [
+            `- **${dc.caseId} (${dc.name || dc.caseId}${dc.cve ? ` ${dc.cve}` : ""}${dc.cwe ? ` / ${dc.cwe}` : ""})**:`,
+            `  - Expected Gate: \`${(dc.expectedGateDecision || "BLOCK").toUpperCase()}\` | Actual Gate: \`${(dc.actualGateDecision || "APPROVE").toUpperCase()}\``,
+            `  - Defect Detection: ${detectionDesc}`,
+            `  - Classification: ${classification}`
+          ].join("\n");
+        })
     )
   ];
 

@@ -197,6 +197,55 @@ function createMockDogfoodAdapters(changeSet) {
 }
 
 /**
+ * Filters excluded files from a ChangeSet, updating files, diffHunks, contentDigest, and line counts.
+ */
+export function filterChangeSetExclusions(changeSet, excludedPaths = []) {
+  if (!changeSet || !changeSet.files) return changeSet;
+  const normalizedExclusions = new Set(
+    excludedPaths.map(p => path.normalize(p).replace(/\\/g, "/").replace(/^\.\//, ""))
+  );
+
+  const rawFiles = changeSet.files || [];
+  const files = rawFiles.filter(f => {
+    const norm = path.normalize(f.path || "").replace(/\\/g, "/").replace(/^\.\//, "");
+    return !normalizedExclusions.has(norm);
+  });
+
+  const totalAdditions = files.reduce((acc, f) => acc + (f.additions || 0), 0);
+  const totalDeletions = files.reduce((acc, f) => acc + (f.deletions || 0), 0);
+
+  // Filter diffHunks if present
+  let filteredDiffHunks = changeSet.diffHunks || "";
+  if (filteredDiffHunks) {
+    const chunks = filteredDiffHunks.split(/(?=^diff --git )/m);
+    const retainedChunks = chunks.filter(chunk => {
+      const match = chunk.match(/^diff --git a\/(.+?) b\/(.+?)(?:\r?\n|$)/m);
+      if (match) {
+        const fileA = path.normalize(match[1]).replace(/\\/g, "/").replace(/^\.\//, "");
+        const fileB = path.normalize(match[2]).replace(/\\/g, "/").replace(/^\.\//, "");
+        if (normalizedExclusions.has(fileA) || normalizedExclusions.has(fileB)) {
+          return false;
+        }
+      }
+      return true;
+    });
+    filteredDiffHunks = retainedChunks.join("").trim();
+  }
+
+  const rawDigest = crypto.createHash("sha256").update(filteredDiffHunks, "utf8").digest("hex");
+  const contentDigest = `sha256:${rawDigest}`;
+
+  return {
+    ...changeSet,
+    files,
+    diffHunks: filteredDiffHunks,
+    contentDigest,
+    totalAdditions,
+    totalDeletions
+  };
+}
+
+/**
  * Classifies file risk tier based on sensitivity and architectural boundaries.
  */
 export function classifyDogfoodFileRisk(filePath) {
@@ -265,22 +314,19 @@ export async function runDogfoodReview(userOptions = {}) {
     throw new Error(`Failed to capture ChangeSet: ${changeSet?.error?.message || "Unknown Git inspection failure"}`);
   }
 
-  const rawFiles = (changeSet.files || []).filter(f => {
-    const norm = (f.path || "").replace(/\\/g, "/");
-    return !norm.endsWith("dogfood-run.json");
-  });
-  const files = rawFiles.map(f => ({
+  const relOut = path.relative(process.cwd(), outPath).replace(/\\/g, "/");
+  changeSet = filterChangeSetExclusions(changeSet, [relOut, "dogfood-run.json"]);
+
+  const files = (changeSet.files || []).map(f => ({
     ...f,
     riskTier: f.riskTier || classifyDogfoodFileRisk(f.path)
   }));
-  const totalAdditions = files.reduce((acc, f) => acc + (f.additions || 0), 0);
-  const totalDeletions = files.reduce((acc, f) => acc + (f.deletions || 0), 0);
   changeSet = {
     ...changeSet,
-    files,
-    totalAdditions,
-    totalDeletions
+    files
   };
+  const totalAdditions = changeSet.totalAdditions;
+  const totalDeletions = changeSet.totalDeletions;
   if (log) {
     console.log(`  ✔ Changed files (excluding telemetry output): ${files.length}`);
     console.log(`  ✔ Total additions: +${totalAdditions} / deletions: -${totalDeletions}`);

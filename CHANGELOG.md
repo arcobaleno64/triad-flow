@@ -19,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Deterministic diff chunking, checkpoint store, and cross-chunk reconciliation.
 - **Supply-Chain Governance & Rulesets (RFC-027-03)**:
   - Active GitHub Rulesets protecting `main` and release tags (`refs/tags/v*`).
-  - SPDX 2.3 Software Bill of Materials (SBOM) generation (`scripts/generate-sbom.mjs`).
+  - SPDX 2.3 Software Bill of Materials (SBOM) generation (`npm run sbom:generate`).
   - SSH tag signature verification with `.github/allowed_signers`.
   - 3-target version lockstep enforcement (`scripts/bump-version.mjs`).
 - **Empirical Evaluation & Dogfooding (TF-OSS-v1)**:

@@ -141,7 +141,7 @@ node scripts/verify-artifact-manifest.mjs evidence-runs/TF-EVIDENCE-0010 --bundl
 | **Gate G1** | Review Prompt & Context Optimization (RFC-027-01) | Baseline diff prompts | Chunking, checklists, AST scope | **CLOSED** |
 | **Gate G2** | Tri-Party Heterogeneous Quorum Engine (RFC-027-02) | Dual-vendor | Tri-vendor (`agy` + `claude` + `codex`), Veto | **CLOSED** |
 | **Gate G3** | Supply-Chain Governance & Rulesets (RFC-027-03) | Ad-hoc tags | SPDX 2.3 SBOM, SSH signatures, Rulesets | **CLOSED** |
-| **Gate G4** | Live Empirical Evaluation (Recall > 20%, 0 Incomplete, Gate Correctness) | 20.0% Recall, 60% Incomplete | 80.0% Recall, 0.0% Incomplete (0/5), 4/5 Policy Pass | **CLOSED** |
+| **Gate G4** | Live Empirical Evaluation (Recall > 20%, 0 Incomplete, sealed corpus/manifest) | 20.0% Recall, 60% Incomplete | 80.0% Recall, 0.0% Incomplete (0/5), 4/5 Policy Pass | **CLOSED** |
 | **Gate G5** | Release Automation & Final Transition (v2.7.0 Release) | v2.6.0 Released | 9-way matrix, package publish, attestations | **READY (Unblocked)** |
 
 **Conclusion**: Triad-Flow v2.7 Gate G4 is officially **CLOSED**. All Roadmap §4.4 empirical acceptance criteria (Recall > 20%, Incomplete = 0/5, corpus digest verified, manifest sealed) are fully and truthfully satisfied by `TF-EVIDENCE-0010`. Gate G5 (v2.7.0 formal release preparation) is now unblocked.

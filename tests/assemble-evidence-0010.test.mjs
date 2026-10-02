@@ -40,6 +40,7 @@ import { resolveProviderProfile } from "../src/adapters/provider-profiles.mjs";
 import { validateAuditReceipt } from "../src/core/audit-receipt.mjs";
 import { validateVerificationRecord } from "../src/core/independent-verifier.mjs";
 import { CliReviewAdapter } from "../src/adapters/cli-transport.mjs";
+import { filterChangeSetExclusions } from "../scripts/dogfood-review.mjs";
 
 test("Contract 1: parseArgs correctly parses all CLI flags and defaults for 0010", () => {
   const def = parseArgs([]);
@@ -386,4 +387,114 @@ test("Contract 10: Truthful README generation on partial run (--case TF-OSS-001)
       fs.rmSync(tempDir, { recursive: true, force: true });
     } catch {}
   }
+});
+
+test("Contract 11: Truthful README generation on incomplete execution marks failure as G4-BLOCKING", async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-test-incomplete-blocking-"));
+
+  function createIncompleteAdapters() {
+    function createExecFn(role) {
+      return async ({ input }) => {
+        const filePaths = (input.changeSet?.files || []).map(f => f.path.replace(/\\/g, "/"));
+        const isCase5 = filePaths.some(p => p.includes("ejs"));
+        if (isCase5) {
+          return {
+            ok: false,
+            executionStatus: "timeout",
+            error: { code: "TIMEOUT", message: "Provider timeout" }
+          };
+        }
+        return {
+          stdout: JSON.stringify({
+            findings: [{
+              title: "Detected prototype pollution",
+              severity: "high",
+              file: filePaths[0] || "test.js",
+              line_start: 1,
+              line_end: 1,
+              cwe: "CWE-1321",
+              type: "prototype-pollution",
+              recommendation: "Fix"
+            }],
+            coverage: { coveredFiles: filePaths, omittedFiles: [] },
+            usage: { promptTokens: 100, completionTokens: 50, totalTokens: 150 }
+          })
+        };
+      };
+    }
+    return {
+      agy: new CliReviewAdapter({ command: "agy", providerName: "agy", modelName: "gemini-3.8-flash", actualModel: { value: "gemini-3.8-flash", source: "reported" }, execFn: createExecFn("agy") }),
+      claude: new CliReviewAdapter({ command: "claude", providerName: "claude", modelName: "claude-5.5-sonnet", actualModel: { value: "claude-5.5-sonnet", source: "reported" }, execFn: createExecFn("claude") }),
+      codex: new CliReviewAdapter({ command: "codex", providerName: "codex", modelName: "gpt-6.1-sol", actualModel: { value: "gpt-6.1-sol", source: "reported" }, execFn: createExecFn("codex") })
+    };
+  }
+
+  try {
+    await assembleEvidence0010({
+      mock: true,
+      reviewAdapters: createIncompleteAdapters(),
+      outDir: tempDir,
+      log: false
+    });
+
+    const readmeContent = fs.readFileSync(path.join(tempDir, "README-EVIDENCE.md"), "utf8");
+
+    // Incomplete case MUST be labeled G4-BLOCKING, never Non-blocking for G4
+    assert.ok(
+      readmeContent.includes("G4-BLOCKING"),
+      "Incomplete run must be explicitly labeled G4-BLOCKING"
+    );
+    assert.ok(
+      !readmeContent.includes("- **TF-OSS-005 (ejs\n  - Expected Gate: `BLOCK` | Actual Gate: `APPROVE`\n  - Defect Detection: incomplete execution\n  - Classification: Honest residual defect; registered as empirical debt for Track D1 dogfooding and future benchmark hardening. Non-blocking for G4."),
+      "Incomplete case must NOT be labeled Non-blocking for G4"
+    );
+  } finally {
+    try {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    } catch {}
+  }
+});
+
+test("Contract 12: filterChangeSetExclusions strips exact outPath and dogfood-run.json from files, diffHunks, and recomputes digest", () => {
+  const mockCs = {
+    files: [
+      { path: "src/core/harness.mjs", additions: 5, deletions: 2 },
+      { path: "dogfood-run.json", additions: 100, deletions: 50 },
+      { path: "nested/dogfood-run.json", additions: 20, deletions: 10 }
+    ],
+    diffHunks: [
+      "diff --git a/src/core/harness.mjs b/src/core/harness.mjs",
+      "index 123..456 100644",
+      "--- a/src/core/harness.mjs",
+      "+++ b/src/core/harness.mjs",
+      "@@ -1,1 +1,2 @@",
+      "+harness edit",
+      "diff --git a/dogfood-run.json b/dogfood-run.json",
+      "index 789..abc 100644",
+      "--- a/dogfood-run.json",
+      "+++ b/dogfood-run.json",
+      "@@ -1,1 +1,2 @@",
+      "+telemetry edit"
+    ].join("\n"),
+    contentDigest: "sha256:olddigest",
+    totalAdditions: 125,
+    totalDeletions: 62
+  };
+
+  const filtered = filterChangeSetExclusions(mockCs, ["dogfood-run.json"]);
+
+  // files filtering: exact match on dogfood-run.json only (nested preserved)
+  assert.equal(filtered.files.length, 2);
+  assert.equal(filtered.files[0].path, "src/core/harness.mjs");
+  assert.equal(filtered.files[1].path, "nested/dogfood-run.json");
+
+  // diffHunks filtering: telemetry hunk dropped, harness hunk retained
+  assert.ok(filtered.diffHunks.includes("src/core/harness.mjs"));
+  assert.ok(!filtered.diffHunks.includes("telemetry edit"));
+  assert.ok(!filtered.diffHunks.includes("diff --git a/dogfood-run.json"));
+
+  // counts and digest updated
+  assert.equal(filtered.totalAdditions, 25);
+  assert.equal(filtered.totalDeletions, 12);
+  assert.notEqual(filtered.contentDigest, "sha256:olddigest");
 });
