@@ -1,0 +1,125 @@
+{
+  "schemaVersion": "1.0.0",
+  "verifiedAt": "2026-10-02T02:46:48.378Z",
+  "changeSetDigest": "sha256:167f2fd7dc8426afc06df7d23d037cf1d58c280dc5d062fd4d499c16c337ab0b",
+  "producer": {
+    "providerName": "tri-party-quorum",
+    "findingsCount": 2,
+    "findings": [
+      {
+        "title": "cleanVersion 行為回歸：前後空白超過 1 個字元的合法版本字串現在回傳 null",
+        "severity": "low",
+        "file": "internal/re.js",
+        "line_start": 6,
+        "line_end": 9,
+        "ruleId": "BEHAVIOR-REGRESSION",
+        "cwe": "CWE-1333",
+        "type": "bug",
+        "recommendation": "若目的是消除 ReDoS 疑慮，應先在比對前限制輸入長度，例如 str.length > 64 時直接回傳 null，並在比對前用 str.trim() 處理空白。這樣能保留原本對任意數量前後空白的接受行為。若確定要收緊行為，須確認呼叫端沒有依賴舊行為（例如 '  1.2.3  ' 或 '1.2.3\\r\\n'），並補上對應測試。",
+        "sources": [
+          "claude"
+        ],
+        "corroborations": 1
+      },
+      {
+        "title": "Previously accepted surrounding whitespace is rejected",
+        "severity": "low",
+        "file": "internal/re.js",
+        "line_start": 6,
+        "line_end": 6,
+        "type": "compatibility",
+        "recommendation": "Preserve surrounding-whitespace support by trimming the input before matching an anchored version regex without whitespace quantifiers. Verify that cleanVersion(' 1.2.3 ') and cleanVersion('  1.2.3  ') both return '1.2.3'.",
+        "sources": [
+          "codex"
+        ],
+        "corroborations": 1
+      }
+    ]
+  },
+  "verifier": {
+    "providerName": "claude",
+    "modelName": "claude-5.5-sonnet",
+    "actualModel": {
+      "source": "reported",
+      "value": "claude-5.5-sonnet"
+    },
+    "usage": {
+      "completionTokens": null,
+      "promptTokens": null,
+      "totalTokens": null,
+      "usageSource": "unavailable"
+    }
+  },
+  "evaluations": [
+    {
+      "findingId": "finding-1",
+      "verdict": "SUPPORTED",
+      "classification": "PARTIALLY_SUPPORTED",
+      "locatorAccurate": true,
+      "typeAccurate": false,
+      "severityAccurate": true,
+      "reasoning": "The diff changes cleanVersion to use safeRe[0], which is /^\\s{0,1}...\\s{0,1}$/. The old re[0] accepted any amount of surrounding whitespace via \\s*. Now '  1.2.3  ' (two spaces) or '1.2.3\\r\\n' (two trailing whitespace characters) returns null, while ' 1.2.3 ' still matches. This is a real behavior regression, and it is a plausible Hyrum's Law hazard. Lines 6-9 cover the changed function and the new regex. Severity low is reasonable because the change is narrow and the diff shows no callers. The CWE-1333 tag is loosely accurate: it concerns the ReDoS motive for the change, not the defect, which is a behavioral regression. Note that the old regex /^\\s*(\\d+)\\.(\\d+)\\.(\\d+)\\s*$/ has no nested or overlapping quantifiers and is not meaningfully ReDoS-prone, so the premise of the change is weak. The recommendation to trim first and then match is sound, and the length cap is a reasonable extra.",
+      "dissent": "The diff changes cleanVersion to use safeRe[0], which is /^\\s{0,1}...\\s{0,1}$/. The old re[0] accepted any amount of surrounding whitespace via \\s*. Now '  1.2.3  ' (two spaces) or '1.2.3\\r\\n' (two trailing whitespace characters) returns null, while ' 1.2.3 ' still matches. This is a real behavior regression, and it is a plausible Hyrum's Law hazard. Lines 6-9 cover the changed function and the new regex. Severity low is reasonable because the change is narrow and the diff shows no callers. The CWE-1333 tag is loosely accurate: it concerns the ReDoS motive for the change, not the defect, which is a behavioral regression. Note that the old regex /^\\s*(\\d+)\\.(\\d+)\\.(\\d+)\\s*$/ has no nested or overlapping quantifiers and is not meaningfully ReDoS-prone, so the premise of the change is weak. The recommendation to trim first and then match is sound, and the length cap is a reasonable extra."
+    },
+    {
+      "findingId": "finding-2",
+      "verdict": "SUPPORTED",
+      "classification": "SUPPORTED",
+      "locatorAccurate": true,
+      "typeAccurate": true,
+      "severityAccurate": true,
+      "reasoning": "Same underlying defect as finding-1. Line 6 is the new safeRe[0] definition, which limits surrounding whitespace to at most one character on each side (\\s{0,1}), where the old re[0] used \\s*. Inputs with two or more leading or trailing whitespace characters were previously accepted and now return null. The type 'compatibility' and severity low fit. Verification with ' 1.2.3 ' (still accepted) and '  1.2.3  ' (now rejected) matches the diff. This is a duplicate of finding-1 and should be reported as such, not merged.",
+      "dissent": null
+    }
+  ],
+  "verifierOmissions": [
+    {
+      "title": "Legacy `re` export retained alongside `safeRe` with no remaining consumer inside this module; the stated ReDoS-hardening is incomplete for external callers",
+      "severity": "info",
+      "file": "internal/re.js",
+      "line_start": 13,
+      "line_end": 13,
+      "cwe": "CWE-1333",
+      "type": "INCOMPLETE-FIX",
+      "recommendation": "If the goal is to remove the greedy-whitespace pattern, remove or deprecate re[0], or point it at the new behavior. Otherwise any caller importing `re` directly keeps the old pattern. Also add tests covering ' 1.2.3 ', '  1.2.3  ', and '1.2.3\\r\\n'.",
+      "id": "omission-1",
+      "classification": "MISSED_BY_PRODUCER"
+    }
+  ],
+  "disagreementLedger": [
+    {
+      "findingId": "finding-1",
+      "producerFinding": {
+        "title": "cleanVersion 行為回歸：前後空白超過 1 個字元的合法版本字串現在回傳 null",
+        "severity": "low",
+        "file": "internal/re.js",
+        "line_start": 6,
+        "line_end": 9,
+        "ruleId": "BEHAVIOR-REGRESSION",
+        "cwe": "CWE-1333",
+        "type": "bug",
+        "recommendation": "若目的是消除 ReDoS 疑慮，應先在比對前限制輸入長度，例如 str.length > 64 時直接回傳 null，並在比對前用 str.trim() 處理空白。這樣能保留原本對任意數量前後空白的接受行為。若確定要收緊行為，須確認呼叫端沒有依賴舊行為（例如 '  1.2.3  ' 或 '1.2.3\\r\\n'），並補上對應測試。",
+        "sources": [
+          "claude"
+        ],
+        "corroborations": 1
+      },
+      "verdict": "SUPPORTED",
+      "classification": "PARTIALLY_SUPPORTED",
+      "locatorAccurate": true,
+      "typeAccurate": false,
+      "severityAccurate": true,
+      "reasoning": "The diff changes cleanVersion to use safeRe[0], which is /^\\s{0,1}...\\s{0,1}$/. The old re[0] accepted any amount of surrounding whitespace via \\s*. Now '  1.2.3  ' (two spaces) or '1.2.3\\r\\n' (two trailing whitespace characters) returns null, while ' 1.2.3 ' still matches. This is a real behavior regression, and it is a plausible Hyrum's Law hazard. Lines 6-9 cover the changed function and the new regex. Severity low is reasonable because the change is narrow and the diff shows no callers. The CWE-1333 tag is loosely accurate: it concerns the ReDoS motive for the change, not the defect, which is a behavioral regression. Note that the old regex /^\\s*(\\d+)\\.(\\d+)\\.(\\d+)\\s*$/ has no nested or overlapping quantifiers and is not meaningfully ReDoS-prone, so the premise of the change is weak. The recommendation to trim first and then match is sound, and the length cap is a reasonable extra.",
+      "dissent": "The diff changes cleanVersion to use safeRe[0], which is /^\\s{0,1}...\\s{0,1}$/. The old re[0] accepted any amount of surrounding whitespace via \\s*. Now '  1.2.3  ' (two spaces) or '1.2.3\\r\\n' (two trailing whitespace characters) returns null, while ' 1.2.3 ' still matches. This is a real behavior regression, and it is a plausible Hyrum's Law hazard. Lines 6-9 cover the changed function and the new regex. Severity low is reasonable because the change is narrow and the diff shows no callers. The CWE-1333 tag is loosely accurate: it concerns the ReDoS motive for the change, not the defect, which is a behavioral regression. Note that the old regex /^\\s*(\\d+)\\.(\\d+)\\.(\\d+)\\s*$/ has no nested or overlapping quantifiers and is not meaningfully ReDoS-prone, so the premise of the change is weak. The recommendation to trim first and then match is sound, and the length cap is a reasonable extra."
+    }
+  ],
+  "summary": {
+    "totalEvaluated": 2,
+    "supportedCount": 2,
+    "partiallySupportedCount": 1,
+    "contestedCount": 0,
+    "insufficientEvidenceCount": 0,
+    "omissionsCount": 1
+  },
+  "ok": true
+}

@@ -1,0 +1,91 @@
+{
+  "schemaVersion": "1.0.0",
+  "verifiedAt": "2026-10-02T02:46:05.505Z",
+  "changeSetDigest": "sha256:0c29940910fb90a6f65f7126c6dfdf18222b1f011109a3296ef3bc91f0d9657d",
+  "producer": {
+    "providerName": "tri-party-quorum",
+    "findingsCount": 1,
+    "findings": [
+      {
+        "title": "Incomplete Prototype Pollution Filter in Section Header Parsing",
+        "severity": "high",
+        "file": "ini.js",
+        "line_start": 14,
+        "line_end": 17,
+        "ruleId": "CHECKLIST-CWE-1321",
+        "cwe": "CWE-1321",
+        "type": "Vulnerability",
+        "recommendation": "Extend validation to block 'constructor' and 'prototype' in addition to '__proto__', or ensure 'out' and section objects are created using Object.create(null) and guarded against inheriting Object.prototype properties.",
+        "sources": [
+          "agy",
+          "claude"
+        ],
+        "corroborations": 2
+      }
+    ]
+  },
+  "verifier": {
+    "providerName": "claude",
+    "modelName": "claude-5.5-sonnet",
+    "actualModel": {
+      "source": "reported",
+      "value": "claude-5.5-sonnet"
+    },
+    "usage": {
+      "completionTokens": null,
+      "promptTokens": null,
+      "totalTokens": null,
+      "usageSource": "unavailable"
+    }
+  },
+  "evaluations": [
+    {
+      "findingId": "finding-1",
+      "verdict": "SUPPORTED",
+      "classification": "PARTIALLY_SUPPORTED",
+      "locatorAccurate": true,
+      "typeAccurate": true,
+      "severityAccurate": false,
+      "reasoning": "The diff adds a guard only for section === '__proto__'. The unguarded line `p = out[section] = out[section] || {};` still reads inherited properties from `out`, which is a plain object. A section such as [constructor], [hasOwnProperty] or [toString] resolves to the inherited function, which is truthy, so `p` becomes that shared built-in function. Later key assignments then mutate it. For example, [constructor] makes `p` the global Object function, so a key/value pair writes onto Object itself. This is the same prototype-pollution class that the guard was meant to stop (CWE-1321), and a blocklist of one name leaves it incomplete. The locator is accurate: lines 14-17 cover the guard and the unguarded assignment. The recommendation to use Object.create(null) or own-property checks is sound. The severity is overstated. A [prototype] section just creates an own key, and [constructor] followed by a `prototype` key cannot overwrite Object.prototype because that property is non-writable. Reaching Object.prototype would need a nested path, and the visible diff does not show whether the parser supports one. Realistic impact is mutation of shared built-in function objects, which is closer to medium than high. The key-assignment code is outside the diff, so a key named '__proto__' is unverified.",
+      "dissent": "The diff adds a guard only for section === '__proto__'. The unguarded line `p = out[section] = out[section] || {};` still reads inherited properties from `out`, which is a plain object. A section such as [constructor], [hasOwnProperty] or [toString] resolves to the inherited function, which is truthy, so `p` becomes that shared built-in function. Later key assignments then mutate it. For example, [constructor] makes `p` the global Object function, so a key/value pair writes onto Object itself. This is the same prototype-pollution class that the guard was meant to stop (CWE-1321), and a blocklist of one name leaves it incomplete. The locator is accurate: lines 14-17 cover the guard and the unguarded assignment. The recommendation to use Object.create(null) or own-property checks is sound. The severity is overstated. A [prototype] section just creates an own key, and [constructor] followed by a `prototype` key cannot overwrite Object.prototype because that property is non-writable. Reaching Object.prototype would need a nested path, and the visible diff does not show whether the parser supports one. Realistic impact is mutation of shared built-in function objects, which is closer to medium than high. The key-assignment code is outside the diff, so a key named '__proto__' is unverified."
+    }
+  ],
+  "verifierOmissions": [],
+  "disagreementLedger": [
+    {
+      "findingId": "finding-1",
+      "producerFinding": {
+        "title": "Incomplete Prototype Pollution Filter in Section Header Parsing",
+        "severity": "high",
+        "file": "ini.js",
+        "line_start": 14,
+        "line_end": 17,
+        "ruleId": "CHECKLIST-CWE-1321",
+        "cwe": "CWE-1321",
+        "type": "Vulnerability",
+        "recommendation": "Extend validation to block 'constructor' and 'prototype' in addition to '__proto__', or ensure 'out' and section objects are created using Object.create(null) and guarded against inheriting Object.prototype properties.",
+        "sources": [
+          "agy",
+          "claude"
+        ],
+        "corroborations": 2
+      },
+      "verdict": "SUPPORTED",
+      "classification": "PARTIALLY_SUPPORTED",
+      "locatorAccurate": true,
+      "typeAccurate": true,
+      "severityAccurate": false,
+      "reasoning": "The diff adds a guard only for section === '__proto__'. The unguarded line `p = out[section] = out[section] || {};` still reads inherited properties from `out`, which is a plain object. A section such as [constructor], [hasOwnProperty] or [toString] resolves to the inherited function, which is truthy, so `p` becomes that shared built-in function. Later key assignments then mutate it. For example, [constructor] makes `p` the global Object function, so a key/value pair writes onto Object itself. This is the same prototype-pollution class that the guard was meant to stop (CWE-1321), and a blocklist of one name leaves it incomplete. The locator is accurate: lines 14-17 cover the guard and the unguarded assignment. The recommendation to use Object.create(null) or own-property checks is sound. The severity is overstated. A [prototype] section just creates an own key, and [constructor] followed by a `prototype` key cannot overwrite Object.prototype because that property is non-writable. Reaching Object.prototype would need a nested path, and the visible diff does not show whether the parser supports one. Realistic impact is mutation of shared built-in function objects, which is closer to medium than high. The key-assignment code is outside the diff, so a key named '__proto__' is unverified.",
+      "dissent": "The diff adds a guard only for section === '__proto__'. The unguarded line `p = out[section] = out[section] || {};` still reads inherited properties from `out`, which is a plain object. A section such as [constructor], [hasOwnProperty] or [toString] resolves to the inherited function, which is truthy, so `p` becomes that shared built-in function. Later key assignments then mutate it. For example, [constructor] makes `p` the global Object function, so a key/value pair writes onto Object itself. This is the same prototype-pollution class that the guard was meant to stop (CWE-1321), and a blocklist of one name leaves it incomplete. The locator is accurate: lines 14-17 cover the guard and the unguarded assignment. The recommendation to use Object.create(null) or own-property checks is sound. The severity is overstated. A [prototype] section just creates an own key, and [constructor] followed by a `prototype` key cannot overwrite Object.prototype because that property is non-writable. Reaching Object.prototype would need a nested path, and the visible diff does not show whether the parser supports one. Realistic impact is mutation of shared built-in function objects, which is closer to medium than high. The key-assignment code is outside the diff, so a key named '__proto__' is unverified."
+    }
+  ],
+  "summary": {
+    "totalEvaluated": 1,
+    "supportedCount": 1,
+    "partiallySupportedCount": 1,
+    "contestedCount": 0,
+    "insufficientEvidenceCount": 0,
+    "omissionsCount": 0
+  },
+  "ok": true
+}
