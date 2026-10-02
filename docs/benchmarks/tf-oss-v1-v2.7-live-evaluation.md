@@ -48,6 +48,15 @@ Under Triad-Flow v2.7, two core architectural pillars were implemented and deplo
 >   * Classification: Honest residual defect; not an authority or gate policy flaw (the policy gate correctly blocks whenever any finding exists). Registered as open empirical debt for Track D1 dogfooding and future benchmark iterations. Non-blocking for G4 closure.
 > - **Gate G4 Status**: Officially **CLOSED**. Gate G5 release preparation is authorized.
 
+### Governance Erratum: Authoritative Gate G4 Definition & Sealed Bundle Preservation
+- **Authoritative Gate G4 Definition**: Per [`docs/roadmap/v2.7-milestone-roadmap.md §4.4`](file:///C:/Users/arcobaleno/Documents/Code/triad-flow/docs/roadmap/v2.7-milestone-roadmap.md#L280-L310), the mandatory acceptance criteria for Gate G4 are strictly:
+  1. Recall strictly improves over baseline (> 20.0%)
+  2. Zero incomplete runs (0/5 = 0.0%)
+  3. Frozen `TF-OSS-v1` corpus digest intact (`sha256:47ed3ce4...`)
+  4. Cryptographic manifest sealed across all bundle artifacts
+- **Sealed Bundle Preservation**: The historical evidence artifact [`evidence-runs/TF-EVIDENCE-0010/README-EVIDENCE.md`](file:///C:/Users/arcobaleno/Documents/Code/triad-flow/evidence-runs/TF-EVIDENCE-0010/README-EVIDENCE.md) contained an over-broad table description labeling "Gate Policy Pass 100%" as a "G4 Strict Acceptance Criterion". The sealed bundle `TF-EVIDENCE-0010` is preserved byte-for-byte unchanged (`sha256:035ae8f5...`), adhering to the invariant that sealed historical evidence is never retroactively modified.
+- **Supplementary Targets & Empirical Debt**: Gate policy correctness (80.0%, 4/5) and average latency (87.605s) missed their supplementary milestone performance targets (`TARGET MISSED`), which are non-blocking for Gate G4. `TF-OSS-005` (ejs CVE-2022-29078 detection miss) is formally registered as open empirical debt.
+
 ---
 
 ## 2. Benchmark Corpus Invariant & Integrity Verification

@@ -39,6 +39,7 @@ import { verifyManifestBundle } from "../src/core/manifest-bundle.mjs";
 import { resolveProviderProfile } from "../src/adapters/provider-profiles.mjs";
 import { validateAuditReceipt } from "../src/core/audit-receipt.mjs";
 import { validateVerificationRecord } from "../src/core/independent-verifier.mjs";
+import { CliReviewAdapter } from "../src/adapters/cli-transport.mjs";
 
 test("Contract 1: parseArgs correctly parses all CLI flags and defaults for 0010", () => {
   const def = parseArgs([]);
@@ -227,4 +228,162 @@ test("Contract 7: CLI Subprocess --dry-run executes in mock mode and verifies ma
   assert.equal(res.status, 0);
   assert.ok(res.stdout.includes("TF-EVIDENCE-0010"));
   assert.ok(res.stdout.includes("Bundle successfully assembled and sealed!"));
+});
+
+test("Contract 8: Truthful README generation under 5/5 pass (TARGET MET, all defended, zero debt)", async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-test-truth-5-5-"));
+
+  try {
+    await assembleEvidence0010({
+      mock: true,
+      outDir: tempDir,
+      log: false
+    });
+
+    const readmeContent = fs.readFileSync(path.join(tempDir, "README-EVIDENCE.md"), "utf8");
+
+    // Must report TARGET MET, not TARGET MISSED
+    assert.ok(readmeContent.includes("**TARGET MET**"), "Must report TARGET MET when 5/5 pass");
+    assert.ok(!readmeContent.includes("**TARGET MISSED**"), "Must NOT report TARGET MISSED when 5/5 pass");
+
+    // Must list all 5 defended cases
+    assert.ok(
+      readmeContent.includes("cases TF-OSS-001, TF-OSS-002, TF-OSS-003, TF-OSS-004, TF-OSS-005 defended"),
+      "Must list all 5 defended cases"
+    );
+
+    // Debt section must state None, not falsely claim TF-OSS-005 missed
+    assert.ok(
+      readmeContent.includes("None. All 5 evaluated case(s) satisfied expected gate decisions."),
+      "Must report zero debt when 5/5 pass"
+    );
+    assert.ok(
+      !readmeContent.includes("- **TF-OSS-005"),
+      "Must NOT falsely report TF-OSS-005 in debt when 5/5 pass"
+    );
+
+    // Corpus immutability must report PASS
+    assert.ok(
+      readmeContent.includes("| **Corpus Immutability** | sha256:47ed3ce44878b77572005358a16511e3f0900dda11d14443e6a2a84baf501625 | Verified byte-for-byte unchanged | **PASS** |")
+    );
+  } finally {
+    try {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    } catch {}
+  }
+});
+
+test("Contract 9: Truthful README generation under 4/5 pass (TARGET MISSED, only 001..004 defended, debt recorded)", async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-test-truth-4-5-"));
+
+  // Mock adapters where TF-OSS-005 returns empty findings (simulating detection miss)
+  function create4of5Adapters() {
+    function findCaseForInput(input) {
+      const filePaths = (input.changeSet?.files || []).map(f => f.path.replace(/\\/g, "/"));
+      for (const c of TF_OSS_CORPUS_V1_CASES) {
+        for (const target of c.targetFiles || []) {
+          if (filePaths.includes(target.replace(/\\/g, "/"))) return c;
+        }
+      }
+      return null;
+    }
+
+    function createExecFn(role) {
+      return async ({ input }) => {
+        const c = findCaseForInput(input);
+        const coveredFiles = (input.changeSet?.files || []).map(f => f.path);
+        let findings = [];
+        if (c && c.goldenFindings && c.id !== "TF-OSS-005") {
+          const g = c.goldenFindings[0];
+          findings.push({
+            title: `Detected ${g.type} in ${c.name}`,
+            severity: "high",
+            file: g.file,
+            line_start: g.line,
+            line_end: g.line,
+            cwe: g.cwe,
+            type: g.type,
+            recommendation: g.rationale
+          });
+        }
+        return {
+          stdout: JSON.stringify({
+            findings,
+            coverage: { coveredFiles, omittedFiles: [] },
+            usage: { promptTokens: 400, completionTokens: 50, totalTokens: 450 }
+          })
+        };
+      };
+    }
+
+    return {
+      agy: new CliReviewAdapter({ command: "agy", providerName: "agy", modelName: "gemini-3.8-flash", actualModel: { value: "gemini-3.8-flash", source: "reported" }, execFn: createExecFn("agy") }),
+      claude: new CliReviewAdapter({ command: "claude", providerName: "claude", modelName: "claude-5.5-sonnet", actualModel: { value: "claude-5.5-sonnet", source: "reported" }, execFn: createExecFn("claude") }),
+      codex: new CliReviewAdapter({ command: "codex", providerName: "codex", modelName: "gpt-6.1-sol", actualModel: { value: "gpt-6.1-sol", source: "reported" }, execFn: createExecFn("codex") })
+    };
+  }
+
+  try {
+    await assembleEvidence0010({
+      mock: true,
+      reviewAdapters: create4of5Adapters(),
+      outDir: tempDir,
+      log: false
+    });
+
+    const readmeContent = fs.readFileSync(path.join(tempDir, "README-EVIDENCE.md"), "utf8");
+
+    // Must report TARGET MISSED
+    assert.ok(readmeContent.includes("**TARGET MISSED**"), "Must report TARGET MISSED when 4/5 pass");
+    assert.ok(!readmeContent.includes("**TARGET MET**"), "Must NOT report TARGET MET when 4/5 pass");
+
+    // Defended cases must only list cases 001..004
+    assert.ok(
+      readmeContent.includes("cases TF-OSS-001, TF-OSS-002, TF-OSS-003, TF-OSS-004 defended"),
+      "Must list only cases 001..004 as defended"
+    );
+    assert.ok(
+      !readmeContent.includes("TF-OSS-005 defended"),
+      "Must NOT list TF-OSS-005 as defended"
+    );
+
+    // Debt section must specifically identify TF-OSS-005
+    assert.ok(
+      readmeContent.includes("- **TF-OSS-005 (ejs CVE-2022-29078 / CWE-94)**:"),
+      "Must record TF-OSS-005 in Known Empirical Debt"
+    );
+    assert.ok(
+      readmeContent.includes("Expected Gate: `BLOCK` | Actual Gate: `APPROVE`"),
+      "Must describe expected vs actual gate for TF-OSS-005"
+    );
+  } finally {
+    try {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    } catch {}
+  }
+});
+
+test("Contract 10: Truthful README generation on partial run (--case TF-OSS-001) never describes unexecuted cases", async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-test-truth-partial-"));
+
+  try {
+    await assembleEvidence0010({
+      mock: true,
+      caseId: "TF-OSS-001",
+      outDir: tempDir,
+      log: false
+    });
+
+    const readmeContent = fs.readFileSync(path.join(tempDir, "README-EVIDENCE.md"), "utf8");
+
+    assert.ok(readmeContent.includes("cases TF-OSS-001 defended"), "Must list TF-OSS-001 defended");
+    assert.ok(!readmeContent.includes("TF-OSS-002"), "Must NOT mention unexecuted case TF-OSS-002");
+    assert.ok(!readmeContent.includes("TF-OSS-003"), "Must NOT mention unexecuted case TF-OSS-003");
+    assert.ok(!readmeContent.includes("TF-OSS-004"), "Must NOT mention unexecuted case TF-OSS-004");
+    assert.ok(!readmeContent.includes("TF-OSS-005"), "Must NOT mention unexecuted case TF-OSS-005");
+  } finally {
+    try {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    } catch {}
+  }
 });

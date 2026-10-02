@@ -541,8 +541,8 @@ export async function assembleEvidence0010(userOptions = {}) {
       console.log("  ✔ Independent Verifier: Anthropic claude (Claude 5.5 Sonnet)");
     }
   } else {
-    reviewAdapters = createTriPartyMockAdapters();
-    verifierAdapter = createMockVerifierAdapter("claude");
+    reviewAdapters = userOptions.reviewAdapters || createTriPartyMockAdapters();
+    verifierAdapter = userOptions.verifierAdapter || createMockVerifierAdapter("claude");
     if (log) {
       console.log("  ✔ Tri-Party Mock Review Adapters configured (agy, claude, codex)");
       console.log("  ✔ Independent Mock Verifier configured (claude)");
@@ -1113,12 +1113,33 @@ export async function assembleEvidence0010(userOptions = {}) {
 
   // Build README-EVIDENCE.md
   const isFullCorpusRun = caseResults.length === TF_OSS_CORPUS_V1_CASES.length;
+  const corpusMatches = corpusIdentity.corpusDigest === TF_OSS_V1_EXPECTED_CORPUS_DIGEST;
+  const corpusStatus = corpusMatches ? "PASS" : "FAIL (CORPUS_MUTATED)";
+  const manifestStatus = isFullCorpusRun ? "PASS" : "PARTIAL";
+
   const recallGate = isFullCorpusRun ? (recall > 0.20 ? "PASS" : "FAIL") : "PARTIAL (NON-AUTHORITATIVE)";
   const precisionGate = isFullCorpusRun ? (precision >= 0.50 ? "PASS" : "FAIL") : "PARTIAL (NON-AUTHORITATIVE)";
   const incompleteGate = isFullCorpusRun ? (incompleteCasesCount === 0 ? "PASS" : "FAIL") : "PARTIAL (NON-AUTHORITATIVE)";
   const latencyGate = isFullCorpusRun ? (avgMs <= 60000 ? "PASS" : "TARGET MISSED") : "PARTIAL (NON-AUTHORITATIVE)";
+
   const gatePolicyCount = caseResults.filter(c => c.gatePolicyPass).length;
-  const gatePolicyGate = isFullCorpusRun ? (gatePolicyCount === TF_OSS_CORPUS_V1_CASES.length ? "PASS" : "FAIL") : "PARTIAL (NON-AUTHORITATIVE)";
+  const defendedCases = caseResults.filter(c => c.gatePolicyPass).map(c => c.caseId);
+  const defendedCasesDesc = defendedCases.length > 0 ? `cases ${defendedCases.join(", ")} defended` : "no cases defended";
+  const gatePolicyStatus = isFullCorpusRun ? (gatePolicyCount === TF_OSS_CORPUS_V1_CASES.length ? "TARGET MET" : "TARGET MISSED") : "PARTIAL";
+
+  const failedCases = caseResults.filter(c => !c.gatePolicyPass);
+  const debtSectionLines = [
+    `### Known Empirical Debt & Residual Limitations`,
+    ...(failedCases.length === 0
+      ? [`None. All ${caseResults.length} evaluated case(s) satisfied expected gate decisions.`]
+      : failedCases.map(fc => [
+          `- **${fc.caseId} (${fc.name || fc.caseId}${fc.cve ? ` ${fc.cve}` : ""}${fc.cwe ? ` / ${fc.cwe}` : ""})**:`,
+          `  - Expected Gate: \`${(fc.expectedGateDecision || "BLOCK").toUpperCase()}\` | Actual Gate: \`${(fc.actualGateDecision || "APPROVE").toUpperCase()}\``,
+          `  - Defect Detection: ${fc.evalResult.caughtGoldens > 0 ? "caught" : `missed (0/3 sentries caught)`}`,
+          `  - Classification: Honest residual defect; not an authority or gate policy flaw. Registered as empirical debt for Track D1 dogfooding and future benchmark hardening. Non-blocking for G4.`
+        ].join("\n"))
+    )
+  ];
 
   const readmeContent = [
     `# Triad-Flow Immutable Evidence Bundle: ${BUNDLE_ID}`,
@@ -1151,21 +1172,17 @@ export async function assembleEvidence0010(userOptions = {}) {
     `|---|---|---|---|`,
     `| **Recall (R)** | > 20.0% (strictly improves over baseline) | **${(recall * 100).toFixed(1)}%** (${caughtGoldens}/${totalGoldens}) | **${recallGate}** |`,
     `| **Incomplete Runs** | 0/5 cases (zero incomplete runs) | **${(incompleteRate * 100).toFixed(1)}%** (${incompleteCasesCount}/${caseResults.length}) | **${incompleteGate}** |`,
-    `| **Corpus Immutability** | sha256:47ed3ce44878b77572005358a16511e3f0900dda11d14443e6a2a84baf501625 | Verified byte-for-byte unchanged | **PASS** |`,
-    `| **Evidence Manifest** | Cryptographic SHA-256 seal across all bundle artifacts | Verified and sealed | **PASS** |`,
+    `| **Corpus Immutability** | ${TF_OSS_V1_EXPECTED_CORPUS_DIGEST} | ${corpusMatches ? "Verified byte-for-byte unchanged" : "CORPUS DIGEST MISMATCH"} | **${corpusStatus}** |`,
+    `| **Evidence Manifest** | Cryptographic SHA-256 seal across all bundle artifacts | Sealed with SHA-256 digests in artifact-manifest.json | **${manifestStatus}** |`,
     ``,
     `### Supplementary Milestone Performance Targets (Non-Blocking for Gate G4)`,
     `| Target | v2.7 Milestone Goal | Observed (${BUNDLE_ID}) | Status |`,
     `|---|---|---|---|`,
     `| **Precision (P)** | >= 50.0% | **${(precision * 100).toFixed(1)}%** (${truePositives}/${precisionDenom}) | **${precisionGate}** |`,
-    `| **Gate Policy Correctness** | 100.0% (5/5) | **${((gatePolicyCount / caseResults.length) * 100).toFixed(1)}%** (${gatePolicyCount}/${caseResults.length}, cases 001..004 defended) | **TARGET MISSED** |`,
+    `| **Gate Policy Correctness** | 100.0% (${caseResults.length}/${caseResults.length}) | **${((gatePolicyCount / caseResults.length) * 100).toFixed(1)}%** (${gatePolicyCount}/${caseResults.length}, ${defendedCasesDesc}) | **${gatePolicyStatus}** |`,
     `| **Average Latency** | <= 60.000s | **${(avgMs / 1000).toFixed(3)}s** (${avgMs}ms) | **${latencyGate}** |`,
     ``,
-    `### Known Empirical Debt & Residual Limitations`,
-    `- **TF-OSS-005 (ejs CVE-2022-29078 / CWE-94)**:`,
-    `  - Expected Gate: \`BLOCK\` \| Actual Gate: \`APPROVE\``,
-    `  - Defect Detection: missed (0/3 sentries caught)`,
-    `  - Classification: Honest residual defect; not an authority bug (unlike 0008, where defect was caught but policy gate approved). Registered as empirical debt for Track D1 dogfooding and future benchmark hardening. Non-blocking for G4.`,
+    ...debtSectionLines,
     ``,
     `## Independent Verification Summary`,
     `- **Verifier**: Anthropic \`claude\` (\`claude-5.5-sonnet\`)`,
