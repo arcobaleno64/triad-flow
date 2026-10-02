@@ -816,6 +816,7 @@ export async function assembleEvidence0010(userOptions = {}) {
       c.incomplete = true;
       c.status = "incomplete";
       c.verifierFailed = true;
+      c.passed = false;
     }
 
     caseRecords[c.caseId] = rec;

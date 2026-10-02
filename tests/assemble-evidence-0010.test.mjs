@@ -572,6 +572,15 @@ test("Contract 13: Fails G4 and marks incomplete when verifierAdapter fails (PRR
     assert.equal(results.metrics.incompleteCasesCount, 5, "All cases must be incomplete when verifier fails");
     assert.equal(results.metrics.incompleteRate, 1.0);
 
+    // Every affected case must assert incomplete, status, verifierFailed, passed === false
+    assert.equal(results.caseResults.length, 5);
+    for (const c of results.caseResults) {
+      assert.equal(c.incomplete, true, `Case ${c.caseId} must be incomplete`);
+      assert.equal(c.status, "incomplete", `Case ${c.caseId} status must be incomplete`);
+      assert.equal(c.verifierFailed, true, `Case ${c.caseId} verifierFailed must be true`);
+      assert.equal(c.passed, false, `Case ${c.caseId} passed must be false`);
+    }
+
     // README must report FAIL on Incomplete Runs gate
     assert.ok(
       readme.includes("| **Incomplete Runs** | 0/5 cases (zero incomplete runs) | **100.0%** (5/5) | **FAIL** |"),
