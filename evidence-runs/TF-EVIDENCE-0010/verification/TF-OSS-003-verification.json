@@ -1,0 +1,118 @@
+{
+  "schemaVersion": "1.0.0",
+  "verifiedAt": "2026-10-02T02:46:33.608Z",
+  "changeSetDigest": "sha256:06899edec052dfbeec830934b8e325091458b4cbf4156f3341c3465a643aa009",
+  "producer": {
+    "providerName": "tri-party-quorum",
+    "findingsCount": 1,
+    "findings": [
+      {
+        "title": "Incomplete Prototype Pollution Protection via Unblocked Constructor and Conditional Prototype Check",
+        "severity": "high",
+        "file": "src/core.js",
+        "line_start": 9,
+        "line_end": 11,
+        "ruleId": "CHECKLIST-CWE-1321",
+        "cwe": "CWE-1321",
+        "type": "Prototype Pollution",
+        "recommendation": "Strictly and unconditionally block 'constructor', 'prototype', and '__proto__' across all path segments (e.g., `if (key === '__proto__' || key === 'constructor' || key === 'prototype')`). In addition, ensure validation covers all path components, including the terminal key.",
+        "sources": [
+          "agy",
+          "claude",
+          "codex"
+        ],
+        "corroborations": 3
+      }
+    ]
+  },
+  "verifier": {
+    "providerName": "claude",
+    "modelName": "claude-5.5-sonnet",
+    "actualModel": {
+      "source": "reported",
+      "value": "claude-5.5-sonnet"
+    },
+    "usage": {
+      "completionTokens": null,
+      "promptTokens": null,
+      "totalTokens": null,
+      "usageSource": "unavailable"
+    }
+  },
+  "evaluations": [
+    {
+      "findingId": "finding-1",
+      "verdict": "SUPPORTED",
+      "classification": "PARTIALLY_SUPPORTED",
+      "locatorAccurate": false,
+      "typeAccurate": true,
+      "severityAccurate": false,
+      "reasoning": "The diff shows a real residual gap, but the finding overstates it. (1) The loop is `i < keys.length - 1`, so the new guard never checks the terminal key. A path such as `['__proto__']` or `['a','__proto__']` is not covered by the guard. Whether it is exploitable depends on the final assignment, which is outside the diff hunk. (2) `constructor` is not blocked. A path like `['constructor','x']` traverses to `Object` and the final assignment would write `Object.x`, and `['constructor','constructor','x']` would write `Function.x`. This is static-property pollution of built-in constructors. (3) The finding says the `prototype` check is conditional on the preceding `constructor`. That is accurate, but it is not directly bypassable through the traversal. Reaching a prototype object without `__proto__` requires `constructor` followed by `prototype`, and that sequence is blocked at any non-terminal position. So the main chain to `Object.prototype` is closed for non-terminal keys. The `prototype` check is also skipped when `i === 0`. That is acceptable, because a plain document has no own function-valued `prototype` to traverse. Severity 'high' is too strong, since the primary `constructor.prototype.x` route is already blocked. 'medium' is more defensible, because the terminal-key and constructor-static gaps are real but narrower. Locator: the added lines are 8-10 in the new file (hunk starts at 5, with 3 context lines before the addition), not 9-11. The type, CWE-1321 Prototype Pollution, is correct.",
+      "dissent": "The diff shows a real residual gap, but the finding overstates it. (1) The loop is `i < keys.length - 1`, so the new guard never checks the terminal key. A path such as `['__proto__']` or `['a','__proto__']` is not covered by the guard. Whether it is exploitable depends on the final assignment, which is outside the diff hunk. (2) `constructor` is not blocked. A path like `['constructor','x']` traverses to `Object` and the final assignment would write `Object.x`, and `['constructor','constructor','x']` would write `Function.x`. This is static-property pollution of built-in constructors. (3) The finding says the `prototype` check is conditional on the preceding `constructor`. That is accurate, but it is not directly bypassable through the traversal. Reaching a prototype object without `__proto__` requires `constructor` followed by `prototype`, and that sequence is blocked at any non-terminal position. So the main chain to `Object.prototype` is closed for non-terminal keys. The `prototype` check is also skipped when `i === 0`. That is acceptable, because a plain document has no own function-valued `prototype` to traverse. Severity 'high' is too strong, since the primary `constructor.prototype.x` route is already blocked. 'medium' is more defensible, because the terminal-key and constructor-static gaps are real but narrower. Locator: the added lines are 8-10 in the new file (hunk starts at 5, with 3 context lines before the addition), not 9-11. The type, CWE-1321 Prototype Pollution, is correct."
+    }
+  ],
+  "verifierOmissions": [
+    {
+      "title": "Terminal key is not validated, so the guard does not cover the final assignment path segment",
+      "severity": "medium",
+      "file": "src/core.js",
+      "line_start": 6,
+      "line_end": 12,
+      "cwe": "CWE-1321",
+      "type": "Prototype Pollution",
+      "recommendation": "Apply the same forbidden-key check to the last path segment before the final assignment. Also reject `constructor` as a path segment, or use Object.create(null) / Object.prototype.hasOwnProperty checks when traversing, so that `obj[key]` cannot resolve inherited properties.",
+      "id": "omission-1",
+      "classification": "MISSED_BY_PRODUCER"
+    },
+    {
+      "title": "Traversal reads inherited properties via `obj[key] === undefined`, not own properties only",
+      "severity": "low",
+      "file": "src/core.js",
+      "line_start": 11,
+      "line_end": 12,
+      "cwe": "CWE-1321",
+      "type": "Prototype Pollution",
+      "recommendation": "Use Object.prototype.hasOwnProperty.call(obj, key) to decide whether to create or descend into a child. Otherwise, inherited keys such as `constructor` resolve to built-in objects and the walk can leave the document.",
+      "id": "omission-2",
+      "classification": "MISSED_BY_PRODUCER"
+    }
+  ],
+  "disagreementLedger": [
+    {
+      "findingId": "finding-1",
+      "producerFinding": {
+        "title": "Incomplete Prototype Pollution Protection via Unblocked Constructor and Conditional Prototype Check",
+        "severity": "high",
+        "file": "src/core.js",
+        "line_start": 9,
+        "line_end": 11,
+        "ruleId": "CHECKLIST-CWE-1321",
+        "cwe": "CWE-1321",
+        "type": "Prototype Pollution",
+        "recommendation": "Strictly and unconditionally block 'constructor', 'prototype', and '__proto__' across all path segments (e.g., `if (key === '__proto__' || key === 'constructor' || key === 'prototype')`). In addition, ensure validation covers all path components, including the terminal key.",
+        "sources": [
+          "agy",
+          "claude",
+          "codex"
+        ],
+        "corroborations": 3
+      },
+      "verdict": "SUPPORTED",
+      "classification": "PARTIALLY_SUPPORTED",
+      "locatorAccurate": false,
+      "typeAccurate": true,
+      "severityAccurate": false,
+      "reasoning": "The diff shows a real residual gap, but the finding overstates it. (1) The loop is `i < keys.length - 1`, so the new guard never checks the terminal key. A path such as `['__proto__']` or `['a','__proto__']` is not covered by the guard. Whether it is exploitable depends on the final assignment, which is outside the diff hunk. (2) `constructor` is not blocked. A path like `['constructor','x']` traverses to `Object` and the final assignment would write `Object.x`, and `['constructor','constructor','x']` would write `Function.x`. This is static-property pollution of built-in constructors. (3) The finding says the `prototype` check is conditional on the preceding `constructor`. That is accurate, but it is not directly bypassable through the traversal. Reaching a prototype object without `__proto__` requires `constructor` followed by `prototype`, and that sequence is blocked at any non-terminal position. So the main chain to `Object.prototype` is closed for non-terminal keys. The `prototype` check is also skipped when `i === 0`. That is acceptable, because a plain document has no own function-valued `prototype` to traverse. Severity 'high' is too strong, since the primary `constructor.prototype.x` route is already blocked. 'medium' is more defensible, because the terminal-key and constructor-static gaps are real but narrower. Locator: the added lines are 8-10 in the new file (hunk starts at 5, with 3 context lines before the addition), not 9-11. The type, CWE-1321 Prototype Pollution, is correct.",
+      "dissent": "The diff shows a real residual gap, but the finding overstates it. (1) The loop is `i < keys.length - 1`, so the new guard never checks the terminal key. A path such as `['__proto__']` or `['a','__proto__']` is not covered by the guard. Whether it is exploitable depends on the final assignment, which is outside the diff hunk. (2) `constructor` is not blocked. A path like `['constructor','x']` traverses to `Object` and the final assignment would write `Object.x`, and `['constructor','constructor','x']` would write `Function.x`. This is static-property pollution of built-in constructors. (3) The finding says the `prototype` check is conditional on the preceding `constructor`. That is accurate, but it is not directly bypassable through the traversal. Reaching a prototype object without `__proto__` requires `constructor` followed by `prototype`, and that sequence is blocked at any non-terminal position. So the main chain to `Object.prototype` is closed for non-terminal keys. The `prototype` check is also skipped when `i === 0`. That is acceptable, because a plain document has no own function-valued `prototype` to traverse. Severity 'high' is too strong, since the primary `constructor.prototype.x` route is already blocked. 'medium' is more defensible, because the terminal-key and constructor-static gaps are real but narrower. Locator: the added lines are 8-10 in the new file (hunk starts at 5, with 3 context lines before the addition), not 9-11. The type, CWE-1321 Prototype Pollution, is correct."
+    }
+  ],
+  "summary": {
+    "totalEvaluated": 1,
+    "supportedCount": 1,
+    "partiallySupportedCount": 1,
+    "contestedCount": 0,
+    "insufficientEvidenceCount": 0,
+    "omissionsCount": 2
+  },
+  "ok": true
+}

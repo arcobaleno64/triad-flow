@@ -1,0 +1,49 @@
+{
+  "schemaVersion": "1.0.0",
+  "verifiedAt": "2026-10-02T02:47:03.972Z",
+  "changeSetDigest": "sha256:d4871325615b2521ffbc7c48418809de77f8ba768c036338c0e7a648668ed561",
+  "producer": {
+    "providerName": "tri-party-quorum",
+    "findingsCount": 0,
+    "findings": []
+  },
+  "verifier": {
+    "providerName": "claude",
+    "modelName": "claude-5.5-sonnet",
+    "actualModel": {
+      "source": "reported",
+      "value": "claude-5.5-sonnet"
+    },
+    "usage": {
+      "completionTokens": null,
+      "promptTokens": null,
+      "totalTokens": null,
+      "usageSource": "unavailable"
+    }
+  },
+  "evaluations": [],
+  "verifierOmissions": [
+    {
+      "title": "outputFunctionName 驗證後再次強制轉型字串（TOCTOU），非字串物件可繞過識別字檢查",
+      "severity": "low",
+      "file": "lib/ejs.js",
+      "line_start": 7,
+      "line_end": 10,
+      "cwe": "CWE-367",
+      "type": "TOCTOU-VALIDATION-BYPASS",
+      "recommendation": "先檢查 typeof opts.outputFunctionName === 'string'，再將值存入區域變數，並對該變數同時做 regex 驗證與字串拼接。若不這樣做，帶有狀態的 toString/valueOf 物件（例如第一次呼叫回傳合法識別字、第二次回傳惡意程式碼）能通過 RegExp.test 的強制轉型，卻在 line 10 的拼接中產生不同字串，造成程式碼注入。",
+      "id": "omission-1",
+      "classification": "MISSED_BY_PRODUCER"
+    }
+  ],
+  "disagreementLedger": [],
+  "summary": {
+    "totalEvaluated": 0,
+    "supportedCount": 0,
+    "partiallySupportedCount": 0,
+    "contestedCount": 0,
+    "insufficientEvidenceCount": 0,
+    "omissionsCount": 1
+  },
+  "ok": true
+}
