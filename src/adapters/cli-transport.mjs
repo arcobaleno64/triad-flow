@@ -91,7 +91,7 @@ export class CliReviewAdapter {
     }
 
     const input = inputValidation.input;
-    const prompt = buildReviewPrompt(input.changeSet, input.role, input.limits);
+    const prompt = input.prompt || buildReviewPrompt(input.changeSet, input.role, input.limits);
     const context = {
       runId: input.runId,
       role: input.role,

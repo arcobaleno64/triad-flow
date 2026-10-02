@@ -439,13 +439,17 @@ test("Contract 11: Truthful README generation on incomplete execution marks fail
 
     const readmeContent = fs.readFileSync(path.join(tempDir, "README-EVIDENCE.md"), "utf8");
 
+    const oss5Idx = readmeContent.indexOf("- **TF-OSS-005");
+    assert.ok(oss5Idx !== -1, "TF-OSS-005 debt entry must exist");
+    const oss5Block = readmeContent.slice(oss5Idx);
+
     // Incomplete case MUST be labeled G4-BLOCKING, never Non-blocking for G4
     assert.ok(
-      readmeContent.includes("G4-BLOCKING"),
+      oss5Block.includes("G4-BLOCKING"),
       "Incomplete run must be explicitly labeled G4-BLOCKING"
     );
     assert.ok(
-      !readmeContent.includes("- **TF-OSS-005 (ejs\n  - Expected Gate: `BLOCK` | Actual Gate: `APPROVE`\n  - Defect Detection: incomplete execution\n  - Classification: Honest residual defect; registered as empirical debt for Track D1 dogfooding and future benchmark hardening. Non-blocking for G4."),
+      !oss5Block.includes("Non-blocking for G4"),
       "Incomplete case must NOT be labeled Non-blocking for G4"
     );
   } finally {
@@ -460,7 +464,9 @@ test("Contract 12: filterChangeSetExclusions strips exact outPath and dogfood-ru
     files: [
       { path: "src/core/harness.mjs", additions: 5, deletions: 2 },
       { path: "dogfood-run.json", additions: 100, deletions: 50 },
-      { path: "nested/dogfood-run.json", additions: 20, deletions: 10 }
+      { path: "nested/dogfood-run.json", additions: 20, deletions: 10 },
+      { path: "src/recovered.mjs", additions: 15, deletions: 1 },
+      { path: "custom output.json", additions: 30, deletions: 5 }
     ],
     diffHunks: [
       "diff --git a/src/core/harness.mjs b/src/core/harness.mjs",
@@ -474,28 +480,49 @@ test("Contract 12: filterChangeSetExclusions strips exact outPath and dogfood-ru
       "--- a/dogfood-run.json",
       "+++ b/dogfood-run.json",
       "@@ -1,1 +1,2 @@",
-      "+telemetry edit"
+      "+telemetry edit",
+      'diff --git "a/custom output.json" "b/custom output.json"',
+      "index 111..222 100644",
+      '--- "a/custom output.json"',
+      '+++ "b/custom output.json"',
+      "@@ -1,1 +1,2 @@",
+      "+quoted telemetry edit",
+      "diff --git a/dogfood-run.json b/src/recovered.mjs",
+      "similarity index 90%",
+      "rename from dogfood-run.json",
+      "rename to src/recovered.mjs",
+      "@@ -1,1 +1,2 @@",
+      "+rename into source retained",
+      "diff --git a/src/old.mjs b/dogfood-run.json",
+      "similarity index 90%",
+      "rename from src/old.mjs",
+      "rename to dogfood-run.json",
+      "@@ -1,1 +1,2 @@",
+      "+rename into telemetry dropped"
     ].join("\n"),
     contentDigest: "sha256:olddigest",
-    totalAdditions: 125,
-    totalDeletions: 62
+    totalAdditions: 170,
+    totalDeletions: 68
   };
 
-  const filtered = filterChangeSetExclusions(mockCs, ["dogfood-run.json"]);
+  const filtered = filterChangeSetExclusions(mockCs, ["dogfood-run.json", "custom output.json"]);
 
-  // files filtering: exact match on dogfood-run.json only (nested preserved)
-  assert.equal(filtered.files.length, 2);
+  // files filtering: exact match on exclusions only (nested preserved, rename into source preserved)
+  assert.equal(filtered.files.length, 3);
   assert.equal(filtered.files[0].path, "src/core/harness.mjs");
   assert.equal(filtered.files[1].path, "nested/dogfood-run.json");
+  assert.equal(filtered.files[2].path, "src/recovered.mjs");
 
-  // diffHunks filtering: telemetry hunk dropped, harness hunk retained
+  // diffHunks filtering: telemetry hunk dropped, quoted telemetry hunk dropped, rename into telemetry dropped
   assert.ok(filtered.diffHunks.includes("src/core/harness.mjs"));
+  assert.ok(filtered.diffHunks.includes("src/recovered.mjs"));
   assert.ok(!filtered.diffHunks.includes("telemetry edit"));
-  assert.ok(!filtered.diffHunks.includes("diff --git a/dogfood-run.json"));
+  assert.ok(!filtered.diffHunks.includes("quoted telemetry edit"));
+  assert.ok(!filtered.diffHunks.includes("rename into telemetry dropped"));
 
   // counts and digest updated
-  assert.equal(filtered.totalAdditions, 25);
-  assert.equal(filtered.totalDeletions, 12);
+  assert.equal(filtered.totalAdditions, 40);
+  assert.equal(filtered.totalDeletions, 13);
   assert.notEqual(filtered.contentDigest, "sha256:olddigest");
   assert.match(filtered.contentDigest, /^[a-f0-9]{64}$/i);
 });

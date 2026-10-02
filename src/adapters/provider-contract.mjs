@@ -86,7 +86,8 @@ export function validateProviderInput(input = {}) {
       policyId: input.policyId.trim(),
       timeoutMs,
       signal: input.signal || null,
-      limits: Object.freeze(limits)
+      limits: Object.freeze(limits),
+      prompt: typeof input.prompt === "string" ? input.prompt : undefined
     })
   };
 }

@@ -15,6 +15,7 @@ import { buildEvidenceReviewPrompt } from "./review-prompts.mjs";
 import { reconcileFindings } from "../core/reconciler.mjs";
 import { classifyFileRisk, RISK_TIERS } from "../core/graph-router.mjs";
 import { normalizeCanonicalPath } from "../core/scoring.mjs";
+import { EXECUTION_STATUS } from "./provider-contract.mjs";
 
 export const COVERAGE_OMISSION_CODES = Object.freeze({
   UNMODIFIED: "OMIT_UNMODIFIED",
@@ -220,12 +221,17 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
 
     try {
       chunkResult = await adapter.executeReview({
+        runId: `${runId}-chunk-${idx}`,
+        role,
+        policyId: options.policyId || "TRI_PARTY_HETEROGENEOUS",
+        timeoutMs: options.timeoutMs,
+        signal: options.signal,
         changeSet: {
           ...changeSet,
           diffHunks: chunk.diffHunks,
-          files: chunk.targetFiles.map(p => ({ path: p, additions: 0, deletions: 0 }))
+          files: chunk.targetFiles.map(p => ({ path: p, additions: 0, deletions: 0 })),
+          contentDigest: crypto.createHash("sha256").update(chunk.diffHunks || "", "utf8").digest("hex")
         },
-        role,
         limits,
         prompt
       });
@@ -316,6 +322,15 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
 
   return {
     runId,
+    ok: finalStatus === "completed" || (reconciledFindings.length > 0 && finalStatus !== "failed"),
+    executionStatus: finalStatus === "completed" ? EXECUTION_STATUS.SUCCESS : (finalStatus === "incomplete" ? EXECUTION_STATUS.PARTIAL_COVERAGE : EXECUTION_STATUS.ERROR),
+    providerIdentity: {
+      provider: adapter.providerName || role,
+      model: adapter.modelName || "unknown-model",
+      family: adapter.family || "unknown",
+      transport: "cli-staged",
+      runId
+    },
     status: finalStatus,
     findings: reconciledFindings,
     coverage: coverageEval.declaration,

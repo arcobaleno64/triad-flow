@@ -1137,13 +1137,17 @@ export async function assembleEvidence0010(userOptions = {}) {
           const classification = isIncomplete
             ? "Execution failure or timeout violating mandatory Roadmap §4.4 zero-incomplete criterion. G4-BLOCKING."
             : "Honest residual defect; registered as empirical debt for Track D1 dogfooding and future benchmark hardening. Non-blocking for G4.";
+          const expGate = dc.expectedGateDecision ? String(dc.expectedGateDecision).toUpperCase() : "UNKNOWN";
+          const actGate = dc.actualGateDecision ? String(dc.actualGateDecision).toUpperCase() : "UNKNOWN";
+          const caught = dc.evalResult?.caughtGoldens ?? (dc.detectionPass ? 1 : 0);
+          const total = dc.evalResult?.totalGoldens ?? (dc.goldensCount || 1);
           const detectionDesc = isIncomplete
             ? "incomplete execution (provider timeout, malformed output, or absence)"
-            : (dc.detectionPass ? `caught (${dc.evalResult?.caughtGoldens || 1}/${dc.evalResult?.totalGoldens || 1} goldens)` : `missed (0/3 sentries caught)`);
+            : (dc.detectionPass ? `caught (${caught}/${total} goldens)` : `missed (${caught}/${total} goldens)`);
 
           return [
             `- **${dc.caseId} (${dc.name || dc.caseId}${dc.cve ? ` ${dc.cve}` : ""}${dc.cwe ? ` / ${dc.cwe}` : ""})**:`,
-            `  - Expected Gate: \`${(dc.expectedGateDecision || "BLOCK").toUpperCase()}\` | Actual Gate: \`${(dc.actualGateDecision || "APPROVE").toUpperCase()}\``,
+            `  - Expected Gate: \`${expGate}\` | Actual Gate: \`${actGate}\``,
             `  - Defect Detection: ${detectionDesc}`,
             `  - Classification: ${classification}`
           ].join("\n");

@@ -26,7 +26,11 @@ import {
 } from "../src/adapters/cli-transport.mjs";
 import { aggregateConsensus } from "../src/core/loop.mjs";
 import { evaluateGateDecision } from "../src/core/harness.mjs";
-import { convertProviderResultToSentryReport } from "../src/adapters/provider-contract.mjs";
+import {
+  EXECUTION_STATUS,
+  convertProviderResultToSentryReport
+} from "../src/adapters/provider-contract.mjs";
+import { executeStagedReview } from "../src/adapters/staged-review.mjs";
 import {
   conductIndependentVerification,
   buildDisagreementLedgerDocument,
@@ -219,11 +223,36 @@ export function filterChangeSetExclusions(changeSet, excludedPaths = []) {
   if (filteredDiffHunks) {
     const chunks = filteredDiffHunks.split(/(?=^diff --git )/m);
     const retainedChunks = chunks.filter(chunk => {
-      const match = chunk.match(/^diff --git a\/(.+?) b\/(.+?)(?:\r?\n|$)/m);
+      const match = chunk.match(/^diff --git (?:"a\/(.+?)"|a\/(.+?))\s+(?:"b\/(.+?)"|b\/(.+?))(?:\r?\n|$)/m);
       if (match) {
-        const fileA = path.normalize(match[1]).replace(/\\/g, "/").replace(/^\.\//, "");
-        const fileB = path.normalize(match[2]).replace(/\\/g, "/").replace(/^\.\//, "");
-        if (normalizedExclusions.has(fileA) || normalizedExclusions.has(fileB)) {
+        const rawA = match[1] || match[2];
+        const rawB = match[3] || match[4];
+        const fileA = path.normalize(rawA).replace(/\\/g, "/").replace(/^\.\//, "");
+        const fileB = path.normalize(rawB).replace(/\\/g, "/").replace(/^\.\//, "");
+        const targetFile = (fileB === "/dev/null" || fileB === "dev/null") ? fileA : fileB;
+        if (normalizedExclusions.has(targetFile)) {
+          return false;
+        }
+        return true;
+      }
+
+      // Fallback for chunks without standard diff --git header
+      const plusMatch = chunk.match(/^\+\+\+ (?:"b\/(.+?)"|b\/(.+?)|([^\s\r\n]+))(?:\r?\n|$)/m);
+      if (plusMatch) {
+        const rawB = plusMatch[1] || plusMatch[2] || plusMatch[3];
+        const fileB = path.normalize(rawB).replace(/\\/g, "/").replace(/^\.\//, "");
+        if (fileB !== "/dev/null" && fileB !== "dev/null") {
+          if (normalizedExclusions.has(fileB)) {
+            return false;
+          }
+          return true;
+        }
+      }
+      const minusMatch = chunk.match(/^--- (?:"a\/(.+?)"|a\/(.+?)|([^\s\r\n]+))(?:\r?\n|$)/m);
+      if (minusMatch) {
+        const rawA = minusMatch[1] || minusMatch[2] || minusMatch[3];
+        const fileA = path.normalize(rawA).replace(/\\/g, "/").replace(/^\.\//, "");
+        if (normalizedExclusions.has(fileA)) {
           return false;
         }
       }
@@ -403,14 +432,31 @@ export async function runDogfoodReview(userOptions = {}) {
   const t0 = Date.now();
 
   const tAgy0 = Date.now();
-  const pAgy = reviewAdapters.agy.executeReview({
-    runId: `dogfood-${Date.now()}-agy`,
-    role: "agy",
-    changeSet,
-    policyId: "TRI_PARTY_HETEROGENEOUS",
-    timeoutMs,
-    signal: userOptions.signal || null
-  }).then(res => ({ res, latencyMs: Date.now() - tAgy0 }));
+  const executeAgyReview = async () => {
+    const runId = `dogfood-${Date.now()}-agy`;
+    let res = await reviewAdapters.agy.executeReview({
+      runId,
+      role: "agy",
+      changeSet,
+      policyId: "TRI_PARTY_HETEROGENEOUS",
+      timeoutMs,
+      signal: userOptions.signal || null
+    });
+
+    if (res?.executionStatus === EXECUTION_STATUS.PAYLOAD_TOO_LARGE) {
+      if (log) console.log("    ℹ [agy] Prompt exceeds Windows argv limit; delegating to staged chunked review (RFC-027-01)...");
+      res = await executeStagedReview(changeSet, reviewAdapters.agy, {
+        runId,
+        role: "agy",
+        policyId: "TRI_PARTY_HETEROGENEOUS",
+        maxChunkBytes: 20000,
+        timeoutMs,
+        signal: userOptions.signal || null
+      });
+    }
+    return res;
+  };
+  const pAgy = executeAgyReview().then(res => ({ res, latencyMs: Date.now() - tAgy0 }));
 
   const tClaude0 = Date.now();
   const pClaude = reviewAdapters.claude.executeReview({
@@ -454,9 +500,9 @@ export async function runDogfoodReview(userOptions = {}) {
   };
 
   if (log) {
-    console.log(`  ✔ Google agy:   status=${rawReports.agy.executionStatus} (${rawReports.agy.findings?.length || 0} findings, ${agyOut.latencyMs}ms)`);
-    console.log(`  ✔ Anthropic claude: status=${rawReports.claude.executionStatus} (${rawReports.claude.findings?.length || 0} findings, ${claudeOut.latencyMs}ms)`);
-    console.log(`  ✔ OpenAI codex: status=${rawReports.codex.executionStatus} (${rawReports.codex.findings?.length || 0} findings, ${codexOut.latencyMs}ms)`);
+    console.log(`  ✔ Google agy:   status=${rawReports.agy.executionStatus} (${rawReports.agy.findings?.length || 0} findings, ${agyOut.latencyMs}ms)${agyOut.res?.error ? ` - error: ${agyOut.res.error}` : ""}`);
+    console.log(`  ✔ Anthropic claude: status=${rawReports.claude.executionStatus} (${rawReports.claude.findings?.length || 0} findings, ${claudeOut.latencyMs}ms)${claudeOut.res?.error ? ` - error: ${claudeOut.res.error}` : ""}`);
+    console.log(`  ✔ OpenAI codex: status=${rawReports.codex.executionStatus} (${rawReports.codex.findings?.length || 0} findings, ${codexOut.latencyMs}ms)${codexOut.res?.error ? ` - error: ${codexOut.res.error}` : ""}`);
   }
 
   // 4. Consensus & Policy Evaluation
