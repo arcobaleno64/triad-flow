@@ -738,7 +738,7 @@ export async function assembleEvidence0010(userOptions = {}) {
   const precisionDenom = truePositives + falsePositives;
   const precision = precisionDenom > 0 ? parseFloat((truePositives / precisionDenom).toFixed(3)) : 0.0;
   const falseBlockRate = cleanCasesCount > 0 ? parseFloat((falseBlocks / cleanCasesCount).toFixed(3)) : null;
-  const incompleteRate = caseResults.length > 0 ? parseFloat((incompleteCasesCount / caseResults.length).toFixed(3)) : 0.0;
+  let incompleteRate = caseResults.length > 0 ? parseFloat((incompleteCasesCount / caseResults.length).toFixed(3)) : 0.0;
 
   const latencies = caseResults.map(r => r.latencyMs).sort((a, b) => a - b);
   const p50Ms = latencies[Math.floor(latencies.length * 0.5)] || 0;
@@ -810,6 +810,12 @@ export async function assembleEvidence0010(userOptions = {}) {
     const recValidation = validateVerificationRecord(rec);
     if (!recValidation.valid) {
       throw new Error(`Case ${c.caseId} verification record validation failed: ${recValidation.errors.join("; ")}`);
+    }
+
+    if (rec.ok === false) {
+      c.incomplete = true;
+      c.status = "incomplete";
+      c.verifierFailed = true;
     }
 
     caseRecords[c.caseId] = rec;
@@ -887,6 +893,13 @@ export async function assembleEvidence0010(userOptions = {}) {
       }
     }
   }
+
+  // Recompute incomplete metrics if any independent verification failed
+  incompleteCasesCount = caseResults.filter(r => r.incomplete).length;
+  incompleteRate = caseResults.length > 0 ? parseFloat((incompleteCasesCount / caseResults.length).toFixed(3)) : 0.0;
+  benchmarkResultsDoc.metrics.incompleteCasesCount = incompleteCasesCount;
+  benchmarkResultsDoc.metrics.incompleteRate = incompleteRate;
+  fs.writeFileSync(resultsPath, JSON.stringify(benchmarkResultsDoc, null, 2) + "\n", "utf8");
 
   const aggregateVerificationRecord = {
     schemaVersion: VERIFICATION_SCHEMA_VERSION,

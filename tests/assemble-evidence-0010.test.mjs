@@ -544,3 +544,43 @@ test("Contract 12: filterChangeSetExclusions strips exact outPath and dogfood-ru
   assert.notEqual(filtered.contentDigest, "sha256:olddigest");
   assert.match(filtered.contentDigest, /^[a-f0-9]{64}$/i);
 });
+
+test("Contract 13: Fails G4 and marks incomplete when verifierAdapter fails (PRRT_kwDOUWarIc6oOUW6)", async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-test-verif-fail-"));
+
+  const failingVerifierAdapter = {
+    providerName: "claude",
+    verifyFindings: async () => ({
+      ok: false,
+      error: "Verifier connection timed out",
+      evaluations: []
+    })
+  };
+
+  try {
+    await assembleEvidence0010({
+      mock: true,
+      verifierAdapter: failingVerifierAdapter,
+      outDir: tempDir,
+      log: false
+    });
+
+    const results = JSON.parse(fs.readFileSync(path.join(tempDir, "benchmark-results.json"), "utf8"));
+    const readme = fs.readFileSync(path.join(tempDir, "README-EVIDENCE.md"), "utf8");
+
+    // All cases must be marked incomplete due to verifier failure
+    assert.equal(results.metrics.incompleteCasesCount, 5, "All cases must be incomplete when verifier fails");
+    assert.equal(results.metrics.incompleteRate, 1.0);
+
+    // README must report FAIL on Incomplete Runs gate
+    assert.ok(
+      readme.includes("| **Incomplete Runs** | 0/5 cases (zero incomplete runs) | **100.0%** (5/5) | **FAIL** |"),
+      "Must fail Incomplete Runs gate when verifier fails"
+    );
+  } finally {
+    try {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    } catch {}
+  }
+});
+
