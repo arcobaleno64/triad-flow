@@ -172,3 +172,63 @@ test("executeStagedReview on chunk failure fails closed with ok=false and incomp
   // Clean up
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
+
+test("executeStagedReview rejects empty provider coverage with omission and fails closed", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-staged-empty-cov-"));
+
+  const cs = {
+    scopeMode: "revision-range",
+    files: [{ path: "src/auth/token.js" }],
+    diffHunks: "diff --git a/src/auth/token.js b/src/auth/token.js\n--- a/src/auth/token.js\n+++ b/src/auth/token.js\n@@ -1 +1 @@\n-old\n+new"
+  };
+
+  const emptyCoverageAdapter = {
+    providerName: "mock-agy",
+    executeReview: async () => ({
+      ok: true,
+      findings: [],
+      coverage: { coveredFiles: [], omittedFiles: [{ path: "src/auth/token.js", reason: "size limit" }] }
+    })
+  };
+
+  const result = await executeStagedReview(cs, emptyCoverageAdapter, {
+    cwd: tmpDir
+  });
+
+  assert.equal(result.ok, false, "Empty provider coverage must NOT be promoted to full coverage");
+  assert.equal(result.executionStatus, "incomplete");
+  assert.equal(result.coverage.coveredFiles.length, 0);
+  assert.equal(result.coverage.isComplete, false);
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+test("executeStagedReview marks run incomplete if any chunk receipt timed out", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-staged-timeout-receipt-"));
+
+  const cs = {
+    scopeMode: "revision-range",
+    files: [{ path: "src/normal.js" }],
+    diffHunks: "diff --git a/src/normal.js b/src/normal.js\n--- a/src/normal.js\n+++ b/src/normal.js\n@@ -1 +1 @@\n-old\n+new"
+  };
+
+  const timeoutAdapter = {
+    providerName: "mock-agy",
+    executeReview: async () => ({
+      ok: false,
+      status: "timeout",
+      error: "Provider timed out"
+    })
+  };
+
+  const result = await executeStagedReview(cs, timeoutAdapter, {
+    cwd: tmpDir
+  });
+
+  assert.equal(result.ok, false, "Timeout chunk must cause staged review to fail closed (ok=false)");
+  assert.equal(result.executionStatus, "incomplete");
+  assert.equal(result.status, "incomplete");
+  assert.ok(result.receipts.some(r => r.status === "timeout"));
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});

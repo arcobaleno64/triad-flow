@@ -251,12 +251,23 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
       if (Array.isArray(chunkResult.findings)) {
         accumulatedFindings.push(...chunkResult.findings);
       }
-      if (chunkResult.coverage && Array.isArray(chunkResult.coverage.coveredFiles) && chunkResult.coverage.coveredFiles.length > 0) {
-        for (const cf of chunkResult.coverage.coveredFiles) {
+      if (chunkResult.coverage) {
+        const provCovered = Array.isArray(chunkResult.coverage.coveredFiles)
+          ? chunkResult.coverage.coveredFiles
+          : [];
+        const provOmitted = Array.isArray(chunkResult.coverage.omittedFiles)
+          ? chunkResult.coverage.omittedFiles
+          : [];
+
+        for (const cf of provCovered) {
           coveredFiles.add(normalizeCanonicalPath(cf));
         }
-        if (Array.isArray(chunkResult.coverage.omittedFiles)) {
-          omittedFiles.push(...chunkResult.coverage.omittedFiles);
+        for (const omit of provOmitted) {
+          omittedFiles.push({
+            file: omit.file || omit.path || omit.target || "unknown",
+            code: omit.code || COVERAGE_OMISSION_CODES.OUT_OF_SCOPE,
+            reason: omit.reason || "Provider declared omission"
+          });
         }
       } else {
         for (const tf of chunk.targetFiles) {
@@ -322,19 +333,21 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
   // Evaluate Coverage
   const coverageEval = evaluateCoverageContract(changeSet, Array.from(coveredFiles), omittedFiles);
 
-  const finalStatus = coverageEval.isComplete ? "completed" : "incomplete";
+  const allReceiptsSucceeded = chunkReceipts.length > 0 && chunkReceipts.every(r => r.status === "completed");
+  const hasTimeouts = omittedFiles.some(o => o.code === COVERAGE_OMISSION_CODES.TIMEOUT) || chunkReceipts.some(r => r.status === "timeout");
+  const isComplete = coverageEval.isComplete && allReceiptsSucceeded && !hasTimeouts;
+  const finalStatus = isComplete ? "completed" : "incomplete";
 
   // Clean up checkpoint on complete success
-  if (coverageEval.isComplete) {
+  if (isComplete) {
     checkpointStore.clearCheckpoint(runId);
   }
 
-  const isComplete = finalStatus === "completed";
   return {
     runId,
     ok: isComplete,
     executionStatus: isComplete ? EXECUTION_STATUS.SUCCESS : EXECUTION_STATUS.INCOMPLETE,
-    error: isComplete ? undefined : (coverageEval.violations?.[0] || "Staged review execution incomplete."),
+    error: isComplete ? undefined : (coverageEval.violations?.[0] || (hasTimeouts ? "One or more chunks timed out during review." : "Staged review execution incomplete.")),
     providerIdentity: {
       provider: adapter.providerName || role,
       model: adapter.modelName || "unknown-model",
