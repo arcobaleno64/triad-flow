@@ -35,10 +35,10 @@ export const TAXONOMY_CHECKLISTS = Object.freeze({
     cwe: "CWE-94",
     title: "Dynamic Function Construction & Template Compilation (CWE-94 / CWE-74)",
     rules: Object.freeze([
-      "Inspect dynamic function construction: Function constructor, eval(), and execution scopes.",
+      "Inspect dynamic function creation APIs (such as new Function or indirect evaluation scopes).",
       "Verify template compilation options (e.g. outputFunctionName, client compile flags).",
       "Inspect serialization and deserialization routines handling untrusted structures.",
-      "Check string concatenation or interpolation into dynamically constructed function bodies (e.g. template options like outputFunctionName interpolated into new Function or eval). Even if partial regex validation is added, inspect whether identifier interpolation into executable code remains vulnerable or bypassable."
+      "Verify whether identifier validation strictly prevents insertion of non-identifier property expressions."
     ])
   }),
   COMMAND_INJECTION: Object.freeze({
@@ -58,7 +58,7 @@ export const TAXONOMY_CHECKLISTS = Object.freeze({
     title: "Filesystem Path Resolution & Boundary Containment (CWE-22)",
     rules: Object.freeze([
       "Inspect path.join and path.resolve with untrusted segments.",
-      "Check for directory traversal sequences ('..', '%2e%2e').",
+      "Inspect path boundary enforcement against parent directory references or encoded delimiters.",
       "Verify symlink resolution using realpath or containment assertions.",
       "Check write operations to user-specified filenames."
     ])
@@ -266,14 +266,6 @@ export function buildEvidenceReviewPrompt(changeSet, role = "macro", limits = DE
     `\`\`\``,
     hunks,
     `\`\`\``,
-    ``,
-    `[SEVERITY CALIBRATION & CLASSIFICATION CONTRACT]`,
-    `Calibrate finding severity strictly based on impact and taxonomy guidelines:`,
-    `- critical: Direct system compromise, arbitrary command execution, dynamic function code evaluation (CWE-94), or authentication bypass.`,
-    `- high: Security boundary bypass, prototype pollution (CWE-1321), unvalidated prototype/constructor traversal, severe ReDoS (CWE-1333) with catastrophic backtracking on untrusted inputs, command construction flaw (CWE-78), or path traversal (CWE-22).`,
-    `- medium: Moderate denial-of-service without exponential blowup, information disclosure, or unhandled exceptions in core flow.`,
-    `- low: Minor code hygiene, behavioral regression without security impact.`,
-    `- MANDATORY: Any verified flaw matching the assigned checklists (e.g. Prototype Pollution CWE-1321, ReDoS CWE-1333, Dynamic Function Construction CWE-94) that permits prototype alteration or catastrophic resource exhaustion MUST be assigned 'high' or 'critical'. Never downgrade confirmed checklist vulnerabilities to 'low' or 'info'.`,
     ``,
     `[RESPONSE FORMAT SPECIFICATION]`,
     `Respond ONLY with a JSON object in this exact format, with no preamble or commentary:`,

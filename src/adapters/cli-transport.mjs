@@ -28,7 +28,7 @@ export { extractJsonFromText } from "./provider-contract.mjs";
 
 const AUTH_ERROR_PATTERNS = [
   /not logged in/i,
-  /unauthorized/i,
+  /\b(?:401\s+unauthorized|unauthorized\s*(?:client|access\s+token|api\s+key))\b/i,
   /invalid[_\s-]api[_\s-]key/i,
   /authentication failed/i,
   /auth failure/i,
@@ -76,6 +76,9 @@ export class CliReviewAdapter {
     this.env = options.env || null;
     this.cwd = options.cwd || null;
     this.args = assembleProviderArgs(profile, options.args);
+    this.maxRetries = options.maxRetries !== undefined
+      ? Number(options.maxRetries)
+      : (this.family === "google" ? 2 : 0);
   }
 
   async executeReview(rawInput) {
@@ -117,15 +120,6 @@ export class CliReviewAdapter {
       }, context);
     }
 
-    // Determine temp file for file-based output channels
-    let tempOutputFile = null;
-    if (this.profile?.outputChannel === "file" && this.profile?.outputFileFlag) {
-      tempOutputFile = path.join(
-        os.tmpdir(),
-        `tf-review-${this.profile.id}-${Date.now()}-${Math.random().toString(36).slice(2)}.json`
-      );
-    }
-
     // Scrub env if envAllowlist is defined
     let effectiveEnv = this.env || process.env;
     if (this.profile?.envAllowlist && Array.isArray(this.profile.envAllowlist)) {
@@ -136,6 +130,29 @@ export class CliReviewAdapter {
           effectiveEnv[k] = v;
         }
       }
+    }
+
+    // Execute with retry on transient safety filter refusal
+    for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
+      const result = await this._spawnAttempt(input, prompt, context, effectiveCwd, effectiveEnv);
+      const isRefusal = result.executionStatus === EXECUTION_STATUS.ERROR &&
+        PROVIDER_REFUSAL_PATTERNS.some(p => p.test(result.error || ""));
+      if (isRefusal && attempt < this.maxRetries && (!input.signal || !input.signal.aborted)) {
+        await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+        continue;
+      }
+      return result;
+    }
+  }
+
+  async _spawnAttempt(input, prompt, context, effectiveCwd, effectiveEnv) {
+    // Determine temp file for file-based output channels
+    let tempOutputFile = null;
+    if (this.profile?.outputChannel === "file" && this.profile?.outputFileFlag) {
+      tempOutputFile = path.join(
+        os.tmpdir(),
+        `tf-review-${this.profile.id}-${Date.now()}-${Math.random().toString(36).slice(2)}.json`
+      );
     }
 
     // Use injected execution function if provided (e.g. for mock unit tests)
