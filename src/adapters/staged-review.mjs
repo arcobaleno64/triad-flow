@@ -259,15 +259,24 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
           ? chunkResult.coverage.omittedFiles
           : [];
 
+        const chunkTargetSet = new Set(chunk.targetFiles.map(tf => normalizeCanonicalPath(tf)));
+
         for (const cf of provCovered) {
-          coveredFiles.add(normalizeCanonicalPath(cf));
+          const norm = normalizeCanonicalPath(cf);
+          if (chunkTargetSet.has(norm)) {
+            coveredFiles.add(norm);
+          }
         }
         for (const omit of provOmitted) {
-          omittedFiles.push({
-            file: omit.file || omit.path || omit.target || "unknown",
-            code: omit.code || COVERAGE_OMISSION_CODES.OUT_OF_SCOPE,
-            reason: omit.reason || "Provider declared omission"
-          });
+          const omitFile = omit.file || omit.path || omit.target || "unknown";
+          const norm = normalizeCanonicalPath(omitFile);
+          if (chunkTargetSet.has(norm)) {
+            omittedFiles.push({
+              file: norm,
+              code: omit.code || COVERAGE_OMISSION_CODES.OUT_OF_SCOPE,
+              reason: omit.reason || "Provider declared omission"
+            });
+          }
         }
       } else {
         for (const tf of chunk.targetFiles) {

@@ -8,6 +8,7 @@
 import crypto from "node:crypto";
 import { classifyFileRisk, RISK_TIERS } from "./graph-router.mjs";
 import { normalizeCanonicalPath } from "./scoring.mjs";
+import { decodeGitCStyleString } from "./git-numstat.mjs";
 
 export const CHUNK_LIMIT_WINDOWS_BYTES = 8192;   // 8 KB ceiling on Windows
 export const CHUNK_LIMIT_POSIX_BYTES = 65536;    // 64 KB ceiling on POSIX
@@ -19,6 +20,66 @@ export const CHUNK_LIMIT_POSIX_BYTES = 65536;    // 64 KB ceiling on POSIX
  */
 export function getSafeChunkLimit(platform = process.platform) {
   return platform === "win32" ? CHUNK_LIMIT_WINDOWS_BYTES : CHUNK_LIMIT_POSIX_BYTES;
+}
+
+/**
+ * Parses Git diff headers supporting quoted and C-style escaped paths.
+ * @param {string} line
+ * @returns {{ fileA: string, fileB: string } | null}
+ */
+export function parseGitDiffHeader(line) {
+  if (!line || typeof line !== "string" || !line.startsWith("diff --git ")) return null;
+  const rest = line.slice("diff --git ".length).trim();
+  let rawA = null;
+  let rawB = null;
+
+  if (rest.startsWith('"')) {
+    let escape = false;
+    let endQuoteIdx = -1;
+    for (let i = 1; i < rest.length; i++) {
+      if (escape) {
+        escape = false;
+      } else if (rest[i] === "\\") {
+        escape = true;
+      } else if (rest[i] === '"') {
+        endQuoteIdx = i;
+        break;
+      }
+    }
+    if (endQuoteIdx !== -1) {
+      rawA = rest.slice(0, endQuoteIdx + 1);
+      rawB = rest.slice(endQuoteIdx + 1).trim();
+    }
+  } else {
+    const spaceIdx = rest.indexOf(" ");
+    if (spaceIdx !== -1) {
+      rawA = rest.slice(0, spaceIdx);
+      rawB = rest.slice(spaceIdx + 1).trim();
+    }
+  }
+
+  if (!rawA || !rawB) return null;
+
+  const unquotePath = (p, prefix) => {
+    let unquoted = p;
+    let wasQuoted = false;
+    if (unquoted.startsWith('"') && unquoted.endsWith('"')) {
+      unquoted = unquoted.slice(1, -1);
+      wasQuoted = true;
+    }
+    if (unquoted.startsWith(prefix)) {
+      unquoted = unquoted.slice(prefix.length);
+    }
+    if (wasQuoted) {
+      unquoted = decodeGitCStyleString(`"${unquoted}"`);
+    }
+    return unquoted;
+  };
+
+  return {
+    fileA: unquotePath(rawA, "a/"),
+    fileB: unquotePath(rawB, "b/")
+  };
 }
 
 /**
@@ -42,22 +103,27 @@ export function splitDiffByFiles(diffText) {
   };
 
   for (const line of lines) {
-    // Detect diff header: diff --git a/path b/path
-    const gitMatch = line.match(/^diff --git a\/(.+?) b\/(.+?)$/);
+    // Detect diff header: diff --git a/path b/path or diff --git "a/path" "b/path"
+    const gitMatch = parseGitDiffHeader(line);
     if (gitMatch) {
       flush();
-      currentFile = normalizeCanonicalPath(gitMatch[2]);
+      const target = (gitMatch.fileB === "/dev/null" || gitMatch.fileB === "dev/null")
+        ? gitMatch.fileA
+        : gitMatch.fileB;
+      currentFile = normalizeCanonicalPath(target);
       currentLines.push(line);
       continue;
     }
 
-    // Detect fallback diff header: +++ b/path
-    const plusMatch = line.match(/^\+\+\+ b\/(.+?)$/);
+    // Detect fallback diff header: +++ b/path or +++ "b/path"
+    const plusMatch = line.match(/^\+\+\+ (?:"b\/(.+?)"|b\/(.+?))$/);
     if (plusMatch && (!currentFile || !currentLines.some(l => l.startsWith("diff --git")))) {
-      if (currentFile && currentFile !== normalizeCanonicalPath(plusMatch[1])) {
+      const rawTarget = plusMatch[1] || plusMatch[2];
+      const target = decodeGitCStyleString(rawTarget.startsWith('"') ? rawTarget : `"${rawTarget}"`);
+      if (currentFile && currentFile !== normalizeCanonicalPath(target)) {
         flush();
       }
-      currentFile = normalizeCanonicalPath(plusMatch[1]);
+      currentFile = normalizeCanonicalPath(target);
     }
 
     if (currentFile) {
@@ -141,12 +207,45 @@ export function partitionChangeSetIntoChunks(changeSet, options = {}) {
       }
 
       if (fileBytes > maxChunkBytes) {
-        // Massive file: Put into standalone chunk with warning notice
-        rawChunks.push({
-          priorityTier: tier,
-          targetFiles: [filePath],
-          diffHunks: fileHunks
-        });
+        // Massive file: partition across hunks if possible, else standalone chunk
+        const hunks = fileHunks.split(/(?=^@@ )/m);
+        if (hunks.length > 2) {
+          const header = hunks[0];
+          let subHunks = [];
+          let subBytes = Buffer.byteLength(header, "utf8");
+
+          for (let i = 1; i < hunks.length; i++) {
+            const h = hunks[i];
+            const hBytes = Buffer.byteLength(h, "utf8");
+            if (subBytes + hBytes > maxChunkBytes && subHunks.length > 0) {
+              rawChunks.push({
+                priorityTier: tier,
+                targetFiles: [filePath],
+                diffHunks: header + subHunks.join("")
+              });
+              subHunks = [h];
+              subBytes = Buffer.byteLength(header, "utf8") + hBytes;
+            } else {
+              subHunks.push(h);
+              subBytes += hBytes;
+            }
+          }
+
+          if (subHunks.length > 0) {
+            rawChunks.push({
+              priorityTier: tier,
+              targetFiles: [filePath],
+              diffHunks: header + subHunks.join("")
+            });
+          }
+        } else {
+          // Cannot split further or single hunk: put into standalone chunk
+          rawChunks.push({
+            priorityTier: tier,
+            targetFiles: [filePath],
+            diffHunks: fileHunks
+          });
+        }
         continue;
       }
 

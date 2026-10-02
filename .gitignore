@@ -23,3 +23,5 @@ scratch/
 !evidence-runs/**
 # Subagent teamwork logs
 .agents/
+# Transient staged review checkpoints
+.triad-flow/

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { resolveRenamePath, parseNumstat, parseNumstatZ } from "../src/core/git-numstat.mjs";
+import { resolveRenamePath, parseNumstat, parseNumstatZ, decodeGitCStyleString } from "../src/core/git-numstat.mjs";
 
 test("resolveRenamePath parses brace rename syntax correctly", () => {
   const res = resolveRenamePath("src/{old => new}/app.js");
@@ -55,4 +55,12 @@ test("parseNumstatZ preserves POSIX backslash characters in filenames (P1-05)", 
   const parsed = parseNumstatZ(raw);
   assert.equal(parsed.length, 1);
   assert.equal(parsed[0].path, "auth\\file.js");
+});
+
+test("decodeGitCStyleString correctly decodes UTF-8 octal sequences and escape chars", () => {
+  assert.equal(decodeGitCStyleString('"src/\\346\\270\\254.js"'), "src/測.js");
+  assert.equal(decodeGitCStyleString('"path/with\\ttab.js"'), "path/with\ttab.js");
+  assert.equal(decodeGitCStyleString('"path/with\\"quote.js"'), 'path/with"quote.js');
+  assert.equal(decodeGitCStyleString('"path/with\\\\backslash.js"'), 'path/with\\backslash.js');
+  assert.equal(decodeGitCStyleString("unquoted/path.js"), "unquoted/path.js");
 });

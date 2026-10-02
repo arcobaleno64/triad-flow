@@ -175,3 +175,22 @@ test("convertProviderResultToSentryReport transforms validated result to sentry 
   assert.equal(errorReport.name, "mock-sentry");
   assert.match(errorReport.error, /timed out/i);
 });
+
+test("validateProviderOutput normalizes paths in coveredFiles against changeSet", () => {
+  const changeSet = makeValidChangeSet({
+    files: [{ path: "CHANGELOG.md", additions: 1, deletions: 1 }]
+  });
+
+  const output = {
+    findings: [],
+    coverage: {
+      coveredFiles: ["./CHANGELOG.md", "src/unrelated.js"],
+      omittedFiles: []
+    }
+  };
+
+  const res = validateProviderOutput(output, { changeSet });
+  assert.equal(res.ok, true);
+  assert.equal(res.coverage.coveredFiles.length, 1);
+  assert.ok(res.coverage.coveredFiles[0].toLowerCase().includes("changelog.md"));
+});

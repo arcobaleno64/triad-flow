@@ -459,14 +459,15 @@ test("Contract 11: Truthful README generation on incomplete execution marks fail
   }
 });
 
-test("Contract 12: filterChangeSetExclusions strips exact outPath and dogfood-run.json from files, diffHunks, and recomputes digest", () => {
+test("Contract 12: filterChangeSetExclusions strips exact outPath and dogfood-run.json, decodes octal escapes, preserves source renames, and tracks excludedFiles", () => {
   const mockCs = {
     files: [
       { path: "src/core/harness.mjs", additions: 5, deletions: 2 },
       { path: "dogfood-run.json", additions: 100, deletions: 50 },
       { path: "nested/dogfood-run.json", additions: 20, deletions: 10 },
       { path: "src/recovered.mjs", additions: 15, deletions: 1 },
-      { path: "custom output.json", additions: 30, deletions: 5 }
+      { path: "custom output.json", additions: 30, deletions: 5 },
+      { path: "測.json", additions: 10, deletions: 5 }
     ],
     diffHunks: [
       "diff --git a/src/core/harness.mjs b/src/core/harness.mjs",
@@ -487,6 +488,12 @@ test("Contract 12: filterChangeSetExclusions strips exact outPath and dogfood-ru
       '+++ "b/custom output.json"',
       "@@ -1,1 +1,2 @@",
       "+quoted telemetry edit",
+      'diff --git "a/\\346\\270\\254.json" "b/\\346\\270\\254.json"',
+      "index 333..444 100644",
+      '--- "a/\\346\\270\\254.json"',
+      '+++ "b/\\346\\270\\254.json"',
+      "@@ -1,1 +1,2 @@",
+      "+octal escaped telemetry edit",
       "diff --git a/dogfood-run.json b/src/recovered.mjs",
       "similarity index 90%",
       "rename from dogfood-run.json",
@@ -498,14 +505,20 @@ test("Contract 12: filterChangeSetExclusions strips exact outPath and dogfood-ru
       "rename from src/old.mjs",
       "rename to dogfood-run.json",
       "@@ -1,1 +1,2 @@",
-      "+rename into telemetry dropped"
+      "+rename from source into telemetry retained",
+      "diff --git a/old-telemetry.json b/dogfood-run.json",
+      "similarity index 90%",
+      "rename from old-telemetry.json",
+      "rename to dogfood-run.json",
+      "@@ -1,1 +1,2 @@",
+      "+rename between two telemetry dropped"
     ].join("\n"),
     contentDigest: "sha256:olddigest",
-    totalAdditions: 170,
-    totalDeletions: 68
+    totalAdditions: 180,
+    totalDeletions: 73
   };
 
-  const filtered = filterChangeSetExclusions(mockCs, ["dogfood-run.json", "custom output.json"]);
+  const filtered = filterChangeSetExclusions(mockCs, ["dogfood-run.json", "custom output.json", "測.json", "old-telemetry.json"]);
 
   // files filtering: exact match on exclusions only (nested preserved, rename into source preserved)
   assert.equal(filtered.files.length, 3);
@@ -513,12 +526,17 @@ test("Contract 12: filterChangeSetExclusions strips exact outPath and dogfood-ru
   assert.equal(filtered.files[1].path, "nested/dogfood-run.json");
   assert.equal(filtered.files[2].path, "src/recovered.mjs");
 
-  // diffHunks filtering: telemetry hunk dropped, quoted telemetry hunk dropped, rename into telemetry dropped
+  // excludedFiles tracking
+  assert.deepEqual(filtered.excludedFiles, ["dogfood-run.json", "custom output.json", "測.json"]);
+
+  // diffHunks filtering: telemetry hunks dropped, rename from source into telemetry retained
   assert.ok(filtered.diffHunks.includes("src/core/harness.mjs"));
   assert.ok(filtered.diffHunks.includes("src/recovered.mjs"));
+  assert.ok(filtered.diffHunks.includes("rename from source into telemetry retained"));
   assert.ok(!filtered.diffHunks.includes("telemetry edit"));
   assert.ok(!filtered.diffHunks.includes("quoted telemetry edit"));
-  assert.ok(!filtered.diffHunks.includes("rename into telemetry dropped"));
+  assert.ok(!filtered.diffHunks.includes("octal escaped telemetry edit"));
+  assert.ok(!filtered.diffHunks.includes("rename between two telemetry dropped"));
 
   // counts and digest updated
   assert.equal(filtered.totalAdditions, 40);

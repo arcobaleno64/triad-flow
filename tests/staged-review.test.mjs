@@ -232,3 +232,42 @@ test("executeStagedReview marks run incomplete if any chunk receipt timed out", 
 
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
+
+test("executeStagedReview ignores provider coverage claims outside chunk targetFiles", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-staged-overclaim-"));
+
+  const cs = {
+    scopeMode: "revision-range",
+    files: [
+      { path: "src/chunk1.js" },
+      { path: "src/chunk2.js" }
+    ],
+    diffHunks: [
+      "diff --git a/src/chunk1.js b/src/chunk1.js\n--- a/src/chunk1.js\n+++ b/src/chunk1.js\n@@ -1 +1 @@\n-old\n+new",
+      "diff --git a/src/chunk2.js b/src/chunk2.js\n--- a/src/chunk2.js\n+++ b/src/chunk2.js\n@@ -1 +1 @@\n-old\n+new"
+    ].join("\n")
+  };
+
+  const overclaimAdapter = {
+    providerName: "mock-agy",
+    executeReview: async () => ({
+      ok: true,
+      findings: [],
+      coverage: {
+        coveredFiles: ["src/chunk1.js", "src/chunk2.js", "unrelated/secret.env"],
+        omittedFiles: [{ path: "unrelated/other.js", reason: "ignored" }]
+      }
+    })
+  };
+
+  const result = await executeStagedReview(cs, overclaimAdapter, {
+    cwd: tmpDir,
+    maxChunkBytes: 50
+  });
+
+  assert.equal(result.ok, true);
+  assert.ok(!result.coverage.coveredFiles.includes("unrelated/secret.env"));
+  assert.ok(!result.coverage.omittedFiles.some(o => o.file?.includes("unrelated/other.js")));
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});

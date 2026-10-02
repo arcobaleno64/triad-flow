@@ -1115,7 +1115,7 @@ export async function assembleEvidence0010(userOptions = {}) {
   const isFullCorpusRun = caseResults.length === TF_OSS_CORPUS_V1_CASES.length;
   const corpusMatches = corpusIdentity.corpusDigest === TF_OSS_V1_EXPECTED_CORPUS_DIGEST;
   const corpusStatus = corpusMatches ? "PASS" : "FAIL (CORPUS_MUTATED)";
-  const manifestStatus = isFullCorpusRun ? "PASS" : "PARTIAL";
+  const manifestStatus = isFullCorpusRun ? "SEALED_ON_COMPLETION" : "PARTIAL (NON-AUTHORITATIVE)";
 
   const recallGate = isFullCorpusRun ? (recall > 0.20 ? "PASS" : "FAIL") : "PARTIAL (NON-AUTHORITATIVE)";
   const precisionGate = isFullCorpusRun ? (precision >= 0.50 ? "PASS" : "FAIL") : "PARTIAL (NON-AUTHORITATIVE)";
@@ -1187,7 +1187,7 @@ export async function assembleEvidence0010(userOptions = {}) {
     `| **Recall (R)** | > 20.0% (strictly improves over baseline) | **${(recall * 100).toFixed(1)}%** (${caughtGoldens}/${totalGoldens}) | **${recallGate}** |`,
     `| **Incomplete Runs** | 0/${targetCases.length} cases (zero incomplete runs) | **${(incompleteRate * 100).toFixed(1)}%** (${incompleteCasesCount}/${caseResults.length}) | **${incompleteGate}** |`,
     `| **Corpus Immutability** | ${TF_OSS_V1_EXPECTED_CORPUS_DIGEST} | ${corpusMatches ? "Verified byte-for-byte unchanged" : "CORPUS DIGEST MISMATCH"} | **${corpusStatus}** |`,
-    `| **Evidence Manifest** | Cryptographic SHA-256 seal across all bundle artifacts | ${isFullCorpusRun ? "All bundle artifacts sealed with SHA-256 digests in artifact-manifest.json" : "Partial bundle artifacts sealed"} | **${manifestStatus}** |`,
+    `| **Evidence Manifest** | Cryptographic SHA-256 seal across all bundle artifacts | ${isFullCorpusRun ? "All bundle artifacts sealed with SHA-256 digests in artifact-manifest.json upon assembly completion" : "Partial bundle artifacts sealed"} | **${manifestStatus}** |`,
     ``,
     `### Supplementary Milestone Performance Targets (Non-Blocking for Gate G4)`,
     `| Target | v2.7 Milestone Goal | Observed (${BUNDLE_ID}) | Status |`,

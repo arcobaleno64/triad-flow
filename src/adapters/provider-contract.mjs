@@ -8,6 +8,7 @@
 
 import { normalizeFinding, redactSecrets } from "../core/harness.mjs";
 import { getProviderFamily } from "../core/benchmark-pilot.mjs";
+import { normalizeCanonicalPath } from "../core/scoring.mjs";
 
 export const EXECUTION_STATUS = Object.freeze({
   SUCCESS: "success",
@@ -247,13 +248,15 @@ function sanitizeRawOutput(raw) {
   }
 
   // Coverage normalization
-  const validFiles = new Set((inputContext.changeSet?.files || []).map(f => f.path));
+  const validFiles = new Set((inputContext.changeSet?.files || []).map(f => normalizeCanonicalPath(typeof f === "string" ? f : f?.path || "")));
   const rawCovered = rawOutput.coverage.coveredFiles;
-  const coveredFiles = rawCovered.filter(p => typeof p === "string" && (validFiles.size === 0 || validFiles.has(p)));
+  const coveredFiles = rawCovered
+    .filter(p => typeof p === "string" && (validFiles.size === 0 || validFiles.has(normalizeCanonicalPath(p))))
+    .map(p => normalizeCanonicalPath(p));
 
   const rawOmitted = rawOutput.coverage.omittedFiles;
   const omittedFiles = rawOmitted.map(o => ({
-    path: String(o?.path || "unknown"),
+    path: String(o?.path || o?.file || "unknown"),
     reason: String(o?.reason || "unspecified")
   }));
 

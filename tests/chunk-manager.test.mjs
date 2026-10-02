@@ -70,3 +70,55 @@ test("partitionChangeSetIntoChunks prioritizes Tier 1 (Critical) files first", (
     assert.ok(c.totalChunks === chunks.length);
   }
 });
+
+test("splitDiffByFiles parses quoted paths and C-style UTF-8 octal escapes", () => {
+  const diff = [
+    'diff --git "a/src/my space/file.js" "b/src/my space/file.js"',
+    '--- "a/src/my space/file.js"',
+    '+++ "b/src/my space/file.js"',
+    '@@ -1 +1 @@',
+    '+ const spaced = true;',
+    'diff --git "a/\\346\\270\\254.js" "b/\\346\\270\\254.js"',
+    '--- "a/\\346\\270\\254.js"',
+    '+++ "b/\\346\\270\\254.js"',
+    '@@ -1 +1 @@',
+    '+ const utf8 = "測";'
+  ].join("\n");
+
+  const map = splitDiffByFiles(diff);
+  assert.equal(map.size, 2);
+  assert.ok(map.has("src/my space/file.js"));
+  assert.ok(map.has("測.js"));
+});
+
+test("partitionChangeSetIntoChunks partitions oversized files across hunks", () => {
+  const diff = [
+    "diff --git a/src/large.js b/src/large.js",
+    "--- a/src/large.js",
+    "+++ b/src/large.js",
+    "@@ -1,5 +1,10 @@",
+    "+ // Hunk 1 content with substantial bytes to exceed small limit",
+    "+ const a = 1;",
+    "+ const b = 2;",
+    "@@ -100,5 +105,10 @@",
+    "+ // Hunk 2 content with substantial bytes to exceed small limit",
+    "+ const c = 3;",
+    "+ const d = 4;"
+  ].join("\n");
+
+  const cs = {
+    files: [{ path: "src/large.js" }],
+    diffHunks: diff
+  };
+
+  // Set limit smaller than total file diff (~350 bytes) but larger than individual hunk (~180 bytes)
+  const chunks = partitionChangeSetIntoChunks(cs, { maxChunkBytes: 220 });
+  assert.equal(chunks.length, 2);
+  assert.deepEqual(chunks[0].targetFiles, ["src/large.js"]);
+  assert.deepEqual(chunks[1].targetFiles, ["src/large.js"]);
+  assert.ok(chunks[0].diffHunks.includes("Hunk 1"));
+  assert.ok(chunks[1].diffHunks.includes("Hunk 2"));
+  // Both chunks must preserve the file header
+  assert.ok(chunks[0].diffHunks.startsWith("diff --git a/src/large.js b/src/large.js"));
+  assert.ok(chunks[1].diffHunks.startsWith("diff --git a/src/large.js b/src/large.js"));
+});

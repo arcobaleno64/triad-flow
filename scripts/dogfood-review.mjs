@@ -20,6 +20,7 @@ import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 import { buildChangeSet } from "../src/core/git-collector.mjs";
+import { decodeGitCStyleString } from "../src/core/git-numstat.mjs";
 import {
   CliReviewAdapter,
   resolveProviderProfile
@@ -144,7 +145,7 @@ Options:
   --base <ref>        Git base reference to diff against (default: main)
   --head <ref>        Git head reference (default: HEAD)
   --out <file>        Output report path (default: dogfood-run.json)
-  --timeout <ms>      Per-provider timeout in milliseconds (default: 120000 live / 30000 mock)
+  --timeout <ms>      Per-provider timeout in milliseconds (default: 300000 live / 30000 mock)
   --help, -h          Show this help message
 `);
 }
@@ -210,9 +211,16 @@ export function filterChangeSetExclusions(changeSet, excludedPaths = []) {
   );
 
   const rawFiles = changeSet.files || [];
+  const excludedFiles = [];
   const files = rawFiles.filter(f => {
-    const norm = path.normalize(f.path || "").replace(/\\/g, "/").replace(/^\.\//, "");
-    return !normalizedExclusions.has(norm);
+    const rawPath = typeof f === "string" ? f : f?.path || "";
+    const decoded = decodeGitCStyleString(rawPath);
+    const norm = path.normalize(decoded).replace(/\\/g, "/").replace(/^\.\//, "");
+    if (normalizedExclusions.has(norm)) {
+      excludedFiles.push(rawPath);
+      return false;
+    }
+    return true;
   });
 
   const totalAdditions = files.reduce((acc, f) => acc + (f.additions || 0), 0);
@@ -227,10 +235,29 @@ export function filterChangeSetExclusions(changeSet, excludedPaths = []) {
       if (match) {
         const rawA = match[1] || match[2];
         const rawB = match[3] || match[4];
-        const fileA = path.normalize(rawA).replace(/\\/g, "/").replace(/^\.\//, "");
-        const fileB = path.normalize(rawB).replace(/\\/g, "/").replace(/^\.\//, "");
-        const targetFile = (fileB === "/dev/null" || fileB === "dev/null") ? fileA : fileB;
-        if (normalizedExclusions.has(targetFile)) {
+        const decodedA = decodeGitCStyleString(rawA.startsWith('"') ? rawA : `"${rawA}"`);
+        const decodedB = decodeGitCStyleString(rawB.startsWith('"') ? rawB : `"${rawB}"`);
+        const fileA = path.normalize(decodedA).replace(/\\/g, "/").replace(/^\.\//, "");
+        const fileB = path.normalize(decodedB).replace(/\\/g, "/").replace(/^\.\//, "");
+        const isExcludedA = normalizedExclusions.has(fileA);
+        const isExcludedB = normalizedExclusions.has(fileB);
+        const isDevNullA = fileA === "/dev/null" || fileA === "dev/null";
+        const isDevNullB = fileB === "/dev/null" || fileB === "dev/null";
+
+        if (isDevNullB) {
+          // File deleted: exclude only if fileA is in exclusions
+          return !isExcludedA;
+        }
+        if (isDevNullA) {
+          // File created: exclude only if fileB is in exclusions
+          return !isExcludedB;
+        }
+        if (fileA === fileB) {
+          return !isExcludedA;
+        }
+        // Rename or copy (fileA !== fileB):
+        // Exclude only if BOTH source and destination are excluded
+        if (isExcludedA && isExcludedB) {
           return false;
         }
         return true;
@@ -238,21 +265,39 @@ export function filterChangeSetExclusions(changeSet, excludedPaths = []) {
 
       // Fallback for chunks without standard diff --git header
       const plusMatch = chunk.match(/^\+\+\+ (?:"b\/(.+?)"|b\/(.+?)|([^\s\r\n]+))(?:\r?\n|$)/m);
+      const minusMatch = chunk.match(/^--- (?:"a\/(.+?)"|a\/(.+?)|([^\s\r\n]+))(?:\r?\n|$)/m);
+      if (plusMatch && minusMatch) {
+        const rawA = minusMatch[1] || minusMatch[2] || minusMatch[3];
+        const rawB = plusMatch[1] || plusMatch[2] || plusMatch[3];
+        const decodedA = decodeGitCStyleString(rawA.startsWith('"') ? rawA : `"${rawA}"`);
+        const decodedB = decodeGitCStyleString(rawB.startsWith('"') ? rawB : `"${rawB}"`);
+        const fileA = path.normalize(decodedA).replace(/\\/g, "/").replace(/^\.\//, "");
+        const fileB = path.normalize(decodedB).replace(/\\/g, "/").replace(/^\.\//, "");
+        const isExcludedA = normalizedExclusions.has(fileA);
+        const isExcludedB = normalizedExclusions.has(fileB);
+        const isDevNullA = fileA === "/dev/null" || fileA === "dev/null";
+        const isDevNullB = fileB === "/dev/null" || fileB === "dev/null";
+
+        if (isDevNullB) return !isExcludedA;
+        if (isDevNullA) return !isExcludedB;
+        if (fileA === fileB) return !isExcludedA;
+        if (isExcludedA && isExcludedB) return false;
+        return true;
+      }
+
       if (plusMatch) {
         const rawB = plusMatch[1] || plusMatch[2] || plusMatch[3];
-        const fileB = path.normalize(rawB).replace(/\\/g, "/").replace(/^\.\//, "");
-        if (fileB !== "/dev/null" && fileB !== "dev/null") {
-          if (normalizedExclusions.has(fileB)) {
-            return false;
-          }
-          return true;
+        const decodedB = decodeGitCStyleString(rawB.startsWith('"') ? rawB : `"${rawB}"`);
+        const fileB = path.normalize(decodedB).replace(/\\/g, "/").replace(/^\.\//, "");
+        if (fileB !== "/dev/null" && fileB !== "dev/null" && normalizedExclusions.has(fileB)) {
+          return false;
         }
       }
-      const minusMatch = chunk.match(/^--- (?:"a\/(.+?)"|a\/(.+?)|([^\s\r\n]+))(?:\r?\n|$)/m);
       if (minusMatch) {
         const rawA = minusMatch[1] || minusMatch[2] || minusMatch[3];
-        const fileA = path.normalize(rawA).replace(/\\/g, "/").replace(/^\.\//, "");
-        if (normalizedExclusions.has(fileA)) {
+        const decodedA = decodeGitCStyleString(rawA.startsWith('"') ? rawA : `"${rawA}"`);
+        const fileA = path.normalize(decodedA).replace(/\\/g, "/").replace(/^\.\//, "");
+        if (fileA !== "/dev/null" && fileA !== "dev/null" && normalizedExclusions.has(fileA)) {
           return false;
         }
       }
@@ -270,7 +315,8 @@ export function filterChangeSetExclusions(changeSet, excludedPaths = []) {
     diffHunks: filteredDiffHunks,
     contentDigest,
     totalAdditions,
-    totalDeletions
+    totalDeletions,
+    excludedFiles
   };
 }
 
@@ -305,7 +351,7 @@ export async function runDogfoodReview(userOptions = {}) {
   const isMock = !isLive;
   const base = userOptions.base || "main";
   const head = userOptions.head || "HEAD";
-  const timeoutMs = userOptions.timeoutMs || (isLive ? 180000 : 30000);
+  const timeoutMs = userOptions.timeoutMs || (isLive ? 300000 : 30000);
   const log = userOptions.log !== false;
   const outPath = path.resolve(userOptions.out || "dogfood-run.json");
 
@@ -574,7 +620,8 @@ export async function runDogfoodReview(userOptions = {}) {
       totalAdditions: changeSet.totalAdditions,
       totalDeletions: changeSet.totalDeletions,
       riskTier: diffTier,
-      files: files.map(f => ({ path: f.path, additions: f.additions, deletions: f.deletions, riskTier: f.riskTier }))
+      files: files.map(f => ({ path: f.path, additions: f.additions, deletions: f.deletions, riskTier: f.riskTier })),
+      excludedFiles: changeSet.excludedFiles || []
     },
     providerTelemetry: {
       agy: {
