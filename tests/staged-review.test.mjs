@@ -113,10 +113,61 @@ test("executeStagedReview partitions chunks and executes adapter with checkpoint
   });
 
   assert.equal(result.status, "completed");
+  assert.equal(result.ok, true);
+  assert.equal(result.executionStatus, "success");
+  assert.equal(result.providerIdentity?.provider, "mock-sentry");
   assert.ok(result.findings.length >= 1);
   assert.equal(result.findings[0].severity, "critical");
   assert.equal(result.findings[0].cwe, "cwe-94");
   assert.ok(result.receipts.length >= 2);
+
+  // Clean up
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+test("executeStagedReview on chunk failure fails closed with ok=false and incomplete status", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-staged-fail-test-"));
+
+  const cs = {
+    scopeMode: "working-tree",
+    files: [
+      { path: "src/auth/token.js" }, // Tier 1 Critical
+      { path: "src/other.js" }
+    ],
+    diffHunks: [
+      "diff --git a/src/auth/token.js b/src/auth/token.js",
+      "@@ -1,1 +1,2 @@",
+      "+ criticalTokenChange();",
+      "diff --git a/src/other.js b/src/other.js",
+      "@@ -1,1 +1,2 @@",
+      "+ otherChange();"
+    ].join("\n")
+  };
+
+  const failingAdapter = {
+    providerName: "failing-sentry",
+    executeReview: async ({ changeSet }) => {
+      if (changeSet.diffHunks.includes("criticalTokenChange")) {
+        return {
+          ok: false,
+          status: "timeout",
+          error: "Process timed out"
+        };
+      }
+      return { ok: true, findings: [{ title: "Non-critical finding", severity: "low" }] };
+    }
+  };
+
+  const result = await executeStagedReview(cs, failingAdapter, {
+    cwd: tmpDir,
+    maxChunkBytes: 50
+  });
+
+  assert.equal(result.status, "incomplete");
+  assert.equal(result.ok, false, "Incomplete staged execution must fail closed (ok=false)");
+  assert.equal(result.executionStatus, "incomplete");
+  assert.ok(result.error);
+  assert.equal(result.providerIdentity?.provider, "failing-sentry");
 
   // Clean up
   fs.rmSync(tmpDir, { recursive: true, force: true });

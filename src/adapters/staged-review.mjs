@@ -251,8 +251,17 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
       if (Array.isArray(chunkResult.findings)) {
         accumulatedFindings.push(...chunkResult.findings);
       }
-      for (const tf of chunk.targetFiles) {
-        coveredFiles.add(normalizeCanonicalPath(tf));
+      if (chunkResult.coverage && Array.isArray(chunkResult.coverage.coveredFiles) && chunkResult.coverage.coveredFiles.length > 0) {
+        for (const cf of chunkResult.coverage.coveredFiles) {
+          coveredFiles.add(normalizeCanonicalPath(cf));
+        }
+        if (Array.isArray(chunkResult.coverage.omittedFiles)) {
+          omittedFiles.push(...chunkResult.coverage.omittedFiles);
+        }
+      } else {
+        for (const tf of chunk.targetFiles) {
+          coveredFiles.add(normalizeCanonicalPath(tf));
+        }
       }
       chunkReceipts.push({
         chunkId: chunk.chunkId,
@@ -320,10 +329,12 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
     checkpointStore.clearCheckpoint(runId);
   }
 
+  const isComplete = finalStatus === "completed";
   return {
     runId,
-    ok: finalStatus === "completed" || (reconciledFindings.length > 0 && finalStatus !== "failed"),
-    executionStatus: finalStatus === "completed" ? EXECUTION_STATUS.SUCCESS : (finalStatus === "incomplete" ? EXECUTION_STATUS.PARTIAL_COVERAGE : EXECUTION_STATUS.ERROR),
+    ok: isComplete,
+    executionStatus: isComplete ? EXECUTION_STATUS.SUCCESS : EXECUTION_STATUS.INCOMPLETE,
+    error: isComplete ? undefined : (coverageEval.violations?.[0] || "Staged review execution incomplete."),
     providerIdentity: {
       provider: adapter.providerName || role,
       model: adapter.modelName || "unknown-model",

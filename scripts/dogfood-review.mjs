@@ -449,7 +449,6 @@ export async function runDogfoodReview(userOptions = {}) {
         runId,
         role: "agy",
         policyId: "TRI_PARTY_HETEROGENEOUS",
-        maxChunkBytes: 20000,
         timeoutMs,
         signal: userOptions.signal || null
       });
