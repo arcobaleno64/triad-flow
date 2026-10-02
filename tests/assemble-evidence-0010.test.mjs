@@ -254,7 +254,7 @@ test("Contract 8: Truthful README generation under 5/5 pass (TARGET MET, all def
 
     // Debt section must state None, not falsely claim TF-OSS-005 missed
     assert.ok(
-      readmeContent.includes("None. All 5 evaluated case(s) satisfied expected gate decisions."),
+      readmeContent.includes("None. All 5 evaluated case(s) satisfied expected detection and gate decisions."),
       "Must report zero debt when 5/5 pass"
     );
     assert.ok(

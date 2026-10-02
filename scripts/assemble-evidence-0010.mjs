@@ -1127,16 +1127,16 @@ export async function assembleEvidence0010(userOptions = {}) {
   const defendedCasesDesc = defendedCases.length > 0 ? `cases ${defendedCases.join(", ")} defended` : "no cases defended";
   const gatePolicyStatus = isFullCorpusRun ? (gatePolicyCount === TF_OSS_CORPUS_V1_CASES.length ? "TARGET MET" : "TARGET MISSED") : "PARTIAL";
 
-  const failedCases = caseResults.filter(c => !c.gatePolicyPass);
+  const debtCases = caseResults.filter(c => !c.gatePolicyPass || !c.detectionPass);
   const debtSectionLines = [
     `### Known Empirical Debt & Residual Limitations`,
-    ...(failedCases.length === 0
-      ? [`None. All ${caseResults.length} evaluated case(s) satisfied expected gate decisions.`]
-      : failedCases.map(fc => [
-          `- **${fc.caseId} (${fc.name || fc.caseId}${fc.cve ? ` ${fc.cve}` : ""}${fc.cwe ? ` / ${fc.cwe}` : ""})**:`,
-          `  - Expected Gate: \`${(fc.expectedGateDecision || "BLOCK").toUpperCase()}\` | Actual Gate: \`${(fc.actualGateDecision || "APPROVE").toUpperCase()}\``,
-          `  - Defect Detection: ${fc.evalResult.caughtGoldens > 0 ? "caught" : `missed (0/3 sentries caught)`}`,
-          `  - Classification: Honest residual defect; not an authority or gate policy flaw. Registered as empirical debt for Track D1 dogfooding and future benchmark hardening. Non-blocking for G4.`
+    ...(debtCases.length === 0
+      ? [`None. All ${caseResults.length} evaluated case(s) satisfied expected detection and gate decisions.`]
+      : debtCases.map(dc => [
+          `- **${dc.caseId} (${dc.name || dc.caseId}${dc.cve ? ` ${dc.cve}` : ""}${dc.cwe ? ` / ${dc.cwe}` : ""})**:`,
+          `  - Expected Gate: \`${(dc.expectedGateDecision || "BLOCK").toUpperCase()}\` | Actual Gate: \`${(dc.actualGateDecision || "APPROVE").toUpperCase()}\``,
+          `  - Defect Detection: ${dc.detectionPass ? `caught (${dc.evalResult.caughtGoldens}/${dc.evalResult.totalGoldens} goldens)` : `missed (0/3 sentries caught)`}`,
+          `  - Classification: Honest residual defect; registered as empirical debt for Track D1 dogfooding and future benchmark hardening. Non-blocking for G4.`
         ].join("\n"))
     )
   ];
@@ -1171,9 +1171,9 @@ export async function assembleEvidence0010(userOptions = {}) {
     `| Criterion | G4 Strict Acceptance Threshold | Observed (${BUNDLE_ID}) | Status |`,
     `|---|---|---|---|`,
     `| **Recall (R)** | > 20.0% (strictly improves over baseline) | **${(recall * 100).toFixed(1)}%** (${caughtGoldens}/${totalGoldens}) | **${recallGate}** |`,
-    `| **Incomplete Runs** | 0/5 cases (zero incomplete runs) | **${(incompleteRate * 100).toFixed(1)}%** (${incompleteCasesCount}/${caseResults.length}) | **${incompleteGate}** |`,
+    `| **Incomplete Runs** | 0/${targetCases.length} cases (zero incomplete runs) | **${(incompleteRate * 100).toFixed(1)}%** (${incompleteCasesCount}/${caseResults.length}) | **${incompleteGate}** |`,
     `| **Corpus Immutability** | ${TF_OSS_V1_EXPECTED_CORPUS_DIGEST} | ${corpusMatches ? "Verified byte-for-byte unchanged" : "CORPUS DIGEST MISMATCH"} | **${corpusStatus}** |`,
-    `| **Evidence Manifest** | Cryptographic SHA-256 seal across all bundle artifacts | Sealed with SHA-256 digests in artifact-manifest.json | **${manifestStatus}** |`,
+    `| **Evidence Manifest** | Cryptographic SHA-256 seal across all bundle artifacts | ${isFullCorpusRun ? "All bundle artifacts sealed with SHA-256 digests in artifact-manifest.json" : "Partial bundle artifacts sealed"} | **${manifestStatus}** |`,
     ``,
     `### Supplementary Milestone Performance Targets (Non-Blocking for Gate G4)`,
     `| Target | v2.7 Milestone Goal | Observed (${BUNDLE_ID}) | Status |`,

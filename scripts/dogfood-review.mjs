@@ -265,21 +265,32 @@ export async function runDogfoodReview(userOptions = {}) {
     throw new Error(`Failed to capture ChangeSet: ${changeSet?.error?.message || "Unknown Git inspection failure"}`);
   }
 
-  const rawFiles = changeSet.files || [];
+  const rawFiles = (changeSet.files || []).filter(f => {
+    const norm = (f.path || "").replace(/\\/g, "/");
+    return !norm.endsWith("dogfood-run.json");
+  });
   const files = rawFiles.map(f => ({
     ...f,
     riskTier: f.riskTier || classifyDogfoodFileRisk(f.path)
   }));
+  const totalAdditions = files.reduce((acc, f) => acc + (f.additions || 0), 0);
+  const totalDeletions = files.reduce((acc, f) => acc + (f.deletions || 0), 0);
+  changeSet = {
+    ...changeSet,
+    files,
+    totalAdditions,
+    totalDeletions
+  };
   if (log) {
-    console.log(`  ✔ Changed files: ${files.length}`);
-    console.log(`  ✔ Total additions: +${changeSet.totalAdditions} / deletions: -${changeSet.totalDeletions}`);
+    console.log(`  ✔ Changed files (excluding telemetry output): ${files.length}`);
+    console.log(`  ✔ Total additions: +${totalAdditions} / deletions: -${totalDeletions}`);
     for (const f of files.slice(0, 10)) {
       console.log(`    • ${f.path} (+${f.additions || 0}/-${f.deletions || 0}, Tier ${f.riskTier})`);
     }
     if (files.length > 10) console.log(`    ... and ${files.length - 10} more files`);
   }
 
-  const totalChangedLines = (changeSet.totalAdditions || 0) + (changeSet.totalDeletions || 0);
+  const totalChangedLines = totalAdditions + totalDeletions;
   const hasTier1 = files.some(f => f.riskTier === 1) || totalChangedLines >= 50;
   const diffTier = hasTier1 ? 1 : 2;
 
