@@ -1,11 +1,11 @@
 {
   "artifacts": {
-    "README-EVIDENCE.md": "sha256:035ae8f5698292e75e74cfb12281c1b6eefdcf05b4528129801507f9e06cf1bc",
+    "README-EVIDENCE.md": "sha256:721d3d6dd7afa702ba59896c507c33584a002e51a3e3481ee7f97a8f6eb1c67a",
     "audit-receipt.json": "sha256:5bd9fc1775e3c2f68ee5421de5843a3efed0066be3504ba1b6ca9d0157188b93",
     "benchmark-results.json": "sha256:71d0804133ec5eb048bb8c219517cf93b05e77e3de917d63306f6f9f93cd976a",
     "corpus-identity.json": "sha256:06a0ea0793adb5b05fa42459fd9b4d6e6f553203fc2ffd42f8282785c5d72add",
     "disagreement-ledger.json": "sha256:eb30464d9efe53161a5266b44b397d112bc2f9dc3443765e992ea33e258525c0",
-    "evidence-index.json": "sha256:3c8db06c5627581312404f64b6737cb6558ea1e8cdd3a262e4e2078625302346",
+    "evidence-index.json": "sha256:18bf35bdeed1b18d151c40cbbe4c16b3d342987ba020c78797870f1fbc5d9913",
     "release-identity.json": "sha256:87fb0dd19ab4cf4dc7c7f8dd9fea39c2bedccb0eab4b40c43255adb6e95178b2",
     "verification-records/TF-OSS-001-verification.json": "sha256:d38cd7f6e3283021c3bf227ce217187c3141aceef425c7941f53717c2f5faa94",
     "verification-records/TF-OSS-002-verification.json": "sha256:cd6345ab64a997ab8869cb2a366f9bac34fd3606ffd38f241689286507ef5b02",

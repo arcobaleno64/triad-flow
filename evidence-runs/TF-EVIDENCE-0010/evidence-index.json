@@ -5,8 +5,8 @@
   "files": [
     {
       "path": "README-EVIDENCE.md",
-      "sizeBytes": 3196,
-      "sha256": "sha256:035ae8f5698292e75e74cfb12281c1b6eefdcf05b4528129801507f9e06cf1bc"
+      "sizeBytes": 3956,
+      "sha256": "sha256:721d3d6dd7afa702ba59896c507c33584a002e51a3e3481ee7f97a8f6eb1c67a"
     },
     {
       "path": "audit-receipt.json",
