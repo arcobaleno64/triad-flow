@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   getSafeChunkLimit,
   splitDiffByFiles,
+  parseGitDiffHeader,
   partitionChangeSetIntoChunks,
   CHUNK_LIMIT_WINDOWS_BYTES,
   CHUNK_LIMIT_POSIX_BYTES
@@ -122,3 +123,35 @@ test("partitionChangeSetIntoChunks partitions oversized files across hunks", () 
   assert.ok(chunks[0].diffHunks.startsWith("diff --git a/src/large.js b/src/large.js"));
   assert.ok(chunks[1].diffHunks.startsWith("diff --git a/src/large.js b/src/large.js"));
 });
+
+test("parseGitDiffHeader parses unquoted filenames with spaces correctly", () => {
+  const parsed = parseGitDiffHeader("diff --git a/my long file.js b/my long file.js");
+  assert.ok(parsed);
+  assert.equal(parsed.fileA, "my long file.js");
+  assert.equal(parsed.fileB, "my long file.js");
+});
+
+test("partitionChangeSetIntoChunks splits a single massive hunk when individual hunk exceeds limit", () => {
+  const manyLines = Array.from({ length: 50 }, (_, i) => `+ const line_${i} = ${i};`).join("\n");
+  const diff = [
+    "diff --git a/src/single-huge.js b/src/single-huge.js",
+    "--- a/src/single-huge.js",
+    "+++ b/src/single-huge.js",
+    "@@ -1,1 +1,50 @@",
+    manyLines
+  ].join("\n");
+
+  const cs = {
+    files: [{ path: "src/single-huge.js" }],
+    diffHunks: diff
+  };
+
+  const chunks = partitionChangeSetIntoChunks(cs, { maxChunkBytes: 300 });
+  assert.ok(chunks.length >= 3, `Expected at least 3 chunks, got ${chunks.length}`);
+  for (const c of chunks) {
+    assert.deepEqual(c.targetFiles, ["src/single-huge.js"]);
+    assert.ok(c.diffHunks.startsWith("diff --git a/src/single-huge.js b/src/single-huge.js"));
+    assert.ok(Buffer.byteLength(c.diffHunks, "utf8") <= 350);
+  }
+});
+

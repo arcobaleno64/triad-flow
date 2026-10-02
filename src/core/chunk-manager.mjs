@@ -10,7 +10,7 @@ import { classifyFileRisk, RISK_TIERS } from "./graph-router.mjs";
 import { normalizeCanonicalPath } from "./scoring.mjs";
 import { decodeGitCStyleString } from "./git-numstat.mjs";
 
-export const CHUNK_LIMIT_WINDOWS_BYTES = 8192;   // 8 KB ceiling on Windows
+export const CHUNK_LIMIT_WINDOWS_BYTES = 6000;   // Safe ceiling on Windows accounting for prompt wrapper overhead
 export const CHUNK_LIMIT_POSIX_BYTES = 65536;    // 64 KB ceiling on POSIX
 
 /**
@@ -32,6 +32,8 @@ export function parseGitDiffHeader(line) {
   const rest = line.slice("diff --git ".length).trim();
   let rawA = null;
   let rawB = null;
+  let wasQuotedA = false;
+  let wasQuotedB = false;
 
   if (rest.startsWith('"')) {
     let escape = false;
@@ -49,23 +51,34 @@ export function parseGitDiffHeader(line) {
     if (endQuoteIdx !== -1) {
       rawA = rest.slice(0, endQuoteIdx + 1);
       rawB = rest.slice(endQuoteIdx + 1).trim();
+      wasQuotedA = true;
+      wasQuotedB = rawB.startsWith('"') && rawB.endsWith('"');
     }
   } else {
-    const spaceIdx = rest.indexOf(" ");
-    if (spaceIdx !== -1) {
-      rawA = rest.slice(0, spaceIdx);
-      rawB = rest.slice(spaceIdx + 1).trim();
+    // Unquoted rawA: match standard git pattern "a/<pathA> b/<pathB>" where paths may contain spaces
+    const gitMatch = rest.match(/^a\/(.+?)\s+b\/(.+)$/);
+    if (gitMatch) {
+      rawA = `a/${gitMatch[1]}`;
+      rawB = `b/${gitMatch[2]}`;
+      wasQuotedA = false;
+      wasQuotedB = rawB.startsWith('"') && rawB.endsWith('"');
+    } else {
+      const spaceIdx = rest.indexOf(" ");
+      if (spaceIdx !== -1) {
+        rawA = rest.slice(0, spaceIdx);
+        rawB = rest.slice(spaceIdx + 1).trim();
+        wasQuotedA = false;
+        wasQuotedB = rawB.startsWith('"') && rawB.endsWith('"');
+      }
     }
   }
 
   if (!rawA || !rawB) return null;
 
-  const unquotePath = (p, prefix) => {
+  const unquotePath = (p, prefix, wasQuoted) => {
     let unquoted = p;
-    let wasQuoted = false;
-    if (unquoted.startsWith('"') && unquoted.endsWith('"')) {
+    if (wasQuoted && unquoted.startsWith('"') && unquoted.endsWith('"')) {
       unquoted = unquoted.slice(1, -1);
-      wasQuoted = true;
     }
     if (unquoted.startsWith(prefix)) {
       unquoted = unquoted.slice(prefix.length);
@@ -77,8 +90,8 @@ export function parseGitDiffHeader(line) {
   };
 
   return {
-    fileA: unquotePath(rawA, "a/"),
-    fileB: unquotePath(rawB, "b/")
+    fileA: unquotePath(rawA, "a/", wasQuotedA),
+    fileB: unquotePath(rawB, "b/", wasQuotedB)
   };
 }
 
@@ -118,8 +131,9 @@ export function splitDiffByFiles(diffText) {
     // Detect fallback diff header: +++ b/path or +++ "b/path"
     const plusMatch = line.match(/^\+\+\+ (?:"b\/(.+?)"|b\/(.+?))$/);
     if (plusMatch && (!currentFile || !currentLines.some(l => l.startsWith("diff --git")))) {
+      const isQuoted = Boolean(plusMatch[1]);
       const rawTarget = plusMatch[1] || plusMatch[2];
-      const target = decodeGitCStyleString(rawTarget.startsWith('"') ? rawTarget : `"${rawTarget}"`);
+      const target = isQuoted ? decodeGitCStyleString(`"${rawTarget}"`) : rawTarget;
       if (currentFile && currentFile !== normalizeCanonicalPath(target)) {
         flush();
       }
@@ -207,43 +221,77 @@ export function partitionChangeSetIntoChunks(changeSet, options = {}) {
       }
 
       if (fileBytes > maxChunkBytes) {
-        // Massive file: partition across hunks if possible, else standalone chunk
+        // Massive file: partition across hunks, and sub-partition oversized hunks by lines
         const hunks = fileHunks.split(/(?=^@@ )/m);
-        if (hunks.length > 2) {
-          const header = hunks[0];
-          let subHunks = [];
-          let subBytes = Buffer.byteLength(header, "utf8");
+        const header = hunks.length > 1 ? hunks[0] : "";
+        const hunkList = hunks.length > 1 ? hunks.slice(1) : hunks;
 
-          for (let i = 1; i < hunks.length; i++) {
-            const h = hunks[i];
-            const hBytes = Buffer.byteLength(h, "utf8");
-            if (subBytes + hBytes > maxChunkBytes && subHunks.length > 0) {
+        let subHunks = [];
+        let subBytes = Buffer.byteLength(header, "utf8");
+
+        for (const h of hunkList) {
+          const hBytes = Buffer.byteLength(h, "utf8");
+
+          if (hBytes > maxChunkBytes) {
+            // First flush accumulated subHunks if any
+            if (subHunks.length > 0) {
               rawChunks.push({
                 priorityTier: tier,
                 targetFiles: [filePath],
                 diffHunks: header + subHunks.join("")
               });
-              subHunks = [h];
-              subBytes = Buffer.byteLength(header, "utf8") + hBytes;
-            } else {
-              subHunks.push(h);
-              subBytes += hBytes;
+              subHunks = [];
+              subBytes = Buffer.byteLength(header, "utf8");
             }
-          }
 
-          if (subHunks.length > 0) {
+            // Split this oversized hunk by lines
+            const lines = h.split("\n");
+            const hunkHeader = lines[0].startsWith("@@") ? lines[0] : "@@ -1,1 +1,1 @@";
+            const bodyLines = lines[0].startsWith("@@") ? lines.slice(1) : lines;
+            let currentLineGroup = [];
+            let currentGroupBytes = Buffer.byteLength(header + hunkHeader + "\n", "utf8");
+
+            for (const line of bodyLines) {
+              const lineBytes = Buffer.byteLength(line + "\n", "utf8");
+              if (currentGroupBytes + lineBytes > maxChunkBytes && currentLineGroup.length > 0) {
+                rawChunks.push({
+                  priorityTier: tier,
+                  targetFiles: [filePath],
+                  diffHunks: header + hunkHeader + "\n" + currentLineGroup.join("\n")
+                });
+                currentLineGroup = [line];
+                currentGroupBytes = Buffer.byteLength(header + hunkHeader + "\n" + line + "\n", "utf8");
+              } else {
+                currentLineGroup.push(line);
+                currentGroupBytes += lineBytes;
+              }
+            }
+            if (currentLineGroup.length > 0) {
+              rawChunks.push({
+                priorityTier: tier,
+                targetFiles: [filePath],
+                diffHunks: header + hunkHeader + "\n" + currentLineGroup.join("\n")
+              });
+            }
+          } else if (subBytes + hBytes > maxChunkBytes && subHunks.length > 0) {
             rawChunks.push({
               priorityTier: tier,
               targetFiles: [filePath],
               diffHunks: header + subHunks.join("")
             });
+            subHunks = [h];
+            subBytes = Buffer.byteLength(header, "utf8") + hBytes;
+          } else {
+            subHunks.push(h);
+            subBytes += hBytes;
           }
-        } else {
-          // Cannot split further or single hunk: put into standalone chunk
+        }
+
+        if (subHunks.length > 0) {
           rawChunks.push({
             priorityTier: tier,
             targetFiles: [filePath],
-            diffHunks: fileHunks
+            diffHunks: header + subHunks.join("")
           });
         }
         continue;

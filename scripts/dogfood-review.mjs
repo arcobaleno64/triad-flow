@@ -233,10 +233,12 @@ export function filterChangeSetExclusions(changeSet, excludedPaths = []) {
     const retainedChunks = chunks.filter(chunk => {
       const match = chunk.match(/^diff --git (?:"a\/(.+?)"|a\/(.+?))\s+(?:"b\/(.+?)"|b\/(.+?))(?:\r?\n|$)/m);
       if (match) {
+        const isQuotedA = Boolean(match[1]);
+        const isQuotedB = Boolean(match[3]);
         const rawA = match[1] || match[2];
         const rawB = match[3] || match[4];
-        const decodedA = decodeGitCStyleString(rawA.startsWith('"') ? rawA : `"${rawA}"`);
-        const decodedB = decodeGitCStyleString(rawB.startsWith('"') ? rawB : `"${rawB}"`);
+        const decodedA = isQuotedA ? decodeGitCStyleString(`"${rawA}"`) : rawA;
+        const decodedB = isQuotedB ? decodeGitCStyleString(`"${rawB}"`) : rawB;
         const fileA = path.normalize(decodedA).replace(/\\/g, "/").replace(/^\.\//, "");
         const fileB = path.normalize(decodedB).replace(/\\/g, "/").replace(/^\.\//, "");
         const isExcludedA = normalizedExclusions.has(fileA);
@@ -267,10 +269,12 @@ export function filterChangeSetExclusions(changeSet, excludedPaths = []) {
       const plusMatch = chunk.match(/^\+\+\+ (?:"b\/(.+?)"|b\/(.+?)|([^\s\r\n]+))(?:\r?\n|$)/m);
       const minusMatch = chunk.match(/^--- (?:"a\/(.+?)"|a\/(.+?)|([^\s\r\n]+))(?:\r?\n|$)/m);
       if (plusMatch && minusMatch) {
+        const isQuotedA = Boolean(minusMatch[1]);
+        const isQuotedB = Boolean(plusMatch[1]);
         const rawA = minusMatch[1] || minusMatch[2] || minusMatch[3];
         const rawB = plusMatch[1] || plusMatch[2] || plusMatch[3];
-        const decodedA = decodeGitCStyleString(rawA.startsWith('"') ? rawA : `"${rawA}"`);
-        const decodedB = decodeGitCStyleString(rawB.startsWith('"') ? rawB : `"${rawB}"`);
+        const decodedA = isQuotedA ? decodeGitCStyleString(`"${rawA}"`) : rawA;
+        const decodedB = isQuotedB ? decodeGitCStyleString(`"${rawB}"`) : rawB;
         const fileA = path.normalize(decodedA).replace(/\\/g, "/").replace(/^\.\//, "");
         const fileB = path.normalize(decodedB).replace(/\\/g, "/").replace(/^\.\//, "");
         const isExcludedA = normalizedExclusions.has(fileA);
@@ -286,16 +290,18 @@ export function filterChangeSetExclusions(changeSet, excludedPaths = []) {
       }
 
       if (plusMatch) {
+        const isQuotedB = Boolean(plusMatch[1]);
         const rawB = plusMatch[1] || plusMatch[2] || plusMatch[3];
-        const decodedB = decodeGitCStyleString(rawB.startsWith('"') ? rawB : `"${rawB}"`);
+        const decodedB = isQuotedB ? decodeGitCStyleString(`"${rawB}"`) : rawB;
         const fileB = path.normalize(decodedB).replace(/\\/g, "/").replace(/^\.\//, "");
         if (fileB !== "/dev/null" && fileB !== "dev/null" && normalizedExclusions.has(fileB)) {
           return false;
         }
       }
       if (minusMatch) {
+        const isQuotedA = Boolean(minusMatch[1]);
         const rawA = minusMatch[1] || minusMatch[2] || minusMatch[3];
-        const decodedA = decodeGitCStyleString(rawA.startsWith('"') ? rawA : `"${rawA}"`);
+        const decodedA = isQuotedA ? decodeGitCStyleString(`"${rawA}"`) : rawA;
         const fileA = path.normalize(decodedA).replace(/\\/g, "/").replace(/^\.\//, "");
         if (fileA !== "/dev/null" && fileA !== "dev/null" && normalizedExclusions.has(fileA)) {
           return false;
@@ -390,7 +396,7 @@ export async function runDogfoodReview(userOptions = {}) {
   }
 
   const relOut = path.relative(process.cwd(), outPath).replace(/\\/g, "/");
-  changeSet = filterChangeSetExclusions(changeSet, [relOut, "dogfood-run.json"]);
+  changeSet = filterChangeSetExclusions(changeSet, [relOut]);
 
   const files = (changeSet.files || []).map(f => ({
     ...f,

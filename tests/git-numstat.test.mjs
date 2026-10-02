@@ -64,3 +64,10 @@ test("decodeGitCStyleString correctly decodes UTF-8 octal sequences and escape c
   assert.equal(decodeGitCStyleString('"path/with\\\\backslash.js"'), 'path/with\\backslash.js');
   assert.equal(decodeGitCStyleString("unquoted/path.js"), "unquoted/path.js");
 });
+
+test("decodeGitCStyleString preserves literal Unicode characters and surrogate pairs without 8-bit truncation", () => {
+  assert.equal(decodeGitCStyleString('"src/測_literal.js"'), "src/測_literal.js");
+  assert.equal(decodeGitCStyleString('"src/測_\\346\\270\\254_mixed.js"'), "src/測_測_mixed.js");
+  assert.equal(decodeGitCStyleString('"src/🚀_rocket.js"'), "src/🚀_rocket.js");
+});
+

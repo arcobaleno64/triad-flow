@@ -88,6 +88,7 @@ test("executeStagedReview partitions chunks and executes adapter with checkpoint
   const mockAdapter = {
     providerName: "mock-sentry",
     executeReview: async ({ changeSet }) => {
+      const targetPaths = (changeSet.files || []).map(f => f.path);
       if (changeSet.diffHunks.includes("evalUser")) {
         return {
           ok: true,
@@ -100,10 +101,21 @@ test("executeStagedReview partitions chunks and executes adapter with checkpoint
               cwe: "CWE-94",
               evidenceSnippet: "eval(input)"
             }
-          ]
+          ],
+          coverage: {
+            coveredFiles: targetPaths,
+            omittedFiles: []
+          }
         };
       }
-      return { ok: true, findings: [] };
+      return {
+        ok: true,
+        findings: [],
+        coverage: {
+          coveredFiles: targetPaths,
+          omittedFiles: []
+        }
+      };
     }
   };
 
@@ -271,3 +283,97 @@ test("executeStagedReview ignores provider coverage claims outside chunk targetF
 
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
+
+test("executeStagedReview fails closed when chunkResult has no coverage object (Finding 2)", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-staged-nocov-"));
+  const cs = {
+    scopeMode: "revision-range",
+    files: [{ path: "src/api.js" }],
+    diffHunks: "diff --git a/src/api.js b/src/api.js\n--- a/src/api.js\n+++ b/src/api.js\n@@ -1 +1 @@\n-old\n+new"
+  };
+
+  const noCoverageAdapter = {
+    providerName: "mock-agy",
+    executeReview: async () => ({
+      ok: true,
+      findings: []
+    })
+  };
+
+  const result = await executeStagedReview(cs, noCoverageAdapter, { cwd: tmpDir });
+  assert.equal(result.ok, false);
+  assert.equal(result.executionStatus, "incomplete");
+  assert.equal(result.coverage.coveredFiles.length, 0);
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+test("executeStagedReview safely handles null or non-object omissions (Finding 3)", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-staged-null-omit-"));
+  const cs = {
+    scopeMode: "revision-range",
+    files: [{ path: "src/api.js" }],
+    diffHunks: "diff --git a/src/api.js b/src/api.js\n--- a/src/api.js\n+++ b/src/api.js\n@@ -1 +1 @@\n-old\n+new"
+  };
+
+  const malformedOmitAdapter = {
+    providerName: "mock-agy",
+    executeReview: async () => ({
+      ok: true,
+      findings: [],
+      coverage: {
+        coveredFiles: ["src/api.js"],
+        omittedFiles: [null, undefined, "not-an-object"]
+      }
+    })
+  };
+
+  const result = await executeStagedReview(cs, malformedOmitAdapter, { cwd: tmpDir });
+  assert.equal(result.ok, true);
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+test("executeStagedReview enforces per-chunk coverage: later chunk returning empty coverage fails closed (Finding 7)", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-staged-hunk-conceal-"));
+  const cs = {
+    scopeMode: "revision-range",
+    files: [{ path: "src/large.js" }],
+    diffHunks: [
+      "diff --git a/src/large.js b/src/large.js\n--- a/src/large.js\n+++ b/src/large.js\n@@ -1,5 +1,10 @@\n+ // Hunk 1\n+ const a = 1;",
+      "@@ -100,5 +105,10 @@\n+ // Hunk 2\n+ const b = 2;"
+    ].join("\n")
+  };
+
+  let callCount = 0;
+  const partialCoverageAdapter = {
+    providerName: "mock-agy",
+    executeReview: async () => {
+      callCount++;
+      if (callCount === 1) {
+        return {
+          ok: true,
+          findings: [],
+          coverage: { coveredFiles: ["src/large.js"], omittedFiles: [] }
+        };
+      }
+      return {
+        ok: true,
+        findings: [],
+        coverage: { coveredFiles: [], omittedFiles: [] }
+      };
+    }
+  };
+
+  const result = await executeStagedReview(cs, partialCoverageAdapter, {
+    cwd: tmpDir,
+    maxChunkBytes: 100
+  });
+
+  assert.equal(result.ok, false, "Must not conceal unreviewed chunk of the same file");
+  assert.equal(result.executionStatus, "incomplete");
+  assert.ok(result.receipts.some(r => r.status === "failed" || r.status === "incomplete"));
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+

@@ -251,6 +251,10 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
       if (Array.isArray(chunkResult.findings)) {
         accumulatedFindings.push(...chunkResult.findings);
       }
+
+      const chunkTargetSet = new Set(chunk.targetFiles.map(tf => normalizeCanonicalPath(tf)));
+      let chunkCoverageValid = false;
+
       if (chunkResult.coverage) {
         const provCovered = Array.isArray(chunkResult.coverage.coveredFiles)
           ? chunkResult.coverage.coveredFiles
@@ -259,38 +263,95 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
           ? chunkResult.coverage.omittedFiles
           : [];
 
-        const chunkTargetSet = new Set(chunk.targetFiles.map(tf => normalizeCanonicalPath(tf)));
+        const coveredInThisChunk = new Set();
+        const omittedInThisChunk = new Set();
 
         for (const cf of provCovered) {
-          const norm = normalizeCanonicalPath(cf);
-          if (chunkTargetSet.has(norm)) {
-            coveredFiles.add(norm);
+          if (typeof cf === "string") {
+            const norm = normalizeCanonicalPath(cf);
+            if (chunkTargetSet.has(norm)) {
+              coveredFiles.add(norm);
+              coveredInThisChunk.add(norm);
+            }
           }
         }
         for (const omit of provOmitted) {
-          const omitFile = omit.file || omit.path || omit.target || "unknown";
-          const norm = normalizeCanonicalPath(omitFile);
-          if (chunkTargetSet.has(norm)) {
+          if (omit && typeof omit === "object") {
+            const omitFile = omit.file || omit.path || omit.target || "unknown";
+            const norm = normalizeCanonicalPath(omitFile);
+            if (chunkTargetSet.has(norm)) {
+              omittedFiles.push({
+                file: norm,
+                code: omit.code || COVERAGE_OMISSION_CODES.OUT_OF_SCOPE,
+                reason: omit.reason || "Provider declared omission"
+              });
+              omittedInThisChunk.add(norm);
+            }
+          }
+        }
+
+        // Per-chunk coverage validation (Finding 7):
+        // All targetFiles in this chunk must be either covered or omitted in this chunk!
+        const uncoveredInChunk = chunk.targetFiles.filter(tf => {
+          const norm = normalizeCanonicalPath(tf);
+          return !coveredInThisChunk.has(norm) && !omittedInThisChunk.has(norm);
+        });
+
+        if (uncoveredInChunk.length === 0) {
+          chunkCoverageValid = true;
+        } else {
+          for (const utf of uncoveredInChunk) {
             omittedFiles.push({
-              file: norm,
-              code: omit.code || COVERAGE_OMISSION_CODES.OUT_OF_SCOPE,
-              reason: omit.reason || "Provider declared omission"
+              file: utf,
+              code: COVERAGE_OMISSION_CODES.OUT_OF_SCOPE,
+              reason: `File '${utf}' was not covered or declared omitted in chunk ${chunk.chunkId}`
             });
           }
         }
       } else {
+        // FAIL CLOSED (Finding 2): Missing coverage object does not grant coverage!
         for (const tf of chunk.targetFiles) {
-          coveredFiles.add(normalizeCanonicalPath(tf));
+          omittedFiles.push({
+            file: tf,
+            code: COVERAGE_OMISSION_CODES.SIZE_LIMIT,
+            reason: `Provider returned no coverage object for chunk ${chunk.chunkId}`
+          });
         }
       }
+
       chunkReceipts.push({
         chunkId: chunk.chunkId,
         chunkIndex: chunk.chunkIndex,
         totalChunks: chunk.totalChunks,
-        status: "completed",
+        status: chunkCoverageValid ? "completed" : "failed",
         durationMs: chunkDurationMs,
-        findingsCount: chunkResult.findings?.length || 0
+        findingsCount: chunkResult.findings?.length || 0,
+        error: chunkCoverageValid ? undefined : "Chunk target files not covered"
       });
+
+      if (chunkCoverageValid) {
+        // Persist successful chunk checkpoint
+        checkpointStore.saveCheckpoint(runId, {
+          runId,
+          stage: STAGED_REVIEW_STAGES.STAGE_2_DEEP_REVIEW,
+          salvagedFindings: accumulatedFindings,
+          completedChunks: idx + 1,
+          totalChunks: chunks.length
+        });
+      } else {
+        // Chunk had invalid coverage: save salvage checkpoint
+        checkpointStore.saveCheckpoint(runId, {
+          runId,
+          stage: STAGED_REVIEW_STAGES.STAGE_2_DEEP_REVIEW,
+          salvagedFindings: accumulatedFindings,
+          completedChunks: idx,
+          totalChunks: chunks.length,
+          omittedFiles
+        });
+        if (chunk.priorityTier === RISK_TIERS.TIER_1_CRITICAL) {
+          break;
+        }
+      }
     } else {
       // Chunk Failed or Timed Out
       const isTimeout = chunkResult?.status === "timeout" || /timeout/i.test(chunkResult?.error || "");
@@ -325,15 +386,6 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
         break;
       }
     }
-
-    // Persist successful chunk checkpoint
-    checkpointStore.saveCheckpoint(runId, {
-      runId,
-      stage: STAGED_REVIEW_STAGES.STAGE_2_DEEP_REVIEW,
-      salvagedFindings: accumulatedFindings,
-      completedChunks: idx + 1,
-      totalChunks: chunks.length
-    });
   }
 
   // Stage 3: Finding Reconciliation

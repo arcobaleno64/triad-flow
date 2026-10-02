@@ -50,10 +50,16 @@ export function decodeGitCStyleString(str = "") {
         }
         bytes.push(parseInt(octal, 8));
       } else {
-        bytes.push(inner.charCodeAt(i));
+        const codePoint = inner.codePointAt(i);
+        const charStr = String.fromCodePoint(codePoint);
+        for (const b of Buffer.from(charStr, "utf8")) bytes.push(b);
+        if (charStr.length > 1) i += (charStr.length - 1);
       }
     } else {
-      bytes.push(inner.charCodeAt(i));
+      const codePoint = inner.codePointAt(i);
+      const charStr = String.fromCodePoint(codePoint);
+      for (const b of Buffer.from(charStr, "utf8")) bytes.push(b);
+      if (charStr.length > 1) i += (charStr.length - 1);
     }
   }
   return Buffer.from(bytes).toString("utf8");
