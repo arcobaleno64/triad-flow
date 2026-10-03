@@ -57,7 +57,7 @@ AND human oracle finalized before Triad result
 AND canonical receipt for this cycle
 ```
 
-Retries may exist as separate runtime telemetry, but only one canonical ledger receipt is permitted for a `cycleId`. The ledger rejects duplicate `cycleId` values rather than counting retries as new maturity samples.
+Retries may exist as separate runtime telemetry, but only one canonical ledger receipt is permitted for a real change. The ledger rejects duplicate `cycleId` values, and a second qualifying live receipt for the same repository + exact commit SHA is rejected even under a different cycle ID. Retry attempts remain in source run telemetry rather than inflating the maturity sample.
 
 ---
 
