@@ -112,6 +112,22 @@ test("live real change counts once; mock and zero-change receipts do not count",
   assert.equal(zero.countsTowardMaturity, false);
 });
 
+test("same live change cannot enter maturity ledger twice under a different cycleId", () => {
+  const first = buildCycleReceipt(baseRun(), meta());
+  assert.throws(() => buildCycleReceipt(
+    baseRun({ runId: "dogfood-source-retry" }),
+    meta({ cycleId: "CYCLE-RETRY-0001" }),
+    [first]
+  ), /Canonical live change already recorded/);
+
+  const mockRetry = buildCycleReceipt(
+    baseRun({ runId: "dogfood-source-mock-retry" }),
+    meta({ cycleId: "CYCLE-MOCK-RETRY", executionMode: "mock" }),
+    [first]
+  );
+  assert.equal(mockRetry.countsTowardMaturity, false);
+});
+
 test("verificationStatus distinguishes not attempted, success, and failure", () => {
   assert.equal(verificationStatus(null), "NOT_ATTEMPTED");
   assert.equal(verificationStatus({ ok: true }), "SUCCESS");
@@ -145,7 +161,7 @@ test("append-only ledger rejects duplicate cycleId without modifying existing by
     assert.throws(() => appendReceipt(ledger, r1), /Duplicate cycleId/);
     assert.equal(fs.readFileSync(ledger, "utf8"), before);
 
-    const r2 = buildCycleReceipt(baseRun({ runId: "dogfood-source-002" }), meta({ cycleId: "CYCLE-0002", failureFamily: "deadline-budget" }), readLedger(ledger));
+    const r2 = buildCycleReceipt(baseRun({ runId: "dogfood-source-002", repository: { commitSha: "b".repeat(40), branch: "feature/example-2" } }), meta({ cycleId: "CYCLE-0002", failureFamily: "deadline-budget" }), readLedger(ledger));
     appendReceipt(ledger, r2);
     const after = fs.readFileSync(ledger, "utf8");
     assert.ok(after.startsWith(before), "Existing canonical receipt bytes must remain unchanged");
