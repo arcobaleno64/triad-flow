@@ -25,9 +25,10 @@ export function getSafeChunkLimit(platform = process.platform) {
 /**
  * Parses Git diff headers supporting quoted and C-style escaped paths.
  * @param {string} line
+ * @param {string[]} [knownPaths=[]] Exact ChangeSet paths used to disambiguate unquoted headers.
  * @returns {{ fileA: string, fileB: string } | null}
  */
-export function parseGitDiffHeader(line) {
+export function parseGitDiffHeader(line, knownPaths = []) {
   if (!line || typeof line !== "string" || !line.startsWith("diff --git ")) return null;
   const rest = line.slice("diff --git ".length).trim();
   let rawA = null;
@@ -55,20 +56,37 @@ export function parseGitDiffHeader(line) {
       wasQuotedB = rawB.startsWith('"') && rawB.endsWith('"');
     }
   } else {
-    // Unquoted rawA: match standard git pattern "a/<pathA> b/<pathB>" where paths may contain spaces
-    const gitMatch = rest.match(/^a\/(.+?)\s+b\/(.+)$/);
-    if (gitMatch) {
-      rawA = `a/${gitMatch[1]}`;
-      rawB = `b/${gitMatch[2]}`;
+    // Unquoted paired paths are ambiguous when a filename itself contains " b/".
+    // Prefer exact ChangeSet path identity and only fall back to legacy parsing when
+    // no authoritative target path is available.
+    const normalizedKnownPaths = (Array.isArray(knownPaths) ? knownPaths : [])
+      .map(p => normalizeCanonicalPath(typeof p === "string" ? p : ""))
+      .filter(Boolean)
+      .sort((a, b) => b.length - a.length);
+
+    const matchedFileB = normalizedKnownPaths.find(p => rest.endsWith(` b/${p}`));
+    if (matchedFileB) {
+      rawB = `b/${matchedFileB}`;
+      rawA = rest.slice(0, rest.length - rawB.length - 1);
+      if (!rawA.startsWith("a/")) return null;
       wasQuotedA = false;
-      wasQuotedB = rawB.startsWith('"') && rawB.endsWith('"');
+      wasQuotedB = false;
     } else {
-      const spaceIdx = rest.indexOf(" ");
-      if (spaceIdx !== -1) {
-        rawA = rest.slice(0, spaceIdx);
-        rawB = rest.slice(spaceIdx + 1).trim();
+      // Compatibility fallback for callers that do not have a ChangeSet path list.
+      const gitMatch = rest.match(/^a\/(.+?)\s+b\/(.+)$/);
+      if (gitMatch) {
+        rawA = `a/${gitMatch[1]}`;
+        rawB = `b/${gitMatch[2]}`;
         wasQuotedA = false;
         wasQuotedB = rawB.startsWith('"') && rawB.endsWith('"');
+      } else {
+        const spaceIdx = rest.indexOf(" ");
+        if (spaceIdx !== -1) {
+          rawA = rest.slice(0, spaceIdx);
+          rawB = rest.slice(spaceIdx + 1).trim();
+          wasQuotedA = false;
+          wasQuotedB = rawB.startsWith('"') && rawB.endsWith('"');
+        }
       }
     }
   }
@@ -100,44 +118,71 @@ export function parseGitDiffHeader(line) {
  * @param {string} diffText
  * @returns {Map<string, string>} Mapping of filePath -> fileDiffHunks
  */
-export function splitDiffByFiles(diffText) {
+export function splitDiffByFiles(diffText, knownPaths = []) {
   const fileDiffs = new Map();
   if (!diffText || typeof diffText !== "string") return fileDiffs;
 
   const lines = diffText.split(/\r?\n/);
   let currentFile = null;
+  let currentOldFile = null;
   let currentLines = [];
+
+  const parseSingleFileHeader = (line, marker) => {
+    if (!line.startsWith(marker)) return null;
+    const raw = line.slice(marker.length);
+    let decoded = raw;
+    if (raw.startsWith('"') && raw.endsWith('"')) {
+      decoded = decodeGitCStyleString(raw);
+    }
+    if (decoded === "/dev/null" || decoded === "dev/null") return "/dev/null";
+    if (decoded.startsWith("a/") || decoded.startsWith("b/")) {
+      decoded = decoded.slice(2);
+    }
+    return normalizeCanonicalPath(decoded);
+  };
 
   const flush = () => {
     if (currentFile && currentLines.length > 0) {
       fileDiffs.set(currentFile, currentLines.join("\n"));
     }
+    currentFile = null;
+    currentOldFile = null;
     currentLines = [];
   };
 
   for (const line of lines) {
-    // Detect diff header: diff --git a/path b/path or diff --git "a/path" "b/path"
-    const gitMatch = parseGitDiffHeader(line);
-    if (gitMatch) {
+    // A diff --git line is only a block boundary. For unquoted paths, exact
+    // target identity comes from known ChangeSet paths or later ---/+++ headers.
+    const gitMatch = parseGitDiffHeader(line, knownPaths);
+    if (line.startsWith("diff --git ")) {
       flush();
-      const target = (gitMatch.fileB === "/dev/null" || gitMatch.fileB === "dev/null")
-        ? gitMatch.fileA
-        : gitMatch.fileB;
-      currentFile = normalizeCanonicalPath(target);
+      if (gitMatch) {
+        currentOldFile = normalizeCanonicalPath(gitMatch.fileA);
+        const target = (gitMatch.fileB === "/dev/null" || gitMatch.fileB === "dev/null")
+          ? gitMatch.fileA
+          : gitMatch.fileB;
+        currentFile = normalizeCanonicalPath(target);
+      }
       currentLines.push(line);
       continue;
     }
 
-    // Detect fallback diff header: +++ b/path or +++ "b/path"
-    const plusMatch = line.match(/^\+\+\+ (?:"b\/(.+?)"|b\/(.+?))$/);
-    if (plusMatch && (!currentFile || !currentLines.some(l => l.startsWith("diff --git")))) {
-      const isQuoted = Boolean(plusMatch[1]);
-      const rawTarget = plusMatch[1] || plusMatch[2];
-      const target = isQuoted ? decodeGitCStyleString(`"${rawTarget}"`) : rawTarget;
-      if (currentFile && currentFile !== normalizeCanonicalPath(target)) {
-        flush();
+    const minusTarget = parseSingleFileHeader(line, "--- ");
+    if (minusTarget && minusTarget !== "/dev/null") {
+      currentOldFile = minusTarget;
+      if (!currentFile) currentFile = minusTarget;
+    }
+
+    const plusTarget = parseSingleFileHeader(line, "+++ ");
+    if (plusTarget) {
+      const hasGitHeader = currentLines.some(l => l.startsWith("diff --git "));
+      const resolvedTarget = plusTarget === "/dev/null" ? currentOldFile : plusTarget;
+      if (resolvedTarget) {
+        if (!hasGitHeader && currentFile && currentFile !== resolvedTarget) {
+          flush();
+        }
+        currentFile = resolvedTarget;
       }
-      currentFile = normalizeCanonicalPath(target);
     }
 
     if (currentFile) {
@@ -165,7 +210,8 @@ export function partitionChangeSetIntoChunks(changeSet, options = {}) {
     return [];
   }
 
-  const fileDiffMap = splitDiffByFiles(diffHunks);
+  const knownPaths = files.map(f => normalizeCanonicalPath(typeof f === "string" ? f : f.path)).filter(Boolean);
+  const fileDiffMap = splitDiffByFiles(diffHunks, knownPaths);
 
   // Group files by risk tier (Tier 1: Critical -> Tier 2: Source -> Tier 3: Docs)
   const tierBuckets = {
