@@ -577,12 +577,12 @@ export function convertProviderResultToSentryReport(result, roleName = "macro") 
   }
 
   return {
-    name: result.providerIdentity.provider,
-    source: result.providerIdentity.provider,
+    name: result?.providerIdentity?.provider || roleName,
+    source: result?.providerIdentity?.provider || roleName,
     role: roleName,
-    providerIdentity: result.providerIdentity,
-    coverage: result.coverage,
-    findings: result.findings
+    providerIdentity: result?.providerIdentity,
+    coverage: result?.coverage,
+    findings: result?.findings
   };
 }
 

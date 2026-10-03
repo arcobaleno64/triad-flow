@@ -369,6 +369,40 @@ export function classifyDogfoodFileRisk(filePath) {
 }
 
 /**
+ * Normalizes provider identity from actual execution result for operational telemetry.
+ * Does not fall back to slot names, canonical defaults, or role names.
+ *
+ * @param {object} res
+ * @returns {{ provider: string, family: string, model: string }}
+ */
+export function normalizeTelemetryIdentity(res) {
+  const pId = res?.providerIdentity;
+  const provider = (typeof pId?.provider === "string" && pId.provider.trim()) ? pId.provider.trim() : "unknown";
+  const family = (typeof pId?.family === "string" && pId.family.trim()) ? pId.family.trim() : "unknown";
+  const model = (typeof pId?.model === "string" && pId.model.trim()) ? pId.model.trim() : "unknown";
+  return { provider, family, model };
+}
+
+/**
+ * Builds normalized provider telemetry entry from provider output and raw sentry report.
+ *
+ * @param {object} output - Execution output containing { res, latencyMs }
+ * @param {object} rawReport - Sentry report containing executionStatus and findings
+ * @returns {object}
+ */
+export function buildProviderTelemetry(output, rawReport) {
+  const identity = normalizeTelemetryIdentity(output?.res);
+  return {
+    provider: identity.provider,
+    family: identity.family,
+    model: identity.model,
+    executionStatus: rawReport?.executionStatus || "unknown",
+    findingsCount: rawReport?.findings?.length || 0,
+    latencyMs: output?.latencyMs ?? 0
+  };
+}
+
+/**
  * Executes Track D1 Shadow Dogfood Review.
  */
 export async function runDogfoodReview(userOptions = {}) {
@@ -633,7 +667,11 @@ export async function runDogfoodReview(userOptions = {}) {
   const authFailureCount = providerOutputs.filter(r => r.executionStatus === "auth_failure").length;
   const otherFailureCount = providerOutputs.filter(r => !["success", "empty"].includes(r.executionStatus)).length;
   const allProvidersSucceeded = providerOutputs.every(r => ["success", "empty"].includes(r.executionStatus));
-  const isExecutionComplete = consensus.quorumReached && allProvidersSucceeded;
+  const verificationAttempted = verificationRecord !== null;
+  const isExecutionComplete =
+    consensus.quorumReached &&
+    allProvidersSucceeded &&
+    (!verificationAttempted || verificationRecord.ok === true);
 
   const dogfoodDoc = {
     schemaVersion: "1.0.0",
@@ -657,27 +695,9 @@ export async function runDogfoodReview(userOptions = {}) {
       excludedFiles: changeSet.excludedFiles || []
     },
     providerTelemetry: {
-      agy: {
-        family: "google",
-        model: "gemini-3.8-flash",
-        executionStatus: rawReports.agy.executionStatus,
-        findingsCount: rawReports.agy.findings?.length || 0,
-        latencyMs: agyOut.latencyMs
-      },
-      claude: {
-        family: "anthropic",
-        model: "claude-5.5-sonnet",
-        executionStatus: rawReports.claude.executionStatus,
-        findingsCount: rawReports.claude.findings?.length || 0,
-        latencyMs: claudeOut.latencyMs
-      },
-      codex: {
-        family: "openai",
-        model: "gpt-6.1-sol",
-        executionStatus: rawReports.codex.executionStatus,
-        findingsCount: rawReports.codex.findings?.length || 0,
-        latencyMs: codexOut.latencyMs
-      }
+      agy: buildProviderTelemetry(agyOut, rawReports.agy),
+      claude: buildProviderTelemetry(claudeOut, rawReports.claude),
+      codex: buildProviderTelemetry(codexOut, rawReports.codex)
     },
     consensus: {
       verdict: consensus.verdict,
