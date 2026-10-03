@@ -800,3 +800,28 @@ test("Regression 7: Normalized CLI provider path preserves valid code and reject
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 
+test("Regression 8: evaluateCoverageContract never throws on stateful throwing getter omission (R1 hardening)", () => {
+  const cs = {
+    scopeMode: "working-tree",
+    files: [{ path: "src/worker.js" }]
+  };
+
+  let reads = 0;
+  const omission = {
+    path: "src/worker.js",
+    reason: "Valid reason",
+    get code() {
+      if (++reads === 1) return null;
+      throw new Error("diagnostic getter threw");
+    }
+  };
+
+  let res;
+  assert.doesNotThrow(() => {
+    res = evaluateCoverageContract(cs, [], [omission]);
+  });
+
+  assert.equal(res.isComplete, false);
+  assert.ok(res.violations.some(v => v.includes("missing or unauthorized code")));
+});
+

@@ -157,13 +157,34 @@ test("Dogfood Contract 7: Output flood does NOT invoke executeStagedReview and r
   const floodOutput = "X".repeat(600 * 1024);
   let agyInvocations = 0;
   const agyFloodAdapter = new CliReviewAdapter({
+    command: "agy",
+    providerName: "agy",
+    family: "google",
+    modelName: "gemini-3.8-flash",
     execFn: async () => {
       agyInvocations++;
       return { stdout: floodOutput };
     }
   });
 
-  const cleanAdapter = new CliReviewAdapter({
+  const cleanClaudeAdapter = new CliReviewAdapter({
+    command: "claude",
+    providerName: "claude",
+    family: "anthropic",
+    modelName: "claude-5.5-sonnet",
+    execFn: async () => ({
+      stdout: JSON.stringify({
+        findings: [],
+        coverage: { coveredFiles: ["src/index.js"], omittedFiles: [] }
+      })
+    })
+  });
+
+  const cleanCodexAdapter = new CliReviewAdapter({
+    command: "codex",
+    providerName: "codex",
+    family: "openai",
+    modelName: "gpt-6.1-sol",
     execFn: async () => ({
       stdout: JSON.stringify({
         findings: [],
@@ -187,8 +208,8 @@ test("Dogfood Contract 7: Output flood does NOT invoke executeStagedReview and r
       },
       reviewAdapters: {
         agy: agyFloodAdapter,
-        claude: cleanAdapter,
-        codex: cleanAdapter
+        claude: cleanClaudeAdapter,
+        codex: cleanCodexAdapter
       },
       out: tmpOut,
       log: false
@@ -201,8 +222,68 @@ test("Dogfood Contract 7: Output flood does NOT invoke executeStagedReview and r
     assert.equal(report.providerTelemetry.agy.executionStatus, EXECUTION_STATUS.ERROR);
     assert.equal(report.providerTelemetry.agy.findingsCount, 0);
 
-    // Advisory gate should register simulated block due to incomplete/errored review
+    // Execution completeness is false due to reviewer error
+    assert.equal(report.telemetryMetrics.executionComplete, false);
+  } finally {
+    try {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    } catch {}
+  }
+});
+
+test("Dogfood Contract 8: Injected reviewAdapters with consensus findings initializes default verifier (P2 hardening)", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-test-dogfood-verifier-"));
+  const tmpOut = path.join(tmpDir, "dogfood-run.json");
+
+  const findingPayload = JSON.stringify({
+    findings: [
+      {
+        title: "SQL Injection in User Lookup",
+        severity: "critical",
+        file: "src/index.js",
+        line_start: 1,
+        line_end: 1,
+        recommendation: "Use parameterized queries",
+        evidenceSnippet: "const a = 1;"
+      }
+    ],
+    coverage: { coveredFiles: ["src/index.js"], omittedFiles: [] }
+  });
+
+  const makeFindingAdapter = (name, cmd, fam, model) => new CliReviewAdapter({
+    command: cmd,
+    providerName: name,
+    family: fam,
+    modelName: model,
+    execFn: async () => ({ stdout: findingPayload })
+  });
+
+  try {
+    const report = await runDogfoodReview({
+      mock: false,
+      changeSet: {
+        ok: true,
+        schemaVersion: "1.0.0",
+        repository: "test",
+        totalFiles: 1,
+        totalAdditions: 10,
+        totalDeletions: 2,
+        files: [{ path: "src/index.js", additions: 10, deletions: 2, riskTier: 2 }],
+        diffHunks: "+ const a = 1;"
+      },
+      reviewAdapters: {
+        agy: makeFindingAdapter("agy", "agy", "google", "gemini-3.8-flash"),
+        claude: makeFindingAdapter("claude", "claude", "anthropic", "claude-5.5-sonnet"),
+        codex: makeFindingAdapter("codex", "codex", "openai", "gpt-6.1-sol")
+      },
+      out: tmpOut,
+      log: false
+    });
+
+    assert.ok(report);
+    assert.equal(report.consensus.totalFindings, 1);
     assert.equal(report.advisoryGate.simulatedGateBlock, true);
+    assert.ok(report.verificationRecord !== null, "Verification record must be populated");
   } finally {
     try {
       fs.rmSync(tmpDir, { recursive: true, force: true });

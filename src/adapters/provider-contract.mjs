@@ -75,6 +75,21 @@ export function safeRenderUntrusted(val, maxLen = 64) {
 }
 
 /**
+ * Safely accesses a property on an untrusted object without throwing if a getter throws.
+ * @param {*} obj
+ * @param {string|number|symbol} prop
+ * @returns {*}
+ */
+export function safeGet(obj, prop) {
+  if (obj === null || obj === undefined) return undefined;
+  try {
+    return obj[prop];
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Validates the input context passed to a provider adapter.
  */
 export function validateProviderInput(input = {}) {
@@ -317,9 +332,11 @@ function sanitizeRawOutput(raw) {
       });
     }
 
-    const rawPath = typeof candidate.path === "string" && candidate.path.trim()
-      ? candidate.path.trim()
-      : (typeof candidate.file === "string" && candidate.file.trim() ? candidate.file.trim() : null);
+    const candidatePath = safeGet(candidate, "path");
+    const candidateFile = safeGet(candidate, "file");
+    const rawPath = typeof candidatePath === "string" && candidatePath.trim()
+      ? candidatePath.trim()
+      : (typeof candidateFile === "string" && candidateFile.trim() ? candidateFile.trim() : null);
 
     if (!rawPath) {
       return Object.freeze({
@@ -333,7 +350,8 @@ function sanitizeRawOutput(raw) {
       });
     }
 
-    const rawCode = typeof candidate.code === "string" ? candidate.code.trim() : "";
+    const candidateCode = safeGet(candidate, "code");
+    const rawCode = typeof candidateCode === "string" ? candidateCode.trim() : "";
     if (!rawCode || !ALLOWED_OMISSION_CODES.has(rawCode)) {
       return Object.freeze({
         ok: false,
@@ -342,11 +360,12 @@ function sanitizeRawOutput(raw) {
         coverage: Object.freeze({ coveredFiles: Object.freeze([]), omittedFiles: Object.freeze([]) }),
         usage: null,
         providerIdentity: Object.freeze(providerIdentity),
-        error: `Malformed omission at index ${i}: omission requires an authorized code from COVERAGE_OMISSION_CODES (received: '${safeRenderUntrusted(candidate.code)}').`
+        error: `Malformed omission at index ${i}: omission requires an authorized code from COVERAGE_OMISSION_CODES (received: '${safeRenderUntrusted(candidateCode)}').`
       });
     }
 
-    const rawReason = typeof candidate.reason === "string" ? candidate.reason.trim() : "";
+    const candidateReason = safeGet(candidate, "reason");
+    const rawReason = typeof candidateReason === "string" ? candidateReason.trim() : "";
     if (!rawReason) {
       return Object.freeze({
         ok: false,

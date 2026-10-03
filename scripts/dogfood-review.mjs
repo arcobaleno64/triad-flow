@@ -488,6 +488,13 @@ export async function runDogfoodReview(userOptions = {}) {
         }),
         codex: codexAdapter
       };
+    } else {
+      reviewAdapters = createMockDogfoodAdapters(changeSet);
+    }
+  }
+
+  if (!verifierAdapter) {
+    if (isLive) {
       verifierAdapter = new CliVerifierAdapter({
         command: "claude",
         providerName: "claude",
@@ -495,7 +502,6 @@ export async function runDogfoodReview(userOptions = {}) {
         actualModel: { value: "claude-5.5-sonnet", source: "reported" }
       });
     } else {
-      reviewAdapters = createMockDogfoodAdapters(changeSet);
       verifierAdapter = createMockVerifierAdapter("claude");
     }
   }

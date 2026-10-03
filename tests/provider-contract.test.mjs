@@ -345,3 +345,32 @@ test("validateProviderOutput never throws on malformed untrusted omission values
     assert.ok(typeof res.error === "string");
   }
 });
+
+test("validateProviderOutput never throws on stateful throwing getter omission objects (R1 hardening)", () => {
+  const changeSet = makeValidChangeSet();
+
+  let reads = 0;
+  const omission = {
+    path: "src/calc.js",
+    reason: "Valid reason",
+    get code() {
+      if (++reads === 1) return null;
+      throw new Error("diagnostic getter threw");
+    }
+  };
+
+  let res;
+  assert.doesNotThrow(() => {
+    res = validateProviderOutput({
+      findings: [],
+      coverage: {
+        coveredFiles: [],
+        omittedFiles: [omission]
+      }
+    }, { changeSet });
+  });
+
+  assert.equal(res.ok, false);
+  assert.equal(res.executionStatus, EXECUTION_STATUS.MALFORMED_OUTPUT);
+  assert.match(res.error, /omission requires an authorized code/i);
+});

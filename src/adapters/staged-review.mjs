@@ -15,7 +15,7 @@ import { buildEvidenceReviewPrompt } from "./review-prompts.mjs";
 import { reconcileFindings } from "../core/reconciler.mjs";
 import { classifyFileRisk, RISK_TIERS } from "../core/graph-router.mjs";
 import { normalizeCanonicalPath } from "../core/scoring.mjs";
-import { EXECUTION_STATUS, COVERAGE_OMISSION_CODES, safeRenderUntrusted } from "./provider-contract.mjs";
+import { EXECUTION_STATUS, COVERAGE_OMISSION_CODES, safeRenderUntrusted, safeGet } from "./provider-contract.mjs";
 
 export { COVERAGE_OMISSION_CODES };
 const ALLOWED_OMISSION_CODES = new Set(Object.values(COVERAGE_OMISSION_CODES));
@@ -46,11 +46,15 @@ export function evaluateCoverageContract(changeSet, coveredFiles = [], omittedFi
       violations.push(`Omission entry at index ${i} must be a non-null plain object.`);
       continue;
     }
-    const omitFile = (typeof omit.file === "string" && omit.file.trim())
-      ? omit.file.trim()
-      : ((typeof omit.path === "string" && omit.path.trim())
-        ? omit.path.trim()
-        : (typeof omit.target === "string" ? omit.target.trim() : null));
+    const fileProp = safeGet(omit, "file");
+    const pathProp = safeGet(omit, "path");
+    const targetProp = safeGet(omit, "target");
+
+    const omitFile = (typeof fileProp === "string" && fileProp.trim())
+      ? fileProp.trim()
+      : ((typeof pathProp === "string" && pathProp.trim())
+        ? pathProp.trim()
+        : (typeof targetProp === "string" ? targetProp.trim() : null));
 
     if (!omitFile) {
       violations.push(`Omission entry at index ${i} is missing a valid file path.`);
@@ -58,11 +62,13 @@ export function evaluateCoverageContract(changeSet, coveredFiles = [], omittedFi
     }
 
     const norm = normalizeCanonicalPath(omitFile);
-    const code = typeof omit.code === "string" ? omit.code.trim() : "";
-    const reason = typeof omit.reason === "string" ? omit.reason.trim() : "";
+    const codeVal = safeGet(omit, "code");
+    const reasonVal = safeGet(omit, "reason");
+    const code = typeof codeVal === "string" ? codeVal.trim() : "";
+    const reason = typeof reasonVal === "string" ? reasonVal.trim() : "";
 
     if (!code || !ALLOWED_OMISSION_CODES.has(code)) {
-      violations.push(`File '${norm}' omission has missing or unauthorized code '${safeRenderUntrusted(omit.code)}'.`);
+      violations.push(`File '${norm}' omission has missing or unauthorized code '${safeRenderUntrusted(codeVal)}'.`);
     }
 
     if (!reason) {
