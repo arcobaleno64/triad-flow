@@ -451,6 +451,7 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
       try {
         const rawChunkFindings = safeGet(chunkResult, "findings");
         let findingsValid = true;
+        const chunkCanonicalFindings = [];
         const findingsLen = safeArrayLength(rawChunkFindings);
         if (!safeIsArray(rawChunkFindings) || findingsLen < 0) {
           findingsValid = false;
@@ -462,8 +463,15 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
               findingsValid = false;
               break;
             }
-            accumulatedFindings.push(canonical);
+            chunkCanonicalFindings.push(canonical);
           }
+        }
+
+        // Finding C: findings are atomic per provider chunk. A malformed suffix
+        // invalidates the entire array; no valid prefix may enter salvage,
+        // reconciliation, checkpoints, or any later trusted path.
+        if (findingsValid) {
+          accumulatedFindings.push(...chunkCanonicalFindings);
         }
 
         if (!findingsValid) {
