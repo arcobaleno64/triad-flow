@@ -20,13 +20,18 @@ import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 import { buildChangeSet } from "../src/core/git-collector.mjs";
+import { decodeGitCStyleString } from "../src/core/git-numstat.mjs";
 import {
   CliReviewAdapter,
   resolveProviderProfile
 } from "../src/adapters/cli-transport.mjs";
 import { aggregateConsensus } from "../src/core/loop.mjs";
 import { evaluateGateDecision } from "../src/core/harness.mjs";
-import { convertProviderResultToSentryReport } from "../src/adapters/provider-contract.mjs";
+import {
+  EXECUTION_STATUS,
+  convertProviderResultToSentryReport
+} from "../src/adapters/provider-contract.mjs";
+import { executeStagedReview } from "../src/adapters/staged-review.mjs";
 import {
   conductIndependentVerification,
   buildDisagreementLedgerDocument,
@@ -140,7 +145,7 @@ Options:
   --base <ref>        Git base reference to diff against (default: main)
   --head <ref>        Git head reference (default: HEAD)
   --out <file>        Output report path (default: dogfood-run.json)
-  --timeout <ms>      Per-provider timeout in milliseconds (default: 120000 live / 30000 mock)
+  --timeout <ms>      Per-provider timeout in milliseconds (default: 300000 live / 30000 mock)
   --help, -h          Show this help message
 `);
 }
@@ -197,6 +202,150 @@ function createMockDogfoodAdapters(changeSet) {
 }
 
 /**
+ * Filters excluded files from a ChangeSet, updating files, diffHunks, contentDigest, and line counts.
+ */
+export function filterChangeSetExclusions(changeSet, excludedPaths = []) {
+  if (!changeSet || !changeSet.files) return changeSet;
+  const normalizedExclusions = new Set(
+    excludedPaths.map(p => path.normalize(p).replace(/\\/g, "/").replace(/^\.\//, ""))
+  );
+
+  const rawFiles = changeSet.files || [];
+  const excludedFiles = [];
+  const files = rawFiles.filter(f => {
+    const rawPath = typeof f === "string" ? f : f?.path || "";
+    const rawOldPath = typeof f === "object" ? f?.oldPath : undefined;
+    const decoded = decodeGitCStyleString(rawPath);
+    const norm = path.normalize(decoded).replace(/\\/g, "/").replace(/^\.\//, "");
+    const isExcludedDest = normalizedExclusions.has(norm);
+
+    let isExcludedSrc = isExcludedDest;
+    if (rawOldPath) {
+      const decodedOld = decodeGitCStyleString(rawOldPath);
+      const normOld = path.normalize(decodedOld).replace(/\\/g, "/").replace(/^\.\//, "");
+      isExcludedSrc = normalizedExclusions.has(normOld);
+    }
+
+    if (rawOldPath && norm !== rawOldPath) {
+      // Rename or copy: exclude only if BOTH source and destination are excluded
+      if (isExcludedDest && isExcludedSrc) {
+        excludedFiles.push(rawPath);
+        return false;
+      }
+      return true;
+    }
+
+    if (isExcludedDest) {
+      excludedFiles.push(rawPath);
+      return false;
+    }
+    return true;
+  });
+
+  const totalAdditions = files.reduce((acc, f) => acc + (f.additions || 0), 0);
+  const totalDeletions = files.reduce((acc, f) => acc + (f.deletions || 0), 0);
+
+  // Filter diffHunks if present
+  let filteredDiffHunks = changeSet.diffHunks || "";
+  if (filteredDiffHunks) {
+    const chunks = filteredDiffHunks.split(/(?=^diff --git )/m);
+    const retainedChunks = chunks.filter(chunk => {
+      const match = chunk.match(/^diff --git (?:"a\/(.+?)"|a\/(.+?))\s+(?:"b\/(.+?)"|b\/(.+?))(?:\r?\n|$)/m);
+      if (match) {
+        const isQuotedA = Boolean(match[1]);
+        const isQuotedB = Boolean(match[3]);
+        const rawA = match[1] || match[2];
+        const rawB = match[3] || match[4];
+        const decodedA = isQuotedA ? decodeGitCStyleString(`"${rawA}"`) : rawA;
+        const decodedB = isQuotedB ? decodeGitCStyleString(`"${rawB}"`) : rawB;
+        const fileA = path.normalize(decodedA).replace(/\\/g, "/").replace(/^\.\//, "");
+        const fileB = path.normalize(decodedB).replace(/\\/g, "/").replace(/^\.\//, "");
+        const isExcludedA = normalizedExclusions.has(fileA);
+        const isExcludedB = normalizedExclusions.has(fileB);
+        const isDevNullA = fileA === "/dev/null" || fileA === "dev/null";
+        const isDevNullB = fileB === "/dev/null" || fileB === "dev/null";
+
+        if (isDevNullB) {
+          // File deleted: exclude only if fileA is in exclusions
+          return !isExcludedA;
+        }
+        if (isDevNullA) {
+          // File created: exclude only if fileB is in exclusions
+          return !isExcludedB;
+        }
+        if (fileA === fileB) {
+          return !isExcludedA;
+        }
+        // Rename or copy (fileA !== fileB):
+        // Exclude only if BOTH source and destination are excluded
+        if (isExcludedA && isExcludedB) {
+          return false;
+        }
+        return true;
+      }
+
+      // Fallback for chunks without standard diff --git header
+      const plusMatch = chunk.match(/^\+\+\+ (?:"b\/(.+?)"|b\/(.+?)|([^\s\r\n]+))(?:\r?\n|$)/m);
+      const minusMatch = chunk.match(/^--- (?:"a\/(.+?)"|a\/(.+?)|([^\s\r\n]+))(?:\r?\n|$)/m);
+      if (plusMatch && minusMatch) {
+        const isQuotedA = Boolean(minusMatch[1]);
+        const isQuotedB = Boolean(plusMatch[1]);
+        const rawA = minusMatch[1] || minusMatch[2] || minusMatch[3];
+        const rawB = plusMatch[1] || plusMatch[2] || plusMatch[3];
+        const decodedA = isQuotedA ? decodeGitCStyleString(`"${rawA}"`) : rawA;
+        const decodedB = isQuotedB ? decodeGitCStyleString(`"${rawB}"`) : rawB;
+        const fileA = path.normalize(decodedA).replace(/\\/g, "/").replace(/^\.\//, "");
+        const fileB = path.normalize(decodedB).replace(/\\/g, "/").replace(/^\.\//, "");
+        const isExcludedA = normalizedExclusions.has(fileA);
+        const isExcludedB = normalizedExclusions.has(fileB);
+        const isDevNullA = fileA === "/dev/null" || fileA === "dev/null";
+        const isDevNullB = fileB === "/dev/null" || fileB === "dev/null";
+
+        if (isDevNullB) return !isExcludedA;
+        if (isDevNullA) return !isExcludedB;
+        if (fileA === fileB) return !isExcludedA;
+        if (isExcludedA && isExcludedB) return false;
+        return true;
+      }
+
+      if (plusMatch) {
+        const isQuotedB = Boolean(plusMatch[1]);
+        const rawB = plusMatch[1] || plusMatch[2] || plusMatch[3];
+        const decodedB = isQuotedB ? decodeGitCStyleString(`"${rawB}"`) : rawB;
+        const fileB = path.normalize(decodedB).replace(/\\/g, "/").replace(/^\.\//, "");
+        if (fileB !== "/dev/null" && fileB !== "dev/null" && normalizedExclusions.has(fileB)) {
+          return false;
+        }
+      }
+      if (minusMatch) {
+        const isQuotedA = Boolean(minusMatch[1]);
+        const rawA = minusMatch[1] || minusMatch[2] || minusMatch[3];
+        const decodedA = isQuotedA ? decodeGitCStyleString(`"${rawA}"`) : rawA;
+        const fileA = path.normalize(decodedA).replace(/\\/g, "/").replace(/^\.\//, "");
+        if (fileA !== "/dev/null" && fileA !== "dev/null" && normalizedExclusions.has(fileA)) {
+          return false;
+        }
+      }
+      return true;
+    });
+    filteredDiffHunks = retainedChunks.join("").trim();
+  }
+
+  const rawDigest = crypto.createHash("sha256").update(filteredDiffHunks, "utf8").digest("hex");
+  const contentDigest = rawDigest;
+
+  return {
+    ...changeSet,
+    files,
+    diffHunks: filteredDiffHunks,
+    contentDigest,
+    totalAdditions,
+    totalDeletions,
+    excludedFiles
+  };
+}
+
+/**
  * Classifies file risk tier based on sensitivity and architectural boundaries.
  */
 export function classifyDogfoodFileRisk(filePath) {
@@ -220,6 +369,40 @@ export function classifyDogfoodFileRisk(filePath) {
 }
 
 /**
+ * Normalizes provider identity from actual execution result for operational telemetry.
+ * Does not fall back to slot names, canonical defaults, or role names.
+ *
+ * @param {object} res
+ * @returns {{ provider: string, family: string, model: string }}
+ */
+export function normalizeTelemetryIdentity(res) {
+  const pId = res?.providerIdentity;
+  const provider = (typeof pId?.provider === "string" && pId.provider.trim()) ? pId.provider.trim() : "unknown";
+  const family = (typeof pId?.family === "string" && pId.family.trim()) ? pId.family.trim() : "unknown";
+  const model = (typeof pId?.model === "string" && pId.model.trim()) ? pId.model.trim() : "unknown";
+  return { provider, family, model };
+}
+
+/**
+ * Builds normalized provider telemetry entry from provider output and raw sentry report.
+ *
+ * @param {object} output - Execution output containing { res, latencyMs }
+ * @param {object} rawReport - Sentry report containing executionStatus and findings
+ * @returns {object}
+ */
+export function buildProviderTelemetry(output, rawReport) {
+  const identity = normalizeTelemetryIdentity(output?.res);
+  return {
+    provider: identity.provider,
+    family: identity.family,
+    model: identity.model,
+    executionStatus: rawReport?.executionStatus || "unknown",
+    findingsCount: rawReport?.findings?.length || 0,
+    latencyMs: output?.latencyMs ?? 0
+  };
+}
+
+/**
  * Executes Track D1 Shadow Dogfood Review.
  */
 export async function runDogfoodReview(userOptions = {}) {
@@ -227,7 +410,7 @@ export async function runDogfoodReview(userOptions = {}) {
   const isMock = !isLive;
   const base = userOptions.base || "main";
   const head = userOptions.head || "HEAD";
-  const timeoutMs = userOptions.timeoutMs || (isLive ? 180000 : 30000);
+  const timeoutMs = userOptions.timeoutMs || (isLive ? 300000 : 30000);
   const log = userOptions.log !== false;
   const outPath = path.resolve(userOptions.out || "dogfood-run.json");
 
@@ -265,80 +448,96 @@ export async function runDogfoodReview(userOptions = {}) {
     throw new Error(`Failed to capture ChangeSet: ${changeSet?.error?.message || "Unknown Git inspection failure"}`);
   }
 
-  const rawFiles = changeSet.files || [];
-  const files = rawFiles.map(f => ({
+  const relOut = path.relative(process.cwd(), outPath).replace(/\\/g, "/");
+  changeSet = filterChangeSetExclusions(changeSet, [relOut]);
+
+  const files = (changeSet.files || []).map(f => ({
     ...f,
     riskTier: f.riskTier || classifyDogfoodFileRisk(f.path)
   }));
+  changeSet = {
+    ...changeSet,
+    files
+  };
+  const totalAdditions = changeSet.totalAdditions;
+  const totalDeletions = changeSet.totalDeletions;
   if (log) {
-    console.log(`  ✔ Changed files: ${files.length}`);
-    console.log(`  ✔ Total additions: +${changeSet.totalAdditions} / deletions: -${changeSet.totalDeletions}`);
+    console.log(`  ✔ Changed files (excluding telemetry output): ${files.length}`);
+    console.log(`  ✔ Total additions: +${totalAdditions} / deletions: -${totalDeletions}`);
     for (const f of files.slice(0, 10)) {
       console.log(`    • ${f.path} (+${f.additions || 0}/-${f.deletions || 0}, Tier ${f.riskTier})`);
     }
     if (files.length > 10) console.log(`    ... and ${files.length - 10} more files`);
   }
 
-  const totalChangedLines = (changeSet.totalAdditions || 0) + (changeSet.totalDeletions || 0);
+  const totalChangedLines = totalAdditions + totalDeletions;
   const hasTier1 = files.some(f => f.riskTier === 1) || totalChangedLines >= 50;
   const diffTier = hasTier1 ? 1 : 2;
 
   // 2. Configure Tri-Party Reviewers
   if (log) console.log("\n[2/5] Configuring tri-party heterogeneous review sentries...");
-  let reviewAdapters;
-  let verifierAdapter;
+  let reviewAdapters = userOptions.reviewAdapters || null;
+  let verifierAdapter = userOptions.verifierAdapter || null;
 
-  if (isLive) {
-    const codexProfile = resolveProviderProfile("codex");
-    let codexCommand = "codex";
-    let codexArgs;
+  if (!reviewAdapters) {
+    if (isLive) {
+      const codexProfile = resolveProviderProfile("codex");
+      let codexCommand = "codex";
+      let codexArgs;
 
-    if (codexProfile?.nativeResolution?.resolvedType === "NATIVE_EXE") {
-      codexCommand = codexProfile.nativeResolution.command;
-    } else if (codexProfile?.nativeResolution?.resolvedType === "NODE_SCRIPT") {
-      codexCommand = codexProfile.nativeResolution.command;
-      codexArgs = [
-        ...(codexProfile.nativeResolution.prefixArgs || []),
-        ...(codexProfile.args || [])
-      ];
+      if (codexProfile?.nativeResolution?.resolvedType === "NATIVE_EXE") {
+        codexCommand = codexProfile.nativeResolution.command;
+      } else if (codexProfile?.nativeResolution?.resolvedType === "NODE_SCRIPT") {
+        codexCommand = codexProfile.nativeResolution.command;
+        codexArgs = [
+          ...(codexProfile.nativeResolution.prefixArgs || []),
+          ...(codexProfile.args || [])
+        ];
+      }
+
+      const codexAdapter = new CliReviewAdapter({
+        command: codexCommand,
+        args: codexArgs,
+        providerName: "codex",
+        modelName: "gpt-6.1-sol",
+        actualModel: { value: "gpt-6.1-sol", source: "reported" },
+        inputChannel: "stdin",
+        supportsStdin: true,
+        useStdin: true
+      });
+      codexAdapter.profile = codexProfile;
+
+      reviewAdapters = {
+        agy: new CliReviewAdapter({
+          command: "agy",
+          providerName: "agy",
+          modelName: "gemini-3.8-flash",
+          actualModel: { value: "gemini-3.8-flash", source: "reported" }
+        }),
+        claude: new CliReviewAdapter({
+          command: "claude",
+          providerName: "claude",
+          modelName: "claude-5.5-sonnet",
+          actualModel: { value: "claude-5.5-sonnet", source: "reported" }
+        }),
+        codex: codexAdapter
+      };
+    } else {
+      reviewAdapters = createMockDogfoodAdapters(changeSet);
     }
+  }
 
-    const codexAdapter = new CliReviewAdapter({
-      command: codexCommand,
-      args: codexArgs,
-      providerName: "codex",
-      modelName: "gpt-6.1-sol",
-      actualModel: { value: "gpt-6.1-sol", source: "reported" },
-      inputChannel: "stdin",
-      supportsStdin: true,
-      useStdin: true
-    });
-    codexAdapter.profile = codexProfile;
-
-    reviewAdapters = {
-      agy: new CliReviewAdapter({
-        command: "agy",
-        providerName: "agy",
-        modelName: "gemini-3.8-flash",
-        actualModel: { value: "gemini-3.8-flash", source: "reported" }
-      }),
-      claude: new CliReviewAdapter({
+  if (!verifierAdapter) {
+    if (isLive) {
+      verifierAdapter = new CliVerifierAdapter({
         command: "claude",
         providerName: "claude",
         modelName: "claude-5.5-sonnet",
         actualModel: { value: "claude-5.5-sonnet", source: "reported" }
-      }),
-      codex: codexAdapter
-    };
-    verifierAdapter = new CliVerifierAdapter({
-      command: "claude",
-      providerName: "claude",
-      modelName: "claude-5.5-sonnet",
-      actualModel: { value: "claude-5.5-sonnet", source: "reported" }
-    });
-  } else {
-    reviewAdapters = createMockDogfoodAdapters(changeSet);
-    verifierAdapter = createMockVerifierAdapter("claude");
+      });
+    } else {
+      verifierAdapter = createMockVerifierAdapter("claude");
+    }
   }
 
   // 3. Execute Tri-Party Review
@@ -346,14 +545,30 @@ export async function runDogfoodReview(userOptions = {}) {
   const t0 = Date.now();
 
   const tAgy0 = Date.now();
-  const pAgy = reviewAdapters.agy.executeReview({
-    runId: `dogfood-${Date.now()}-agy`,
-    role: "agy",
-    changeSet,
-    policyId: "TRI_PARTY_HETEROGENEOUS",
-    timeoutMs,
-    signal: userOptions.signal || null
-  }).then(res => ({ res, latencyMs: Date.now() - tAgy0 }));
+  const executeAgyReview = async () => {
+    const runId = `dogfood-${Date.now()}-agy`;
+    let res = await reviewAdapters.agy.executeReview({
+      runId,
+      role: "agy",
+      changeSet,
+      policyId: "TRI_PARTY_HETEROGENEOUS",
+      timeoutMs,
+      signal: userOptions.signal || null
+    });
+
+    if (res?.executionStatus === EXECUTION_STATUS.PAYLOAD_TOO_LARGE) {
+      if (log) console.log("    ℹ [agy] Prompt exceeds Windows argv limit; delegating to staged chunked review (RFC-027-01)...");
+      res = await executeStagedReview(changeSet, reviewAdapters.agy, {
+        runId,
+        role: "agy",
+        policyId: "TRI_PARTY_HETEROGENEOUS",
+        timeoutMs,
+        signal: userOptions.signal || null
+      });
+    }
+    return res;
+  };
+  const pAgy = executeAgyReview().then(res => ({ res, latencyMs: Date.now() - tAgy0 }));
 
   const tClaude0 = Date.now();
   const pClaude = reviewAdapters.claude.executeReview({
@@ -397,9 +612,9 @@ export async function runDogfoodReview(userOptions = {}) {
   };
 
   if (log) {
-    console.log(`  ✔ Google agy:   status=${rawReports.agy.executionStatus} (${rawReports.agy.findings?.length || 0} findings, ${agyOut.latencyMs}ms)`);
-    console.log(`  ✔ Anthropic claude: status=${rawReports.claude.executionStatus} (${rawReports.claude.findings?.length || 0} findings, ${claudeOut.latencyMs}ms)`);
-    console.log(`  ✔ OpenAI codex: status=${rawReports.codex.executionStatus} (${rawReports.codex.findings?.length || 0} findings, ${codexOut.latencyMs}ms)`);
+    console.log(`  ✔ Google agy:   status=${rawReports.agy.executionStatus} (${rawReports.agy.findings?.length || 0} findings, ${agyOut.latencyMs}ms)${agyOut.res?.error ? ` - error: ${agyOut.res.error}` : ""}`);
+    console.log(`  ✔ Anthropic claude: status=${rawReports.claude.executionStatus} (${rawReports.claude.findings?.length || 0} findings, ${claudeOut.latencyMs}ms)${claudeOut.res?.error ? ` - error: ${claudeOut.res.error}` : ""}`);
+    console.log(`  ✔ OpenAI codex: status=${rawReports.codex.executionStatus} (${rawReports.codex.findings?.length || 0} findings, ${codexOut.latencyMs}ms)${codexOut.res?.error ? ` - error: ${codexOut.res.error}` : ""}`);
   }
 
   // 4. Consensus & Policy Evaluation
@@ -452,7 +667,11 @@ export async function runDogfoodReview(userOptions = {}) {
   const authFailureCount = providerOutputs.filter(r => r.executionStatus === "auth_failure").length;
   const otherFailureCount = providerOutputs.filter(r => !["success", "empty"].includes(r.executionStatus)).length;
   const allProvidersSucceeded = providerOutputs.every(r => ["success", "empty"].includes(r.executionStatus));
-  const isExecutionComplete = consensus.quorumReached && allProvidersSucceeded;
+  const verificationAttempted = verificationRecord !== null;
+  const isExecutionComplete =
+    consensus.quorumReached &&
+    allProvidersSucceeded &&
+    (!verificationAttempted || verificationRecord.ok === true);
 
   const dogfoodDoc = {
     schemaVersion: "1.0.0",
@@ -472,30 +691,13 @@ export async function runDogfoodReview(userOptions = {}) {
       totalAdditions: changeSet.totalAdditions,
       totalDeletions: changeSet.totalDeletions,
       riskTier: diffTier,
-      files: files.map(f => ({ path: f.path, additions: f.additions, deletions: f.deletions, riskTier: f.riskTier }))
+      files: files.map(f => ({ path: f.path, additions: f.additions, deletions: f.deletions, riskTier: f.riskTier })),
+      excludedFiles: changeSet.excludedFiles || []
     },
     providerTelemetry: {
-      agy: {
-        family: "google",
-        model: "gemini-3.8-flash",
-        executionStatus: rawReports.agy.executionStatus,
-        findingsCount: rawReports.agy.findings?.length || 0,
-        latencyMs: agyOut.latencyMs
-      },
-      claude: {
-        family: "anthropic",
-        model: "claude-5.5-sonnet",
-        executionStatus: rawReports.claude.executionStatus,
-        findingsCount: rawReports.claude.findings?.length || 0,
-        latencyMs: claudeOut.latencyMs
-      },
-      codex: {
-        family: "openai",
-        model: "gpt-6.1-sol",
-        executionStatus: rawReports.codex.executionStatus,
-        findingsCount: rawReports.codex.findings?.length || 0,
-        latencyMs: codexOut.latencyMs
-      }
+      agy: buildProviderTelemetry(agyOut, rawReports.agy),
+      claude: buildProviderTelemetry(claudeOut, rawReports.claude),
+      codex: buildProviderTelemetry(codexOut, rawReports.codex)
     },
     consensus: {
       verdict: consensus.verdict,

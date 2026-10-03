@@ -15,21 +15,63 @@ import { buildEvidenceReviewPrompt } from "./review-prompts.mjs";
 import { reconcileFindings } from "../core/reconciler.mjs";
 import { classifyFileRisk, RISK_TIERS } from "../core/graph-router.mjs";
 import { normalizeCanonicalPath } from "../core/scoring.mjs";
+import { normalizeFinding } from "../core/harness.mjs";
+import { EXECUTION_STATUS, COVERAGE_OMISSION_CODES, safeRenderUntrusted, safeGet, safeIsArray, safeArrayLength, safeErrorMessage } from "./provider-contract.mjs";
 
-export const COVERAGE_OMISSION_CODES = Object.freeze({
-  UNMODIFIED: "OMIT_UNMODIFIED",
-  SIZE_LIMIT: "OMIT_SIZE_LIMIT",
-  BINARY: "OMIT_BINARY",
-  GENERATED: "OMIT_GENERATED",
-  OUT_OF_SCOPE: "OMIT_OUT_OF_SCOPE",
-  TIMEOUT: "OMIT_TIMEOUT"
-});
+export { COVERAGE_OMISSION_CODES };
+const ALLOWED_OMISSION_CODES = new Set(Object.values(COVERAGE_OMISSION_CODES));
 
 export const STAGED_REVIEW_STAGES = Object.freeze({
   STAGE_1_TRIAGE: "stage-1-triage",
   STAGE_2_DEEP_REVIEW: "stage-2-deep-review",
   STAGE_3_VERIFICATION: "stage-3-verification"
 });
+
+/**
+ * Validates and canonicalizes a raw candidate finding object before accumulation or persistence.
+ * Shields pipeline against revoked Proxies, throwing getters, circular references, and hostile toJSON() hooks.
+ * Returns null if the candidate is not a safe, valid object.
+ * @param {*} raw
+ * @returns {object|null}
+ */
+export function canonicalizeFinding(raw) {
+  if (!raw || typeof raw !== "object" || safeIsArray(raw)) {
+    return null;
+  }
+  try {
+    const jsonStr = JSON.stringify(raw);
+    if (!jsonStr || typeof jsonStr !== "string") return null;
+    const parsed = JSON.parse(jsonStr);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+
+    delete parsed.__trustedCapabilityNonce;
+    delete parsed.authority;
+    delete parsed.isTrusted;
+    delete parsed.quorumReached;
+    delete parsed.consensusProof;
+
+    const norm = normalizeFinding(parsed);
+    if (!norm || !norm.valid || !norm.finding) {
+      return null;
+    }
+
+    if (parsed.sources !== undefined && parsed.sources !== null) {
+      if (!Array.isArray(parsed.sources)) {
+        return null;
+      }
+      for (const s of parsed.sources) {
+        if (typeof s !== "string" || !s.trim()) {
+          return null;
+        }
+      }
+      norm.finding.sources = parsed.sources.map(s => s.trim());
+    }
+
+    return norm.finding;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Evaluates full coverage contract over a ChangeSet.
@@ -40,51 +82,138 @@ export const STAGED_REVIEW_STAGES = Object.freeze({
  * @returns {{ isComplete: boolean, coveredPercentage: number, violations: string[], declaration: object }}
  */
 export function evaluateCoverageContract(changeSet, coveredFiles = [], omittedFiles = []) {
-  const allFiles = (changeSet?.files || []).map(f => normalizeCanonicalPath(typeof f === "string" ? f : f.path));
-  const coveredSet = new Set(coveredFiles.map(f => normalizeCanonicalPath(f)));
-  const omittedMap = new Map();
+  try {
+    const rawAllFiles = safeGet(changeSet, "files");
+    const violations = [];
 
-  for (const omit of omittedFiles) {
-    omittedMap.set(normalizeCanonicalPath(omit.file), omit);
-  }
-
-  const violations = [];
-
-  for (const f of allFiles) {
-    const isCovered = coveredSet.has(f);
-    const omitRecord = omittedMap.get(f);
-
-    if (!isCovered && !omitRecord) {
-      violations.push(`File '${f}' was neither covered nor declared as omitted.`);
-      continue;
+    const allFilesLen = safeArrayLength(rawAllFiles);
+    if (!safeIsArray(rawAllFiles) || allFilesLen < 0) {
+      violations.push("ChangeSet requires a valid 'files' array with readable length.");
     }
 
-    // Tier 1 Check: Critical files MUST NOT be omitted under size limits or out-of-scope
-    const tier = classifyFileRisk(f);
-    if (tier === RISK_TIERS.TIER_1_CRITICAL && omitRecord) {
-      if (omitRecord.code === COVERAGE_OMISSION_CODES.SIZE_LIMIT || omitRecord.code === COVERAGE_OMISSION_CODES.OUT_OF_SCOPE) {
-        violations.push(`Tier 1 (Critical) file '${f}' cannot be omitted under code '${omitRecord.code}' (Fail-Closed).`);
+    const allFiles = (safeIsArray(rawAllFiles) ? rawAllFiles : []).map(f => normalizeCanonicalPath(typeof f === "string" ? f : safeGet(f, "path") || ""));
+    const coveredSet = new Set();
+    const omittedMap = new Map();
+
+    const covLen = safeArrayLength(coveredFiles);
+    if (!safeIsArray(coveredFiles) || covLen < 0) {
+      violations.push("Coverage declaration 'coveredFiles' must be a valid array with readable length.");
+    } else {
+      for (let i = 0; i < covLen; i++) {
+        const cf = safeGet(coveredFiles, i);
+        if (typeof cf === "string" && cf.trim()) {
+          coveredSet.add(normalizeCanonicalPath(cf.trim()));
+        }
       }
     }
-  }
 
-  const isComplete = violations.length === 0;
-  const coveredCount = coveredSet.size;
-  const totalCount = allFiles.length || 1;
-  const coveredPercentage = Math.min(100, Math.round((coveredCount / totalCount) * 100));
+    const omittedLen = safeArrayLength(omittedFiles);
+    if (!safeIsArray(omittedFiles) || omittedLen < 0) {
+      violations.push("Coverage declaration 'omittedFiles' must be a valid array with readable length.");
+    } else {
+      for (let i = 0; i < omittedLen; i++) {
+        const omit = safeGet(omittedFiles, i);
+        if (!omit || typeof omit !== "object" || safeIsArray(omit)) {
+          violations.push(`Omission entry at index ${i} must be a non-null plain object.`);
+          continue;
+        }
+        const fileProp = safeGet(omit, "file");
+        const pathProp = safeGet(omit, "path");
+        const targetProp = safeGet(omit, "target");
 
-  return {
-    isComplete,
-    coveredPercentage,
-    violations,
-    declaration: {
-      coveredFiles: Array.from(coveredSet),
-      omittedFiles: Array.from(omittedMap.values()),
-      totalFiles: totalCount,
-      coveredPercentage,
-      isComplete
+        const omitFile = (typeof fileProp === "string" && fileProp.trim())
+          ? fileProp.trim()
+          : ((typeof pathProp === "string" && pathProp.trim())
+            ? pathProp.trim()
+            : (typeof targetProp === "string" ? targetProp.trim() : null));
+
+        if (!omitFile) {
+          violations.push(`Omission entry at index ${i} is missing a valid file path.`);
+          continue;
+        }
+
+        const norm = normalizeCanonicalPath(omitFile);
+        const codeVal = safeGet(omit, "code");
+        const reasonVal = safeGet(omit, "reason");
+        const code = typeof codeVal === "string" ? codeVal.trim() : "";
+        const reason = typeof reasonVal === "string" ? reasonVal.trim() : "";
+
+        if (!code || !ALLOWED_OMISSION_CODES.has(code)) {
+          violations.push(`File '${norm}' omission has missing or unauthorized code '${safeRenderUntrusted(codeVal)}'.`);
+        }
+
+        if (!reason) {
+          violations.push(`File '${norm}' omission has missing or empty reason.`);
+        }
+
+        omittedMap.set(norm, {
+          file: norm,
+          path: norm,
+          code: code || undefined,
+          reason: reason || undefined
+        });
+      }
     }
-  };
+
+    for (const f of allFiles) {
+      const isCovered = coveredSet.has(f);
+      const omitRecord = omittedMap.get(f);
+
+      // P1-1: covered XOR omitted (A file MUST NOT be simultaneously covered and omitted)
+      if (isCovered && omitRecord) {
+        violations.push(`File '${f}' was declared as both covered and omitted (contradictory coverage declaration).`);
+        continue;
+      }
+
+      if (!isCovered && !omitRecord) {
+        violations.push(`File '${f}' was neither covered nor declared as omitted.`);
+        continue;
+      }
+
+      // Tier 1 Check: Critical files MUST NOT be omitted under any code (Fail-Closed)
+      const tier = classifyFileRisk(f);
+      if (tier === RISK_TIERS.TIER_1_CRITICAL && omitRecord) {
+        violations.push(`Tier 1 (Critical) file '${f}' cannot be omitted under code '${safeRenderUntrusted(omitRecord.code || "unknown")}' (Fail-Closed).`);
+      }
+    }
+
+    // Check any files outside allFiles that appear in both coveredSet and omittedMap
+    for (const [omitFile] of omittedMap) {
+      if (coveredSet.has(omitFile) && !allFiles.includes(omitFile)) {
+        violations.push(`File '${omitFile}' was declared as both covered and omitted (contradictory coverage declaration).`);
+      }
+    }
+
+    const isComplete = violations.length === 0;
+    const coveredCount = coveredSet.size;
+    const totalCount = allFiles.length || 1;
+    const coveredPercentage = Math.min(100, Math.round((coveredCount / totalCount) * 100));
+
+    return {
+      isComplete,
+      coveredPercentage,
+      violations,
+      declaration: {
+        coveredFiles: Array.from(coveredSet),
+        omittedFiles: Array.from(omittedMap.values()),
+        totalFiles: totalCount,
+        coveredPercentage,
+        isComplete
+      }
+    };
+  } catch (err) {
+    return {
+      isComplete: false,
+      coveredPercentage: 0,
+      violations: [`Coverage evaluation failed closed: ${safeErrorMessage(err)}`],
+      declaration: {
+        coveredFiles: [],
+        omittedFiles: [],
+        isComplete: false,
+        coveredPercentage: 0
+      }
+    };
+  }
 }
 
 /**
@@ -112,18 +241,22 @@ export class CheckpointStore {
    * @param {object} checkpointData
    */
   saveCheckpoint(runId, checkpointData) {
-    this._ensureDir();
-    const filePath = this.getCheckpointPath(runId);
-    const tmpPath = `${filePath}.tmp.${Date.now()}`;
-    const payload = JSON.stringify({
-      schemaVersion: "1.0.0",
-      runId,
-      timestamp: new Date().toISOString(),
-      ...checkpointData
-    }, null, 2);
+    try {
+      this._ensureDir();
+      const filePath = this.getCheckpointPath(runId);
+      const tmpPath = `${filePath}.tmp.${Date.now()}`;
+      const payload = JSON.stringify({
+        schemaVersion: "1.0.0",
+        runId,
+        timestamp: new Date().toISOString(),
+        ...checkpointData
+      }, null, 2);
 
-    fs.writeFileSync(tmpPath, payload, "utf8");
-    fs.renameSync(tmpPath, filePath);
+      fs.writeFileSync(tmpPath, payload, "utf8");
+      fs.renameSync(tmpPath, filePath);
+    } catch {
+      // Checkpoint saving must never crash execution or leak unhandled rejections
+    }
   }
 
   /**
@@ -188,6 +321,14 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
     };
   }
 
+  // P1-2: Freeze total staged-review budget and track absolute global deadline (RFC-027-01 §8.8)
+  const totalBudgetMs = typeof options.timeoutMs === "number" && options.timeoutMs > 0
+    ? options.timeoutMs
+    : 300000;
+  const nominalChunkBudgetMs = Math.min(60000, Math.max(1, Math.floor(totalBudgetMs / chunks.length)));
+  const reviewStartTime = Date.now();
+  const globalDeadline = reviewStartTime + totalBudgetMs;
+
   const accumulatedFindings = [];
   const coveredFiles = new Set();
   const omittedFiles = [];
@@ -197,6 +338,43 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
   for (let idx = 0; idx < chunks.length; idx++) {
     const chunk = chunks[idx];
     const chunkTarget = chunk.targetFiles[0] || "index.js";
+    const now = Date.now();
+    const remainingGlobalMs = globalDeadline - now;
+
+    // P1-2 Requirement 6: Global budget exhaustion before invoking provider
+    if (remainingGlobalMs <= 0) {
+      for (let remIdx = idx; remIdx < chunks.length; remIdx++) {
+        const remChunk = chunks[remIdx];
+        for (const tf of remChunk.targetFiles) {
+          omittedFiles.push({
+            file: tf,
+            code: COVERAGE_OMISSION_CODES.TIMEOUT,
+            reason: `Staged review global budget exhausted (${totalBudgetMs}ms) before chunk ${remChunk.chunkId} could execute.`
+          });
+        }
+        chunkReceipts.push({
+          chunkId: remChunk.chunkId,
+          chunkIndex: remChunk.chunkIndex,
+          totalChunks: remChunk.totalChunks,
+          status: "timeout",
+          durationMs: 0,
+          findingsCount: 0,
+          error: "Global staged review budget exhausted."
+        });
+      }
+      checkpointStore.saveCheckpoint(runId, {
+        runId,
+        stage: STAGED_REVIEW_STAGES.STAGE_2_DEEP_REVIEW,
+        salvagedFindings: accumulatedFindings,
+        completedChunks: idx,
+        totalChunks: chunks.length,
+        omittedFiles
+      });
+      break;
+    }
+
+    // P1-2 Requirement 5: Effective chunk timeout
+    const effectiveChunkTimeoutMs = Math.max(1, Math.min(60000, nominalChunkBudgetMs, remainingGlobalMs));
 
     // Build AST Context Package for primary target file in chunk
     const contextPkg = buildContextPackage({
@@ -218,14 +396,34 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
     const chunkStartTime = Date.now();
     let chunkResult;
 
+    const chunkController = new AbortController();
+    let externalAbortHandler = null;
+    if (options.signal) {
+      if (options.signal.aborted) {
+        chunkController.abort(options.signal.reason);
+      } else {
+        externalAbortHandler = () => chunkController.abort(options.signal.reason);
+        options.signal.addEventListener("abort", externalAbortHandler, { once: true });
+      }
+    }
+
+    const globalDeadlineTimer = setTimeout(() => {
+      chunkController.abort("Global staged review budget exhausted.");
+    }, remainingGlobalMs);
+
     try {
       chunkResult = await adapter.executeReview({
+        runId: `${runId}-chunk-${idx}`,
+        role,
+        policyId: options.policyId || "TRI_PARTY_HETEROGENEOUS",
+        timeoutMs: effectiveChunkTimeoutMs,
+        signal: chunkController.signal,
         changeSet: {
           ...changeSet,
           diffHunks: chunk.diffHunks,
-          files: chunk.targetFiles.map(p => ({ path: p, additions: 0, deletions: 0 }))
+          files: chunk.targetFiles.map(p => ({ path: p, additions: 0, deletions: 0 })),
+          contentDigest: crypto.createHash("sha256").update(chunk.diffHunks || "", "utf8").digest("hex")
         },
-        role,
         limits,
         prompt
       });
@@ -233,32 +431,324 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
       chunkResult = {
         ok: false,
         status: "error",
-        error: err.message || String(err),
+        error: safeErrorMessage(err),
         findings: []
       };
+    } finally {
+      clearTimeout(globalDeadlineTimer);
+      if (options.signal && externalAbortHandler) {
+        options.signal.removeEventListener("abort", externalAbortHandler);
+      }
     }
 
     const chunkDurationMs = Date.now() - chunkStartTime;
 
     // Handle chunk outcome
     if (chunkResult && chunkResult.ok) {
-      if (Array.isArray(chunkResult.findings)) {
-        accumulatedFindings.push(...chunkResult.findings);
+      let chunkCoverageValid = false;
+      let contradictionError = null;
+
+      try {
+        const rawChunkFindings = safeGet(chunkResult, "findings");
+        let findingsValid = true;
+        const chunkCanonicalFindings = [];
+        const findingsLen = safeArrayLength(rawChunkFindings);
+        if (!safeIsArray(rawChunkFindings) || findingsLen < 0) {
+          findingsValid = false;
+        } else {
+          for (let fIdx = 0; fIdx < findingsLen; fIdx++) {
+            const fItem = safeGet(rawChunkFindings, fIdx);
+            const canonical = canonicalizeFinding(fItem);
+            if (!canonical) {
+              findingsValid = false;
+              break;
+            }
+            chunkCanonicalFindings.push(canonical);
+          }
+        }
+
+        // Finding C: findings are atomic per provider chunk. A malformed suffix
+        // invalidates the entire array; no valid prefix may enter salvage,
+        // reconciliation, checkpoints, or any later trusted path.
+        if (findingsValid) {
+          accumulatedFindings.push(...chunkCanonicalFindings);
+        }
+
+        if (!findingsValid) {
+          chunkCoverageValid = false;
+          contradictionError = `Chunk ${chunk.chunkId} returned malformed or unreadable findings array`;
+          for (const tf of chunk.targetFiles) {
+            omittedFiles.push({
+              file: tf,
+              path: tf,
+              code: COVERAGE_OMISSION_CODES.OUT_OF_SCOPE,
+              reason: contradictionError
+            });
+          }
+        } else {
+          const chunkTargetSet = new Set(chunk.targetFiles.map(tf => normalizeCanonicalPath(tf)));
+
+          const covObj = safeGet(chunkResult, "coverage");
+          if (covObj && typeof covObj === "object" && !safeIsArray(covObj)) {
+            const rawProvCovered = safeGet(covObj, "coveredFiles");
+            const rawProvOmitted = safeGet(covObj, "omittedFiles");
+
+            const coveredLen = safeArrayLength(rawProvCovered);
+            const omittedLen = safeArrayLength(rawProvOmitted);
+
+            const isCoveredValid = safeIsArray(rawProvCovered) && coveredLen >= 0;
+            const isOmittedValid = safeIsArray(rawProvOmitted) && omittedLen >= 0;
+
+            if (!isCoveredValid || !isOmittedValid) {
+              chunkCoverageValid = false;
+              contradictionError = `Chunk ${chunk.chunkId} returned malformed coverage arrays (coveredFiles valid: ${isCoveredValid}, omittedFiles valid: ${isOmittedValid})`;
+              for (const tf of chunk.targetFiles) {
+                omittedFiles.push({
+                  file: tf,
+                  path: tf,
+                  code: "MALFORMED_COVERAGE",
+                  reason: contradictionError
+                });
+              }
+            } else {
+              const provCovered = rawProvCovered;
+              const provOmitted = rawProvOmitted;
+              const coveredInThisChunk = new Set();
+              const omittedInThisChunk = new Set();
+              const omittedObjectsInThisChunk = [];
+              let hasMalformedOmission = false;
+
+              for (let cIdx = 0; cIdx < coveredLen; cIdx++) {
+                const cf = safeGet(provCovered, cIdx);
+                if (typeof cf === "string") {
+                  const norm = normalizeCanonicalPath(cf);
+                  if (chunkTargetSet.has(norm)) {
+                    coveredInThisChunk.add(norm);
+                  }
+                }
+              }
+
+              for (let oIdx = 0; oIdx < omittedLen; oIdx++) {
+                const omit = safeGet(provOmitted, oIdx);
+                if (!omit || typeof omit !== "object" || safeIsArray(omit)) {
+                  hasMalformedOmission = true;
+                  omittedObjectsInThisChunk.push({
+                    file: `malformed_entry_${oIdx}`,
+                    path: `malformed_entry_${oIdx}`,
+                    code: "MALFORMED_ENTRY",
+                    reason: `Omission entry at index ${oIdx} is not a valid object in chunk ${chunk.chunkId}`
+                  });
+                  continue;
+                }
+
+                const fileProp = safeGet(omit, "file");
+                const pathProp = safeGet(omit, "path");
+                const targetProp = safeGet(omit, "target");
+
+                const omitFile = (typeof fileProp === "string" && fileProp.trim())
+                  ? fileProp.trim()
+                  : ((typeof pathProp === "string" && pathProp.trim())
+                    ? pathProp.trim()
+                    : (typeof targetProp === "string" ? targetProp.trim() : null));
+
+                if (!omitFile) {
+                  hasMalformedOmission = true;
+                  omittedObjectsInThisChunk.push({
+                    file: `missing_path_${oIdx}`,
+                    path: `missing_path_${oIdx}`,
+                    code: "MALFORMED_ENTRY",
+                    reason: `Omission entry at index ${oIdx} is missing a file path in chunk ${chunk.chunkId}`
+                  });
+                  continue;
+                }
+
+                const norm = normalizeCanonicalPath(omitFile);
+                if (!chunkTargetSet.has(norm)) {
+                  // Ignore provider claims outside chunk targetFiles
+                  continue;
+                }
+
+                const codeVal = safeGet(omit, "code");
+                const reasonVal = safeGet(omit, "reason");
+                const code = typeof codeVal === "string" ? codeVal.trim() : "";
+                const reason = typeof reasonVal === "string" ? reasonVal.trim() : "";
+                const isValidCode = Boolean(code && ALLOWED_OMISSION_CODES.has(code));
+                const isValidReason = Boolean(reason && reason.length > 0);
+
+                if (isValidCode && isValidReason) {
+                  omittedInThisChunk.add(norm);
+                  omittedObjectsInThisChunk.push({
+                    file: norm,
+                    path: norm,
+                    code,
+                    reason
+                  });
+                } else {
+                  hasMalformedOmission = true;
+                  omittedObjectsInThisChunk.push({
+                    file: norm,
+                    path: norm,
+                    code: code || "MALFORMED_OMISSION",
+                    reason: reason || `Malformed omission code '${safeRenderUntrusted(codeVal)}'`
+                  });
+                }
+              }
+
+              if (hasMalformedOmission) {
+                chunkCoverageValid = false;
+                contradictionError = `Chunk ${chunk.chunkId} contains malformed or unauthorized omission entries`;
+              }
+
+              // P1-1 Requirement 1: Reject intra-chunk contradiction (covered AND omitted in same chunk)
+              const intraChunkContradictions = chunk.targetFiles.filter(tf => {
+                const norm = normalizeCanonicalPath(tf);
+                return coveredInThisChunk.has(norm) && omittedInThisChunk.has(norm);
+              });
+
+              // P1-1 Requirement 3: Reject cross-chunk contradiction (covered in one chunk, omitted in another)
+              const crossChunkContradictions = chunk.targetFiles.filter(tf => {
+                const norm = normalizeCanonicalPath(tf);
+                const wasCoveredPrior = coveredFiles.has(norm);
+                const wasOmittedPrior = omittedFiles.some(o => normalizeCanonicalPath(o.file || o.path) === norm);
+                return (omittedInThisChunk.has(norm) && wasCoveredPrior) ||
+                       (coveredInThisChunk.has(norm) && wasOmittedPrior);
+              });
+
+              if (intraChunkContradictions.length > 0 || crossChunkContradictions.length > 0) {
+                chunkCoverageValid = false;
+                const badFile = intraChunkContradictions[0] || crossChunkContradictions[0];
+                const isIntra = intraChunkContradictions.length > 0;
+                contradictionError = isIntra
+                  ? `Contradictory coverage declaration for '${badFile}' (both covered and omitted in chunk ${chunk.chunkId})`
+                  : `Cross-chunk contradictory coverage for '${badFile}' (covered in one chunk, omitted in chunk ${chunk.chunkId})`;
+                for (const cf of coveredInThisChunk) {
+                  coveredFiles.add(cf);
+                }
+                for (const om of omittedObjectsInThisChunk) {
+                  omittedFiles.push(om);
+                }
+                for (const tf of chunk.targetFiles) {
+                  const norm = normalizeCanonicalPath(tf);
+                  if (!omittedInThisChunk.has(norm)) {
+                    omittedFiles.push({
+                      file: tf,
+                      code: COVERAGE_OMISSION_CODES.OUT_OF_SCOPE,
+                      reason: contradictionError
+                    });
+                  }
+                }
+              } else if (hasMalformedOmission) {
+                chunkCoverageValid = false;
+                for (const cf of coveredInThisChunk) {
+                  coveredFiles.add(cf);
+                }
+                for (const om of omittedObjectsInThisChunk) {
+                  omittedFiles.push(om);
+                }
+                for (const tf of chunk.targetFiles) {
+                  const norm = normalizeCanonicalPath(tf);
+                  if (!coveredInThisChunk.has(norm) && !omittedInThisChunk.has(norm)) {
+                    omittedFiles.push({
+                      file: tf,
+                      path: tf,
+                      code: COVERAGE_OMISSION_CODES.OUT_OF_SCOPE,
+                      reason: contradictionError
+                    });
+                  }
+                }
+              } else {
+                // No contradiction: apply valid coverage and omissions
+                for (const cf of coveredInThisChunk) {
+                  coveredFiles.add(cf);
+                }
+                for (const om of omittedObjectsInThisChunk) {
+                  omittedFiles.push(om);
+                }
+
+                // Per-chunk coverage validation: All targetFiles in this chunk must be either covered or omitted
+                const uncoveredInChunk = chunk.targetFiles.filter(tf => {
+                  const norm = normalizeCanonicalPath(tf);
+                  return !coveredInThisChunk.has(norm) && !omittedInThisChunk.has(norm);
+                });
+
+                if (uncoveredInChunk.length === 0) {
+                  chunkCoverageValid = true;
+                } else {
+                  for (const utf of uncoveredInChunk) {
+                    const normUtf = normalizeCanonicalPath(utf);
+                    if (!omittedObjectsInThisChunk.some(o => normalizeCanonicalPath(o.file || o.path) === normUtf)) {
+                      omittedFiles.push({
+                        file: utf,
+                        path: utf,
+                        code: COVERAGE_OMISSION_CODES.OUT_OF_SCOPE,
+                        reason: `File '${utf}' was not covered or declared omitted in chunk ${chunk.chunkId}`
+                      });
+                    }
+                  }
+                }
+              }
+            }
+          } else {
+            // FAIL CLOSED (Finding 2): Missing coverage object does not grant coverage!
+            for (const tf of chunk.targetFiles) {
+              omittedFiles.push({
+                file: tf,
+                code: COVERAGE_OMISSION_CODES.SIZE_LIMIT,
+                reason: `Provider returned no coverage object for chunk ${chunk.chunkId}`
+              });
+            }
+          }
+        }
+      } catch (chunkProcErr) {
+        chunkCoverageValid = false;
+        contradictionError = `Chunk result processing failed: ${safeErrorMessage(chunkProcErr)}`;
+        for (const tf of chunk.targetFiles) {
+          omittedFiles.push({
+            file: tf,
+            code: COVERAGE_OMISSION_CODES.SIZE_LIMIT,
+            reason: contradictionError
+          });
+        }
       }
-      for (const tf of chunk.targetFiles) {
-        coveredFiles.add(normalizeCanonicalPath(tf));
-      }
+
       chunkReceipts.push({
         chunkId: chunk.chunkId,
         chunkIndex: chunk.chunkIndex,
         totalChunks: chunk.totalChunks,
-        status: "completed",
+        status: chunkCoverageValid ? "completed" : "failed",
         durationMs: chunkDurationMs,
-        findingsCount: chunkResult.findings?.length || 0
+        findingsCount: Math.max(0, safeArrayLength(safeGet(chunkResult, "findings"))),
+        error: chunkCoverageValid ? undefined : (contradictionError || "Chunk target files not covered")
       });
+
+      if (chunkCoverageValid) {
+        // Persist successful chunk checkpoint
+        checkpointStore.saveCheckpoint(runId, {
+          runId,
+          stage: STAGED_REVIEW_STAGES.STAGE_2_DEEP_REVIEW,
+          salvagedFindings: accumulatedFindings,
+          completedChunks: idx + 1,
+          totalChunks: chunks.length
+        });
+      } else {
+        // Chunk had invalid coverage: save salvage checkpoint
+        checkpointStore.saveCheckpoint(runId, {
+          runId,
+          stage: STAGED_REVIEW_STAGES.STAGE_2_DEEP_REVIEW,
+          salvagedFindings: accumulatedFindings,
+          completedChunks: idx,
+          totalChunks: chunks.length,
+          omittedFiles
+        });
+        if (chunk.priorityTier === RISK_TIERS.TIER_1_CRITICAL) {
+          break;
+        }
+      }
     } else {
       // Chunk Failed or Timed Out
-      const isTimeout = chunkResult?.status === "timeout" || /timeout/i.test(chunkResult?.error || "");
+      const isTimeout = chunkResult?.status === "timeout" ||
+        chunkResult?.executionStatus === EXECUTION_STATUS.TIMEOUT ||
+        /timeout/i.test(chunkResult?.error || "");
       for (const tf of chunk.targetFiles) {
         omittedFiles.push({
           file: tf,
@@ -290,35 +780,50 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
         break;
       }
     }
-
-    // Persist successful chunk checkpoint
-    checkpointStore.saveCheckpoint(runId, {
-      runId,
-      stage: STAGED_REVIEW_STAGES.STAGE_2_DEEP_REVIEW,
-      salvagedFindings: accumulatedFindings,
-      completedChunks: idx + 1,
-      totalChunks: chunks.length
-    });
   }
 
   // Stage 3: Finding Reconciliation
-  const reconciledFindings = reconcileFindings(accumulatedFindings, adapter.providerName || role);
+  let reconciledFindings = [];
+  let reconciliationFailed = false;
+  let reconciliationError = null;
+  try {
+    reconciledFindings = reconcileFindings(accumulatedFindings, adapter.providerName || role);
+  } catch (recErr) {
+    reconciliationFailed = true;
+    reconciliationError = `Finding reconciliation failed: ${safeErrorMessage(recErr)}`;
+  }
 
   // Evaluate Coverage
   const coverageEval = evaluateCoverageContract(changeSet, Array.from(coveredFiles), omittedFiles);
 
-  const finalStatus = coverageEval.isComplete ? "completed" : "incomplete";
+  const allReceiptsSucceeded = chunkReceipts.length > 0 && chunkReceipts.every(r => r.status === "completed");
+  const hasTimeouts = omittedFiles.some(o => o.code === COVERAGE_OMISSION_CODES.TIMEOUT) || chunkReceipts.some(r => r.status === "timeout");
+  const isComplete = coverageEval.isComplete && allReceiptsSucceeded && !hasTimeouts && !reconciliationFailed;
+  const finalStatus = isComplete ? "completed" : "incomplete";
 
   // Clean up checkpoint on complete success
-  if (coverageEval.isComplete) {
+  if (isComplete) {
     checkpointStore.clearCheckpoint(runId);
   }
 
   return {
     runId,
+    ok: isComplete,
+    executionStatus: isComplete ? EXECUTION_STATUS.SUCCESS : EXECUTION_STATUS.INCOMPLETE,
+    error: isComplete ? undefined : (reconciliationError || coverageEval.violations?.[0] || (hasTimeouts ? "One or more chunks timed out during review." : "Staged review execution incomplete.")),
+    providerIdentity: {
+      provider: adapter.providerName || role,
+      model: adapter.modelName || "unknown-model",
+      family: adapter.family || "unknown",
+      transport: "cli-staged",
+      runId
+    },
     status: finalStatus,
     findings: reconciledFindings,
-    coverage: coverageEval.declaration,
+    coverage: {
+      ...coverageEval.declaration,
+      isComplete
+    },
     violations: coverageEval.violations,
     receipts: chunkReceipts
   };

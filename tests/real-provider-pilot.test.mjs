@@ -184,7 +184,7 @@ test("Path 5 (Coverage Incompleteness): Multi-file changeset with omitted files 
           findings: [],
           coverage: {
             coveredFiles: ["src/auth.js"],
-            omittedFiles: [{ path: "src/db.js", reason: "Truncated or omitted by reviewer" }]
+            omittedFiles: [{ path: "src/db.js", code: "OMIT_SIZE_LIMIT", reason: "Truncated or omitted by reviewer" }]
           }
         })
       })

@@ -382,7 +382,7 @@ test("Test 12 (3-Point Passed Check): Requires detectionPass, gatePolicyPass, an
             type: "sql-injection"
           }
         ],
-        coverage: { coveredFiles: [], omittedFiles: [{ path: caseDef.targetFile, reason: "omitted" }] }
+        coverage: { coveredFiles: [], omittedFiles: [{ path: caseDef.targetFile, code: "OMIT_SIZE_LIMIT", reason: "omitted" }] }
       })
     })
   });

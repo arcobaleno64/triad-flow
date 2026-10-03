@@ -8,6 +8,7 @@ import {
   buildEvidenceReviewPrompt,
   buildReviewPrompt
 } from "../src/adapters/review-prompts.mjs";
+import { COVERAGE_OMISSION_CODES } from "../src/adapters/provider-contract.mjs";
 
 test("TAXONOMY_CHECKLISTS defines all 5 required vulnerability categories", () => {
   const keys = Object.keys(TAXONOMY_CHECKLISTS);
@@ -89,4 +90,33 @@ test("buildReviewPrompt maintains backward compatibility with legacy consumers",
   assert.match(legacyPrompt, /Scope: working-tree/);
   assert.match(legacyPrompt, /src\/legacy\.js/);
   assert.match(legacyPrompt, /\+ const x = 42;/);
+});
+
+test("buildEvidenceReviewPrompt synchronizes omittedFiles schema with authorized omission codes (R2)", () => {
+  const cs = {
+    scopeMode: "working-tree",
+    contentDigest: "abc123digest",
+    files: [{ path: "src/index.js", additions: 5, deletions: 1 }],
+    diffHunks: "+ const a = 1;"
+  };
+
+  const prompt = buildEvidenceReviewPrompt(cs, "macro");
+
+  // Schema properties in coverage and omittedFiles example
+  assert.match(prompt, /"coveredFiles":\s*\[\s*"path\/to\/covered_file\.js"\s*\]/);
+  assert.match(prompt, /"path":\s*"path\/to\/omitted_file\.md"/);
+  assert.match(prompt, /"code":\s*"OMIT_OUT_OF_SCOPE"/);
+  assert.match(prompt, /"reason":/);
+
+  // All authorized omission codes must be documented
+  const allowedCodes = Object.values(COVERAGE_OMISSION_CODES);
+  assert.ok(allowedCodes.length > 0);
+  for (const code of allowedCodes) {
+    assert.ok(prompt.includes(code), `Prompt must document omission code ${code}`);
+  }
+
+  // Coverage rules explicitly state non-empty reason and fail-closed Tier 1 rule
+  assert.match(prompt, /Coverage & Omission Rules:/);
+  assert.match(prompt, /authorized/i);
+  assert.match(prompt, /Tier 1/);
 });

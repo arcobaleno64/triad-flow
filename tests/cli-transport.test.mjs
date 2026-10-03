@@ -8,7 +8,8 @@ import {
   CliReviewAdapter,
   OfflineReviewAdapter,
   extractJsonFromText,
-  buildReviewPrompt
+  buildReviewPrompt,
+  readBoundedFile
 } from "../src/adapters/cli-transport.mjs";
 import { EXECUTION_STATUS, validateProviderOutput } from "../src/adapters/provider-contract.mjs";
 import { orchestrateReview } from "../src/adapters/review-orchestrator.mjs";
@@ -255,7 +256,7 @@ test("CliReviewAdapter: detects provider refusal/content filter and classifies a
   assert.match(res.error, /Provider safety\/content filter refusal detected/);
 });
 
-test("CliReviewAdapter (Acceptance 7: 過大回應 Payload Too Large)", async () => {
+test("CliReviewAdapter (Acceptance 7: 過大回應 Output Flood Execution Error)", async () => {
   const cs = makeChangeSet();
   const hugeOutput = "A".repeat(1024 * 1024); // 1 MB string
   const mockExec = async () => ({
@@ -272,7 +273,111 @@ test("CliReviewAdapter (Acceptance 7: 過大回應 Payload Too Large)", async ()
   });
 
   assert.equal(res.ok, false);
-  assert.equal(res.executionStatus, EXECUTION_STATUS.PAYLOAD_TOO_LARGE);
+  assert.equal(res.executionStatus, EXECUTION_STATUS.ERROR);
+  assert.match(res.error, /maxOutputBytes/i);
+});
+
+test("CliReviewAdapter (Acceptance 7b: Stderr Output Flood Execution Error)", async () => {
+  const cs = makeChangeSet();
+  const hugeStderr = "E".repeat(1024 * 1024); // 1 MB string
+  const mockExec = async () => ({
+    stdout: "{}",
+    stderr: hugeStderr
+  });
+
+  const adapter = new CliReviewAdapter({ execFn: mockExec });
+  const res = await adapter.executeReview({
+    runId: "run-huge-stderr-01",
+    role: "macro",
+    changeSet: cs,
+    policyId: "SINGLE_SENTRY",
+    limits: { maxOutputBytes: 1000 }
+  });
+
+  assert.equal(res.ok, false);
+  assert.equal(res.executionStatus, EXECUTION_STATUS.ERROR);
+  assert.match(res.error, /maxOutputBytes/i);
+});
+
+test("CliReviewAdapter (Acceptance 7c: Preclassified status with stdout flood classified as ERROR)", async () => {
+  const cs = makeChangeSet();
+  const floodOutput = "X".repeat(600 * 1024);
+  const mockExec = async () => ({
+    executionStatus: "payload_too_large",
+    stdout: floodOutput
+  });
+
+  const adapter = new CliReviewAdapter({ execFn: mockExec });
+  const res = await adapter.executeReview({
+    runId: "run-flood-preclass-01",
+    role: "macro",
+    changeSet: cs,
+    policyId: "SINGLE_SENTRY",
+    limits: { maxOutputBytes: 1000 }
+  });
+
+  assert.equal(res.ok, false);
+  assert.equal(res.executionStatus, EXECUTION_STATUS.ERROR);
+  assert.match(res.error, /maxOutputBytes/i);
+});
+
+test("CliReviewAdapter (Acceptance 7d: fileOutput flood classified as ERROR)", async () => {
+  const cs = makeChangeSet();
+  const floodFile = "F".repeat(600 * 1024);
+  const mockExec = async () => ({
+    fileOutput: floodFile,
+    stdout: "{}"
+  });
+
+  const adapter = new CliReviewAdapter({ execFn: mockExec });
+  const res = await adapter.executeReview({
+    runId: "run-flood-file-01",
+    role: "macro",
+    changeSet: cs,
+    policyId: "SINGLE_SENTRY",
+    limits: { maxOutputBytes: 1000 }
+  });
+
+  assert.equal(res.ok, false);
+  assert.equal(res.executionStatus, EXECUTION_STATUS.ERROR);
+  assert.match(res.error, /maxOutputBytes/i);
+});
+
+test("CliReviewAdapter (Acceptance 7e: stat/read race with bounded read classified as ERROR)", async () => {
+  const cs = makeChangeSet();
+  const tmpFile = path.join(os.tmpdir(), `tf-race-test-${Date.now()}.json`);
+  fs.writeFileSync(tmpFile, "X".repeat(2092), "utf8");
+
+  const origStatSync = fs.statSync;
+  fs.statSync = (p, opts) => {
+    if (p === tmpFile) {
+      return { size: 1 };
+    }
+    return origStatSync(p, opts);
+  };
+
+  try {
+    const adapter = new CliReviewAdapter({
+      execFn: async () => ({
+        code: 0,
+        stdout: "{}"
+      })
+    });
+
+    const res = adapter._processResult(
+      { code: 0, stdout: "{}" },
+      { changeSet: cs, providerName: "mock" },
+      { maxOutputBytes: 1000, maxInputBytes: 100000 },
+      tmpFile
+    );
+
+    assert.equal(res.ok, false);
+    assert.equal(res.executionStatus, EXECUTION_STATUS.ERROR);
+    assert.match(res.error, /maxOutputBytes/i);
+  } finally {
+    fs.statSync = origStatSync;
+    try { fs.unlinkSync(tmpFile); } catch {}
+  }
 });
 
 test("CliReviewAdapter (Acceptance 8: 部分覆蓋 Partial Coverage & Omitted Files)", async () => {
@@ -286,7 +391,7 @@ test("CliReviewAdapter (Acceptance 8: 部分覆蓋 Partial Coverage & Omitted Fi
       findings: [],
       coverage: {
         coveredFiles: ["src/sample.js"],
-        omittedFiles: [{ path: "src/large-binary.dat", reason: "Binary file skipped by reviewer" }]
+        omittedFiles: [{ path: "src/large-binary.dat", code: "OMIT_BINARY", reason: "Binary file skipped by reviewer" }]
       }
     })
   });
@@ -502,4 +607,69 @@ test("validateProviderOutput enforces 4096-byte UTF-8 cap and redacts secrets in
   assert.ok(Buffer.byteLength(rawPrefix, "utf8") <= 4096);
   assert.ok(!out.error.includes("ghp_"));
   assert.ok(out.error.includes("[REDACTED_SECRET]"));
+});
+
+test("CliReviewAdapter enforces timeoutMs budget across retries without sleeping past deadline", async () => {
+  let execAttempts = 0;
+  const adapter = new CliReviewAdapter({
+    command: "fake-provider",
+    args: [],
+    providerName: "fake-provider",
+    modelName: "fake-model",
+    family: "google", // maxRetries = 2
+    execFn: async () => {
+      execAttempts++;
+      return {
+        code: 0,
+        stdout: "This request was blocked by Gemini's filters."
+      };
+    }
+  });
+
+  const t0 = Date.now();
+  const res = await adapter.executeReview({
+    runId: "retry-deadline-test",
+    role: "macro",
+    policyId: "SINGLE_SENTRY",
+    timeoutMs: 50, // Much smaller than 1000ms retry backoff
+    changeSet: makeChangeSet([{ path: "src/a.js", additions: 1, deletions: 0 }])
+  });
+  const elapsed = Date.now() - t0;
+
+  assert.ok(elapsed < 800, `Execution should finish quickly without 1000ms sleep (took ${elapsed}ms)`);
+  assert.equal(res.ok, false);
+  assert.equal(res.executionStatus, EXECUTION_STATUS.TIMEOUT);
+  assert.match(res.error, /timeout budget/i);
+});
+
+test("readBoundedFile enforces maxBytes strictly without unbounded fallback", () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-read-bounded-"));
+  try {
+    const validFile = path.join(tmpDir, "valid.txt");
+    fs.writeFileSync(validFile, "hello world", "utf8");
+    const content = readBoundedFile(validFile, 100);
+    assert.equal(content, "hello world");
+
+    // File exceeding limit triggers error via stat
+    const largeFile = path.join(tmpDir, "large.txt");
+    fs.writeFileSync(largeFile, "A".repeat(200), "utf8");
+    assert.throws(() => {
+      readBoundedFile(largeFile, 100);
+    }, /exceeded maxOutputBytes/);
+
+    // Exact boundary: 100 bytes allowed
+    const exactFile = path.join(tmpDir, "exact.txt");
+    fs.writeFileSync(exactFile, "B".repeat(100), "utf8");
+    const exactContent = readBoundedFile(exactFile, 100);
+    assert.equal(exactContent.length, 100);
+
+    // 101 bytes with maxBytes 100 triggers error
+    const boundaryExceededFile = path.join(tmpDir, "exceeded.txt");
+    fs.writeFileSync(boundaryExceededFile, "C".repeat(101), "utf8");
+    assert.throws(() => {
+      readBoundedFile(boundaryExceededFile, 100);
+    }, /exceeded maxOutputBytes/);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
 });

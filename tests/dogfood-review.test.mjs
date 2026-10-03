@@ -13,9 +13,14 @@ import {
   parseArgs,
   runDogfoodReview,
   classifyDogfoodFileRisk,
+  filterChangeSetExclusions,
   getCurrentCommitSha,
-  getCurrentBranch
+  getCurrentBranch,
+  normalizeTelemetryIdentity,
+  buildProviderTelemetry
 } from "../scripts/dogfood-review.mjs";
+import { CliReviewAdapter } from "../src/adapters/cli-transport.mjs";
+import { EXECUTION_STATUS } from "../src/adapters/provider-contract.mjs";
 
 test("Dogfood Contract 1: parseArgs correctly parses flags", () => {
   const def = parseArgs([]);
@@ -101,3 +106,746 @@ test("Dogfood Contract 5: classifyDogfoodFileRisk classifies security paths as T
   assert.equal(classifyDogfoodFileRisk("docs/README.md"), 2);
   assert.equal(classifyDogfoodFileRisk("src/utils/formatter.js"), 2);
 });
+
+test("Dogfood Contract 6: filterChangeSetExclusions handles renames symmetrically between files and diff (Finding 3)", () => {
+  // Case A: src/old.mjs renamed into excluded file dogfood-run.json
+  const renameDiff = [
+    "diff --git a/src/old.mjs b/dogfood-run.json",
+    "similarity index 90%",
+    "rename from src/old.mjs",
+    "rename to dogfood-run.json",
+    "--- a/src/old.mjs",
+    "+++ b/dogfood-run.json",
+    "@@ -1,2 +1,2 @@",
+    "- old content",
+    "+ new content"
+  ].join("\n");
+
+  const csRename = {
+    files: [
+      { path: "dogfood-run.json", oldPath: "src/old.mjs", additions: 1, deletions: 1 },
+      { path: "src/normal.js", additions: 5, deletions: 0 }
+    ],
+    diffHunks: renameDiff + "\n" + [
+      "diff --git a/src/normal.js b/src/normal.js",
+      "--- a/src/normal.js",
+      "+++ b/src/normal.js",
+      "@@ -1 +1 @@",
+      "+ console.log(1);"
+    ].join("\n")
+  };
+
+  const filtered = filterChangeSetExclusions(csRename, ["dogfood-run.json"]);
+  // Source src/old.mjs was not excluded, so both diff chunk and file entry must be retained!
+  assert.ok(filtered.diffHunks.includes("diff --git a/src/old.mjs b/dogfood-run.json"));
+  assert.equal(filtered.files.length, 2, "Retained rename must preserve file entry in files");
+  assert.equal(filtered.totalAdditions, 6);
+  assert.equal(filtered.totalDeletions, 1);
+
+  // Case B: Both source and destination in exclusion list
+  const filteredBoth = filterChangeSetExclusions(csRename, ["dogfood-run.json", "src/old.mjs"]);
+  assert.ok(!filteredBoth.diffHunks.includes("diff --git a/src/old.mjs b/dogfood-run.json"));
+  assert.equal(filteredBoth.files.length, 1);
+  assert.equal(filteredBoth.files[0].path, "src/normal.js");
+  assert.equal(filteredBoth.totalAdditions, 5);
+  assert.equal(filteredBoth.totalDeletions, 0);
+});
+
+test("Dogfood Contract 7: Output flood does NOT invoke executeStagedReview and reports error in telemetry (R3)", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-test-dogfood-flood-"));
+  const tmpOut = path.join(tmpDir, "dogfood-run.json");
+
+  // Simulate an output flood exceeding maxOutputBytes (512KB)
+  const floodOutput = "X".repeat(600 * 1024);
+  let agyInvocations = 0;
+  const agyFloodAdapter = new CliReviewAdapter({
+    command: "agy",
+    providerName: "agy",
+    family: "google",
+    modelName: "gemini-3.8-flash",
+    execFn: async () => {
+      agyInvocations++;
+      return { stdout: floodOutput };
+    }
+  });
+
+  const cleanClaudeAdapter = new CliReviewAdapter({
+    command: "claude",
+    providerName: "claude",
+    family: "anthropic",
+    modelName: "claude-5.5-sonnet",
+    execFn: async () => ({
+      stdout: JSON.stringify({
+        findings: [],
+        coverage: { coveredFiles: ["src/index.js"], omittedFiles: [] }
+      })
+    })
+  });
+
+  const cleanCodexAdapter = new CliReviewAdapter({
+    command: "codex",
+    providerName: "codex",
+    family: "openai",
+    modelName: "gpt-6.1-sol",
+    execFn: async () => ({
+      stdout: JSON.stringify({
+        findings: [],
+        coverage: { coveredFiles: ["src/index.js"], omittedFiles: [] }
+      })
+    })
+  });
+
+  try {
+    const report = await runDogfoodReview({
+      mock: false,
+      changeSet: {
+        ok: true,
+        schemaVersion: "1.0.0",
+        repository: "test",
+        totalFiles: 1,
+        totalAdditions: 10,
+        totalDeletions: 2,
+        files: [{ path: "src/index.js", additions: 10, deletions: 2, riskTier: 2 }],
+        diffHunks: "+ const a = 1;"
+      },
+      reviewAdapters: {
+        agy: agyFloodAdapter,
+        claude: cleanClaudeAdapter,
+        codex: cleanCodexAdapter
+      },
+      out: tmpOut,
+      log: false
+    });
+
+    // Output flood must NOT trigger staged fallback (which would have called agy multiple times for chunks)
+    assert.equal(agyInvocations, 1, "agy must be invoked exactly once without staged review retry");
+
+    // Failure remains visible in provider telemetry as error
+    assert.equal(report.providerTelemetry.agy.executionStatus, EXECUTION_STATUS.ERROR);
+    assert.equal(report.providerTelemetry.agy.findingsCount, 0);
+
+    // Execution completeness is false due to reviewer error
+    assert.equal(report.telemetryMetrics.executionComplete, false);
+  } finally {
+    try {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    } catch {}
+  }
+});
+
+test("Dogfood Contract 7b: Preclassified flood status does NOT invoke executeStagedReview and classifies as error (R3 hardening)", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-test-dogfood-flood-preclass-"));
+  const tmpOut = path.join(tmpDir, "dogfood-run.json");
+
+  const floodOutput = "X".repeat(600 * 1024);
+  let agyInvocations = 0;
+  const agyPreclassifiedFloodAdapter = new CliReviewAdapter({
+    command: "agy",
+    providerName: "agy",
+    family: "google",
+    modelName: "gemini-3.8-flash",
+    execFn: async () => {
+      agyInvocations++;
+      return { executionStatus: "payload_too_large", stdout: floodOutput };
+    }
+  });
+
+  const cleanClaudeAdapter = new CliReviewAdapter({
+    command: "claude",
+    providerName: "claude",
+    family: "anthropic",
+    modelName: "claude-5.5-sonnet",
+    execFn: async () => ({
+      stdout: JSON.stringify({
+        findings: [],
+        coverage: { coveredFiles: ["src/index.js"], omittedFiles: [] }
+      })
+    })
+  });
+
+  const cleanCodexAdapter = new CliReviewAdapter({
+    command: "codex",
+    providerName: "codex",
+    family: "openai",
+    modelName: "gpt-6.1-sol",
+    execFn: async () => ({
+      stdout: JSON.stringify({
+        findings: [],
+        coverage: { coveredFiles: ["src/index.js"], omittedFiles: [] }
+      })
+    })
+  });
+
+  try {
+    const report = await runDogfoodReview({
+      mock: false,
+      changeSet: {
+        ok: true,
+        schemaVersion: "1.0.0",
+        repository: "test",
+        totalFiles: 1,
+        totalAdditions: 10,
+        totalDeletions: 2,
+        files: [{ path: "src/index.js", additions: 10, deletions: 2, riskTier: 2 }],
+        diffHunks: "+ const a = 1;"
+      },
+      reviewAdapters: {
+        agy: agyPreclassifiedFloodAdapter,
+        claude: cleanClaudeAdapter,
+        codex: cleanCodexAdapter
+      },
+      out: tmpOut,
+      log: false
+    });
+
+    assert.equal(agyInvocations, 1, "agy must be invoked exactly once without staged review retry");
+    assert.equal(report.providerTelemetry.agy.executionStatus, EXECUTION_STATUS.ERROR);
+    assert.equal(report.telemetryMetrics.executionComplete, false);
+  } finally {
+    try {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    } catch {}
+  }
+});
+
+test("Dogfood Contract 8: Injected reviewAdapters with consensus findings initializes default verifier (P2 hardening)", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-test-dogfood-verifier-"));
+  const tmpOut = path.join(tmpDir, "dogfood-run.json");
+
+  const findingPayload = JSON.stringify({
+    findings: [
+      {
+        title: "SQL Injection in User Lookup",
+        severity: "critical",
+        file: "src/index.js",
+        line_start: 1,
+        line_end: 1,
+        recommendation: "Use parameterized queries",
+        evidenceSnippet: "const a = 1;"
+      }
+    ],
+    coverage: { coveredFiles: ["src/index.js"], omittedFiles: [] }
+  });
+
+  const makeFindingAdapter = (name, cmd, fam, model) => new CliReviewAdapter({
+    command: cmd,
+    providerName: name,
+    family: fam,
+    modelName: model,
+    execFn: async () => ({ stdout: findingPayload })
+  });
+
+  try {
+    const report = await runDogfoodReview({
+      mock: false,
+      changeSet: {
+        ok: true,
+        schemaVersion: "1.0.0",
+        repository: "test",
+        totalFiles: 1,
+        totalAdditions: 10,
+        totalDeletions: 2,
+        files: [{ path: "src/index.js", additions: 10, deletions: 2, riskTier: 2 }],
+        diffHunks: "+ const a = 1;"
+      },
+      reviewAdapters: {
+        agy: makeFindingAdapter("agy", "agy", "google", "gemini-3.8-flash"),
+        claude: makeFindingAdapter("claude", "claude", "anthropic", "claude-5.5-sonnet"),
+        codex: makeFindingAdapter("codex", "codex", "openai", "gpt-6.1-sol")
+      },
+      out: tmpOut,
+      log: false
+    });
+
+    assert.ok(report);
+    assert.equal(report.consensus.totalFindings, 1);
+    assert.equal(report.advisoryGate.simulatedGateBlock, true);
+    assert.ok(report.verificationRecord !== null, "Verification record must be populated");
+  } finally {
+    try {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    } catch {}
+  }
+});
+
+// ==============================================================================
+// RB-1: Derive providerTelemetry identity from actual execution result
+// ==============================================================================
+
+test("RB1-A: Default identities in mock/live result reflect canonical values", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-test-rb1-a-"));
+  const tmpOut = path.join(tmpDir, "dogfood-run.json");
+
+  try {
+    const report = await runDogfoodReview({
+      mock: true,
+      changeSet: {
+        ok: true,
+        schemaVersion: "1.0.0",
+        repository: "test",
+        totalFiles: 1,
+        totalAdditions: 5,
+        totalDeletions: 1,
+        files: [{ path: "src/index.js", additions: 5, deletions: 1, riskTier: 2 }],
+        diffHunks: "+ const a = 1;"
+      },
+      out: tmpOut,
+      log: false
+    });
+
+    assert.equal(report.providerTelemetry.agy.provider, "agy");
+    assert.equal(report.providerTelemetry.agy.family, "google");
+    assert.equal(report.providerTelemetry.agy.model, "gemini-3.8-flash");
+
+    assert.equal(report.providerTelemetry.claude.provider, "claude");
+    assert.equal(report.providerTelemetry.claude.family, "anthropic");
+    assert.equal(report.providerTelemetry.claude.model, "claude-5.5-sonnet");
+
+    assert.equal(report.providerTelemetry.codex.provider, "codex");
+    assert.equal(report.providerTelemetry.codex.family, "openai");
+    assert.equal(report.providerTelemetry.codex.model, "gpt-6.1-sol");
+  } finally {
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+  }
+});
+
+test("RB1-B: Injected reviewer identities reflect exact values regardless of slot", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-test-rb1-b-"));
+  const tmpOut = path.join(tmpDir, "dogfood-run.json");
+
+  const makeCustomAdapter = (provider, family, model) => ({
+    executeReview: async () => ({
+      ok: true,
+      executionStatus: "success",
+      findings: [],
+      coverage: { coveredFiles: ["src/index.js"], omittedFiles: [] },
+      providerIdentity: { provider, family, model }
+    })
+  });
+
+  try {
+    const report = await runDogfoodReview({
+      mock: false,
+      changeSet: {
+        ok: true,
+        schemaVersion: "1.0.0",
+        repository: "test",
+        totalFiles: 1,
+        totalAdditions: 5,
+        totalDeletions: 1,
+        files: [{ path: "src/index.js", additions: 5, deletions: 1, riskTier: 2 }],
+        diffHunks: "+ const a = 1;"
+      },
+      reviewAdapters: {
+        agy: makeCustomAdapter("custom-reviewer-x", "custom-family-x", "custom-model-x"),
+        claude: makeCustomAdapter("custom-reviewer-y", "custom-family-y", "custom-model-y"),
+        codex: makeCustomAdapter("custom-reviewer-z", "custom-family-z", "custom-model-z")
+      },
+      out: tmpOut,
+      log: false
+    });
+
+    assert.equal(report.providerTelemetry.agy.provider, "custom-reviewer-x");
+    assert.equal(report.providerTelemetry.agy.family, "custom-family-x");
+    assert.equal(report.providerTelemetry.agy.model, "custom-model-x");
+
+    assert.equal(report.providerTelemetry.claude.provider, "custom-reviewer-y");
+    assert.equal(report.providerTelemetry.claude.family, "custom-family-y");
+    assert.equal(report.providerTelemetry.claude.model, "custom-model-y");
+
+    assert.equal(report.providerTelemetry.codex.provider, "custom-reviewer-z");
+    assert.equal(report.providerTelemetry.codex.family, "custom-family-z");
+    assert.equal(report.providerTelemetry.codex.model, "custom-model-z");
+  } finally {
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+  }
+});
+
+test("RB1-C: Missing providerIdentity does not throw and defaults fields to 'unknown' without canonical false attribution", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-test-rb1-c-"));
+  const tmpOut = path.join(tmpDir, "dogfood-run.json");
+
+  const bareAdapter = {
+    executeReview: async () => ({
+      ok: true,
+      executionStatus: "success",
+      findings: [],
+      coverage: { coveredFiles: ["src/index.js"], omittedFiles: [] }
+    })
+  };
+
+  try {
+    const report = await runDogfoodReview({
+      mock: false,
+      changeSet: {
+        ok: true,
+        schemaVersion: "1.0.0",
+        repository: "test",
+        totalFiles: 1,
+        totalAdditions: 5,
+        totalDeletions: 1,
+        files: [{ path: "src/index.js", additions: 5, deletions: 1, riskTier: 2 }],
+        diffHunks: "+ const a = 1;"
+      },
+      reviewAdapters: {
+        agy: bareAdapter,
+        claude: bareAdapter,
+        codex: bareAdapter
+      },
+      out: tmpOut,
+      log: false
+    });
+
+    for (const slot of ["agy", "claude", "codex"]) {
+      assert.equal(report.providerTelemetry[slot].provider, "unknown");
+      assert.equal(report.providerTelemetry[slot].family, "unknown");
+      assert.equal(report.providerTelemetry[slot].model, "unknown");
+      // Explicitly assert NO canonical false attribution
+      assert.notEqual(report.providerTelemetry[slot].provider, slot);
+      assert.notEqual(report.providerTelemetry[slot].family, "google");
+      assert.notEqual(report.providerTelemetry[slot].family, "anthropic");
+      assert.notEqual(report.providerTelemetry[slot].family, "openai");
+      assert.notEqual(report.providerTelemetry[slot].model, "gemini-3.8-flash");
+      assert.notEqual(report.providerTelemetry[slot].model, "claude-5.5-sonnet");
+      assert.notEqual(report.providerTelemetry[slot].model, "gpt-6.1-sol");
+    }
+  } finally {
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+  }
+});
+
+test("RB1-D: Invalid or partial providerIdentity defaults missing/non-string fields to 'unknown'", () => {
+  // Test unit helper directly and through review execution
+  assert.deepEqual(normalizeTelemetryIdentity(null), { provider: "unknown", family: "unknown", model: "unknown" });
+  assert.deepEqual(normalizeTelemetryIdentity({}), { provider: "unknown", family: "unknown", model: "unknown" });
+  assert.deepEqual(normalizeTelemetryIdentity({ providerIdentity: null }), { provider: "unknown", family: "unknown", model: "unknown" });
+  assert.deepEqual(normalizeTelemetryIdentity({ providerIdentity: { provider: "valid-prov" } }), { provider: "valid-prov", family: "unknown", model: "unknown" });
+  assert.deepEqual(normalizeTelemetryIdentity({ providerIdentity: { provider: 123, family: null, model: "" } }), { provider: "unknown", family: "unknown", model: "unknown" });
+  assert.deepEqual(normalizeTelemetryIdentity({ providerIdentity: { provider: "  test  ", family: " fam ", model: " mod " } }), { provider: "test", family: "fam", model: "mod" });
+});
+
+test("RB1-E: Injected model does not falsely appear as canonical names because of slot", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-test-rb1-e-"));
+  const tmpOut = path.join(tmpDir, "dogfood-run.json");
+
+  // Swap provider/models across slots to verify slot name does not dictate telemetry identity
+  const swappedAdapters = {
+    agy: {
+      executeReview: async () => ({
+        ok: true,
+        executionStatus: "success",
+        findings: [],
+        coverage: { coveredFiles: ["src/index.js"], omittedFiles: [] },
+        providerIdentity: { provider: "codex", family: "openai", model: "gpt-6.1-sol" }
+      })
+    },
+    claude: {
+      executeReview: async () => ({
+        ok: true,
+        executionStatus: "success",
+        findings: [],
+        coverage: { coveredFiles: ["src/index.js"], omittedFiles: [] },
+        providerIdentity: { provider: "agy", family: "google", model: "gemini-3.8-flash" }
+      })
+    },
+    codex: {
+      executeReview: async () => ({
+        ok: true,
+        executionStatus: "success",
+        findings: [],
+        coverage: { coveredFiles: ["src/index.js"], omittedFiles: [] },
+        providerIdentity: { provider: "claude", family: "anthropic", model: "claude-5.5-sonnet" }
+      })
+    }
+  };
+
+  try {
+    const report = await runDogfoodReview({
+      mock: false,
+      changeSet: {
+        ok: true,
+        schemaVersion: "1.0.0",
+        repository: "test",
+        totalFiles: 1,
+        totalAdditions: 5,
+        totalDeletions: 1,
+        files: [{ path: "src/index.js", additions: 5, deletions: 1, riskTier: 2 }],
+        diffHunks: "+ const a = 1;"
+      },
+      reviewAdapters: swappedAdapters,
+      out: tmpOut,
+      log: false
+    });
+
+    // Slot agy must show codex/openai/gpt-6.1-sol, NOT agy/google/gemini-3.8-flash
+    assert.equal(report.providerTelemetry.agy.provider, "codex");
+    assert.equal(report.providerTelemetry.agy.family, "openai");
+    assert.equal(report.providerTelemetry.agy.model, "gpt-6.1-sol");
+
+    // Slot claude must show agy/google/gemini-3.8-flash, NOT claude/anthropic/claude-5.5-sonnet
+    assert.equal(report.providerTelemetry.claude.provider, "agy");
+    assert.equal(report.providerTelemetry.claude.family, "google");
+    assert.equal(report.providerTelemetry.claude.model, "gemini-3.8-flash");
+
+    // Slot codex must show claude/anthropic/claude-5.5-sonnet, NOT codex/openai/gpt-6.1-sol
+    assert.equal(report.providerTelemetry.codex.provider, "claude");
+    assert.equal(report.providerTelemetry.codex.family, "anthropic");
+    assert.equal(report.providerTelemetry.codex.model, "claude-5.5-sonnet");
+  } finally {
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+  }
+});
+
+// ==============================================================================
+// RB-2: Failed attempted verification makes execution incomplete
+// ==============================================================================
+
+const mockChangeSetWithFindings = {
+  ok: true,
+  schemaVersion: "1.0.0",
+  repository: "test",
+  totalFiles: 1,
+  totalAdditions: 10,
+  totalDeletions: 2,
+  files: [{ path: "src/index.js", additions: 10, deletions: 2, riskTier: 2 }],
+  diffHunks: "+ const a = 1;"
+};
+
+const makeFindingReviewAdapters = () => {
+  const makeAdapter = (name, cmd, fam, model) => new CliReviewAdapter({
+    command: cmd,
+    providerName: name,
+    family: fam,
+    modelName: model,
+    execFn: async () => ({
+      stdout: JSON.stringify({
+        findings: [
+          {
+            title: "Command Injection in ExecHandler",
+            severity: "critical",
+            file: "src/index.js",
+            line_start: 1,
+            line_end: 1,
+            recommendation: "Sanitize arguments",
+            evidenceSnippet: "const a = 1;"
+          }
+        ],
+        coverage: { coveredFiles: ["src/index.js"], omittedFiles: [] }
+      })
+    })
+  });
+  return {
+    agy: makeAdapter("agy", "agy", "google", "gemini-3.8-flash"),
+    claude: makeAdapter("claude", "claude", "anthropic", "claude-5.5-sonnet"),
+    codex: makeAdapter("codex", "codex", "openai", "gpt-6.1-sol")
+  };
+};
+
+test("RB2-A: Successful verifier allows executionComplete === true", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-test-rb2-a-"));
+  const tmpOut = path.join(tmpDir, "dogfood-run.json");
+
+  const successfulVerifierAdapter = {
+    providerName: "claude",
+    modelName: "claude-5.5-sonnet",
+    executeVerification: async () => ({
+      ok: true,
+      evaluations: [
+        {
+          findingId: "finding-1",
+          verdict: "SUPPORTED",
+          locatorAccurate: true,
+          typeAccurate: true,
+          severityAccurate: true,
+          reasoning: "Vulnerability verified against diff.",
+          dissent: ""
+        }
+      ],
+      verifierOmissions: []
+    })
+  };
+
+  try {
+    const report = await runDogfoodReview({
+      mock: false,
+      changeSet: mockChangeSetWithFindings,
+      reviewAdapters: makeFindingReviewAdapters(),
+      verifierAdapter: successfulVerifierAdapter,
+      out: tmpOut,
+      log: false
+    });
+
+    assert.ok(report.verificationRecord !== null, "Verification record must be present");
+    assert.equal(report.verificationRecord.ok, true);
+    assert.equal(report.consensus.quorumReached, true);
+    assert.equal(report.telemetryMetrics.executionComplete, true);
+  } finally {
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+  }
+});
+
+test("RB2-B: Verifier timeout results in verificationRecord.ok === false and executionComplete === false", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-test-rb2-b-"));
+  const tmpOut = path.join(tmpDir, "dogfood-run.json");
+
+  const timeoutVerifierAdapter = {
+    providerName: "claude",
+    modelName: "claude-5.5-sonnet",
+    executeVerification: async () => {
+      const err = new Error("Independent verifier execution timed out after 30000ms");
+      err.name = "TimeoutError";
+      throw err;
+    }
+  };
+
+  try {
+    const report = await runDogfoodReview({
+      mock: false,
+      changeSet: mockChangeSetWithFindings,
+      reviewAdapters: makeFindingReviewAdapters(),
+      verifierAdapter: timeoutVerifierAdapter,
+      out: tmpOut,
+      log: false
+    });
+
+    assert.ok(report.verificationRecord !== null, "Verification record must be preserved");
+    assert.equal(report.verificationRecord.ok, false);
+    assert.equal(report.consensus.quorumReached, true);
+    assert.equal(report.telemetryMetrics.executionComplete, false);
+  } finally {
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+  }
+});
+
+test("RB2-C: Malformed verifier response results in verificationRecord.ok === false and executionComplete === false", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-test-rb2-c-"));
+  const tmpOut = path.join(tmpDir, "dogfood-run.json");
+
+  const malformedVerifierAdapter = {
+    providerName: "claude",
+    modelName: "claude-5.5-sonnet",
+    executeVerification: async () => ({
+      stdout: "INVALID NON-JSON OUTPUT <<<<>>>>"
+    })
+  };
+
+  try {
+    const report = await runDogfoodReview({
+      mock: false,
+      changeSet: mockChangeSetWithFindings,
+      reviewAdapters: makeFindingReviewAdapters(),
+      verifierAdapter: malformedVerifierAdapter,
+      out: tmpOut,
+      log: false
+    });
+
+    assert.ok(report.verificationRecord !== null, "Verification record must be preserved");
+    assert.equal(report.verificationRecord.ok, false);
+    assert.equal(report.consensus.quorumReached, true);
+    assert.equal(report.telemetryMetrics.executionComplete, false);
+  } finally {
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+  }
+});
+
+test("RB2-D: Verifier execution error results in verificationRecord.ok === false and executionComplete === false", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-test-rb2-d-"));
+  const tmpOut = path.join(tmpDir, "dogfood-run.json");
+
+  const errorVerifierAdapter = {
+    providerName: "claude",
+    modelName: "claude-5.5-sonnet",
+    executeVerification: async () => {
+      throw new Error("CLI process failed with exit code 127: command not found");
+    }
+  };
+
+  try {
+    const report = await runDogfoodReview({
+      mock: false,
+      changeSet: mockChangeSetWithFindings,
+      reviewAdapters: makeFindingReviewAdapters(),
+      verifierAdapter: errorVerifierAdapter,
+      out: tmpOut,
+      log: false
+    });
+
+    assert.ok(report.verificationRecord !== null, "Verification record must be preserved");
+    assert.equal(report.verificationRecord.ok, false);
+    assert.equal(report.consensus.quorumReached, true);
+    assert.equal(report.telemetryMetrics.executionComplete, false);
+  } finally {
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+  }
+});
+
+test("RB2-E: Zero consensus findings means verificationRecord === null and preserves previous executionComplete semantics", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-test-rb2-e-"));
+  const tmpOut = path.join(tmpDir, "dogfood-run.json");
+
+  const cleanReviewAdapters = {
+    agy: new CliReviewAdapter({
+      command: "agy",
+      providerName: "agy",
+      family: "google",
+      modelName: "gemini-3.8-flash",
+      execFn: async () => ({
+        stdout: JSON.stringify({
+          findings: [],
+          coverage: { coveredFiles: ["src/index.js"], omittedFiles: [] }
+        })
+      })
+    }),
+    claude: new CliReviewAdapter({
+      command: "claude",
+      providerName: "claude",
+      family: "anthropic",
+      modelName: "claude-5.5-sonnet",
+      execFn: async () => ({
+        stdout: JSON.stringify({
+          findings: [],
+          coverage: { coveredFiles: ["src/index.js"], omittedFiles: [] }
+        })
+      })
+    }),
+    codex: new CliReviewAdapter({
+      command: "codex",
+      providerName: "codex",
+      family: "openai",
+      modelName: "gpt-6.1-sol",
+      execFn: async () => ({
+        stdout: JSON.stringify({
+          findings: [],
+          coverage: { coveredFiles: ["src/index.js"], omittedFiles: [] }
+        })
+      })
+    })
+  };
+
+  try {
+    const report = await runDogfoodReview({
+      mock: false,
+      changeSet: {
+        ok: true,
+        schemaVersion: "1.0.0",
+        repository: "test",
+        totalFiles: 1,
+        totalAdditions: 2,
+        totalDeletions: 1,
+        files: [{ path: "src/index.js", additions: 2, deletions: 1, riskTier: 2 }],
+        diffHunks: "+ const a = 1;"
+      },
+      reviewAdapters: cleanReviewAdapters,
+      out: tmpOut,
+      log: false
+    });
+
+    assert.equal(report.consensus.totalFindings, 0);
+    assert.equal(report.verificationRecord, null, "No verification attempted when findings === 0");
+    assert.equal(report.consensus.quorumReached, true);
+    assert.equal(report.telemetryMetrics.executionComplete, true, "Clean review with quorum must complete successfully");
+  } finally {
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+  }
+});
+

@@ -24,7 +24,16 @@ export const SEVERITY_NAMES = Object.freeze(["info", "low", "medium", "high", "c
  * @returns {"critical" | "high" | "medium" | "low" | "info"}
  */
 export function normalizeSeverity(severity = "") {
-  const s = String(severity).toLowerCase().trim();
+  let s = "";
+  if (typeof severity === "string") {
+    s = severity.toLowerCase().trim();
+  } else {
+    try {
+      s = String(severity || "").toLowerCase().trim();
+    } catch {
+      return "info";
+    }
+  }
   if (s === "critical" || s === "blocker") return "critical";
   if (s === "high") return "high";
   if (s === "medium" || s === "moderate") return "medium";
@@ -40,25 +49,34 @@ export function normalizeSeverity(severity = "") {
  * @returns {string}
  */
 export function normalizeCweToken(cwe = "", title = "", type = "") {
-  const rawCwe = String(cwe || "").trim();
+  let rawCwe = "";
+  try {
+    rawCwe = typeof cwe === "string" ? cwe.trim() : String(cwe || "").trim();
+  } catch {
+    rawCwe = "";
+  }
+
   const numMatch = rawCwe.match(/^(?:CWE[-_]?)?(\d+)$/i);
   if (numMatch) {
     return `cwe-${numMatch[1]}`;
   }
 
+  const rawTitle = typeof title === "string" ? title : "";
+  const rawType = typeof type === "string" ? type : "";
+
   // Attempt extraction from title or type
-  const combined = `${rawCwe} ${title || ""} ${type || ""}`;
+  const combined = `${rawCwe} ${rawTitle} ${rawType}`;
   const extracted = combined.match(/\bCWE[-_]?(\d+)\b/i);
   if (extracted) {
     return `cwe-${extracted[1]}`;
   }
 
   // Fallback to type or sanitized title snippet
-  if (type && typeof type === "string") {
-    return type.toLowerCase().replace(/[^a-z0-9_-]/g, "-").slice(0, 24);
+  if (rawType) {
+    return rawType.toLowerCase().replace(/[^a-z0-9_-]/g, "-").slice(0, 24);
   }
 
-  const sanitizedTitle = (title || "unclassified").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 16);
+  const sanitizedTitle = (rawTitle || "unclassified").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 16);
   return sanitizedTitle || "generic";
 }
 
@@ -117,9 +135,11 @@ export function mergeFindings(primary, incoming, sourceId = "") {
   const highestSeverity = weightI > weightP ? sevI : sevP;
 
   // Aggregate sources
-  const sourceSet = new Set(primary.sources || []);
+  const primarySources = Array.isArray(primary.sources) ? primary.sources : (typeof primary.sources === "string" ? [primary.sources] : []);
+  const sourceSet = new Set(primarySources);
   if (primary.sourceId) sourceSet.add(primary.sourceId);
-  if (incoming.sources) incoming.sources.forEach(s => sourceSet.add(s));
+  if (Array.isArray(incoming.sources)) incoming.sources.forEach(s => sourceSet.add(s));
+  else if (typeof incoming.sources === "string") sourceSet.add(incoming.sources);
   if (incoming.sourceId) sourceSet.add(incoming.sourceId);
   if (sourceId) sourceSet.add(sourceId);
 
@@ -172,7 +192,8 @@ export function reconcileFindings(rawFindings = [], sourceId = "") {
       const snippet = raw.evidenceSnippet || raw.snippet || "";
       const idHash = crypto.createHash("sha256").update(`${canonicalKey}:${snippet}`).digest("hex").slice(0, 16);
 
-      const sources = new Set(raw.sources || []);
+      const rawSources = Array.isArray(raw.sources) ? raw.sources : (typeof raw.sources === "string" ? [raw.sources] : []);
+      const sources = new Set(rawSources);
       if (raw.sourceId) sources.add(raw.sourceId);
       if (sourceId) sources.add(sourceId);
 

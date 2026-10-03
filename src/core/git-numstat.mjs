@@ -26,23 +26,43 @@ export function resolveRenamePath(rawPath = "") {
   return { path: rawPath, oldPath: null, renamed: false };
 }
 
-function decodeGitCStyleString(str = "") {
-  if (!str.startsWith('"') || !str.endsWith('"')) {
+export function decodeGitCStyleString(str = "") {
+  if (typeof str !== "string" || !str.startsWith('"') || !str.endsWith('"')) {
     return str;
   }
   const inner = str.slice(1, -1);
-  return inner.replace(/\\([0-7]{1,3}|[\\"/trn])/g, (match, p1) => {
-    if (p1 === '"') return '"';
-    if (p1 === "\\") return "\\";
-    if (p1 === "/") return "/";
-    if (p1 === "t") return "\t";
-    if (p1 === "r") return "\r";
-    if (p1 === "n") return "\n";
-    if (/^[0-7]{1,3}$/.test(p1)) {
-      return String.fromCharCode(parseInt(p1, 8));
+  const bytes = [];
+  for (let i = 0; i < inner.length; i++) {
+    if (inner[i] === "\\" && i + 1 < inner.length) {
+      const next = inner[i + 1];
+      if (next === "n") { bytes.push(0x0a); i++; }
+      else if (next === "r") { bytes.push(0x0d); i++; }
+      else if (next === "t") { bytes.push(0x09); i++; }
+      else if (next === "a") { bytes.push(0x07); i++; }
+      else if (next === "b") { bytes.push(0x08); i++; }
+      else if (next === "f") { bytes.push(0x0c); i++; }
+      else if (next === "v") { bytes.push(0x0b); i++; }
+      else if (next === "\"" || next === "\\" || next === "/") { bytes.push(next.charCodeAt(0)); i++; }
+      else if (next >= "0" && next <= "7") {
+        let octal = "";
+        for (let j = 0; j < 3 && i + 1 < inner.length && inner[i + 1] >= "0" && inner[i + 1] <= "7"; j++) {
+          octal += inner[++i];
+        }
+        bytes.push(parseInt(octal, 8));
+      } else {
+        const codePoint = inner.codePointAt(i);
+        const charStr = String.fromCodePoint(codePoint);
+        for (const b of Buffer.from(charStr, "utf8")) bytes.push(b);
+        if (charStr.length > 1) i += (charStr.length - 1);
+      }
+    } else {
+      const codePoint = inner.codePointAt(i);
+      const charStr = String.fromCodePoint(codePoint);
+      for (const b of Buffer.from(charStr, "utf8")) bytes.push(b);
+      if (charStr.length > 1) i += (charStr.length - 1);
     }
-    return match;
-  });
+  }
+  return Buffer.from(bytes).toString("utf8");
 }
 
 /**
