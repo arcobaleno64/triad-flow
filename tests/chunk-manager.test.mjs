@@ -229,3 +229,113 @@ test("partitionChangeSetIntoChunks strictly enforces byte ceiling even with a si
 });
 
 
+
+
+test("Finding A: exact ChangeSet paths disambiguate filenames containing literal ' b/'", () => {
+  const diff = [
+    "diff --git a/foo b/bar.js b/foo b/bar.js",
+    "--- a/foo b/bar.js",
+    "+++ b/foo b/bar.js",
+    "@@ -1 +1 @@",
+    "-oldLiteralBSlash",
+    "+newLiteralBSlash",
+    "diff --git a/foo/bar.js b/foo/bar.js",
+    "--- a/foo/bar.js",
+    "+++ b/foo/bar.js",
+    "@@ -1 +1 @@",
+    "-oldNormal",
+    "+newNormal"
+  ].join("\n");
+
+  const map = splitDiffByFiles(diff, ["foo b/bar.js", "foo/bar.js"]);
+  assert.equal(map.size, 2);
+  assert.ok(map.has("foo b/bar.js"));
+  assert.ok(map.has("foo/bar.js"));
+  assert.match(map.get("foo b/bar.js"), /newLiteralBSlash/);
+  assert.doesNotMatch(map.get("foo b/bar.js"), /newNormal/);
+  assert.match(map.get("foo/bar.js"), /newNormal/);
+});
+
+test("Finding A: exact mapping covers normal, spaces, rename, quoted, and non-ASCII quoted paths", () => {
+  const diff = [
+    "diff --git a/src/normal.js b/src/normal.js",
+    "--- a/src/normal.js",
+    "+++ b/src/normal.js",
+    "@@ -1 +1 @@",
+    "-n0",
+    "+n1",
+    "diff --git a/my space.js b/my space.js",
+    "--- a/my space.js",
+    "+++ b/my space.js",
+    "@@ -1 +1 @@",
+    "-s0",
+    "+s1",
+    "diff --git a/old-name.js b/new-name.js",
+    "--- a/old-name.js",
+    "+++ b/new-name.js",
+    "@@ -1 +1 @@",
+    "-r0",
+    "+r1",
+    'diff --git "a/quoted file.js" "b/quoted file.js"',
+    '--- "a/quoted file.js"',
+    '+++ "b/quoted file.js"',
+    "@@ -1 +1 @@",
+    "-q0",
+    "+q1",
+    'diff --git "a/\\346\\270\\254.js" "b/\\346\\270\\254.js"',
+    '--- "a/\\346\\270\\254.js"',
+    '+++ "b/\\346\\270\\254.js"',
+    "@@ -1 +1 @@",
+    "-u0",
+    "+u1"
+  ].join("\n");
+
+  const targets = ["src/normal.js", "my space.js", "new-name.js", "quoted file.js", "測.js"];
+  const map = splitDiffByFiles(diff, targets);
+  assert.deepEqual([...map.keys()].sort(), [...targets].sort());
+
+  const markers = new Map([
+    ["src/normal.js", "n1"],
+    ["my space.js", "s1"],
+    ["new-name.js", "r1"],
+    ["quoted file.js", "q1"],
+    ["測.js", "u1"]
+  ]);
+
+  for (const target of targets) {
+    const fileDiff = map.get(target);
+    assert.ok(fileDiff && fileDiff.length > 0, `Expected non-empty diff for ${target}`);
+    assert.match(fileDiff, new RegExp(markers.get(target)));
+  }
+});
+
+test("Finding A: partition mapping never emits an empty diff for an exact ChangeSet target", () => {
+  const diff = [
+    "diff --git a/foo b/bar.js b/foo b/bar.js",
+    "--- a/foo b/bar.js",
+    "+++ b/foo b/bar.js",
+    "@@ -1 +1 @@",
+    "-oldA",
+    "+newA",
+    "diff --git a/another space.js b/another space.js",
+    "--- a/another space.js",
+    "+++ b/another space.js",
+    "@@ -1 +1 @@",
+    "-oldB",
+    "+newB"
+  ].join("\n");
+  const cs = {
+    files: [{ path: "foo b/bar.js" }, { path: "another space.js" }],
+    diffHunks: diff
+  };
+  const chunks = partitionChangeSetIntoChunks(cs, { maxChunkBytes: 100000 });
+  const seen = new Map();
+  for (const chunk of chunks) {
+    for (const target of chunk.targetFiles) {
+      assert.ok(chunk.diffHunks.length > 0, `Chunk for ${target} must not be empty`);
+      seen.set(target, chunk.diffHunks);
+    }
+  }
+  assert.match(seen.get("foo b/bar.js"), /newA/);
+  assert.match(seen.get("another space.js"), /newB/);
+});
