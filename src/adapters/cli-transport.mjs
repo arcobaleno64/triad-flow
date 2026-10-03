@@ -58,6 +58,48 @@ export {
   selectChecklists
 };
 
+/**
+ * Reads a file up to maxBytes with strict bounds to prevent unbounded allocations and stat/read races.
+ * @param {string} filePath
+ * @param {number} maxBytes
+ * @returns {string}
+ */
+export function readBoundedFile(filePath, maxBytes) {
+  let stat;
+  try {
+    stat = fs.statSync(filePath);
+    if (stat.size > maxBytes) {
+      throw new Error(`Provider file output exceeded maxOutputBytes (${maxBytes})`);
+    }
+  } catch (err) {
+    if (err.message && err.message.includes("exceeded maxOutputBytes")) throw err;
+  }
+
+  let fd;
+  try {
+    fd = fs.openSync(filePath, "r");
+    const buf = Buffer.alloc(maxBytes + 1);
+    let totalRead = 0;
+    while (totalRead <= maxBytes) {
+      const n = fs.readSync(fd, buf, totalRead, maxBytes + 1 - totalRead, null);
+      if (n === 0) break;
+      totalRead += n;
+    }
+    if (totalRead > maxBytes) {
+      throw new Error(`Provider file output exceeded maxOutputBytes (${maxBytes})`);
+    }
+    const content = buf.toString("utf8", 0, totalRead);
+    if (Buffer.byteLength(content, "utf8") > maxBytes) {
+      throw new Error(`Provider file output exceeded maxOutputBytes (${maxBytes})`);
+    }
+    return content;
+  } finally {
+    if (fd !== undefined) {
+      try { fs.closeSync(fd); } catch {}
+    }
+  }
+}
+
 export class CliReviewAdapter {
   constructor(options = {}) {
     this.command = options.command || "agy";
@@ -299,13 +341,19 @@ export class CliReviewAdapter {
 
       const timer = setTimeout(() => {
         timedOut = true;
-        killedReason = EXECUTION_STATUS.TIMEOUT;
+        if (!killedReason) {
+          killedReason = EXECUTION_STATUS.TIMEOUT;
+          killedError = `CLI reviewer timed out after ${input.timeoutMs}ms`;
+        }
         child.kill();
       }, input.timeoutMs);
 
       const abortHandler = () => {
         aborted = true;
-        killedReason = EXECUTION_STATUS.CANCELLED;
+        if (!killedReason) {
+          killedReason = EXECUTION_STATUS.CANCELLED;
+          killedError = `CLI reviewer cancelled via signal`;
+        }
         child.kill();
       };
 
@@ -348,14 +396,32 @@ export class CliReviewAdapter {
         clearTimeout(timer);
         if (input.signal) input.signal.removeEventListener("abort", abortHandler);
 
+        // Precedence: Output flood takes absolute precedence over timeout/cancellation
+        if (Buffer.byteLength(stdout, "utf8") > input.limits.maxOutputBytes) {
+          killedReason = EXECUTION_STATUS.ERROR;
+          killedError = `Provider stdout exceeded maxOutputBytes (${input.limits.maxOutputBytes})`;
+        } else if (Buffer.byteLength(stderr, "utf8") > input.limits.maxOutputBytes) {
+          killedReason = EXECUTION_STATUS.ERROR;
+          killedError = `Provider stderr exceeded maxOutputBytes (${input.limits.maxOutputBytes})`;
+        }
+
         let fileOutputContent = null;
         if (tempOutputFile && fs.existsSync(tempOutputFile)) {
+          let fileReadError = null;
           try {
-            fileOutputContent = fs.readFileSync(tempOutputFile, "utf8");
-          } catch {}
-          try {
-            fs.unlinkSync(tempOutputFile);
-          } catch {}
+            fileOutputContent = readBoundedFile(tempOutputFile, input.limits.maxOutputBytes);
+          } catch (err) {
+            fileReadError = err;
+          } finally {
+            try { fs.unlinkSync(tempOutputFile); } catch {}
+          }
+
+          if (fileReadError && !killedReason) {
+            killedReason = EXECUTION_STATUS.ERROR;
+            killedError = fileReadError.message && fileReadError.message.includes("exceeded maxOutputBytes")
+              ? fileReadError.message
+              : `Failed to read CLI provider output file: ${fileReadError.message}`;
+          }
         }
 
         if (killedReason) {
@@ -421,32 +487,33 @@ export class CliReviewAdapter {
   }
 
   _processResult(res, context, limits, tempOutputFile) {
-    if (res && res.executionStatus && res.executionStatus !== EXECUTION_STATUS.SUCCESS && res.executionStatus !== EXECUTION_STATUS.EMPTY) {
-      return validateProviderOutput(res, context);
-    }
-
-    const exitCode = res?.code ?? res?.exitCode;
-    if (exitCode !== undefined && exitCode !== 0) {
-      const fullErr = `${res.stderr || ""}\n${res.stdout || ""}`;
-      const isAuthError = AUTH_ERROR_PATTERNS.some(p => p.test(fullErr));
-      return validateProviderOutput({
-        executionStatus: isAuthError ? EXECUTION_STATUS.AUTH_FAILURE : EXECUTION_STATUS.ERROR,
-        error: isAuthError
-          ? `Authentication failure detected in CLI reviewer output: ${(res.stderr || res.stdout || "").trim()}`
-          : `CLI reviewer exited with code ${exitCode}: ${(res.stderr || "").trim() || (res.stdout || "").trim()}`
-      }, context);
-    }
-
     let fileContent = null;
+    let fileReadError = null;
+
     if (res && typeof res.fileOutput === "string") {
+      if (Buffer.byteLength(res.fileOutput, "utf8") > limits.maxOutputBytes) {
+        return validateProviderOutput({
+          executionStatus: EXECUTION_STATUS.ERROR,
+          error: `Provider file output exceeded maxOutputBytes (${limits.maxOutputBytes})`
+        }, context);
+      }
       fileContent = res.fileOutput;
     } else if (tempOutputFile && fs.existsSync(tempOutputFile)) {
       try {
-        fileContent = fs.readFileSync(tempOutputFile, "utf8");
-      } catch {}
+        fileContent = readBoundedFile(tempOutputFile, limits.maxOutputBytes);
+      } catch (err) {
+        fileReadError = err;
+      }
     }
 
-    const outputToParse = fileContent !== null ? fileContent : (res?.stdout || "");
+    if (fileReadError) {
+      return validateProviderOutput({
+        executionStatus: EXECUTION_STATUS.ERROR,
+        error: fileReadError.message && fileReadError.message.includes("exceeded maxOutputBytes")
+          ? fileReadError.message
+          : `Failed to read CLI provider output file: ${fileReadError.message}`
+      }, context);
+    }
 
     if (res && typeof res.stdout === "string") {
       if (Buffer.byteLength(res.stdout, "utf8") > limits.maxOutputBytes) {
@@ -463,6 +530,24 @@ export class CliReviewAdapter {
         error: `Provider stderr exceeded maxOutputBytes (${limits.maxOutputBytes})`
       }, context);
     }
+
+    if (res && res.executionStatus && res.executionStatus !== EXECUTION_STATUS.SUCCESS && res.executionStatus !== EXECUTION_STATUS.EMPTY) {
+      return validateProviderOutput(res, context);
+    }
+
+    const exitCode = res?.code ?? res?.exitCode;
+    if (exitCode !== undefined && exitCode !== 0) {
+      const fullErr = `${res.stderr || ""}\n${res.stdout || ""}`;
+      const isAuthError = AUTH_ERROR_PATTERNS.some(p => p.test(fullErr));
+      return validateProviderOutput({
+        executionStatus: isAuthError ? EXECUTION_STATUS.AUTH_FAILURE : EXECUTION_STATUS.ERROR,
+        error: isAuthError
+          ? `Authentication failure detected in CLI reviewer output: ${(res.stderr || res.stdout || "").trim()}`
+          : `CLI reviewer exited with code ${exitCode}: ${(res.stderr || "").trim() || (res.stdout || "").trim()}`
+      }, context);
+    }
+
+    const outputToParse = fileContent !== null ? fileContent : (res?.stdout || "");
 
     if (res?.stderr && AUTH_ERROR_PATTERNS.some(p => p.test(res.stderr))) {
       return validateProviderOutput({

@@ -330,7 +330,9 @@ test("executeStagedReview safely handles null or non-object omissions (Finding 3
   };
 
   const result = await executeStagedReview(cs, malformedOmitAdapter, { cwd: tmpDir });
-  assert.equal(result.ok, true);
+  assert.equal(result.ok, false);
+  assert.equal(result.executionStatus, "incomplete");
+  assert.equal(result.coverage.isComplete, false);
 
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
@@ -823,5 +825,341 @@ test("Regression 8: evaluateCoverageContract never throws on stateful throwing g
 
   assert.equal(res.isComplete, false);
   assert.ok(res.violations.some(v => v.includes("missing or unauthorized code")));
+});
+
+test("Regression 9: evaluateCoverageContract never throws on revoked Proxy omissions or lists (R1 hardening)", () => {
+  const cs = {
+    scopeMode: "working-tree",
+    files: [{ path: "src/worker.js" }]
+  };
+
+  const makeRevoked = () => {
+    const { proxy, revoke } = Proxy.revocable({}, {});
+    revoke();
+    return proxy;
+  };
+
+  let res1;
+  assert.doesNotThrow(() => {
+    res1 = evaluateCoverageContract(cs, [], [makeRevoked()]);
+  });
+  assert.equal(res1.isComplete, false);
+
+  let res2;
+  assert.doesNotThrow(() => {
+    res2 = evaluateCoverageContract(cs, makeRevoked(), makeRevoked());
+  });
+  assert.equal(res2.isComplete, false);
+});
+
+test("Regression 10: executeStagedReview never throws on stateful throwing getter omission in chunk result (P2 hardening)", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-test-staged-getter-"));
+  const cs = {
+    scopeMode: "working-tree",
+    files: [{ path: "src/worker.js", riskTier: 2, additions: 200, deletions: 10 }],
+    diffHunks: "diff --git a/src/worker.js b/src/worker.js\n@@ -1 +1 @@\n-old\n+new"
+  };
+
+  let reads = 0;
+  const hostileOmission = {
+    path: "src/worker.js",
+    reason: "Valid reason",
+    get code() {
+      if (++reads === 1) return "OMIT_GENERATED";
+      throw new Error("stateful getter threw on second access");
+    }
+  };
+
+  const hostileAdapter = {
+    providerName: "mock-provider",
+    executeReview: async () => ({
+      ok: true,
+      executionStatus: "success",
+      findings: [],
+      coverage: {
+        coveredFiles: [],
+        omittedFiles: [hostileOmission]
+      }
+    })
+  };
+
+  let stagedResult;
+  await assert.doesNotReject(async () => {
+    stagedResult = await executeStagedReview(cs, hostileAdapter, { cwd: tmpDir });
+  });
+
+  assert.ok(stagedResult);
+  assert.equal(stagedResult.ok, true);
+  assert.equal(stagedResult.coverage.isComplete, true);
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+test("Regression 11: evaluateCoverageContract and executeStagedReview reject revoked omission list or [revokedProxy] even when coverage is complete", async () => {
+  const cs = {
+    scopeMode: "working-tree",
+    files: [{ path: "src/worker.js", additions: 10, deletions: 0 }],
+    diffHunks: "diff --git a/src/worker.js b/src/worker.js\n@@ -1 +1 @@\n-old\n+new"
+  };
+
+  const makeRevoked = () => {
+    const { proxy, revoke } = Proxy.revocable({}, {});
+    revoke();
+    return proxy;
+  };
+
+  // 1. Direct evaluateCoverageContract with covered worker.js and revoked omission-list Proxy
+  const res1 = evaluateCoverageContract(cs, ["src/worker.js"], makeRevoked());
+  assert.equal(res1.isComplete, false);
+  assert.ok(res1.violations.length > 0);
+
+  // 2. Direct evaluateCoverageContract with covered worker.js and [revokedProxy]
+  const res2 = evaluateCoverageContract(cs, ["src/worker.js"], [makeRevoked()]);
+  assert.equal(res2.isComplete, false);
+  assert.ok(res2.violations.length > 0);
+
+  // 3. executeStagedReview with covered worker.js and revoked omission-list Proxy
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-test-staged-revoked-"));
+  const revokedListAdapter = {
+    providerName: "mock-provider",
+    executeReview: async () => ({
+      ok: true,
+      executionStatus: "success",
+      findings: [],
+      coverage: {
+        coveredFiles: ["src/worker.js"],
+        omittedFiles: makeRevoked()
+      }
+    })
+  };
+
+  const stagedResult1 = await executeStagedReview(cs, revokedListAdapter, { cwd: tmpDir });
+  assert.equal(stagedResult1.ok, false);
+  assert.equal(stagedResult1.executionStatus, "incomplete");
+  assert.equal(stagedResult1.coverage.isComplete, false);
+
+  // 4. executeStagedReview with covered worker.js and [revokedProxy]
+  const revokedItemAdapter = {
+    providerName: "mock-provider",
+    executeReview: async () => ({
+      ok: true,
+      executionStatus: "success",
+      findings: [],
+      coverage: {
+        coveredFiles: ["src/worker.js"],
+        omittedFiles: [makeRevoked()]
+      }
+    })
+  };
+
+  const stagedResult2 = await executeStagedReview(cs, revokedItemAdapter, { cwd: tmpDir });
+  assert.equal(stagedResult2.ok, false);
+  assert.equal(stagedResult2.executionStatus, "incomplete");
+  assert.equal(stagedResult2.coverage.isComplete, false);
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+test("Regression 12: executeStagedReview and evaluateCoverageContract handle throw null and revoked findings without unhandled rejection", async () => {
+  const cs = {
+    scopeMode: "working-tree",
+    files: [{ path: "src/worker.js", additions: 10, deletions: 0 }],
+    diffHunks: "diff --git a/src/worker.js b/src/worker.js\n@@ -1 +1 @@\n-old\n+new"
+  };
+
+  const makeRevoked = () => {
+    const { proxy, revoke } = Proxy.revocable({}, {});
+    revoke();
+    return proxy;
+  };
+
+  // 1. evaluateCoverageContract on changeSet throwing null
+  const hostileCs = new Proxy({}, {
+    get(target, prop) {
+      if (prop === "files") throw null;
+      return target[prop];
+    }
+  });
+  let res;
+  assert.doesNotThrow(() => {
+    res = evaluateCoverageContract(hostileCs, ["src/worker.js"], []);
+  });
+  assert.equal(res.isComplete, false);
+
+  // 2. executeStagedReview with revoked findings
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-test-staged-findings-"));
+  const revokedFindingsAdapter = {
+    providerName: "mock-provider",
+    executeReview: async () => ({
+      ok: true,
+      executionStatus: "success",
+      findings: makeRevoked(),
+      coverage: {
+        coveredFiles: ["src/worker.js"],
+        omittedFiles: []
+      }
+    })
+  };
+
+  let res2;
+  await assert.doesNotReject(async () => {
+    res2 = await executeStagedReview(cs, revokedFindingsAdapter, { cwd: tmpDir });
+  });
+  assert.equal(res2.ok, false);
+  assert.equal(res2.executionStatus, "incomplete");
+  assert.equal(res2.coverage.isComplete, false);
+
+  // 3. executeStagedReview with [revokedProxy] as finding item
+  const revokedItemFindingsAdapter = {
+    providerName: "mock-provider",
+    executeReview: async () => ({
+      ok: true,
+      executionStatus: "success",
+      findings: [makeRevoked()],
+      coverage: {
+        coveredFiles: ["src/worker.js"],
+        omittedFiles: []
+      }
+    })
+  };
+
+  let res3;
+  await assert.doesNotReject(async () => {
+    res3 = await executeStagedReview(cs, revokedItemFindingsAdapter, { cwd: tmpDir });
+  });
+  assert.equal(res3.ok, false);
+  assert.equal(res3.executionStatus, "incomplete");
+  assert.equal(res3.coverage.isComplete, false);
+
+  // 4. executeStagedReview with throwing toJSON finding item
+  const throwingJsonFindingsAdapter = {
+    providerName: "mock-provider",
+    executeReview: async () => ({
+      ok: true,
+      executionStatus: "success",
+      findings: [{
+        title: "Trap",
+        severity: "high",
+        toJSON() {
+          throw null;
+        }
+      }],
+      coverage: {
+        coveredFiles: ["src/worker.js"],
+        omittedFiles: []
+      }
+    })
+  };
+
+  let res4;
+  await assert.doesNotReject(async () => {
+    res4 = await executeStagedReview(cs, throwingJsonFindingsAdapter, { cwd: tmpDir });
+  });
+  assert.equal(res4.ok, false);
+  assert.equal(res4.executionStatus, "incomplete");
+  assert.equal(res4.coverage.isComplete, false);
+
+  // 5. executeStagedReview with fractional array length findings
+  const fractionalFindingsAdapter = {
+    providerName: "mock-provider",
+    executeReview: async () => ({
+      ok: true,
+      executionStatus: "success",
+      findings: new Proxy([{ title: "X", severity: "high", file: "src/worker.js" }], {
+        get: (t, k) => k === "length" ? 0.5 : t[k]
+      }),
+      coverage: {
+        coveredFiles: ["src/worker.js"],
+        omittedFiles: []
+      }
+    })
+  };
+
+  let res5;
+  await assert.doesNotReject(async () => {
+    res5 = await executeStagedReview(cs, fractionalFindingsAdapter, { cwd: tmpDir });
+  });
+  assert.equal(res5.ok, false);
+  assert.equal(res5.executionStatus, "incomplete");
+  assert.equal(res5.coverage.isComplete, false);
+
+  // 6. executeStagedReview with adapter throwing null
+  const throwNullAdapter = {
+    providerName: "mock-provider",
+    executeReview: async () => {
+      throw null;
+    }
+  };
+  let throwNullRes;
+  await assert.doesNotReject(async () => {
+    throwNullRes = await executeStagedReview(cs, throwNullAdapter, { cwd: tmpDir });
+  });
+  assert.equal(throwNullRes.ok, false);
+  assert.equal(throwNullRes.executionStatus, "incomplete");
+
+  // 7. executeStagedReview with { title: {} } finding
+  const hostileTitleAdapter = {
+    providerName: "mock-provider",
+    executeReview: async () => ({
+      ok: true,
+      executionStatus: "success",
+      findings: [{ title: {}, severity: "high", file: "src/worker.js" }],
+      coverage: {
+        coveredFiles: ["src/worker.js"],
+        omittedFiles: []
+      }
+    })
+  };
+  let res7;
+  await assert.doesNotReject(async () => {
+    res7 = await executeStagedReview(cs, hostileTitleAdapter, { cwd: tmpDir });
+  });
+  assert.equal(res7.ok, false);
+  assert.equal(res7.executionStatus, "incomplete");
+  assert.equal(res7.coverage.isComplete, false);
+
+  // 8. executeStagedReview with { severity: { toString: null } } finding
+  const hostileSeverityAdapter = {
+    providerName: "mock-provider",
+    executeReview: async () => ({
+      ok: true,
+      executionStatus: "success",
+      findings: [{ title: "SQLi", severity: { toString: null }, file: "src/worker.js" }],
+      coverage: {
+        coveredFiles: ["src/worker.js"],
+        omittedFiles: []
+      }
+    })
+  };
+  let res8;
+  await assert.doesNotReject(async () => {
+    res8 = await executeStagedReview(cs, hostileSeverityAdapter, { cwd: tmpDir });
+  });
+  assert.equal(res8.ok, false);
+  assert.equal(res8.executionStatus, "incomplete");
+  assert.equal(res8.coverage.isComplete, false);
+
+  // 9. executeStagedReview with { sources: {} } finding
+  const hostileSourcesAdapter = {
+    providerName: "mock-provider",
+    executeReview: async () => ({
+      ok: true,
+      executionStatus: "success",
+      findings: [{ title: "SQLi", severity: "high", file: "src/worker.js", sources: {} }],
+      coverage: {
+        coveredFiles: ["src/worker.js"],
+        omittedFiles: []
+      }
+    })
+  };
+  let res9;
+  await assert.doesNotReject(async () => {
+    res9 = await executeStagedReview(cs, hostileSourcesAdapter, { cwd: tmpDir });
+  });
+  assert.equal(res9.ok, false);
+  assert.equal(res9.executionStatus, "incomplete");
+  assert.equal(res9.coverage.isComplete, false);
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 

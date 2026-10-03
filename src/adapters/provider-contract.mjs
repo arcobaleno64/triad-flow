@@ -90,68 +90,138 @@ export function safeGet(obj, prop) {
 }
 
 /**
+ * Safely checks if a value is an Array without throwing on revoked Proxies.
+ * @param {*} val
+ * @returns {boolean}
+ */
+export function safeIsArray(val) {
+  try {
+    return Array.isArray(val);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Safely reads the length of an Array or array-like object without throwing if a getter throws.
+ * Returns -1 if length cannot be safely read or is not a valid non-negative integer.
+ * @param {*} arr
+ * @returns {number}
+ */
+export function safeArrayLength(arr) {
+  try {
+    if (arr === null || arr === undefined) return -1;
+    const len = arr.length;
+    return typeof len === "number" && Number.isSafeInteger(len) && len >= 0 ? len : -1;
+  } catch {
+    return -1;
+  }
+}
+
+/**
+ * Safely extracts an error message from an untrusted thrown value (e.g. throw null, object with throwing getter).
+ * @param {*} err
+ * @param {string} [fallback="Unknown error"]
+ * @returns {string}
+ */
+export function safeErrorMessage(err, fallback = "Unknown error") {
+  try {
+    if (err === null || err === undefined) return fallback;
+    const msg = safeGet(err, "message");
+    if (typeof msg === "string" && msg.trim()) return msg.trim();
+    const str = safeRenderUntrusted(err);
+    return str && str !== "[unrenderable]" ? str : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function safeCoerceString(val, fallback = "") {
+  try {
+    if (val === null || val === undefined) return fallback;
+    const s = String(val);
+    return typeof s === "string" ? s : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+/**
  * Validates the input context passed to a provider adapter.
  */
 export function validateProviderInput(input = {}) {
-  if (!input || typeof input !== "object" || Array.isArray(input)) {
-    return { valid: false, reason: "Provider input must be a non-null plain object." };
+  try {
+    if (!input || typeof input !== "object" || safeIsArray(input)) {
+      return { valid: false, reason: "Provider input must be a non-null plain object." };
+    }
+
+    const runId = safeGet(input, "runId");
+    if (typeof runId !== "string" || !runId.trim()) {
+      return { valid: false, reason: "Provider input requires a non-empty string 'runId'." };
+    }
+
+    const role = safeGet(input, "role");
+    if (typeof role !== "string" || !role.trim()) {
+      return { valid: false, reason: "Provider input requires a non-empty string 'role'." };
+    }
+
+    const changeSet = safeGet(input, "changeSet");
+    if (!changeSet || typeof changeSet !== "object" || safeIsArray(changeSet)) {
+      return { valid: false, reason: "Provider input requires a valid 'changeSet' object." };
+    }
+
+    if (safeGet(changeSet, "schemaVersion") !== "1.0.0") {
+      return { valid: false, reason: "ChangeSet must have schemaVersion '1.0.0'." };
+    }
+
+    const contentDigest = safeGet(changeSet, "contentDigest");
+    if (typeof contentDigest !== "string" || !/^[a-f0-9]{64}$/i.test(contentDigest)) {
+      return { valid: false, reason: "ChangeSet requires a valid 64-char sha256 'contentDigest'." };
+    }
+
+    const files = safeGet(changeSet, "files");
+    if (!safeIsArray(files)) {
+      return { valid: false, reason: "ChangeSet requires a 'files' array." };
+    }
+
+    const policyId = safeGet(input, "policyId");
+    if (typeof policyId !== "string" || !policyId.trim()) {
+      return { valid: false, reason: "Provider input requires a non-empty string 'policyId'." };
+    }
+
+    const timeoutMsVal = safeGet(input, "timeoutMs") ?? safeGet(input, "deadline") ?? DEFAULT_LIMITS.defaultTimeoutMs;
+    const timeoutMs = Number(timeoutMsVal);
+    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+      return { valid: false, reason: "Provider input 'timeoutMs' must be a positive number." };
+    }
+
+    const signal = safeGet(input, "signal");
+    if (signal && (typeof signal !== "object" || typeof safeGet(signal, "aborted") !== "boolean")) {
+      return { valid: false, reason: "Provider input 'signal' must be an AbortSignal instance." };
+    }
+
+    const inputLimits = safeGet(input, "limits");
+    const limits = {
+      maxInputBytes: Number(safeGet(inputLimits, "maxInputBytes") || DEFAULT_LIMITS.maxInputBytes),
+      maxOutputBytes: Number(safeGet(inputLimits, "maxOutputBytes") || DEFAULT_LIMITS.maxOutputBytes)
+    };
+
+    return {
+      valid: true,
+      input: Object.freeze({
+        runId: runId.trim(),
+        role: role.trim(),
+        changeSet,
+        policyId: policyId.trim(),
+        timeoutMs,
+        signal: signal || null,
+        limits: Object.freeze(limits),
+        prompt: typeof safeGet(input, "prompt") === "string" ? safeGet(input, "prompt") : undefined
+      })
+    };
+  } catch (err) {
+    return { valid: false, reason: `Provider input validation failed: ${safeErrorMessage(err)}` };
   }
-
-  if (typeof input.runId !== "string" || !input.runId.trim()) {
-    return { valid: false, reason: "Provider input requires a non-empty string 'runId'." };
-  }
-
-  if (typeof input.role !== "string" || !input.role.trim()) {
-    return { valid: false, reason: "Provider input requires a non-empty string 'role'." };
-  }
-
-  if (!input.changeSet || typeof input.changeSet !== "object") {
-    return { valid: false, reason: "Provider input requires a valid 'changeSet' object." };
-  }
-
-  if (input.changeSet.schemaVersion !== "1.0.0") {
-    return { valid: false, reason: "ChangeSet must have schemaVersion '1.0.0'." };
-  }
-
-  if (typeof input.changeSet.contentDigest !== "string" || !/^[a-f0-9]{64}$/i.test(input.changeSet.contentDigest)) {
-    return { valid: false, reason: "ChangeSet requires a valid 64-char sha256 'contentDigest'." };
-  }
-
-  if (!Array.isArray(input.changeSet.files)) {
-    return { valid: false, reason: "ChangeSet requires a 'files' array." };
-  }
-
-  if (typeof input.policyId !== "string" || !input.policyId.trim()) {
-    return { valid: false, reason: "Provider input requires a non-empty string 'policyId'." };
-  }
-
-  const timeoutMs = Number(input.timeoutMs || input.deadline || DEFAULT_LIMITS.defaultTimeoutMs);
-  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
-    return { valid: false, reason: "Provider input 'timeoutMs' must be a positive number." };
-  }
-
-  if (input.signal && (typeof input.signal !== "object" || typeof input.signal.aborted !== "boolean")) {
-    return { valid: false, reason: "Provider input 'signal' must be an AbortSignal instance." };
-  }
-
-  const limits = {
-    maxInputBytes: Number(input.limits?.maxInputBytes || DEFAULT_LIMITS.maxInputBytes),
-    maxOutputBytes: Number(input.limits?.maxOutputBytes || DEFAULT_LIMITS.maxOutputBytes)
-  };
-
-  return {
-    valid: true,
-    input: Object.freeze({
-      runId: input.runId.trim(),
-      role: input.role.trim(),
-      changeSet: input.changeSet,
-      policyId: input.policyId.trim(),
-      timeoutMs,
-      signal: input.signal || null,
-      limits: Object.freeze(limits),
-      prompt: typeof input.prompt === "string" ? input.prompt : undefined
-    })
-  };
 }
 
 /**
@@ -159,260 +229,336 @@ export function validateProviderInput(input = {}) {
  * Strips all capability forgery attempts and ensures safe, canonical data.
  */
 export function validateProviderOutput(rawOutput, inputContext = {}) {
-  const providerName = String(inputContext.providerName || rawOutput?.providerIdentity?.provider || "unknown-provider");
-  const providerIdentity = {
-    provider: providerName,
-    family: getProviderFamily(inputContext.family || rawOutput?.providerIdentity?.family || providerName),
-    model: String(inputContext.modelName || rawOutput?.providerIdentity?.model || "unknown-model"),
-    transport: String(inputContext.transport || rawOutput?.providerIdentity?.transport || "cli"),
-    runId: String(inputContext.runId || rawOutput?.providerIdentity?.runId || "unassigned-run")
-  };
+  try {
+    const rawProviderIdentity = safeGet(rawOutput, "providerIdentity");
+    const providerName = safeCoerceString(inputContext.providerName || safeGet(rawProviderIdentity, "provider") || "unknown-provider");
+    const providerIdentity = {
+      provider: providerName,
+      family: getProviderFamily(safeCoerceString(inputContext.family || safeGet(rawProviderIdentity, "family") || providerName)),
+      model: safeCoerceString(inputContext.modelName || safeGet(rawProviderIdentity, "model") || "unknown-model"),
+      transport: safeCoerceString(inputContext.transport || safeGet(rawProviderIdentity, "transport") || "cli"),
+      runId: safeCoerceString(inputContext.runId || safeGet(rawProviderIdentity, "runId") || "unassigned-run")
+    };
 
-function sanitizeRawOutput(raw) {
-  if (raw === undefined || raw === null) return undefined;
-  const str = typeof raw === "string" ? raw : (typeof raw === "object" ? JSON.stringify(raw) : String(raw));
-  const MAX_RAW_OUTPUT_BYTES = 4096;
-  const redacted = redactSecrets(str);
-  const buf = Buffer.from(redacted, "utf8");
-  if (buf.length > MAX_RAW_OUTPUT_BYTES) {
-    let end = MAX_RAW_OUTPUT_BYTES;
-    let seqStart = end;
-    while (seqStart > 0 && (buf[seqStart] & 0xC0) === 0x80) {
-      seqStart--;
+    function sanitizeRawOutput(raw) {
+      if (raw === undefined || raw === null) return undefined;
+      let str;
+      try {
+        str = typeof raw === "string" ? raw : (typeof raw === "object" ? JSON.stringify(raw) : String(raw));
+      } catch {
+        str = "[unrenderable]";
+      }
+      if (!str) return undefined;
+      const MAX_RAW_OUTPUT_BYTES = 4096;
+      const redacted = redactSecrets(str);
+      const buf = Buffer.from(redacted, "utf8");
+      if (buf.length > MAX_RAW_OUTPUT_BYTES) {
+        let end = MAX_RAW_OUTPUT_BYTES;
+        let seqStart = end;
+        while (seqStart > 0 && (buf[seqStart] & 0xC0) === 0x80) {
+          seqStart--;
+        }
+        if (seqStart >= 0 && seqStart < buf.length) {
+          const lead = buf[seqStart];
+          let seqLen = 1;
+          if ((lead & 0xE0) === 0xC0) seqLen = 2;
+          else if ((lead & 0xF0) === 0xE0) seqLen = 3;
+          else if ((lead & 0xF8) === 0xF0) seqLen = 4;
+
+          if (seqStart + seqLen > MAX_RAW_OUTPUT_BYTES) {
+            end = seqStart;
+          }
+        }
+        return buf.subarray(0, end).toString("utf8") + " ... [TRUNCATED]";
+      }
+      return redacted;
     }
-    if (seqStart >= 0 && seqStart < buf.length) {
-      const lead = buf[seqStart];
-      let seqLen = 1;
-      if ((lead & 0xE0) === 0xC0) seqLen = 2;
-      else if ((lead & 0xF0) === 0xE0) seqLen = 3;
-      else if ((lead & 0xF8) === 0xF0) seqLen = 4;
 
-      if (seqStart + seqLen > MAX_RAW_OUTPUT_BYTES) {
-        end = seqStart;
+    // If rawOutput indicates a transport-level error or terminal status
+    const rawExecStatus = safeGet(rawOutput, "executionStatus");
+    if (rawExecStatus && rawExecStatus !== EXECUTION_STATUS.SUCCESS && rawExecStatus !== EXECUTION_STATUS.EMPTY) {
+      const status = Object.values(EXECUTION_STATUS).includes(rawExecStatus)
+        ? rawExecStatus
+        : EXECUTION_STATUS.ERROR;
+
+      const rawErr = safeGet(rawOutput, "error");
+      return Object.freeze({
+        ok: false,
+        executionStatus: status,
+        findings: Object.freeze([]),
+        coverage: Object.freeze({ coveredFiles: Object.freeze([]), omittedFiles: Object.freeze([]) }),
+        usage: null,
+        providerIdentity: Object.freeze(providerIdentity),
+        rawOutput: sanitizeRawOutput(safeGet(rawOutput, "rawOutput")),
+        error: rawErr ? redactSecrets(safeCoerceString(rawErr)) : `Execution terminated with status '${status}'.`
+      });
+    }
+
+    if (!rawOutput || typeof rawOutput !== "object" || safeIsArray(rawOutput)) {
+      return Object.freeze({
+        ok: false,
+        executionStatus: EXECUTION_STATUS.MALFORMED_OUTPUT,
+        findings: Object.freeze([]),
+        coverage: Object.freeze({ coveredFiles: Object.freeze([]), omittedFiles: Object.freeze([]) }),
+        usage: null,
+        providerIdentity: Object.freeze(providerIdentity),
+        rawOutput: sanitizeRawOutput(safeGet(rawOutput, "rawOutput")),
+        error: "Provider output must be a non-null plain object."
+      });
+    }
+
+    // Enforce required findings array (Fail-Closed: cannot be missing or non-array)
+    const rawFindings = safeGet(rawOutput, "findings");
+    if (!safeIsArray(rawFindings)) {
+      return Object.freeze({
+        ok: false,
+        executionStatus: EXECUTION_STATUS.MALFORMED_OUTPUT,
+        findings: Object.freeze([]),
+        coverage: Object.freeze({ coveredFiles: Object.freeze([]), omittedFiles: Object.freeze([]) }),
+        usage: null,
+        providerIdentity: Object.freeze(providerIdentity),
+        error: "Provider output requires a 'findings' array."
+      });
+    }
+
+    // Coverage validation: MUST be a non-null plain object with coveredFiles (array) and omittedFiles (array)
+    const rawCoverage = safeGet(rawOutput, "coverage");
+    if (!rawCoverage || typeof rawCoverage !== "object" || safeIsArray(rawCoverage)) {
+      return Object.freeze({
+        ok: false,
+        executionStatus: EXECUTION_STATUS.MALFORMED_OUTPUT,
+        findings: Object.freeze([]),
+        coverage: Object.freeze({ coveredFiles: Object.freeze([]), omittedFiles: Object.freeze([]) }),
+        usage: null,
+        providerIdentity: Object.freeze(providerIdentity),
+        error: "Provider output requires a 'coverage' plain object."
+      });
+    }
+
+    const rawCoveredFiles = safeGet(rawCoverage, "coveredFiles");
+    if (!safeIsArray(rawCoveredFiles)) {
+      return Object.freeze({
+        ok: false,
+        executionStatus: EXECUTION_STATUS.MALFORMED_OUTPUT,
+        findings: Object.freeze([]),
+        coverage: Object.freeze({ coveredFiles: Object.freeze([]), omittedFiles: Object.freeze([]) }),
+        usage: null,
+        providerIdentity: Object.freeze(providerIdentity),
+        error: "Provider coverage requires a 'coveredFiles' array."
+      });
+    }
+
+    const coveredCount = safeArrayLength(rawCoveredFiles);
+    if (coveredCount < 0) {
+      return Object.freeze({
+        ok: false,
+        executionStatus: EXECUTION_STATUS.MALFORMED_OUTPUT,
+        findings: Object.freeze([]),
+        coverage: Object.freeze({ coveredFiles: Object.freeze([]), omittedFiles: Object.freeze([]) }),
+        usage: null,
+        providerIdentity: Object.freeze(providerIdentity),
+        error: "Provider coverage 'coveredFiles' array length could not be safely read (malformed array)."
+      });
+    }
+
+    const rawOmittedFiles = safeGet(rawCoverage, "omittedFiles");
+    if (!safeIsArray(rawOmittedFiles)) {
+      return Object.freeze({
+        ok: false,
+        executionStatus: EXECUTION_STATUS.MALFORMED_OUTPUT,
+        findings: Object.freeze([]),
+        coverage: Object.freeze({ coveredFiles: Object.freeze([]), omittedFiles: Object.freeze([]) }),
+        usage: null,
+        providerIdentity: Object.freeze(providerIdentity),
+        error: "Provider coverage requires an 'omittedFiles' array."
+      });
+    }
+
+    const omissionsCount = safeArrayLength(rawOmittedFiles);
+    if (omissionsCount < 0) {
+      return Object.freeze({
+        ok: false,
+        executionStatus: EXECUTION_STATUS.MALFORMED_OUTPUT,
+        findings: Object.freeze([]),
+        coverage: Object.freeze({ coveredFiles: Object.freeze([]), omittedFiles: Object.freeze([]) }),
+        usage: null,
+        providerIdentity: Object.freeze(providerIdentity),
+        error: "Provider coverage 'omittedFiles' array length could not be safely read (malformed array)."
+      });
+    }
+
+    // Treat input findings under Default-Deny: normalize each finding
+    // Fail-Closed: any candidate finding that fails normalization triggers MALFORMED_OUTPUT
+    const normalizedFindings = [];
+    const findingsCount = safeArrayLength(rawFindings);
+    if (findingsCount < 0) {
+      return Object.freeze({
+        ok: false,
+        executionStatus: EXECUTION_STATUS.MALFORMED_OUTPUT,
+        findings: Object.freeze([]),
+        coverage: Object.freeze({ coveredFiles: Object.freeze([]), omittedFiles: Object.freeze([]) }),
+        usage: null,
+        providerIdentity: Object.freeze(providerIdentity),
+        error: "Provider output 'findings' array length could not be safely read (malformed array)."
+      });
+    }
+
+    for (let i = 0; i < findingsCount; i++) {
+      const candidate = safeGet(rawFindings, i);
+      // Defense against Capability Forgery: delete any forged capability fields
+      if (candidate && typeof candidate === "object") {
+        try {
+          delete candidate.__trustedCapabilityNonce;
+          delete candidate.authority;
+          delete candidate.isTrusted;
+          delete candidate.quorumReached;
+          delete candidate.consensusProof;
+        } catch {}
+      }
+
+      const norm = normalizeFinding(candidate);
+      if (!norm.valid) {
+        return Object.freeze({
+          ok: false,
+          executionStatus: EXECUTION_STATUS.MALFORMED_OUTPUT,
+          findings: Object.freeze([]),
+          coverage: Object.freeze({ coveredFiles: Object.freeze([]), omittedFiles: Object.freeze([]) }),
+          usage: null,
+          providerIdentity: Object.freeze(providerIdentity),
+          error: `Malformed finding at index ${i}: ${norm.reason || "invalid finding format"}`
+        });
+      }
+      normalizedFindings.push(norm.finding);
+    }
+
+    // Coverage normalization
+    const validFiles = new Set((inputContext.changeSet?.files || []).map(f => normalizeCanonicalPath(typeof f === "string" ? f : safeGet(f, "path") || "")));
+    const coveredFiles = [];
+    for (let i = 0; i < coveredCount; i++) {
+      const p = safeGet(rawCoveredFiles, i);
+      if (typeof p === "string" && (validFiles.size === 0 || validFiles.has(normalizeCanonicalPath(p)))) {
+        coveredFiles.push(normalizeCanonicalPath(p));
       }
     }
-    return buf.subarray(0, end).toString("utf8") + " ... [TRUNCATED]";
-  }
-  return redacted;
-}
 
-  // If rawOutput indicates a transport-level error or terminal status
-  if (rawOutput && rawOutput.executionStatus && rawOutput.executionStatus !== EXECUTION_STATUS.SUCCESS && rawOutput.executionStatus !== EXECUTION_STATUS.EMPTY) {
-    const status = Object.values(EXECUTION_STATUS).includes(rawOutput.executionStatus)
-      ? rawOutput.executionStatus
-      : EXECUTION_STATUS.ERROR;
+    const omittedFiles = [];
+
+    for (let i = 0; i < omissionsCount; i++) {
+      const candidate = safeGet(rawOmittedFiles, i);
+      if (!candidate || typeof candidate !== "object" || safeIsArray(candidate)) {
+        return Object.freeze({
+          ok: false,
+          executionStatus: EXECUTION_STATUS.MALFORMED_OUTPUT,
+          findings: Object.freeze([]),
+          coverage: Object.freeze({ coveredFiles: Object.freeze([]), omittedFiles: Object.freeze([]) }),
+          usage: null,
+          providerIdentity: Object.freeze(providerIdentity),
+          error: `Malformed omission at index ${i}: omission must be a non-null plain object.`
+        });
+      }
+
+      const candidatePath = safeGet(candidate, "path");
+      const candidateFile = safeGet(candidate, "file");
+      const rawPath = typeof candidatePath === "string" && candidatePath.trim()
+        ? candidatePath.trim()
+        : (typeof candidateFile === "string" && candidateFile.trim() ? candidateFile.trim() : null);
+
+      if (!rawPath) {
+        return Object.freeze({
+          ok: false,
+          executionStatus: EXECUTION_STATUS.MALFORMED_OUTPUT,
+          findings: Object.freeze([]),
+          coverage: Object.freeze({ coveredFiles: Object.freeze([]), omittedFiles: Object.freeze([]) }),
+          usage: null,
+          providerIdentity: Object.freeze(providerIdentity),
+          error: `Malformed omission at index ${i}: omission requires a non-empty string 'path' or 'file'.`
+        });
+      }
+
+      const candidateCode = safeGet(candidate, "code");
+      const rawCode = typeof candidateCode === "string" ? candidateCode.trim() : "";
+      if (!rawCode || !ALLOWED_OMISSION_CODES.has(rawCode)) {
+        return Object.freeze({
+          ok: false,
+          executionStatus: EXECUTION_STATUS.MALFORMED_OUTPUT,
+          findings: Object.freeze([]),
+          coverage: Object.freeze({ coveredFiles: Object.freeze([]), omittedFiles: Object.freeze([]) }),
+          usage: null,
+          providerIdentity: Object.freeze(providerIdentity),
+          error: `Malformed omission at index ${i}: omission requires an authorized code from COVERAGE_OMISSION_CODES (received: '${safeRenderUntrusted(candidateCode)}').`
+        });
+      }
+
+      const candidateReason = safeGet(candidate, "reason");
+      const rawReason = typeof candidateReason === "string" ? candidateReason.trim() : "";
+      if (!rawReason) {
+        return Object.freeze({
+          ok: false,
+          executionStatus: EXECUTION_STATUS.MALFORMED_OUTPUT,
+          findings: Object.freeze([]),
+          coverage: Object.freeze({ coveredFiles: Object.freeze([]), omittedFiles: Object.freeze([]) }),
+          usage: null,
+          providerIdentity: Object.freeze(providerIdentity),
+          error: `Malformed omission at index ${i}: omission requires a non-empty string 'reason'.`
+        });
+      }
+
+      const normPath = normalizeCanonicalPath(rawPath);
+      omittedFiles.push(Object.freeze({
+        path: normPath,
+        file: normPath,
+        code: rawCode,
+        reason: rawReason
+      }));
+    }
+
+    // Usage validation
+    let usage = null;
+    const rawUsage = safeGet(rawOutput, "usage");
+    if (rawUsage && typeof rawUsage === "object" && !safeIsArray(rawUsage)) {
+      const pTokens = safeGet(rawUsage, "promptTokens");
+      const cTokens = safeGet(rawUsage, "completionTokens");
+      const tTokens = safeGet(rawUsage, "totalTokens");
+      usage = {
+        promptTokens: Number.isFinite(pTokens) ? Number(pTokens) : null,
+        completionTokens: Number.isFinite(cTokens) ? Number(cTokens) : null,
+        totalTokens: Number.isFinite(tTokens) ? Number(tTokens) : null
+      };
+    }
+
+    const executionStatus = normalizedFindings.length === 0
+      ? EXECUTION_STATUS.EMPTY
+      : EXECUTION_STATUS.SUCCESS;
 
     return Object.freeze({
-      ok: false,
-      executionStatus: status,
-      findings: Object.freeze([]),
-      coverage: Object.freeze({ coveredFiles: Object.freeze([]), omittedFiles: Object.freeze([]) }),
-      usage: null,
+      ok: true,
+      executionStatus,
+      findings: Object.freeze(normalizedFindings),
+      coverage: Object.freeze({
+        coveredFiles: Object.freeze(coveredFiles),
+        omittedFiles: Object.freeze(omittedFiles)
+      }),
+      usage: usage ? Object.freeze(usage) : null,
       providerIdentity: Object.freeze(providerIdentity),
-      rawOutput: sanitizeRawOutput(rawOutput.rawOutput),
-      error: rawOutput.error ? redactSecrets(String(rawOutput.error)) : `Execution terminated with status '${status}'.`
+      error: null
     });
-  }
-
-  if (!rawOutput || typeof rawOutput !== "object" || Array.isArray(rawOutput)) {
+  } catch (err) {
     return Object.freeze({
       ok: false,
       executionStatus: EXECUTION_STATUS.MALFORMED_OUTPUT,
       findings: Object.freeze([]),
       coverage: Object.freeze({ coveredFiles: Object.freeze([]), omittedFiles: Object.freeze([]) }),
       usage: null,
-      providerIdentity: Object.freeze(providerIdentity),
-      rawOutput: sanitizeRawOutput(rawOutput),
-      error: "Provider output must be a non-null plain object."
+      providerIdentity: Object.freeze({
+        provider: safeCoerceString(inputContext?.providerName, "unknown-provider"),
+        family: getProviderFamily(safeCoerceString(inputContext?.family, "unknown")),
+        model: safeCoerceString(inputContext?.modelName, "unknown-model"),
+        transport: safeCoerceString(inputContext?.transport, "cli"),
+        runId: safeCoerceString(inputContext?.runId, "unassigned-run")
+      }),
+      error: `Provider output validation failed closed: ${safeErrorMessage(err)}`
     });
   }
-
-  // Enforce required findings array (Fail-Closed: cannot be missing or non-array)
-  if (!Array.isArray(rawOutput.findings)) {
-    return Object.freeze({
-      ok: false,
-      executionStatus: EXECUTION_STATUS.MALFORMED_OUTPUT,
-      findings: Object.freeze([]),
-      coverage: Object.freeze({ coveredFiles: Object.freeze([]), omittedFiles: Object.freeze([]) }),
-      usage: null,
-      providerIdentity: Object.freeze(providerIdentity),
-      error: "Provider output requires a 'findings' array."
-    });
-  }
-
-  // Coverage validation: MUST be a non-null plain object with coveredFiles (array) and omittedFiles (array)
-  if (!rawOutput.coverage || typeof rawOutput.coverage !== "object" || Array.isArray(rawOutput.coverage)) {
-    return Object.freeze({
-      ok: false,
-      executionStatus: EXECUTION_STATUS.MALFORMED_OUTPUT,
-      findings: Object.freeze([]),
-      coverage: Object.freeze({ coveredFiles: Object.freeze([]), omittedFiles: Object.freeze([]) }),
-      usage: null,
-      providerIdentity: Object.freeze(providerIdentity),
-      error: "Provider output requires a 'coverage' plain object."
-    });
-  }
-
-  if (!Array.isArray(rawOutput.coverage.coveredFiles)) {
-    return Object.freeze({
-      ok: false,
-      executionStatus: EXECUTION_STATUS.MALFORMED_OUTPUT,
-      findings: Object.freeze([]),
-      coverage: Object.freeze({ coveredFiles: Object.freeze([]), omittedFiles: Object.freeze([]) }),
-      usage: null,
-      providerIdentity: Object.freeze(providerIdentity),
-      error: "Provider coverage requires a 'coveredFiles' array."
-    });
-  }
-
-  if (!Array.isArray(rawOutput.coverage.omittedFiles)) {
-    return Object.freeze({
-      ok: false,
-      executionStatus: EXECUTION_STATUS.MALFORMED_OUTPUT,
-      findings: Object.freeze([]),
-      coverage: Object.freeze({ coveredFiles: Object.freeze([]), omittedFiles: Object.freeze([]) }),
-      usage: null,
-      providerIdentity: Object.freeze(providerIdentity),
-      error: "Provider coverage requires an 'omittedFiles' array."
-    });
-  }
-
-  // Treat input findings under Default-Deny: normalize each finding
-  // Fail-Closed: any candidate finding that fails normalization triggers MALFORMED_OUTPUT
-  const rawFindings = rawOutput.findings;
-  const normalizedFindings = [];
-
-  for (let i = 0; i < rawFindings.length; i++) {
-    const candidate = rawFindings[i];
-    // Defense against Capability Forgery: delete any forged capability fields
-    if (candidate && typeof candidate === "object") {
-      delete candidate.__trustedCapabilityNonce;
-      delete candidate.authority;
-      delete candidate.isTrusted;
-      delete candidate.quorumReached;
-      delete candidate.consensusProof;
-    }
-
-    const norm = normalizeFinding(candidate);
-    if (!norm.valid) {
-      return Object.freeze({
-        ok: false,
-        executionStatus: EXECUTION_STATUS.MALFORMED_OUTPUT,
-        findings: Object.freeze([]),
-        coverage: Object.freeze({ coveredFiles: Object.freeze([]), omittedFiles: Object.freeze([]) }),
-        usage: null,
-        providerIdentity: Object.freeze(providerIdentity),
-        error: `Malformed finding at index ${i}: ${norm.reason || "invalid finding format"}`
-      });
-    }
-    normalizedFindings.push(norm.finding);
-  }
-
-  // Coverage normalization
-  const validFiles = new Set((inputContext.changeSet?.files || []).map(f => normalizeCanonicalPath(typeof f === "string" ? f : f?.path || "")));
-  const rawCovered = rawOutput.coverage.coveredFiles;
-  const coveredFiles = rawCovered
-    .filter(p => typeof p === "string" && (validFiles.size === 0 || validFiles.has(normalizeCanonicalPath(p))))
-    .map(p => normalizeCanonicalPath(p));
-
-  const rawOmitted = rawOutput.coverage.omittedFiles;
-  const omittedFiles = [];
-
-  for (let i = 0; i < rawOmitted.length; i++) {
-    const candidate = rawOmitted[i];
-    if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
-      return Object.freeze({
-        ok: false,
-        executionStatus: EXECUTION_STATUS.MALFORMED_OUTPUT,
-        findings: Object.freeze([]),
-        coverage: Object.freeze({ coveredFiles: Object.freeze([]), omittedFiles: Object.freeze([]) }),
-        usage: null,
-        providerIdentity: Object.freeze(providerIdentity),
-        error: `Malformed omission at index ${i}: omission must be a non-null plain object.`
-      });
-    }
-
-    const candidatePath = safeGet(candidate, "path");
-    const candidateFile = safeGet(candidate, "file");
-    const rawPath = typeof candidatePath === "string" && candidatePath.trim()
-      ? candidatePath.trim()
-      : (typeof candidateFile === "string" && candidateFile.trim() ? candidateFile.trim() : null);
-
-    if (!rawPath) {
-      return Object.freeze({
-        ok: false,
-        executionStatus: EXECUTION_STATUS.MALFORMED_OUTPUT,
-        findings: Object.freeze([]),
-        coverage: Object.freeze({ coveredFiles: Object.freeze([]), omittedFiles: Object.freeze([]) }),
-        usage: null,
-        providerIdentity: Object.freeze(providerIdentity),
-        error: `Malformed omission at index ${i}: omission requires a non-empty string 'path' or 'file'.`
-      });
-    }
-
-    const candidateCode = safeGet(candidate, "code");
-    const rawCode = typeof candidateCode === "string" ? candidateCode.trim() : "";
-    if (!rawCode || !ALLOWED_OMISSION_CODES.has(rawCode)) {
-      return Object.freeze({
-        ok: false,
-        executionStatus: EXECUTION_STATUS.MALFORMED_OUTPUT,
-        findings: Object.freeze([]),
-        coverage: Object.freeze({ coveredFiles: Object.freeze([]), omittedFiles: Object.freeze([]) }),
-        usage: null,
-        providerIdentity: Object.freeze(providerIdentity),
-        error: `Malformed omission at index ${i}: omission requires an authorized code from COVERAGE_OMISSION_CODES (received: '${safeRenderUntrusted(candidateCode)}').`
-      });
-    }
-
-    const candidateReason = safeGet(candidate, "reason");
-    const rawReason = typeof candidateReason === "string" ? candidateReason.trim() : "";
-    if (!rawReason) {
-      return Object.freeze({
-        ok: false,
-        executionStatus: EXECUTION_STATUS.MALFORMED_OUTPUT,
-        findings: Object.freeze([]),
-        coverage: Object.freeze({ coveredFiles: Object.freeze([]), omittedFiles: Object.freeze([]) }),
-        usage: null,
-        providerIdentity: Object.freeze(providerIdentity),
-        error: `Malformed omission at index ${i}: omission requires a non-empty string 'reason'.`
-      });
-    }
-
-    const normPath = normalizeCanonicalPath(rawPath);
-    omittedFiles.push(Object.freeze({
-      path: normPath,
-      file: normPath,
-      code: rawCode,
-      reason: rawReason
-    }));
-  }
-
-  // Usage validation
-  let usage = null;
-  if (rawOutput.usage && typeof rawOutput.usage === "object") {
-    usage = {
-      promptTokens: Number.isFinite(rawOutput.usage.promptTokens) ? Number(rawOutput.usage.promptTokens) : null,
-      completionTokens: Number.isFinite(rawOutput.usage.completionTokens) ? Number(rawOutput.usage.completionTokens) : null,
-      totalTokens: Number.isFinite(rawOutput.usage.totalTokens) ? Number(rawOutput.usage.totalTokens) : null
-    };
-  }
-
-  const executionStatus = normalizedFindings.length === 0
-    ? EXECUTION_STATUS.EMPTY
-    : EXECUTION_STATUS.SUCCESS;
-
-  return Object.freeze({
-    ok: true,
-    executionStatus,
-    findings: Object.freeze(normalizedFindings),
-    coverage: Object.freeze({
-      coveredFiles: Object.freeze(coveredFiles),
-      omittedFiles: Object.freeze(omittedFiles)
-    }),
-    usage: usage ? Object.freeze(usage) : null,
-    providerIdentity: Object.freeze(providerIdentity),
-    error: null
-  });
 }
 
 /**

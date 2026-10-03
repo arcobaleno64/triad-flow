@@ -231,6 +231,81 @@ test("Dogfood Contract 7: Output flood does NOT invoke executeStagedReview and r
   }
 });
 
+test("Dogfood Contract 7b: Preclassified flood status does NOT invoke executeStagedReview and classifies as error (R3 hardening)", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-test-dogfood-flood-preclass-"));
+  const tmpOut = path.join(tmpDir, "dogfood-run.json");
+
+  const floodOutput = "X".repeat(600 * 1024);
+  let agyInvocations = 0;
+  const agyPreclassifiedFloodAdapter = new CliReviewAdapter({
+    command: "agy",
+    providerName: "agy",
+    family: "google",
+    modelName: "gemini-3.8-flash",
+    execFn: async () => {
+      agyInvocations++;
+      return { executionStatus: "payload_too_large", stdout: floodOutput };
+    }
+  });
+
+  const cleanClaudeAdapter = new CliReviewAdapter({
+    command: "claude",
+    providerName: "claude",
+    family: "anthropic",
+    modelName: "claude-5.5-sonnet",
+    execFn: async () => ({
+      stdout: JSON.stringify({
+        findings: [],
+        coverage: { coveredFiles: ["src/index.js"], omittedFiles: [] }
+      })
+    })
+  });
+
+  const cleanCodexAdapter = new CliReviewAdapter({
+    command: "codex",
+    providerName: "codex",
+    family: "openai",
+    modelName: "gpt-6.1-sol",
+    execFn: async () => ({
+      stdout: JSON.stringify({
+        findings: [],
+        coverage: { coveredFiles: ["src/index.js"], omittedFiles: [] }
+      })
+    })
+  });
+
+  try {
+    const report = await runDogfoodReview({
+      mock: false,
+      changeSet: {
+        ok: true,
+        schemaVersion: "1.0.0",
+        repository: "test",
+        totalFiles: 1,
+        totalAdditions: 10,
+        totalDeletions: 2,
+        files: [{ path: "src/index.js", additions: 10, deletions: 2, riskTier: 2 }],
+        diffHunks: "+ const a = 1;"
+      },
+      reviewAdapters: {
+        agy: agyPreclassifiedFloodAdapter,
+        claude: cleanClaudeAdapter,
+        codex: cleanCodexAdapter
+      },
+      out: tmpOut,
+      log: false
+    });
+
+    assert.equal(agyInvocations, 1, "agy must be invoked exactly once without staged review retry");
+    assert.equal(report.providerTelemetry.agy.executionStatus, EXECUTION_STATUS.ERROR);
+    assert.equal(report.telemetryMetrics.executionComplete, false);
+  } finally {
+    try {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    } catch {}
+  }
+});
+
 test("Dogfood Contract 8: Injected reviewAdapters with consensus findings initializes default verifier (P2 hardening)", async () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-test-dogfood-verifier-"));
   const tmpOut = path.join(tmpDir, "dogfood-run.json");

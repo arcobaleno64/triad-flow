@@ -102,9 +102,10 @@ test("buildEvidenceReviewPrompt synchronizes omittedFiles schema with authorized
 
   const prompt = buildEvidenceReviewPrompt(cs, "macro");
 
-  // Schema properties in omittedFiles example
-  assert.match(prompt, /"path":\s*"path\/to\/file"/);
-  assert.match(prompt, /"code":/);
+  // Schema properties in coverage and omittedFiles example
+  assert.match(prompt, /"coveredFiles":\s*\[\s*"path\/to\/covered_file\.js"\s*\]/);
+  assert.match(prompt, /"path":\s*"path\/to\/omitted_file\.md"/);
+  assert.match(prompt, /"code":\s*"OMIT_OUT_OF_SCOPE"/);
   assert.match(prompt, /"reason":/);
 
   // All authorized omission codes must be documented

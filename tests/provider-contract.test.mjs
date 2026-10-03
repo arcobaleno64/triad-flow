@@ -5,6 +5,7 @@ import {
   EXECUTION_STATUS,
   COVERAGE_OMISSION_CODES,
   safeRenderUntrusted,
+  safeArrayLength,
   validateProviderInput,
   validateProviderOutput,
   convertProviderResultToSentryReport
@@ -373,4 +374,158 @@ test("validateProviderOutput never throws on stateful throwing getter omission o
   assert.equal(res.ok, false);
   assert.equal(res.executionStatus, EXECUTION_STATUS.MALFORMED_OUTPUT);
   assert.match(res.error, /omission requires an authorized code/i);
+});
+
+test("validateProviderOutput never throws on revoked Proxy omissions or payloads (R1 hardening)", () => {
+  const changeSet = makeValidChangeSet();
+
+  const makeRevoked = () => {
+    const { proxy, revoke } = Proxy.revocable({}, {});
+    revoke();
+    return proxy;
+  };
+
+  // 1. Revoked proxy as omission item
+  let res1;
+  assert.doesNotThrow(() => {
+    res1 = validateProviderOutput({
+      findings: [],
+      coverage: {
+        coveredFiles: [],
+        omittedFiles: [makeRevoked()]
+      }
+    }, { changeSet });
+  });
+  assert.equal(res1.ok, false);
+  assert.equal(res1.executionStatus, EXECUTION_STATUS.MALFORMED_OUTPUT);
+
+  // 2. Revoked proxy as rawOutput
+  let res2;
+  assert.doesNotThrow(() => {
+    res2 = validateProviderOutput(makeRevoked(), { changeSet });
+  });
+  assert.equal(res2.ok, false);
+  assert.equal(res2.executionStatus, EXECUTION_STATUS.MALFORMED_OUTPUT);
+
+  // 3. Revoked proxy as coverage
+  let res3;
+  assert.doesNotThrow(() => {
+    res3 = validateProviderOutput({
+      findings: [],
+      coverage: makeRevoked()
+    }, { changeSet });
+  });
+  assert.equal(res3.ok, false);
+  assert.equal(res3.executionStatus, EXECUTION_STATUS.MALFORMED_OUTPUT);
+});
+
+test("validateProviderOutput: unreadable array lengths fail closed with MALFORMED_OUTPUT", () => {
+  const changeSet = makeValidChangeSet();
+
+  const makeThrowingLengthProxy = (arr) => {
+    return new Proxy(arr, {
+      get(target, prop) {
+        if (prop === "length") {
+          throw new Error("throwing length getter");
+        }
+        return target[prop];
+      }
+    });
+  };
+
+  // 1. Findings array with throwing length
+  const res1 = validateProviderOutput({
+    findings: makeThrowingLengthProxy([{ title: "X", severity: "high", file: "src/calc.js", line_start: 1, line_end: 1, recommendation: "fix" }]),
+    coverage: { coveredFiles: ["src/calc.js"], omittedFiles: [] }
+  }, { changeSet });
+  assert.equal(res1.ok, false);
+  assert.equal(res1.executionStatus, EXECUTION_STATUS.MALFORMED_OUTPUT);
+  assert.match(res1.error, /findings.*length.*malformed/i);
+
+  // 2. OmittedFiles array with throwing length
+  const res2 = validateProviderOutput({
+    findings: [],
+    coverage: {
+      coveredFiles: ["src/calc.js"],
+      omittedFiles: makeThrowingLengthProxy([{ path: "src/other.js", code: "OMIT_OUT_OF_SCOPE", reason: "Scope" }])
+    }
+  }, { changeSet });
+  assert.equal(res2.ok, false);
+  assert.equal(res2.executionStatus, EXECUTION_STATUS.MALFORMED_OUTPUT);
+  assert.match(res2.error, /omittedFiles.*length.*malformed/i);
+});
+
+test("validateProviderOutput & validateProviderInput: throw null never escapes catch block", () => {
+  const changeSet = makeValidChangeSet();
+
+  const hostilePayload = new Proxy({}, {
+    get(target, prop) {
+      if (prop === "coverage" || prop === "findings") {
+        throw null;
+      }
+      return target[prop];
+    }
+  });
+
+  let res1;
+  assert.doesNotThrow(() => {
+    res1 = validateProviderOutput(hostilePayload, { changeSet });
+  });
+  assert.equal(res1.ok, false);
+  assert.equal(res1.executionStatus, EXECUTION_STATUS.MALFORMED_OUTPUT);
+
+  const hostileInput = new Proxy({}, {
+    get(target, prop) {
+      if (prop === "runId") {
+        throw null;
+      }
+      return target[prop];
+    }
+  });
+
+  let res2;
+  assert.doesNotThrow(() => {
+    res2 = validateProviderInput(hostileInput);
+  });
+  assert.equal(res2.valid, false);
+});
+
+test("validateProviderOutput & safeArrayLength: fractional array lengths fail closed with MALFORMED_OUTPUT", () => {
+  const changeSet = makeValidChangeSet();
+
+  const makeFractionalLengthProxy = (arr, fractionalLen) => {
+    return new Proxy(arr, {
+      get(target, prop) {
+        if (prop === "length") {
+          return fractionalLen;
+        }
+        return target[prop];
+      }
+    });
+  };
+
+  assert.equal(safeArrayLength(makeFractionalLengthProxy([], 0.5)), -1);
+  assert.equal(safeArrayLength(makeFractionalLengthProxy([], 1.5)), -1);
+  assert.equal(safeArrayLength(makeFractionalLengthProxy([], -0.5)), -1);
+  assert.equal(safeArrayLength(makeFractionalLengthProxy([], Infinity)), -1);
+  assert.equal(safeArrayLength(makeFractionalLengthProxy([], NaN)), -1);
+
+  // 1. Findings array with fractional length
+  const res1 = validateProviderOutput({
+    findings: makeFractionalLengthProxy([{ title: "X", severity: "high", file: "src/calc.js", line_start: 1, line_end: 1, recommendation: "fix" }], 0.5),
+    coverage: { coveredFiles: ["src/calc.js"], omittedFiles: [] }
+  }, { changeSet });
+  assert.equal(res1.ok, false);
+  assert.equal(res1.executionStatus, EXECUTION_STATUS.MALFORMED_OUTPUT);
+
+  // 2. OmittedFiles array with fractional length
+  const res2 = validateProviderOutput({
+    findings: [],
+    coverage: {
+      coveredFiles: ["src/calc.js"],
+      omittedFiles: makeFractionalLengthProxy([{ path: "src/other.js", code: "OMIT_OUT_OF_SCOPE", reason: "Scope" }], 0.5)
+    }
+  }, { changeSet });
+  assert.equal(res2.ok, false);
+  assert.equal(res2.executionStatus, EXECUTION_STATUS.MALFORMED_OUTPUT);
 });
