@@ -1163,3 +1163,87 @@ test("Regression 12: executeStagedReview and evaluateCoverageContract handle thr
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 
+
+
+test("Finding B: earlier non-critical failure followed by success remains incomplete in final evidence", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-staged-b-fail-then-success-"));
+  const cs = {
+    scopeMode: "revision-range",
+    files: [{ path: "src/first.js" }, { path: "src/second.js" }],
+    diffHunks: [
+      "diff --git a/src/first.js b/src/first.js\n--- a/src/first.js\n+++ b/src/first.js\n@@ -1 +1 @@\n-old1\n+new1",
+      "diff --git a/src/second.js b/src/second.js\n--- a/src/second.js\n+++ b/src/second.js\n@@ -1 +1 @@\n-old2\n+new2"
+    ].join("\n")
+  };
+
+  let callCount = 0;
+  const adapter = {
+    providerName: "mock-b",
+    executeReview: async ({ changeSet }) => {
+      callCount++;
+      const target = changeSet.files[0].path;
+      if (target === "src/first.js") {
+        return { ok: false, executionStatus: "error", status: "error", error: "first chunk failed" };
+      }
+      return {
+        ok: true,
+        findings: [],
+        coverage: { coveredFiles: ["src/second.js"], omittedFiles: [] }
+      };
+    }
+  };
+
+  const result = await executeStagedReview(cs, adapter, {
+    cwd: tmpDir,
+    maxChunkBytes: 80
+  });
+
+  assert.equal(callCount, 2, "Non-critical failure may continue to later chunks");
+  assert.equal(result.ok, false);
+  assert.equal(result.executionStatus, "incomplete");
+  assert.equal(result.coverage.isComplete, false);
+  assert.ok(result.receipts.some(r => r.status === "failed" && r.chunkIndex === 1));
+  assert.ok(result.receipts.some(r => r.status === "completed" && r.chunkIndex === 2));
+  assert.ok(result.coverage.omittedFiles.some(o => o.file === "src/first.js"));
+
+  const store = new CheckpointStore({ cwd: tmpDir });
+  const checkpoint = store.readCheckpoint(result.runId);
+  assert.ok(checkpoint, "Incomplete run keeps its latest checkpoint");
+  assert.equal(checkpoint.completedChunks, 2, "Current checkpoint records the later successful index, not true cumulative success count");
+  assert.equal(checkpoint.omittedFiles, undefined, "Current successful checkpoint overwrites prior persisted omission history");
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+test("Finding C: malformed findings array is atomic and cannot salvage a valid prefix", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-staged-c-atomic-"));
+  const cs = {
+    scopeMode: "revision-range",
+    files: [{ path: "src/atomic.js" }],
+    diffHunks: "diff --git a/src/atomic.js b/src/atomic.js\n--- a/src/atomic.js\n+++ b/src/atomic.js\n@@ -1 +1 @@\n-old\n+new"
+  };
+
+  const adapter = {
+    providerName: "mock-c",
+    executeReview: async () => ({
+      ok: true,
+      findings: [
+        { title: "valid prefix must not survive", severity: "high", file: "src/atomic.js", line_start: 1, line_end: 1 },
+        null
+      ],
+      coverage: { coveredFiles: ["src/atomic.js"], omittedFiles: [] }
+    })
+  };
+
+  const result = await executeStagedReview(cs, adapter, { cwd: tmpDir });
+  assert.equal(result.ok, false);
+  assert.equal(result.executionStatus, "incomplete");
+  assert.deepEqual(result.findings, [], "Rejected provider output must contribute zero findings");
+
+  const store = new CheckpointStore({ cwd: tmpDir });
+  const checkpoint = store.readCheckpoint(result.runId);
+  assert.ok(checkpoint);
+  assert.deepEqual(checkpoint.salvagedFindings, [], "Malformed array must not persist a valid prefix into salvage state");
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
