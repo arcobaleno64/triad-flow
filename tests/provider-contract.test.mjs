@@ -4,6 +4,7 @@ import crypto from "node:crypto";
 import {
   EXECUTION_STATUS,
   COVERAGE_OMISSION_CODES,
+  safeRenderUntrusted,
   validateProviderInput,
   validateProviderOutput,
   convertProviderResultToSentryReport
@@ -256,4 +257,91 @@ test("Regression 3: Authorized omission code is preserved exactly through normal
   assert.equal(res.coverage.omittedFiles[0].code, COVERAGE_OMISSION_CODES.GENERATED);
   assert.equal(res.coverage.omittedFiles[0].reason, "Auto-generated parser");
   assert.ok(res.coverage.omittedFiles[0].path.includes("src/calc.js") || res.coverage.omittedFiles[0].path.includes("src\\calc.js"));
+});
+
+test("safeRenderUntrusted unit tests: primitives, symbols, objects, throws (R1)", () => {
+  assert.equal(safeRenderUntrusted(null), "null");
+  assert.equal(safeRenderUntrusted(undefined), "undefined");
+  assert.equal(safeRenderUntrusted("hello"), "hello");
+  assert.equal(safeRenderUntrusted(123), "123");
+  assert.equal(safeRenderUntrusted(true), "true");
+  assert.equal(safeRenderUntrusted(42n), "42");
+  assert.equal(safeRenderUntrusted(Symbol("test")), "Symbol(test)");
+  assert.equal(safeRenderUntrusted({ a: 1 }), '{"a":1}');
+  assert.equal(safeRenderUntrusted([1, 2]), "[1,2]");
+  assert.equal(safeRenderUntrusted(Object.create(null)), "{}");
+
+  // Throwing getters/toString/toJSON
+  const throwingGetter = {
+    get toString() {
+      throw new Error("toString threw");
+    }
+  };
+  assert.doesNotThrow(() => safeRenderUntrusted(throwingGetter));
+
+  const throwingToJSON = {
+    toJSON() {
+      throw new Error("toJSON threw");
+    }
+  };
+  assert.equal(safeRenderUntrusted(throwingToJSON), "[unrenderable]");
+
+  // Circular reference
+  const circular = {};
+  circular.self = circular;
+  assert.equal(safeRenderUntrusted(circular), "[unrenderable]");
+
+  // Length bounding
+  const longStr = "A".repeat(100);
+  const rendered = safeRenderUntrusted(longStr, 32);
+  assert.equal(rendered.length, 35); // 32 + "..."
+  assert.ok(rendered.endsWith("..."));
+});
+
+test("validateProviderOutput never throws on malformed untrusted omission values (R1)", () => {
+  const changeSet = makeValidChangeSet();
+
+  const malformedValues = [
+    Symbol("bad-symbol"),
+    Object.create(null),
+    { toString: null },
+    {
+      get toString() {
+        throw new Error("malicious toString");
+      }
+    },
+    {
+      [Symbol.toPrimitive]() {
+        throw new Error("malicious toPrimitive");
+      }
+    },
+    {
+      toJSON() {
+        throw new Error("malicious toJSON");
+      }
+    },
+    null,
+    12345,
+    {},
+    [],
+    "X".repeat(200)
+  ];
+
+  for (const badCode of malformedValues) {
+    let res;
+    assert.doesNotThrow(() => {
+      res = validateProviderOutput({
+        findings: [],
+        coverage: {
+          coveredFiles: [],
+          omittedFiles: [{ path: "src/calc.js", code: badCode, reason: "Valid reason" }]
+        }
+      }, { changeSet });
+    }, `validateProviderOutput threw on badCode: ${safeRenderUntrusted(badCode)}`);
+
+    assert.equal(res.ok, false);
+    assert.equal(res.executionStatus, EXECUTION_STATUS.MALFORMED_OUTPUT);
+    assert.match(res.error, /omission requires an authorized code/i);
+    assert.ok(typeof res.error === "string");
+  }
 });

@@ -442,60 +442,62 @@ export async function runDogfoodReview(userOptions = {}) {
 
   // 2. Configure Tri-Party Reviewers
   if (log) console.log("\n[2/5] Configuring tri-party heterogeneous review sentries...");
-  let reviewAdapters;
-  let verifierAdapter;
+  let reviewAdapters = userOptions.reviewAdapters || null;
+  let verifierAdapter = userOptions.verifierAdapter || null;
 
-  if (isLive) {
-    const codexProfile = resolveProviderProfile("codex");
-    let codexCommand = "codex";
-    let codexArgs;
+  if (!reviewAdapters) {
+    if (isLive) {
+      const codexProfile = resolveProviderProfile("codex");
+      let codexCommand = "codex";
+      let codexArgs;
 
-    if (codexProfile?.nativeResolution?.resolvedType === "NATIVE_EXE") {
-      codexCommand = codexProfile.nativeResolution.command;
-    } else if (codexProfile?.nativeResolution?.resolvedType === "NODE_SCRIPT") {
-      codexCommand = codexProfile.nativeResolution.command;
-      codexArgs = [
-        ...(codexProfile.nativeResolution.prefixArgs || []),
-        ...(codexProfile.args || [])
-      ];
-    }
+      if (codexProfile?.nativeResolution?.resolvedType === "NATIVE_EXE") {
+        codexCommand = codexProfile.nativeResolution.command;
+      } else if (codexProfile?.nativeResolution?.resolvedType === "NODE_SCRIPT") {
+        codexCommand = codexProfile.nativeResolution.command;
+        codexArgs = [
+          ...(codexProfile.nativeResolution.prefixArgs || []),
+          ...(codexProfile.args || [])
+        ];
+      }
 
-    const codexAdapter = new CliReviewAdapter({
-      command: codexCommand,
-      args: codexArgs,
-      providerName: "codex",
-      modelName: "gpt-6.1-sol",
-      actualModel: { value: "gpt-6.1-sol", source: "reported" },
-      inputChannel: "stdin",
-      supportsStdin: true,
-      useStdin: true
-    });
-    codexAdapter.profile = codexProfile;
+      const codexAdapter = new CliReviewAdapter({
+        command: codexCommand,
+        args: codexArgs,
+        providerName: "codex",
+        modelName: "gpt-6.1-sol",
+        actualModel: { value: "gpt-6.1-sol", source: "reported" },
+        inputChannel: "stdin",
+        supportsStdin: true,
+        useStdin: true
+      });
+      codexAdapter.profile = codexProfile;
 
-    reviewAdapters = {
-      agy: new CliReviewAdapter({
-        command: "agy",
-        providerName: "agy",
-        modelName: "gemini-3.8-flash",
-        actualModel: { value: "gemini-3.8-flash", source: "reported" }
-      }),
-      claude: new CliReviewAdapter({
+      reviewAdapters = {
+        agy: new CliReviewAdapter({
+          command: "agy",
+          providerName: "agy",
+          modelName: "gemini-3.8-flash",
+          actualModel: { value: "gemini-3.8-flash", source: "reported" }
+        }),
+        claude: new CliReviewAdapter({
+          command: "claude",
+          providerName: "claude",
+          modelName: "claude-5.5-sonnet",
+          actualModel: { value: "claude-5.5-sonnet", source: "reported" }
+        }),
+        codex: codexAdapter
+      };
+      verifierAdapter = new CliVerifierAdapter({
         command: "claude",
         providerName: "claude",
         modelName: "claude-5.5-sonnet",
         actualModel: { value: "claude-5.5-sonnet", source: "reported" }
-      }),
-      codex: codexAdapter
-    };
-    verifierAdapter = new CliVerifierAdapter({
-      command: "claude",
-      providerName: "claude",
-      modelName: "claude-5.5-sonnet",
-      actualModel: { value: "claude-5.5-sonnet", source: "reported" }
-    });
-  } else {
-    reviewAdapters = createMockDogfoodAdapters(changeSet);
-    verifierAdapter = createMockVerifierAdapter("claude");
+      });
+    } else {
+      reviewAdapters = createMockDogfoodAdapters(changeSet);
+      verifierAdapter = createMockVerifierAdapter("claude");
+    }
   }
 
   // 3. Execute Tri-Party Review

@@ -15,7 +15,7 @@ import { buildEvidenceReviewPrompt } from "./review-prompts.mjs";
 import { reconcileFindings } from "../core/reconciler.mjs";
 import { classifyFileRisk, RISK_TIERS } from "../core/graph-router.mjs";
 import { normalizeCanonicalPath } from "../core/scoring.mjs";
-import { EXECUTION_STATUS, COVERAGE_OMISSION_CODES } from "./provider-contract.mjs";
+import { EXECUTION_STATUS, COVERAGE_OMISSION_CODES, safeRenderUntrusted } from "./provider-contract.mjs";
 
 export { COVERAGE_OMISSION_CODES };
 const ALLOWED_OMISSION_CODES = new Set(Object.values(COVERAGE_OMISSION_CODES));
@@ -62,7 +62,7 @@ export function evaluateCoverageContract(changeSet, coveredFiles = [], omittedFi
     const reason = typeof omit.reason === "string" ? omit.reason.trim() : "";
 
     if (!code || !ALLOWED_OMISSION_CODES.has(code)) {
-      violations.push(`File '${norm}' omission has missing or unauthorized code '${omit.code}'.`);
+      violations.push(`File '${norm}' omission has missing or unauthorized code '${safeRenderUntrusted(omit.code)}'.`);
     }
 
     if (!reason) {
@@ -95,7 +95,7 @@ export function evaluateCoverageContract(changeSet, coveredFiles = [], omittedFi
     // Tier 1 Check: Critical files MUST NOT be omitted under any code (Fail-Closed)
     const tier = classifyFileRisk(f);
     if (tier === RISK_TIERS.TIER_1_CRITICAL && omitRecord) {
-      violations.push(`Tier 1 (Critical) file '${f}' cannot be omitted under code '${omitRecord.code || "unknown"}' (Fail-Closed).`);
+      violations.push(`Tier 1 (Critical) file '${f}' cannot be omitted under code '${safeRenderUntrusted(omitRecord.code || "unknown")}' (Fail-Closed).`);
     }
   }
 

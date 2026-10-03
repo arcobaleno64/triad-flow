@@ -255,7 +255,7 @@ test("CliReviewAdapter: detects provider refusal/content filter and classifies a
   assert.match(res.error, /Provider safety\/content filter refusal detected/);
 });
 
-test("CliReviewAdapter (Acceptance 7: 過大回應 Payload Too Large)", async () => {
+test("CliReviewAdapter (Acceptance 7: 過大回應 Output Flood Execution Error)", async () => {
   const cs = makeChangeSet();
   const hugeOutput = "A".repeat(1024 * 1024); // 1 MB string
   const mockExec = async () => ({
@@ -272,7 +272,30 @@ test("CliReviewAdapter (Acceptance 7: 過大回應 Payload Too Large)", async ()
   });
 
   assert.equal(res.ok, false);
-  assert.equal(res.executionStatus, EXECUTION_STATUS.PAYLOAD_TOO_LARGE);
+  assert.equal(res.executionStatus, EXECUTION_STATUS.ERROR);
+  assert.match(res.error, /maxOutputBytes/i);
+});
+
+test("CliReviewAdapter (Acceptance 7b: Stderr Output Flood Execution Error)", async () => {
+  const cs = makeChangeSet();
+  const hugeStderr = "E".repeat(1024 * 1024); // 1 MB string
+  const mockExec = async () => ({
+    stdout: "{}",
+    stderr: hugeStderr
+  });
+
+  const adapter = new CliReviewAdapter({ execFn: mockExec });
+  const res = await adapter.executeReview({
+    runId: "run-huge-stderr-01",
+    role: "macro",
+    changeSet: cs,
+    policyId: "SINGLE_SENTRY",
+    limits: { maxOutputBytes: 1000 }
+  });
+
+  assert.equal(res.ok, false);
+  assert.equal(res.executionStatus, EXECUTION_STATUS.ERROR);
+  assert.match(res.error, /maxOutputBytes/i);
 });
 
 test("CliReviewAdapter (Acceptance 8: 部分覆蓋 Partial Coverage & Omitted Files)", async () => {

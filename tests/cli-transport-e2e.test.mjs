@@ -386,7 +386,7 @@ test("E2E-06: Memory flood defense (maxOutputBytes exceeded) -> Child killed, Ga
   const report = JSON.parse(stdout.buffer);
   assert.equal(report.status, "incomplete");
   assert.equal(report.gate.decision, "block");
-  assert.equal(report.providers[0].executionStatus, EXECUTION_STATUS.PAYLOAD_TOO_LARGE);
+  assert.equal(report.providers[0].executionStatus, EXECUTION_STATUS.ERROR);
   assert.match(report.consensus.consensusProof, /Quorum Failure/i);
 
   // 2. Direct adapter execution check
@@ -404,8 +404,8 @@ test("E2E-06: Memory flood defense (maxOutputBytes exceeded) -> Child killed, Ga
   });
 
   assert.equal(res.ok, false);
-  assert.equal(res.executionStatus, EXECUTION_STATUS.PAYLOAD_TOO_LARGE);
-  assert.match(res.error, /payload_too_large/);
+  assert.equal(res.executionStatus, EXECUTION_STATUS.ERROR);
+  assert.match(res.error, /maxOutputBytes/i);
 });
 
 test("E2E-07: Auth failure pattern detection -> AUTH_FAILURE detected, Gate BLOCK", async () => {

@@ -233,6 +233,7 @@ export class CliReviewAdapter {
       let stdout = "";
       let stderr = "";
       let killedReason = null;
+      let killedError = null;
       let timedOut = false;
       let aborted = false;
 
@@ -315,7 +316,8 @@ export class CliReviewAdapter {
       child.stdout.on("data", (chunk) => {
         stdout += chunk.toString();
         if (Buffer.byteLength(stdout, "utf8") > input.limits.maxOutputBytes) {
-          killedReason = EXECUTION_STATUS.PAYLOAD_TOO_LARGE;
+          killedReason = EXECUTION_STATUS.ERROR;
+          killedError = `Provider stdout exceeded maxOutputBytes (${input.limits.maxOutputBytes})`;
           child.kill();
         }
       });
@@ -323,7 +325,8 @@ export class CliReviewAdapter {
       child.stderr.on("data", (chunk) => {
         stderr += chunk.toString();
         if (Buffer.byteLength(stderr, "utf8") > input.limits.maxOutputBytes) {
-          killedReason = EXECUTION_STATUS.PAYLOAD_TOO_LARGE;
+          killedReason = EXECUTION_STATUS.ERROR;
+          killedError = `Provider stderr exceeded maxOutputBytes (${input.limits.maxOutputBytes})`;
           child.kill();
         }
       });
@@ -358,7 +361,7 @@ export class CliReviewAdapter {
         if (killedReason) {
           resolve(validateProviderOutput({
             executionStatus: killedReason,
-            error: `Process terminated: ${killedReason}`
+            error: killedError || `Process terminated: ${killedReason}`
           }, context));
           return;
         }
@@ -448,16 +451,16 @@ export class CliReviewAdapter {
     if (res && typeof res.stdout === "string") {
       if (Buffer.byteLength(res.stdout, "utf8") > limits.maxOutputBytes) {
         return validateProviderOutput({
-          executionStatus: EXECUTION_STATUS.PAYLOAD_TOO_LARGE,
-          error: `Output exceeded maxOutputBytes (${limits.maxOutputBytes})`
+          executionStatus: EXECUTION_STATUS.ERROR,
+          error: `Provider stdout exceeded maxOutputBytes (${limits.maxOutputBytes})`
         }, context);
       }
     }
 
     if (res?.stderr && Buffer.byteLength(res.stderr, "utf8") > limits.maxOutputBytes) {
       return validateProviderOutput({
-        executionStatus: EXECUTION_STATUS.PAYLOAD_TOO_LARGE,
-        error: `Stderr exceeded maxOutputBytes (${limits.maxOutputBytes})`
+        executionStatus: EXECUTION_STATUS.ERROR,
+        error: `Provider stderr exceeded maxOutputBytes (${limits.maxOutputBytes})`
       }, context);
     }
 

@@ -5,7 +5,9 @@
  * XML-delimited context sections, and Default-Deny sentry contracts.
  */
 
-import { DEFAULT_LIMITS } from "./provider-contract.mjs";
+import { DEFAULT_LIMITS, COVERAGE_OMISSION_CODES } from "./provider-contract.mjs";
+
+const ALLOWED_OMISSION_CODES_LIST = Object.values(COVERAGE_OMISSION_CODES);
 
 export const TAXONOMY_CHECKLISTS = Object.freeze({
   PROTOTYPE_POLLUTION: Object.freeze({
@@ -287,14 +289,27 @@ export function buildEvidenceReviewPrompt(changeSet, role = "macro", limits = DE
     `  ],`,
     `  "coverage": {`,
     `    "coveredFiles": ["path/to/file"],`,
-    `    "omittedFiles": []`,
+    `    "omittedFiles": [`,
+    `      {`,
+    `        "path": "path/to/file",`,
+    `        "code": "${ALLOWED_OMISSION_CODES_LIST.join("|")}",`,
+    `        "reason": "Human-readable reason for omitting this file"`,
+    `      }`,
+    `    ]`,
     `  },`,
     `  "usage": {`,
     `    "promptTokens": null,`,
     `    "completionTokens": null,`,
     `    "totalTokens": null`,
     `  }`,
-    `}`
+    `}`,
+    ``,
+    `Coverage & Omission Rules:`,
+    `- Every changed file must appear in either 'coveredFiles' or 'omittedFiles' (never both).`,
+    `- If a file is in 'omittedFiles', each entry MUST be an object with 'path', 'code', and 'reason'.`,
+    `- 'code' MUST strictly be an authorized omission code: ${ALLOWED_OMISSION_CODES_LIST.join(", ")}. Any other code will be rejected as malformed output.`,
+    `- 'reason' MUST be a non-empty human-readable explanation.`,
+    `- Critical Tier 1 security files can never be omitted under any code.`
   );
 
   return sections.filter(s => s !== "").join("\n");

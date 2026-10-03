@@ -40,6 +40,41 @@ export const COVERAGE_OMISSION_CODES = Object.freeze({
 const ALLOWED_OMISSION_CODES = new Set(Object.values(COVERAGE_OMISSION_CODES));
 
 /**
+ * Safely renders an untrusted diagnostic value into a bounded string without throwing.
+ * Handles symbols, Object.create(null), throwing getters/toString/toJSON, and circular references.
+ * @param {*} val
+ * @param {number} [maxLen=64]
+ * @returns {string}
+ */
+export function safeRenderUntrusted(val, maxLen = 64) {
+  const limit = (typeof maxLen === "number" && maxLen > 0) ? maxLen : 64;
+  try {
+    if (val === null) return "null";
+    if (val === undefined) return "undefined";
+    const t = typeof val;
+    let s;
+    if (t === "string") {
+      s = val;
+    } else if (t === "number" || t === "boolean" || t === "bigint" || t === "symbol") {
+      s = String(val);
+    } else if (t === "object") {
+      try {
+        s = JSON.stringify(val);
+      } catch {
+        s = "[unrenderable]";
+      }
+    } else {
+      s = String(val);
+    }
+    if (typeof s !== "string") return "[unrenderable]";
+    if (s.length > limit) return s.slice(0, limit) + "...";
+    return s;
+  } catch {
+    return "[unrenderable]";
+  }
+}
+
+/**
  * Validates the input context passed to a provider adapter.
  */
 export function validateProviderInput(input = {}) {
@@ -307,7 +342,7 @@ function sanitizeRawOutput(raw) {
         coverage: Object.freeze({ coveredFiles: Object.freeze([]), omittedFiles: Object.freeze([]) }),
         usage: null,
         providerIdentity: Object.freeze(providerIdentity),
-        error: `Malformed omission at index ${i}: omission requires an authorized code from COVERAGE_OMISSION_CODES (received: '${candidate.code}').`
+        error: `Malformed omission at index ${i}: omission requires an authorized code from COVERAGE_OMISSION_CODES (received: '${safeRenderUntrusted(candidate.code)}').`
       });
     }
 

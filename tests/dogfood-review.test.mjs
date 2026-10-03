@@ -17,6 +17,8 @@ import {
   getCurrentCommitSha,
   getCurrentBranch
 } from "../scripts/dogfood-review.mjs";
+import { CliReviewAdapter } from "../src/adapters/cli-transport.mjs";
+import { EXECUTION_STATUS } from "../src/adapters/provider-contract.mjs";
 
 test("Dogfood Contract 1: parseArgs correctly parses flags", () => {
   const def = parseArgs([]);
@@ -145,5 +147,66 @@ test("Dogfood Contract 6: filterChangeSetExclusions handles renames symmetricall
   assert.equal(filteredBoth.files[0].path, "src/normal.js");
   assert.equal(filteredBoth.totalAdditions, 5);
   assert.equal(filteredBoth.totalDeletions, 0);
+});
+
+test("Dogfood Contract 7: Output flood does NOT invoke executeStagedReview and reports error in telemetry (R3)", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-test-dogfood-flood-"));
+  const tmpOut = path.join(tmpDir, "dogfood-run.json");
+
+  // Simulate an output flood exceeding maxOutputBytes (512KB)
+  const floodOutput = "X".repeat(600 * 1024);
+  let agyInvocations = 0;
+  const agyFloodAdapter = new CliReviewAdapter({
+    execFn: async () => {
+      agyInvocations++;
+      return { stdout: floodOutput };
+    }
+  });
+
+  const cleanAdapter = new CliReviewAdapter({
+    execFn: async () => ({
+      stdout: JSON.stringify({
+        findings: [],
+        coverage: { coveredFiles: ["src/index.js"], omittedFiles: [] }
+      })
+    })
+  });
+
+  try {
+    const report = await runDogfoodReview({
+      mock: false,
+      changeSet: {
+        ok: true,
+        schemaVersion: "1.0.0",
+        repository: "test",
+        totalFiles: 1,
+        totalAdditions: 10,
+        totalDeletions: 2,
+        files: [{ path: "src/index.js", additions: 10, deletions: 2, riskTier: 2 }],
+        diffHunks: "+ const a = 1;"
+      },
+      reviewAdapters: {
+        agy: agyFloodAdapter,
+        claude: cleanAdapter,
+        codex: cleanAdapter
+      },
+      out: tmpOut,
+      log: false
+    });
+
+    // Output flood must NOT trigger staged fallback (which would have called agy multiple times for chunks)
+    assert.equal(agyInvocations, 1, "agy must be invoked exactly once without staged review retry");
+
+    // Failure remains visible in provider telemetry as error
+    assert.equal(report.providerTelemetry.agy.executionStatus, EXECUTION_STATUS.ERROR);
+    assert.equal(report.providerTelemetry.agy.findingsCount, 0);
+
+    // Advisory gate should register simulated block due to incomplete/errored review
+    assert.equal(report.advisoryGate.simulatedGateBlock, true);
+  } finally {
+    try {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    } catch {}
+  }
 });
 
