@@ -128,6 +128,9 @@ export function buildCycleReceipt(run, m, prior = []) {
   const c = run.changeSetSummary || {};
   const files = num(c.totalFiles, Array.isArray(c.files) ? c.files.length : 0);
   const counts = mode === "live" && files > 0;
+  if (counts && prior.some(r => r.countsTowardMaturity === true && r?.repository?.name === repoName && r?.repository?.commitSha === sha)) {
+    throw new Error(`Canonical live change already recorded for ${repoName}@${sha}`);
+  }
   const triad = deriveTriadDisposition(run);
   const discrepancy = classifyDiscrepancy(triad, human);
   const family = validateFailureFamily(m.failureFamily);
