@@ -47,7 +47,7 @@ export function getCurrentCommitSha() {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"]
     }).trim();
-    if (/^[0-9a-f]{40,64}$/i.test(out)) return out;
+    if (/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i.test(out)) return out;
   } catch {}
   return "0000000000000000000000000000000000000000";
 }
@@ -402,10 +402,47 @@ export function buildProviderTelemetry(output, rawReport) {
   };
 }
 
+export function isTimeoutLikeError(err) {
+  return Boolean(
+    err &&
+    (err.name === "TimeoutError" || /timeout|timed out/i.test(String(err.message || err)))
+  );
+}
+
+function instrumentVerifierAdapter(adapter, onTimeout) {
+  const inspectResult = (result) => {
+    if (result?.executionStatus === EXECUTION_STATUS.TIMEOUT) onTimeout();
+    return result;
+  };
+  const wrap = (fn, thisArg) => async (...args) => {
+    try {
+      return inspectResult(await fn.apply(thisArg, args));
+    } catch (err) {
+      if (isTimeoutLikeError(err)) onTimeout();
+      throw err;
+    }
+  };
+
+  if (typeof adapter === "function") return wrap(adapter, null);
+  if (!adapter || typeof adapter !== "object") return adapter;
+
+  return new Proxy(adapter, {
+    get(target, prop, receiver) {
+      const value = Reflect.get(target, prop, receiver);
+      if (["executeVerification", "verify", "execFn"].includes(String(prop)) && typeof value === "function") {
+        return wrap(value, target);
+      }
+      return value;
+    }
+  });
+}
+
 /**
  * Executes Track D1 Shadow Dogfood Review.
  */
 export async function runDogfoodReview(userOptions = {}) {
+  const runStartedAt = new Date().toISOString();
+  const runId = `dogfood-${Date.now()}`;
   const isLive = Boolean(userOptions.live);
   const isMock = !isLive;
   const base = userOptions.base || "main";
@@ -544,11 +581,13 @@ export async function runDogfoodReview(userOptions = {}) {
   if (log) console.log("\n[3/5] Executing tri-party review on PR changeset...");
   const t0 = Date.now();
 
+  let stagedFallbackUsed = false;
+  let stagedChunkCount = null;
   const tAgy0 = Date.now();
   const executeAgyReview = async () => {
-    const runId = `dogfood-${Date.now()}-agy`;
+    const providerRunId = `${runId}-agy`;
     let res = await reviewAdapters.agy.executeReview({
-      runId,
+      runId: providerRunId,
       role: "agy",
       changeSet,
       policyId: "TRI_PARTY_HETEROGENEOUS",
@@ -558,13 +597,15 @@ export async function runDogfoodReview(userOptions = {}) {
 
     if (res?.executionStatus === EXECUTION_STATUS.PAYLOAD_TOO_LARGE) {
       if (log) console.log("    ℹ [agy] Prompt exceeds Windows argv limit; delegating to staged chunked review (RFC-027-01)...");
+      stagedFallbackUsed = true;
       res = await executeStagedReview(changeSet, reviewAdapters.agy, {
-        runId,
+        runId: providerRunId,
         role: "agy",
         policyId: "TRI_PARTY_HETEROGENEOUS",
         timeoutMs,
         signal: userOptions.signal || null
       });
+      stagedChunkCount = Array.isArray(res?.receipts) ? res.receipts.length : null;
     }
     return res;
   };
@@ -572,7 +613,7 @@ export async function runDogfoodReview(userOptions = {}) {
 
   const tClaude0 = Date.now();
   const pClaude = reviewAdapters.claude.executeReview({
-    runId: `dogfood-${Date.now()}-claude`,
+    runId: `${runId}-claude`,
     role: "claude",
     changeSet,
     policyId: "TRI_PARTY_HETEROGENEOUS",
@@ -582,7 +623,7 @@ export async function runDogfoodReview(userOptions = {}) {
 
   const tCodex0 = Date.now();
   const pCodex = reviewAdapters.codex.executeReview({
-    runId: `dogfood-${Date.now()}-codex`,
+    runId: `${runId}-codex`,
     role: "codex",
     changeSet,
     policyId: "TRI_PARTY_HETEROGENEOUS",
@@ -642,11 +683,15 @@ export async function runDogfoodReview(userOptions = {}) {
   // 5. Verification & Telemetry Compilation
   if (log) console.log("\n[5/5] Compiling operational telemetry into dogfood-run.json...");
   let verificationRecord = null;
+  let verifierTimedOut = false;
   if (findings.length > 0) {
+    const instrumentedVerifier = instrumentVerifierAdapter(verifierAdapter, () => {
+      verifierTimedOut = true;
+    });
     verificationRecord = await conductIndependentVerification(
       changeSet,
       findings,
-      verifierAdapter,
+      instrumentedVerifier,
       {
         producerName: "tri-party-quorum",
         producerModel: "agy+claude+codex",
@@ -663,7 +708,9 @@ export async function runDogfoodReview(userOptions = {}) {
 
   const providerOutputs = [rawReports.agy, rawReports.claude, rawReports.codex];
   const malformedCount = providerOutputs.filter(r => r.executionStatus === "malformed_output").length;
-  const timeoutCount = providerOutputs.filter(r => r.executionStatus === "timeout").length;
+  const reviewerTimeoutCount = providerOutputs.filter(r => r.executionStatus === "timeout").length;
+  const verifierTimeoutCount = verifierTimedOut ? 1 : 0;
+  const timeoutCount = reviewerTimeoutCount + verifierTimeoutCount;
   const authFailureCount = providerOutputs.filter(r => r.executionStatus === "auth_failure").length;
   const otherFailureCount = providerOutputs.filter(r => !["success", "empty"].includes(r.executionStatus)).length;
   const allProvidersSucceeded = providerOutputs.every(r => ["success", "empty"].includes(r.executionStatus));
@@ -674,8 +721,10 @@ export async function runDogfoodReview(userOptions = {}) {
     (!verificationAttempted || verificationRecord.ok === true);
 
   const dogfoodDoc = {
-    schemaVersion: "1.0.0",
-    runId: `dogfood-${Date.now()}`,
+    schemaVersion: "1.1.0",
+    runId,
+    executionMode: isLive ? "live" : "mock",
+    runStartedAt,
     timestamp: new Date().toISOString(),
     track: "Track D1: SHADOW_DOGFOOD",
     authority: "NONE (ADVISORY_ONLY)",
@@ -695,9 +744,9 @@ export async function runDogfoodReview(userOptions = {}) {
       excludedFiles: changeSet.excludedFiles || []
     },
     providerTelemetry: {
-      agy: buildProviderTelemetry(agyOut, rawReports.agy),
-      claude: buildProviderTelemetry(claudeOut, rawReports.claude),
-      codex: buildProviderTelemetry(codexOut, rawReports.codex)
+      agy: { ...buildProviderTelemetry(agyOut, rawReports.agy), stagedFallbackUsed },
+      claude: { ...buildProviderTelemetry(claudeOut, rawReports.claude), stagedFallbackUsed: false },
+      codex: { ...buildProviderTelemetry(codexOut, rawReports.codex), stagedFallbackUsed: false }
     },
     consensus: {
       verdict: consensus.verdict,
@@ -725,9 +774,13 @@ export async function runDogfoodReview(userOptions = {}) {
       avgProviderLatencyMs: Math.round((agyOut.latencyMs + claudeOut.latencyMs + codexOut.latencyMs) / 3),
       executionComplete: isExecutionComplete,
       malformedOutputCount: malformedCount,
+      reviewerTimeoutCount,
+      verifierTimeoutCount,
       timeoutCount,
       authFailureCount,
-      otherFailureCount
+      otherFailureCount,
+      stagedFallbackUsed,
+      chunkCount: stagedFallbackUsed ? stagedChunkCount : null
     },
     verificationRecord
   };
