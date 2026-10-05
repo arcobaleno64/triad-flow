@@ -356,11 +356,22 @@ export function renderSummary(receipts) {
     `- False hold: **${fh}**`,
     `- Timeout-cycle rate: **${pct}**`,
     `- Average wall-clock latency: **${avg} ms**`, "",
-    "False-advance/false-hold rates use only binary autonomous Triad outcomes (`APPROVE` / `BLOCK`). `DEGRADED`, `INCOMPLETE`, and `HUMAN_REVIEW_REQUIRED` never enter those rates automatically.", "",
+    "False-advance/false-hold rates use only binary autonomous Triad outcomes (`APPROVE` / `BLOCK`). `DEGRADED`, `INCOMPLETE`, and `HUMAN_REVIEW_REQUIRED` never enter those rates automatically.", ""
+  ];
+
+  const legacy = receipts.filter(r => r.maturityEligibility === "LEGACY_PRE_PRODUCER_AUTHORITY");
+  if (legacy.length) {
+    lines.push(
+      `> **Legacy observation:** \`${legacy.map(r => r.cycleId).join(", ")}\` ${legacy.length === 1 ? "remains" : "remain"} preserved as real shadow observation${legacy.length === 1 ? "" : "s"}, but predates producer-authoritative \`executionMode\` / \`runStartedAt\` and therefore does not count toward the maturity denominator.`,
+      ""
+    );
+  }
+
+  lines.push(
     "## Cycle Receipts", "",
     "| Cycle | Mode | Counts | Human | Triad | Discrepancy | Verify | Family | Recurrence | Escalation |",
     "|---|---|---:|---|---|---|---|---|---:|---|"
-  ];
+  );
 
   for (const r of receipts) {
     lines.push(`| ${r.cycleId} | ${r.executionMode} | ${r.countsTowardMaturity ? "yes" : "no"} | ${r.humanDisposition} | ${r.triadDisposition} | ${r.discrepancy} | ${r.assurance?.verificationStatus || "NOT_ATTEMPTED"} | ${r.failureFamily || "NONE"} | ${r.recurrenceCount || 0} | ${r.escalationAction || "NONE"} |`);
