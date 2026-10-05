@@ -60,7 +60,7 @@ test("Dogfood Contract 2: runDogfoodReview in mock mode executes and generates d
 
     assert.equal(report.schemaVersion, "1.1.0");
     assert.equal(report.executionMode, "mock");
-    assert.match(report.runStartedAt, /^\\d{4}-\\d{2}-\\d{2}T.*Z$/);
+    assert.match(report.runStartedAt, /^\d{4}-\d{2}-\d{2}T.*Z$/);
     assert.ok(report.runId.startsWith("dogfood-"));
     assert.equal(report.track, "Track D1: SHADOW_DOGFOOD");
     assert.equal(report.authority, "NONE (ADVISORY_ONLY)");
