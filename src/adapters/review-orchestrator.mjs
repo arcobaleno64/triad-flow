@@ -19,19 +19,23 @@ function isCoverageComplete(changeSet, providerResult) {
   if (!changeSet || !Array.isArray(changeSet.files)) return false;
 
   const coverage = providerResult.coverage;
-  if (!coverage) return false;
+  if (!coverage || typeof coverage !== "object") return false;
 
-  const coveredFiles = Array.isArray(coverage.coveredFiles) ? coverage.coveredFiles : [];
-  const omittedFiles = Array.isArray(coverage.omittedFiles) ? coverage.omittedFiles : [];
+  if (!Array.isArray(coverage.coveredFiles) || !Array.isArray(coverage.omittedFiles)) {
+    return false;
+  }
+
+  const coveredFiles = coverage.coveredFiles;
+  const omittedFiles = coverage.omittedFiles;
 
   const coverageEval = evaluateCoverageContract(changeSet, coveredFiles, omittedFiles);
   if (!coverageEval.isComplete) return false;
 
   // In non-staged review, size-limit or timeout omissions indicate incomplete execution
   // (files exceeding context budget require staged review / chunking).
-  const hasIncompleteOmission = omittedFiles.some(o => {
-    const code = (o && typeof o === "object" && typeof o.code === "string") ? o.code.trim() : "";
-    return code === COVERAGE_OMISSION_CODES.SIZE_LIMIT || code === COVERAGE_OMISSION_CODES.TIMEOUT;
+  // Read from the sanitized declaration to avoid re-invoking stateful or throwing getters.
+  const hasIncompleteOmission = (coverageEval.declaration?.omittedFiles || []).some(o => {
+    return o && (o.code === COVERAGE_OMISSION_CODES.SIZE_LIMIT || o.code === COVERAGE_OMISSION_CODES.TIMEOUT);
   });
 
   return !hasIncompleteOmission;
