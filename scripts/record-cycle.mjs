@@ -198,10 +198,10 @@ function validateCanonicalAppend(prior, receipt) {
 }
 
 function parseLockOwner(raw) {
-  const match = typeof raw === "string" ? /^(\d+):([a-f0-9-]+)$/i.exec(raw.trim()) : null;
+  const match = typeof raw === "string" ? /^(\d+)(?::([a-f0-9-]+))?$/i.exec(raw.trim()) : null;
   if (!match) return null;
   const pid = Number(match[1]);
-  return Number.isSafeInteger(pid) && pid > 0 ? { pid, token: raw.trim() } : null;
+  return Number.isSafeInteger(pid) && pid > 0 ? { pid, token: raw.trim(), legacy: match[2] === undefined } : null;
 }
 
 function processIsAlive(pid) {
