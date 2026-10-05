@@ -41,26 +41,75 @@ import {
 } from "../src/core/independent-verifier.mjs";
 import { TOOL_VERSION } from "../src/core/review-run-report.mjs";
 
-export function getCurrentCommitSha() {
+export function getCommitShaForRef(ref = "HEAD") {
   try {
-    const out = execFileSync("git", ["rev-parse", "HEAD"], {
+    const out = execFileSync("git", ["rev-parse", "--verify", `${ref}^{commit}`], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"]
     }).trim();
-    if (/^[0-9a-f]{40,64}$/i.test(out)) return out;
+    if (/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i.test(out) && !/^0+$/.test(out)) return out.toLowerCase();
   } catch {}
-  return "0000000000000000000000000000000000000000";
+  return null;
+}
+
+export function getCurrentCommitSha() {
+  return getCommitShaForRef("HEAD") || "0000000000000000000000000000000000000000";
+}
+
+export function getBranchForRef(ref = "HEAD") {
+  try {
+    const out = execFileSync("git", ["rev-parse", "--symbolic-full-name", ref], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"]
+    }).trim();
+    if (!out.includes("\n") && /^refs\/(heads|remotes)\//.test(out)) {
+      return out.replace(/^refs\/(heads|remotes)\//, "");
+    }
+  } catch {}
+  return null;
 }
 
 export function getCurrentBranch() {
+  return getBranchForRef("HEAD");
+}
+
+export function normalizeRepositoryIdentity(value) {
+  const raw = typeof value === "string" ? value.trim().replace(/\\/g, "/") : "";
+  const normalized = raw.replace(/^https?:\/\/github\.com\//i, "")
+    .replace(/^ssh:\/\/git@github\.com\//i, "")
+    .replace(/^git@github\.com:/i, "")
+    .replace(/\.git$/i, "")
+    .replace(/^\/+|\/+$/g, "")
+    .toLowerCase();
+  return /^[a-z0-9_.-]+\/[a-z0-9_.-]+$/.test(normalized) ? normalized : null;
+}
+
+export function getRepositoryIdentityFromGit(requestedIdentity = null) {
+  let remotes;
   try {
-    const out = execFileSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], {
+    remotes = execFileSync("git", ["remote"], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"]
-    }).trim();
-    if (out && !out.includes("\n") && out !== "HEAD") return out;
-  } catch {}
-  return "main";
+    }).trim().split(/\r?\n/).filter(Boolean);
+  } catch {
+    return null;
+  }
+  const identities = new Set();
+  for (const remote of remotes) {
+    try {
+      const url = execFileSync("git", ["remote", "get-url", remote], {
+        encoding: "utf8", stdio: ["ignore", "pipe", "pipe"]
+      }).trim();
+      const identity = normalizeRepositoryIdentity(url);
+      if (identity && remote === "origin") return identity;
+      if (identity) identities.add(identity);
+    } catch {}
+  }
+  if (identities.size > 1) {
+    if (identities.has(requestedIdentity)) return requestedIdentity;
+    throw new Error("Ambiguous repository remotes: --repository must match a canonical remote identity");
+  }
+  return [...identities][0] || null;
 }
 
 export function parseArgs(argv = process.argv.slice(2)) {
@@ -96,6 +145,13 @@ export function parseArgs(argv = process.argv.slice(2)) {
       options.head = argv[++i];
     } else if (arg.startsWith("--head=")) {
       options.head = arg.slice("--head=".length);
+    } else if (arg === "--repository") {
+      if (i + 1 >= argv.length || argv[i + 1].startsWith("-")) {
+        throw new Error("Missing value for --repository");
+      }
+      options.repository = argv[++i];
+    } else if (arg.startsWith("--repository=")) {
+      options.repository = arg.slice("--repository=".length);
     } else if (arg === "--out") {
       if (i + 1 >= argv.length || argv[i + 1].startsWith("-")) {
         throw new Error("Missing value for --out");
@@ -144,6 +200,7 @@ Options:
   --mock              Execute review using deterministic simulation (default)
   --base <ref>        Git base reference to diff against (default: main)
   --head <ref>        Git head reference (default: HEAD)
+  --repository <id>   Canonical owner/repo for a repository without a resolvable remote; must match any resolved identity
   --out <file>        Output report path (default: dogfood-run.json)
   --timeout <ms>      Per-provider timeout in milliseconds (default: 300000 live / 30000 mock)
   --help, -h          Show this help message
@@ -402,10 +459,58 @@ export function buildProviderTelemetry(output, rawReport) {
   };
 }
 
+export function isTimeoutLikeError(err) {
+  return Boolean(
+    err &&
+    (err.name === "TimeoutError" || /timeout|timed out/i.test(String(err.message || err)))
+  );
+}
+
+export function instrumentVerifierAdapter(adapter, onTimeout) {
+  const inspectResult = (result) => {
+    if (result?.executionStatus === EXECUTION_STATUS.TIMEOUT) onTimeout();
+    return result;
+  };
+  const wrap = (fn, thisArg) => async (...args) => {
+    try {
+      return inspectResult(await fn.apply(thisArg, args));
+    } catch (err) {
+      if (isTimeoutLikeError(err)) onTimeout();
+      throw err;
+    }
+  };
+
+  if (typeof adapter === "function") return wrap(adapter, null);
+  if (!adapter || typeof adapter !== "object") return adapter;
+
+  if (
+    typeof adapter.command === "string" &&
+    typeof adapter.executeVerification !== "function" &&
+    typeof adapter.verify !== "function" &&
+    typeof adapter.execFn !== "function"
+  ) {
+    return instrumentVerifierAdapter(new CliVerifierAdapter(adapter), onTimeout);
+  }
+
+  return new Proxy(adapter, {
+    get(target, prop, receiver) {
+      const value = Reflect.get(target, prop, receiver);
+      if (["executeVerification", "verify", "execFn"].includes(String(prop)) && typeof value === "function") {
+        // The CLI adapter catches execFn exceptions internally. Use its proxy
+        // as this so the nested execFn is observed before that catch runs.
+        return wrap(value, target instanceof CliVerifierAdapter ? receiver : target);
+      }
+      return value;
+    }
+  });
+}
+
 /**
  * Executes Track D1 Shadow Dogfood Review.
  */
 export async function runDogfoodReview(userOptions = {}) {
+  const runStartedAt = new Date().toISOString();
+  const runId = `dogfood-${Date.now()}-${crypto.randomUUID()}`;
   const isLive = Boolean(userOptions.live);
   const isMock = !isLive;
   const base = userOptions.base || "main";
@@ -414,15 +519,18 @@ export async function runDogfoodReview(userOptions = {}) {
   const log = userOptions.log !== false;
   const outPath = path.resolve(userOptions.out || "dogfood-run.json");
 
-  const commitSha = getCurrentCommitSha();
-  const branch = getCurrentBranch();
+  const branch = getBranchForRef(head);
+  const requestedHeadSha = getCommitShaForRef(head);
+  if (!requestedHeadSha) {
+    throw new Error(`Reviewed head ref '${head}' cannot be resolved to a non-zero commit SHA`);
+  }
 
   if (log) {
     console.log("==================================================================================");
     console.log("  Triad-Flow Track D1: Shadow Dogfood Review");
     console.log(`  Authority Mode: SHADOW_DOGFOOD (Advisory / Observation Only, Zero Merge Authority)`);
     console.log(`  Execution Mode: ${isLive ? "LIVE (Real Provider CLIs)" : "MOCK (Deterministic Simulation)"}`);
-    console.log(`  Git Scope: ${base}...${head} (Branch: ${branch}, HEAD: ${commitSha.slice(0, 10)})`);
+    console.log(`  Git Scope: ${base}...${head} (Branch: ${branch}, Reviewed Head: ${requestedHeadSha.slice(0, 10)})`);
     console.log("==================================================================================\n");
   }
 
@@ -446,6 +554,29 @@ export async function runDogfoodReview(userOptions = {}) {
 
   if (!changeSet || !changeSet.ok) {
     throw new Error(`Failed to capture ChangeSet: ${changeSet?.error?.message || "Unknown Git inspection failure"}`);
+  }
+
+  const changeSetHeadSha = typeof changeSet?.repository?.headSha === "string"
+    ? changeSet.repository.headSha.trim().toLowerCase()
+    : requestedHeadSha;
+  if (changeSetHeadSha !== requestedHeadSha) {
+    throw new Error(`Reviewed ChangeSet head SHA '${changeSetHeadSha}' does not match requested --head '${requestedHeadSha}'`);
+  }
+  const commitSha = requestedHeadSha;
+  const requestedRepository = userOptions.repository === undefined
+    ? null : normalizeRepositoryIdentity(userOptions.repository);
+  if (userOptions.repository !== undefined && !requestedRepository) {
+    throw new Error("--repository must use canonical owner/repo syntax");
+  }
+  const resolvedRepository =
+    normalizeRepositoryIdentity(changeSet?.repository?.name) ||
+    getRepositoryIdentityFromGit(requestedRepository);
+  if (requestedRepository && resolvedRepository && requestedRepository !== resolvedRepository) {
+    throw new Error("Requested repository identity does not match the reviewed repository");
+  }
+  const repositoryName = resolvedRepository || requestedRepository;
+  if (!repositoryName) {
+    throw new Error("Reviewed repository identity cannot be resolved to canonical owner/repo; provide --repository");
   }
 
   const relOut = path.relative(process.cwd(), outPath).replace(/\\/g, "/");
@@ -544,11 +675,14 @@ export async function runDogfoodReview(userOptions = {}) {
   if (log) console.log("\n[3/5] Executing tri-party review on PR changeset...");
   const t0 = Date.now();
 
+  let stagedFallbackUsed = false;
+  let stagedChunkCount = null;
+  let stagedTimeoutCount = 0;
   const tAgy0 = Date.now();
   const executeAgyReview = async () => {
-    const runId = `dogfood-${Date.now()}-agy`;
+    const providerRunId = `${runId}-agy`;
     let res = await reviewAdapters.agy.executeReview({
-      runId,
+      runId: providerRunId,
       role: "agy",
       changeSet,
       policyId: "TRI_PARTY_HETEROGENEOUS",
@@ -558,13 +692,18 @@ export async function runDogfoodReview(userOptions = {}) {
 
     if (res?.executionStatus === EXECUTION_STATUS.PAYLOAD_TOO_LARGE) {
       if (log) console.log("    ℹ [agy] Prompt exceeds Windows argv limit; delegating to staged chunked review (RFC-027-01)...");
+      stagedFallbackUsed = true;
       res = await executeStagedReview(changeSet, reviewAdapters.agy, {
-        runId,
+        runId: providerRunId,
         role: "agy",
         policyId: "TRI_PARTY_HETEROGENEOUS",
         timeoutMs,
         signal: userOptions.signal || null
       });
+      stagedChunkCount = Array.isArray(res?.receipts) ? res.receipts.length : null;
+      stagedTimeoutCount = Array.isArray(res?.receipts)
+        ? res.receipts.filter(r => r?.status === "timeout").length
+        : 0;
     }
     return res;
   };
@@ -572,7 +711,7 @@ export async function runDogfoodReview(userOptions = {}) {
 
   const tClaude0 = Date.now();
   const pClaude = reviewAdapters.claude.executeReview({
-    runId: `dogfood-${Date.now()}-claude`,
+    runId: `${runId}-claude`,
     role: "claude",
     changeSet,
     policyId: "TRI_PARTY_HETEROGENEOUS",
@@ -582,7 +721,7 @@ export async function runDogfoodReview(userOptions = {}) {
 
   const tCodex0 = Date.now();
   const pCodex = reviewAdapters.codex.executeReview({
-    runId: `dogfood-${Date.now()}-codex`,
+    runId: `${runId}-codex`,
     role: "codex",
     changeSet,
     policyId: "TRI_PARTY_HETEROGENEOUS",
@@ -642,11 +781,15 @@ export async function runDogfoodReview(userOptions = {}) {
   // 5. Verification & Telemetry Compilation
   if (log) console.log("\n[5/5] Compiling operational telemetry into dogfood-run.json...");
   let verificationRecord = null;
+  let verifierTimedOut = false;
   if (findings.length > 0) {
+    const instrumentedVerifier = instrumentVerifierAdapter(verifierAdapter, () => {
+      verifierTimedOut = true;
+    });
     verificationRecord = await conductIndependentVerification(
       changeSet,
       findings,
-      verifierAdapter,
+      instrumentedVerifier,
       {
         producerName: "tri-party-quorum",
         producerModel: "agy+claude+codex",
@@ -663,7 +806,11 @@ export async function runDogfoodReview(userOptions = {}) {
 
   const providerOutputs = [rawReports.agy, rawReports.claude, rawReports.codex];
   const malformedCount = providerOutputs.filter(r => r.executionStatus === "malformed_output").length;
-  const timeoutCount = providerOutputs.filter(r => r.executionStatus === "timeout").length;
+  const reviewerTimeoutCount =
+    providerOutputs.filter(r => r.executionStatus === "timeout").length +
+    stagedTimeoutCount;
+  const verifierTimeoutCount = verifierTimedOut ? 1 : 0;
+  const timeoutCount = reviewerTimeoutCount + verifierTimeoutCount;
   const authFailureCount = providerOutputs.filter(r => r.executionStatus === "auth_failure").length;
   const otherFailureCount = providerOutputs.filter(r => !["success", "empty"].includes(r.executionStatus)).length;
   const allProvidersSucceeded = providerOutputs.every(r => ["success", "empty"].includes(r.executionStatus));
@@ -674,13 +821,16 @@ export async function runDogfoodReview(userOptions = {}) {
     (!verificationAttempted || verificationRecord.ok === true);
 
   const dogfoodDoc = {
-    schemaVersion: "1.0.0",
-    runId: `dogfood-${Date.now()}`,
+    schemaVersion: "1.1.0",
+    runId,
+    executionMode: isLive ? "live" : "mock",
+    runStartedAt,
     timestamp: new Date().toISOString(),
     track: "Track D1: SHADOW_DOGFOOD",
     authority: "NONE (ADVISORY_ONLY)",
     triadFlowVersion: TOOL_VERSION,
     repository: {
+      name: repositoryName,
       commitSha,
       branch,
       base,
@@ -695,9 +845,9 @@ export async function runDogfoodReview(userOptions = {}) {
       excludedFiles: changeSet.excludedFiles || []
     },
     providerTelemetry: {
-      agy: buildProviderTelemetry(agyOut, rawReports.agy),
-      claude: buildProviderTelemetry(claudeOut, rawReports.claude),
-      codex: buildProviderTelemetry(codexOut, rawReports.codex)
+      agy: { ...buildProviderTelemetry(agyOut, rawReports.agy), stagedFallbackUsed },
+      claude: { ...buildProviderTelemetry(claudeOut, rawReports.claude), stagedFallbackUsed: false },
+      codex: { ...buildProviderTelemetry(codexOut, rawReports.codex), stagedFallbackUsed: false }
     },
     consensus: {
       verdict: consensus.verdict,
@@ -725,9 +875,13 @@ export async function runDogfoodReview(userOptions = {}) {
       avgProviderLatencyMs: Math.round((agyOut.latencyMs + claudeOut.latencyMs + codexOut.latencyMs) / 3),
       executionComplete: isExecutionComplete,
       malformedOutputCount: malformedCount,
+      reviewerTimeoutCount,
+      verifierTimeoutCount,
       timeoutCount,
       authFailureCount,
-      otherFailureCount
+      otherFailureCount,
+      stagedFallbackUsed,
+      chunkCount: stagedFallbackUsed ? stagedChunkCount : null
     },
     verificationRecord
   };
