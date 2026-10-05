@@ -12,19 +12,51 @@ const EXECUTION_MODES = new Set(["live", "mock"]);
 const FAMILY_RE = /^(?:NONE|[a-z0-9]+(?:-[a-z0-9]+)*)$/;
 const CYCLE_RE = /^CYCLE-[A-Z0-9][A-Z0-9._-]*$/;
 const SHA_RE = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i;
-const ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/;
-const ISO_UTC_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/;
+const ISO_RE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?(Z|([+-])(\d{2}):(\d{2}))$/;
 
 const num = (v, fallback = 0) => Number.isFinite(v) ? Number(v) : fallback;
 const sleepSync = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 
 export function parseStrictIso(value, label, { utc = false } = {}) {
-  if (typeof value !== "string" || !(utc ? ISO_UTC_RE : ISO_RE).test(value)) {
+  const match = typeof value === "string" ? ISO_RE.exec(value) : null;
+  if (!match || (utc && match[8] !== "Z")) {
     throw new Error(`${label} must use strict ISO-8601 syntax${utc ? " in UTC (Z)" : ""}`);
   }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  const second = Number(match[6]);
+  const offsetHour = match[8] === "Z" ? 0 : Number(match[10]);
+  const offsetMinute = match[8] === "Z" ? 0 : Number(match[11]);
+  const leap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+
+  if (
+    month < 1 || month > 12 ||
+    day < 1 || day > days[month - 1] ||
+    hour < 0 || hour > 23 ||
+    minute < 0 || minute > 59 ||
+    second < 0 || second > 59 ||
+    offsetHour < 0 || offsetHour > 23 ||
+    offsetMinute < 0 || offsetMinute > 59
+  ) {
+    throw new Error(`${label} must be a valid ISO-8601 calendar timestamp`);
+  }
+
   const ms = Date.parse(value);
   if (!Number.isFinite(ms)) throw new Error(`${label} must be a valid ISO-8601 timestamp`);
   return { ms, value: new Date(ms).toISOString() };
+}
+
+export function normalizeCommitSha(value) {
+  const sha = typeof value === "string" ? value.trim().toLowerCase() : "";
+  if (!SHA_RE.test(sha) || /^0+$/.test(sha)) {
+    throw new Error("Source commit must be a non-zero exact 40/64 hex SHA");
+  }
+  return sha;
 }
 
 export function parseArgs(argv = process.argv.slice(2)) {
@@ -139,10 +171,47 @@ function validateCanonicalAppend(prior, receipt) {
     prior.some(r =>
       r.countsTowardMaturity === true &&
       r?.repository?.name === receipt.repository.name &&
-      r?.repository?.commitSha === receipt.repository.commitSha
+      String(r?.repository?.commitSha || "").toLowerCase() === receipt.repository.commitSha
     )
   ) {
     throw new Error(`Canonical live change already recorded for ${receipt.repository.name}@${receipt.repository.commitSha}`);
+  }
+}
+
+function lockOwnerPid(lockPath) {
+  try {
+    const raw = fs.readFileSync(lockPath, "utf8").trim();
+    const parsed = Number(raw);
+    return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function processIsAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return err?.code === "EPERM";
+  }
+}
+
+function recoverStaleLedgerLock(lockPath) {
+  const observed = (() => {
+    try { return fs.readFileSync(lockPath, "utf8"); } catch { return null; }
+  })();
+  if (observed === null) return true;
+
+  const pid = lockOwnerPid(lockPath);
+  if (pid === null || processIsAlive(pid)) return false;
+
+  try {
+    if (fs.readFileSync(lockPath, "utf8") !== observed) return false;
+    fs.unlinkSync(lockPath);
+    return true;
+  } catch (err) {
+    return err?.code === "ENOENT";
   }
 }
 
@@ -158,6 +227,7 @@ function withLedgerLock(file, fn, timeoutMs = 5000) {
       fs.writeFileSync(fd, String(process.pid), "utf8");
     } catch (err) {
       if (err?.code !== "EEXIST") throw err;
+      if (recoverStaleLedgerLock(lockPath)) continue;
       if (Date.now() >= deadline) throw new Error(`Timed out waiting for canonical ledger lock: ${lockPath}`);
       sleepSync(10);
     }
@@ -218,10 +288,15 @@ export function buildCycleReceipt(run, m, prior = []) {
   }
 
   const repoName = String(m.repository || run?.repository?.name || "").trim();
-  const sha = String(run?.repository?.commitSha || "").trim();
   const branch = String(run?.repository?.branch || "").trim();
-  if (!repoName || !branch || !SHA_RE.test(sha)) {
-    throw new Error("Source run identity/provenance is incomplete: repository, branch, and exact 40/64 hex commit SHA are required");
+  let sha;
+  try {
+    sha = normalizeCommitSha(run?.repository?.commitSha);
+  } catch {
+    throw new Error("Source run identity/provenance is incomplete: repository, branch, and non-zero exact 40/64 hex commit SHA are required");
+  }
+  if (!repoName || !branch) {
+    throw new Error("Source run identity/provenance is incomplete: repository, branch, and non-zero exact 40/64 hex commit SHA are required");
   }
 
   const c = run.changeSetSummary || {};
@@ -232,7 +307,7 @@ export function buildCycleReceipt(run, m, prior = []) {
     prior.some(r =>
       r.countsTowardMaturity === true &&
       r?.repository?.name === repoName &&
-      r?.repository?.commitSha === sha
+      String(r?.repository?.commitSha || "").toLowerCase() === sha
     )
   ) {
     throw new Error(`Canonical live change already recorded for ${repoName}@${sha}`);
@@ -395,15 +470,66 @@ export function renderSummary(receipts) {
   return lines.join("\n");
 }
 
+function existingFileIdentity(file) {
+  try {
+    const stat = fs.statSync(file);
+    return { dev: stat.dev, ino: stat.ino, real: fs.realpathSync(file) };
+  } catch (err) {
+    if (err?.code === "ENOENT") return null;
+    throw err;
+  }
+}
+
+function symlinkTargetPath(file) {
+  try {
+    const stat = fs.lstatSync(file);
+    if (!stat.isSymbolicLink()) return null;
+    return path.resolve(path.dirname(file), fs.readlinkSync(file));
+  } catch (err) {
+    if (err?.code === "ENOENT") return null;
+    throw err;
+  }
+}
+
 function assertDistinctPaths(ledger, summary) {
   if (ledger === summary) {
     throw new Error("Canonical ledger and derived summary must use different paths");
+  }
+
+  const summaryTarget = symlinkTargetPath(summary);
+  if (summaryTarget && path.resolve(summaryTarget) === path.resolve(ledger)) {
+    throw new Error("Derived summary path aliases the canonical ledger");
+  }
+
+  const ledgerIdentity = existingFileIdentity(ledger);
+  const summaryIdentity = existingFileIdentity(summary);
+  if (
+    ledgerIdentity && summaryIdentity &&
+    (ledgerIdentity.real === summaryIdentity.real ||
+      (ledgerIdentity.dev === summaryIdentity.dev && ledgerIdentity.ino === summaryIdentity.ino))
+  ) {
+    throw new Error("Derived summary path aliases the canonical ledger");
   }
 }
 
 function writeSummary(summary, receipts) {
   fs.mkdirSync(path.dirname(summary), { recursive: true });
-  fs.writeFileSync(summary, renderSummary(receipts), "utf8");
+  const tmp = path.join(
+    path.dirname(summary),
+    `.${path.basename(summary)}.tmp-${process.pid}-${Date.now()}`
+  );
+  fs.writeFileSync(tmp, renderSummary(receipts), "utf8");
+  try {
+    fs.renameSync(tmp, summary);
+  } catch (err) {
+    if (!["EEXIST", "EPERM"].includes(err?.code)) throw err;
+    try { fs.unlinkSync(summary); } catch (unlinkErr) {
+      if (unlinkErr?.code !== "ENOENT") throw unlinkErr;
+    }
+    fs.renameSync(tmp, summary);
+  } finally {
+    try { if (fs.existsSync(tmp)) fs.unlinkSync(tmp); } catch {}
+  }
 }
 
 export function rebuildSummary(ledgerPath = DEFAULT_LEDGER, summaryPath = DEFAULT_SUMMARY) {
@@ -411,7 +537,9 @@ export function rebuildSummary(ledgerPath = DEFAULT_LEDGER, summaryPath = DEFAUL
   const summary = path.resolve(summaryPath);
   assertDistinctPaths(ledger, summary);
   return withLedgerLock(ledger, () => {
+    assertDistinctPaths(ledger, summary);
     const receipts = readLedger(ledger);
+    assertDistinctPaths(ledger, summary);
     writeSummary(summary, receipts);
     return receipts.length;
   });
@@ -450,9 +578,11 @@ export function recordCycle(o) {
   }
 
   return withLedgerLock(ledger, () => {
+    assertDistinctPaths(ledger, summary);
     const prior = readLedger(ledger);
     const receipt = buildCycleReceipt(run, metadata, prior);
     appendReceiptUnlocked(ledger, receipt, prior);
+    assertDistinctPaths(ledger, summary);
     writeSummary(summary, [...prior, receipt]);
     return receipt;
   });
