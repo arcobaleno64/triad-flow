@@ -975,8 +975,13 @@ test("Observation producer authority: genuine staged fallback is preserved expli
 test("Observation producer authority: report commit matches the actually reviewed --head ref", async () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-test-reviewed-head-"));
   const tmpOut = path.join(tmpDir, "dogfood-run.json");
-  const parentSha = execFileSync("git", ["rev-parse", "--verify", "HEAD^"], { encoding: "utf8" }).trim().toLowerCase();
-  const currentSha = execFileSync("git", ["rev-parse", "--verify", "HEAD"], { encoding: "utf8" }).trim().toLowerCase();
+  const originalCwd = process.cwd();
+
+  const git = (...args) => execFileSync("git", args, {
+    cwd: tmpDir,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"]
+  }).trim();
 
   const clean = (provider, family, model) => ({
     executeReview: async () => ({
@@ -989,13 +994,28 @@ test("Observation producer authority: report commit matches the actually reviewe
   });
 
   try {
+    git("init");
+    git("config", "user.email", "triad-flow-test@example.invalid");
+    git("config", "user.name", "Triad Flow Test");
+    fs.writeFileSync(path.join(tmpDir, "one.txt"), "one\n", "utf8");
+    git("add", "one.txt");
+    git("commit", "-m", "first");
+    const reviewedSha = git("rev-parse", "HEAD").toLowerCase();
+
+    fs.writeFileSync(path.join(tmpDir, "two.txt"), "two\n", "utf8");
+    git("add", "two.txt");
+    git("commit", "-m", "second");
+    const checkoutSha = git("rev-parse", "HEAD").toLowerCase();
+    assert.notEqual(reviewedSha, checkoutSha);
+
+    process.chdir(tmpDir);
     const report = await runDogfoodReview({
       live: true,
-      head: parentSha,
+      head: reviewedSha,
       changeSet: {
         ok: true,
         schemaVersion: "1.0.0",
-        repository: { headSha: parentSha },
+        repository: { headSha: reviewedSha },
         totalFiles: 1,
         totalAdditions: 1,
         totalDeletions: 0,
@@ -1011,10 +1031,11 @@ test("Observation producer authority: report commit matches the actually reviewe
       log: false
     });
 
-    assert.equal(report.repository.commitSha, parentSha);
-    assert.equal(report.repository.head, parentSha);
-    assert.notEqual(report.repository.commitSha, currentSha);
+    assert.equal(report.repository.commitSha, reviewedSha);
+    assert.equal(report.repository.head, reviewedSha);
+    assert.notEqual(report.repository.commitSha, checkoutSha);
   } finally {
+    process.chdir(originalCwd);
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 });
