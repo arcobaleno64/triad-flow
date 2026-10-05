@@ -13,30 +13,32 @@
 ## Scorecard
 
 - Ledger receipts: **1**
-- Maturity-counting cycles: **1 / 20–30**
+- Maturity-counting cycles: **0 / 20–30**
 - False advance: **0**
 - False hold: **0**
 - Timeout-cycle rate: **0.0%**
-- Average wall-clock latency: **194550 ms**
+- Average wall-clock latency: **0 ms**
 
 False-advance/false-hold rates use only binary autonomous Triad outcomes (`APPROVE` / `BLOCK`). `DEGRADED`, `INCOMPLETE`, and `HUMAN_REVIEW_REQUIRED` never enter those rates automatically.
+
+> **Legacy observation:** `CYCLE-0001` remains preserved as the first real live shadow observation, but it predates producer-authoritative `executionMode` and `runStartedAt`. It therefore does not count toward the 20–30 maturity denominator.
 
 ## Cycle Receipts
 
 | Cycle | Mode | Counts | Human | Triad | Discrepancy | Verify | Family | Recurrence | Escalation |
 |---|---|---:|---|---|---|---|---|---:|---|
-| CYCLE-0001 | live | yes | APPROVE | DEGRADED | NEUTRAL_DISAGREEMENT | SUCCESS | ledger-path-collision | 1 | NONE |
+| CYCLE-0001 | live | no | APPROVE | DEGRADED | NEUTRAL_DISAGREEMENT | SUCCESS | ledger-path-collision | 0 | NONE |
 
 ## Active Failure Families
 
 | Failure family | Qualifying occurrences |
 |---|---:|
-| ledger-path-collision | 1 |
+| _none yet_ | 0 |
 
 ## SHADOW -> ADVISORY Maturity Gate
 
 - [ ] At least 20 qualifying real change cycles (target range 20–30).
-- [x] No observed false advance in the qualifying sample.
+- [ ] No observed false advance in the qualifying sample.
 - [ ] No known systemic false-approve path.
 - [ ] No new P0/P1 authority, provenance, or coverage truthfulness family.
 - [ ] PASS / BLOCK / DEGRADED / INCOMPLETE / HUMAN_REVIEW_REQUIRED classification is operationally stable.
