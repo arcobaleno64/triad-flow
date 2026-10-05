@@ -243,3 +243,36 @@ test("summary false rates exclude DEGRADED and INCOMPLETE neutral outcomes", () 
   assert.match(md, /False advance: \*\*0\*\*/);
   assert.match(md, /False hold: \*\*0\*\*/);
 });
+
+test("ledger path cannot equal summary path to prevent canonical ledger overwrite", () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tf-cycle-collision-"));
+  try {
+    const source = path.join(tmp, "dogfood-run.json");
+    const target = path.join(tmp, "collision-file.txt");
+    const initialContent = '{"existing":"data"}\n';
+    fs.writeFileSync(source, JSON.stringify(baseRun()), "utf8");
+    fs.writeFileSync(target, initialContent, "utf8");
+
+    assert.throws(
+      () => recordCycle({
+        from: source,
+        cycleId: "CYCLE-COLLISION-0001",
+        executionMode: "live",
+        repository: "arcobaleno64/triad-flow",
+        human: "APPROVE",
+        humanFinalizedAt: "2026-10-04T01:00:00Z",
+        family: "NONE",
+        telemetryOnly: false,
+        ledger: target,
+        summary: target,
+        dryRun: false
+      }),
+      /Canonical ledger and derived summary must use different paths/
+    );
+
+    assert.equal(fs.readFileSync(target, "utf8"), initialContent);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+

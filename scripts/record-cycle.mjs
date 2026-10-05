@@ -214,6 +214,9 @@ export function recordCycle(o) {
   for (const k of ["from", "cycleId", "executionMode", "human", "humanFinalizedAt"]) if (!o[k]) throw new Error(`--${k.replace(/[A-Z]/g, x => `-${x.toLowerCase()}`)} is required`);
   const run = JSON.parse(fs.readFileSync(path.resolve(o.from), "utf8"));
   const ledger = path.resolve(o.ledger || DEFAULT_LEDGER), summary = path.resolve(o.summary || DEFAULT_SUMMARY);
+  if (ledger === summary) {
+    throw new Error("Canonical ledger and derived summary must use different paths");
+  }
   const prior = readLedger(ledger);
   const receipt = buildCycleReceipt(run, { cycleId:o.cycleId, executionMode:o.executionMode, sourceRunId:o.sourceRunId, repository:o.repository,
     prNumber:o.prNumber, humanDisposition:o.human, humanFinalizedAt:o.humanFinalizedAt, humanNotes:o.humanNotes,
