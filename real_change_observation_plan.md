@@ -100,7 +100,8 @@ interface CycleReceipt {
     name: string;
     commitSha: string;
     prNumber?: number;
-    branch: string;
+    branch: string | null;           // branch resolved from the reviewed head; null for an immutable/detached head
+    head?: string;                   // producer's reviewed ref, preserved when branch is null
     diffStat: { files: number; additions: number; deletions: number };
   };
 
@@ -327,9 +328,9 @@ The pre-closure observation contract is tightened as follows:
    - producer `executionMode === "live"`
    - real diff files > 0
    - human oracle timestamp strictly earlier than producer `runStartedAt`
-   - authoritative source run ID and exact 40- or 64-hex commit SHA.
+   - authoritative source run ID and non-zero exact 40- or 64-hex commit SHA, canonicalized to lowercase.
 
-4. Ledger writes serialize duplicate validation + append under an exclusive lock. Existing non-empty JSONL without a trailing LF receives a separator before the new record.
+4. Ledger writes serialize duplicate validation + append under an exclusive lock derived from the ledger's canonical filesystem path. Symlink aliases share that lock. Hard-linked ledgers are rejected before append because an inode has no unique canonical pathname; no separate lock registry is introduced. Existing non-empty JSONL without a trailing LF receives a separator before the new record. Owner-bearing locks recover only after the owner PID is dead; ambiguous ownerless locks are not reclaimed by age.
 
 5. `--rebuild-summary` regenerates the Markdown projection from the canonical ledger. The ledger remains authoritative if summary generation fails.
 
@@ -338,6 +339,11 @@ The pre-closure observation contract is tightened as follows:
    - unknown `chunkCount` is `null`.
    - staged fallback is read only from producer-preserved telemetry.
    - `timeoutCount` includes reviewer and independent-verifier timeout contributions.
+   - staged chunk timeouts contribute to `reviewerTimeoutCount`; nested verifier `execFn` timeouts contribute to `verifierTimeoutCount` even when the CLI adapter catches the exception.
+
+Producer provenance preserves the requested `--head` and resolves both commit SHA and branch from that ref. An immutable SHA or detached `HEAD` has `branch: null`; the recorder preserves the producer's head ref instead of inventing a branch. Source run IDs include a UUID so simultaneous reviews have distinct attempt identities.
+
+Repository identity remains producer-bound. The producer uses a canonical ChangeSet identity or Git remote identity, preferring `origin` and accepting a unique canonical identity from other remotes. Producer `--repository` supplies the identity for a remote-less repository or selects a matching identity when non-origin remotes are ambiguous; it cannot substitute a different resolved repository. Recorder overrides remain match-only checks. Empty estimated-cost inputs are rejected; an explicit numeric zero is valid. Calendar components are validated before timestamp parsing, including month length and leap years.
 
 ### CYCLE-0001 pre-closure disposition
 

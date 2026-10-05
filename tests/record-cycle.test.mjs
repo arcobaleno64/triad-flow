@@ -96,6 +96,27 @@ test("parseArgs accepts ingestion metadata and strict positive decimal PR syntax
   }
 });
 
+test("estimated cost rejects empty input while preserving an explicit zero", () => {
+  for (const value of ["", " ", "\t"]) {
+    assert.throws(() => parseArgs([`--estimated-cost-usd=${value}`]), /Invalid --estimated-cost-usd/);
+    assert.throws(() => parseArgs(["--estimated-cost-usd", value]), /Invalid --estimated-cost-usd/);
+  }
+  assert.equal(parseArgs(["--estimated-cost-usd=0"]).estimatedCostUsd, 0);
+  assert.equal(parseArgs(["--estimated-cost-usd", "0.25"]).estimatedCostUsd, 0.25);
+});
+
+test("detached reviewed head is preserved without fabricating a branch", () => {
+  const receipt = buildCycleReceipt(baseRun({
+    repository: { name: "arcobaleno64/triad-flow", commitSha: "a".repeat(40), branch: null, head: "a".repeat(40) }
+  }), meta());
+  assert.equal(receipt.repository.branch, null);
+  assert.equal(receipt.repository.head, "a".repeat(40));
+  assert.equal(receipt.countsTowardMaturity, true);
+  assert.throws(() => buildCycleReceipt(baseRun({
+    repository: { name: "arcobaleno64/triad-flow", commitSha: "a".repeat(40), branch: null }
+  }), meta()), /identity\/provenance is incomplete/);
+});
+
 test("strict ISO validation rejects parseable-but-non-ISO timestamp text", () => {
   assert.equal(parseStrictIso("2026-10-04T00:20:00Z", "t").value, "2026-10-04T00:20:00.000Z");
   assert.throws(() => parseStrictIso("October 4, 2026 00:20 UTC", "t"), /strict ISO-8601/);
@@ -104,6 +125,10 @@ test("strict ISO validation rejects parseable-but-non-ISO timestamp text", () =>
   assert.throws(() => parseStrictIso("2026-02-30T00:00:00Z", "t"), /valid ISO-8601 calendar timestamp/);
   assert.throws(() => parseStrictIso("2026-01-01T24:00:00Z", "t"), /valid ISO-8601 calendar timestamp/);
   assert.throws(() => parseStrictIso("2026-13-01T00:00:00Z", "t"), /valid ISO-8601 calendar timestamp/);
+  for (const invalid of ["2026-04-31T00:00:00Z", "1900-02-29T00:00:00Z", "2026-01-01T00:60:00Z", "2026-01-01T00:00:60Z"]) {
+    assert.throws(() => parseStrictIso(invalid, "t"), /valid ISO-8601 calendar timestamp/);
+  }
+  assert.equal(parseStrictIso("2000-02-29T08:00:00+08:00", "t").value, "2000-02-29T00:00:00.000Z");
 });
 
 test("truth table keeps binary false rates separate from abstention/escalation outcomes", () => {
@@ -226,6 +251,8 @@ test("commit identity is canonicalized before duplicate comparison", () => {
     meta({ cycleId: "CYCLE-CASE-RETRY" }),
     [first]
   ), /Canonical live change already recorded/);
+  const historicalUpper = { ...first, repository: { ...first.repository, commitSha: upper } };
+  assert.throws(() => buildCycleReceipt(baseRun(), meta({ cycleId: "CYCLE-HISTORICAL-CASE" }), [historicalUpper]), /Canonical live change already recorded/);
 });
 
 test("verificationStatus distinguishes not attempted, success, and failure", () => {
@@ -340,6 +367,98 @@ test("concurrent duplicate attempts serialize duplicate check plus append", asyn
   }
 });
 
+test("symlink ledger aliases serialize duplicate appends across processes", async (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tf-cycle-alias-lock-"));
+  const ledger = path.join(tmp, "ledger.jsonl");
+  const alias = path.join(tmp, "alias.jsonl");
+  const release = path.join(tmp, "release");
+  const children = [];
+  try {
+    fs.writeFileSync(ledger, "");
+    try { fs.symlinkSync(ledger, alias, "file"); }
+    catch (err) {
+      if (["EPERM", "EACCES"].includes(err?.code)) {
+        t.skip("Host does not permit file symlink creation");
+        return;
+      }
+      throw err;
+    }
+    const receipt = buildCycleReceipt(baseRun(), meta());
+    const scriptUrl = new URL("../scripts/record-cycle.mjs", import.meta.url).href;
+    const run = (file) => {
+      const child = spawn(process.execPath, ["--input-type=module", "-e", `
+        import fs from "node:fs";
+        import { appendReceipt } from ${JSON.stringify(scriptUrl)};
+        const pause = () => {
+          const deadline = Date.now() + 10000;
+          while (!fs.existsSync(${JSON.stringify(release)})) {
+            if (Date.now() > deadline) throw new Error("Test barrier timed out");
+            Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
+          }
+        };
+        const read = fs.readFileSync;
+        fs.readFileSync = function(file, ...args) {
+          const result = read.call(this, file, ...args);
+          if (String(file).endsWith(".jsonl")) { process.send("snapshot"); pause(); }
+          return result;
+        };
+        const link = fs.linkSync;
+        fs.linkSync = function(...args) {
+          try { return link.apply(this, args); }
+          catch (err) {
+            if (err.code === "EEXIST") { process.send("blocked"); pause(); }
+            throw err;
+          }
+        };
+        try { appendReceipt(${JSON.stringify(file)}, ${JSON.stringify(receipt)}); }
+        catch (err) { console.error(err.message); process.exitCode = 1; }
+        process.disconnect();
+      `], { stdio: ["ignore", "ignore", "pipe", "ipc"] });
+      const entry = { child, stderr: "" };
+      child.stderr.on("data", d => { entry.stderr += d; });
+      entry.signal = new Promise((resolve, reject) => {
+        child.once("message", resolve);
+        child.once("error", reject);
+        child.once("close", code => reject(new Error(`Child exited before barrier (${code}): ${entry.stderr}`)));
+      });
+      entry.done = new Promise(resolve => child.once("close", code => resolve({ code, stderr: entry.stderr })));
+      children.push(entry);
+      return entry;
+    };
+    const first = run(ledger);
+    assert.equal(await first.signal, "snapshot");
+    const second = run(alias);
+    assert.equal(await second.signal, "blocked", "Alias must wait while the canonical writer owns the lock");
+    fs.writeFileSync(release, "release");
+    const results = await Promise.all(children.map(c => c.done));
+    assert.deepEqual(results.map(r => r.code).sort(), [0, 1]);
+    assert.ok(results.some(r => /Duplicate cycleId rejected/.test(r.stderr)));
+    assert.equal(readLedger(ledger).length, 1);
+  } finally {
+    fs.writeFileSync(release, "release");
+    await Promise.all(children.map(c => c.done));
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("hard-linked ledgers fail closed before duplicate validation or append", () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tf-cycle-ledger-hardlink-"));
+  try {
+    const ledger = path.join(tmp, "ledger.jsonl");
+    const alias = path.join(tmp, "alias.jsonl");
+    fs.writeFileSync(ledger, "");
+    fs.linkSync(ledger, alias);
+    const receipt = buildCycleReceipt(baseRun(), meta());
+    for (const file of [ledger, alias]) {
+      assert.throws(() => appendReceipt(file, receipt), /hard.linked ledger/i);
+      assert.equal(fs.readFileSync(ledger, "utf8"), "");
+      assert.equal(fs.existsSync(`${file}.lock`), false);
+    }
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 test("stale crashed-owner ledger lock is recovered before append", () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tf-cycle-stale-lock-"));
   try {
@@ -349,6 +468,34 @@ test("stale crashed-owner ledger lock is recovered before append", () => {
     assert.equal(readLedger(ledger).length, 1);
     assert.equal(fs.existsSync(`${ledger}.lock`), false);
   } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("live PID:nonce owner is preserved and its lock recovers after process death", async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tf-cycle-crashed-process-"));
+  const ledger = path.join(tmp, "ledger.jsonl");
+  const child = spawn(process.execPath, ["--input-type=module", "-e", `
+    import fs from "node:fs";
+    import crypto from "node:crypto";
+    fs.writeFileSync(${JSON.stringify(`${ledger}.lock`)}, process.pid + ":" + crypto.randomUUID(), { flag: "wx" });
+    process.send("ready");
+    setInterval(() => {}, 1000);
+  `], { stdio: ["ignore", "ignore", "pipe", "ipc"] });
+  const exited = new Promise(resolve => child.once("close", resolve));
+  try {
+    await new Promise((resolve, reject) => { child.once("message", resolve); child.once("error", reject); child.once("close", () => reject(new Error("Owner exited before creating the lock"))); });
+    const owner = fs.readFileSync(`${ledger}.lock`, "utf8");
+    assert.equal(recoverStaleLedgerLock(`${ledger}.lock`), false);
+    assert.equal(fs.readFileSync(`${ledger}.lock`, "utf8"), owner);
+    child.kill();
+    await exited;
+    appendReceipt(ledger, buildCycleReceipt(baseRun(), meta()));
+    assert.equal(readLedger(ledger).length, 1);
+    assert.equal(fs.existsSync(`${ledger}.lock`), false);
+  } finally {
+    child.kill();
+    await exited;
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 });
@@ -377,6 +524,12 @@ test("hard-link summary alias to ledger is rejected without truncating canonical
     const before = fs.readFileSync(ledger, "utf8");
     fs.linkSync(ledger, summary);
     assert.throws(() => rebuildSummary(ledger, summary), /aliases the canonical ledger/);
+    const source = path.join(tmp, "run.json");
+    fs.writeFileSync(source, JSON.stringify(baseRun()));
+    assert.throws(() => recordCycle({
+      from: source, cycleId: "CYCLE-ALIAS", executionMode: "live", human: "APPROVE",
+      humanFinalizedAt: "2026-10-04T00:20:00Z", ledger, summary
+    }), /aliases the canonical ledger/);
     assert.equal(fs.readFileSync(ledger, "utf8"), before);
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
@@ -400,6 +553,12 @@ test("symlink summary alias to ledger is rejected without truncating canonical b
       throw err;
     }
     assert.throws(() => rebuildSummary(ledger, summary), /aliases the canonical ledger/);
+    const source = path.join(tmp, "run.json");
+    fs.writeFileSync(source, JSON.stringify(baseRun()));
+    assert.throws(() => recordCycle({
+      from: source, cycleId: "CYCLE-ALIAS", executionMode: "live", human: "APPROVE",
+      humanFinalizedAt: "2026-10-04T00:20:00Z", ledger, summary
+    }), /aliases the canonical ledger/);
     assert.equal(fs.readFileSync(ledger, "utf8"), before);
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });

@@ -56,15 +56,21 @@ export function getCurrentCommitSha() {
   return getCommitShaForRef("HEAD") || "0000000000000000000000000000000000000000";
 }
 
-export function getCurrentBranch() {
+export function getBranchForRef(ref = "HEAD") {
   try {
-    const out = execFileSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], {
+    const out = execFileSync("git", ["rev-parse", "--symbolic-full-name", ref], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"]
     }).trim();
-    if (out && !out.includes("\n") && out !== "HEAD") return out;
+    if (!out.includes("\n") && /^refs\/(heads|remotes)\//.test(out)) {
+      return out.replace(/^refs\/(heads|remotes)\//, "");
+    }
   } catch {}
-  return "main";
+  return null;
+}
+
+export function getCurrentBranch() {
+  return getBranchForRef("HEAD");
 }
 
 export function normalizeRepositoryIdentity(value) {
@@ -78,16 +84,32 @@ export function normalizeRepositoryIdentity(value) {
   return /^[a-z0-9_.-]+\/[a-z0-9_.-]+$/.test(normalized) ? normalized : null;
 }
 
-export function getRepositoryIdentityFromGit() {
+export function getRepositoryIdentityFromGit(requestedIdentity = null) {
+  let remotes;
   try {
-    const remote = execFileSync("git", ["remote", "get-url", "origin"], {
+    remotes = execFileSync("git", ["remote"], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"]
-    }).trim();
-    return normalizeRepositoryIdentity(remote);
+    }).trim().split(/\r?\n/).filter(Boolean);
   } catch {
     return null;
   }
+  const identities = new Set();
+  for (const remote of remotes) {
+    try {
+      const url = execFileSync("git", ["remote", "get-url", remote], {
+        encoding: "utf8", stdio: ["ignore", "pipe", "pipe"]
+      }).trim();
+      const identity = normalizeRepositoryIdentity(url);
+      if (identity && remote === "origin") return identity;
+      if (identity) identities.add(identity);
+    } catch {}
+  }
+  if (identities.size > 1) {
+    if (identities.has(requestedIdentity)) return requestedIdentity;
+    throw new Error("Ambiguous repository remotes: --repository must match a canonical remote identity");
+  }
+  return [...identities][0] || null;
 }
 
 export function parseArgs(argv = process.argv.slice(2)) {
@@ -123,6 +145,13 @@ export function parseArgs(argv = process.argv.slice(2)) {
       options.head = argv[++i];
     } else if (arg.startsWith("--head=")) {
       options.head = arg.slice("--head=".length);
+    } else if (arg === "--repository") {
+      if (i + 1 >= argv.length || argv[i + 1].startsWith("-")) {
+        throw new Error("Missing value for --repository");
+      }
+      options.repository = argv[++i];
+    } else if (arg.startsWith("--repository=")) {
+      options.repository = arg.slice("--repository=".length);
     } else if (arg === "--out") {
       if (i + 1 >= argv.length || argv[i + 1].startsWith("-")) {
         throw new Error("Missing value for --out");
@@ -171,6 +200,7 @@ Options:
   --mock              Execute review using deterministic simulation (default)
   --base <ref>        Git base reference to diff against (default: main)
   --head <ref>        Git head reference (default: HEAD)
+  --repository <id>   Canonical owner/repo for a repository without a resolvable remote; must match any resolved identity
   --out <file>        Output report path (default: dogfood-run.json)
   --timeout <ms>      Per-provider timeout in milliseconds (default: 300000 live / 30000 mock)
   --help, -h          Show this help message
@@ -466,7 +496,9 @@ export function instrumentVerifierAdapter(adapter, onTimeout) {
     get(target, prop, receiver) {
       const value = Reflect.get(target, prop, receiver);
       if (["executeVerification", "verify", "execFn"].includes(String(prop)) && typeof value === "function") {
-        return wrap(value, target);
+        // The CLI adapter catches execFn exceptions internally. Use its proxy
+        // as this so the nested execFn is observed before that catch runs.
+        return wrap(value, target instanceof CliVerifierAdapter ? receiver : target);
       }
       return value;
     }
@@ -478,7 +510,7 @@ export function instrumentVerifierAdapter(adapter, onTimeout) {
  */
 export async function runDogfoodReview(userOptions = {}) {
   const runStartedAt = new Date().toISOString();
-  const runId = `dogfood-${Date.now()}`;
+  const runId = `dogfood-${Date.now()}-${crypto.randomUUID()}`;
   const isLive = Boolean(userOptions.live);
   const isMock = !isLive;
   const base = userOptions.base || "main";
@@ -487,7 +519,7 @@ export async function runDogfoodReview(userOptions = {}) {
   const log = userOptions.log !== false;
   const outPath = path.resolve(userOptions.out || "dogfood-run.json");
 
-  const branch = getCurrentBranch();
+  const branch = getBranchForRef(head);
   const requestedHeadSha = getCommitShaForRef(head);
   if (!requestedHeadSha) {
     throw new Error(`Reviewed head ref '${head}' cannot be resolved to a non-zero commit SHA`);
@@ -531,11 +563,20 @@ export async function runDogfoodReview(userOptions = {}) {
     throw new Error(`Reviewed ChangeSet head SHA '${changeSetHeadSha}' does not match requested --head '${requestedHeadSha}'`);
   }
   const commitSha = requestedHeadSha;
-  const repositoryName =
+  const requestedRepository = userOptions.repository === undefined
+    ? null : normalizeRepositoryIdentity(userOptions.repository);
+  if (userOptions.repository !== undefined && !requestedRepository) {
+    throw new Error("--repository must use canonical owner/repo syntax");
+  }
+  const resolvedRepository =
     normalizeRepositoryIdentity(changeSet?.repository?.name) ||
-    getRepositoryIdentityFromGit();
+    getRepositoryIdentityFromGit(requestedRepository);
+  if (requestedRepository && resolvedRepository && requestedRepository !== resolvedRepository) {
+    throw new Error("Requested repository identity does not match the reviewed repository");
+  }
+  const repositoryName = resolvedRepository || requestedRepository;
   if (!repositoryName) {
-    throw new Error("Reviewed repository identity cannot be resolved to canonical owner/repo");
+    throw new Error("Reviewed repository identity cannot be resolved to canonical owner/repo; provide --repository");
   }
 
   const relOut = path.relative(process.cwd(), outPath).replace(/\\/g, "/");

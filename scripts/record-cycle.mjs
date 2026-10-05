@@ -15,7 +15,6 @@ const CYCLE_RE = /^CYCLE-[A-Z0-9][A-Z0-9._-]*$/;
 const SHA_RE = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i;
 const ISO_RE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?(Z|([+-])(\d{2}):(\d{2}))$/;
 
-const LOCK_OWNER_GRACE_MS = 1000;
 const num = (v, fallback = 0) => Number.isFinite(v) ? Number(v) : fallback;
 const sleepSync = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 
@@ -113,6 +112,7 @@ export function parseArgs(argv = process.argv.slice(2)) {
       value = parsed;
     }
     if (key === "estimated-cost-usd") {
+      if (!value.trim()) throw new Error("Invalid --estimated-cost-usd value: must not be empty");
       value = Number(value);
       if (!Number.isFinite(value) || value < 0) throw new Error("Invalid --estimated-cost-usd value");
     }
@@ -253,9 +253,28 @@ function tryCreateOwnedLock(lockPath) {
   }
 }
 
-function withLedgerLock(file, fn, timeoutMs = 5000) {
+function canonicalLedgerPath(file) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  const lockPath = `${file}.lock`;
+  try {
+    const stat = fs.statSync(file, { bigint: true });
+    // Hard links have no unique canonical pathname. Reject them rather than
+    // introduce a separate inode-lock registry for the append-only ledger.
+    if (stat.nlink > 1n) throw new Error("Hard-linked ledger is not supported; canonical ledger must have one filesystem name");
+    return fs.realpathSync(file);
+  } catch (err) {
+    if (err?.code !== "ENOENT") throw err;
+    try {
+      if (fs.lstatSync(file).isSymbolicLink()) throw new Error("Dangling ledger symlink cannot be locked canonically");
+    } catch (linkErr) {
+      if (linkErr?.code !== "ENOENT") throw linkErr;
+    }
+    return path.join(fs.realpathSync(path.dirname(file)), path.basename(file));
+  }
+}
+
+function withLedgerLock(file, fn, timeoutMs = 5000) {
+  const ledger = canonicalLedgerPath(file);
+  const lockPath = `${ledger}.lock`;
   const deadline = Date.now() + timeoutMs;
   let ownerToken = null;
 
@@ -268,7 +287,8 @@ function withLedgerLock(file, fn, timeoutMs = 5000) {
   }
 
   try {
-    return fn();
+    if (canonicalLedgerPath(ledger) !== ledger) throw new Error("Canonical ledger identity changed while acquiring lock");
+    return fn(ledger);
   } finally {
     try {
       if (fs.readFileSync(lockPath, "utf8").trim() === ownerToken) fs.unlinkSync(lockPath);
@@ -286,9 +306,9 @@ function appendReceiptUnlocked(file, receipt, prior) {
 }
 
 export function appendReceipt(file, receipt) {
-  return withLedgerLock(file, () => {
-    const prior = readLedger(file);
-    appendReceiptUnlocked(file, receipt, prior);
+  return withLedgerLock(file, ledger => {
+    const prior = readLedger(ledger);
+    appendReceiptUnlocked(ledger, receipt, prior);
     return [...prior, receipt];
   });
 }
@@ -333,15 +353,16 @@ export function buildCycleReceipt(run, m, prior = []) {
   if (m.repository !== undefined && normalizeRepositoryIdentity(m.repository) !== repoName) {
     throw new Error("Repository override rejected: receipt identity must come from source run");
   }
-  const branch = String(run?.repository?.branch || "").trim();
+  const branch = String(run?.repository?.branch || "").trim() || null;
+  const head = String(run?.repository?.head || "").trim() || null;
   let sha;
   try {
     sha = normalizeCommitSha(run?.repository?.commitSha);
   } catch {
-    throw new Error("Source run identity/provenance is incomplete: repository, branch, and non-zero exact 40/64 hex commit SHA are required");
+    throw new Error("Source run identity/provenance is incomplete: repository, branch or head ref, and non-zero exact 40/64 hex commit SHA are required");
   }
-  if (!repoName || !branch) {
-    throw new Error("Source run identity/provenance is incomplete: repository, branch, and non-zero exact 40/64 hex commit SHA are required");
+  if (!repoName || (!branch && !head)) {
+    throw new Error("Source run identity/provenance is incomplete: repository, branch or head ref, and non-zero exact 40/64 hex commit SHA are required");
   }
 
   const c = run.changeSetSummary || {};
@@ -405,6 +426,7 @@ export function buildCycleReceipt(run, m, prior = []) {
       commitSha: sha,
       ...(m.prNumber ? { prNumber: m.prNumber } : {}),
       branch,
+      ...(head ? { head } : {}),
       diffStat: { files, additions: num(c.totalAdditions), deletions: num(c.totalDeletions) }
     },
     humanDisposition: human,
@@ -584,10 +606,10 @@ export function rebuildSummary(ledgerPath = DEFAULT_LEDGER, summaryPath = DEFAUL
   const ledger = path.resolve(ledgerPath);
   const summary = path.resolve(summaryPath);
   assertDistinctPaths(ledger, summary);
-  return withLedgerLock(ledger, () => {
-    assertDistinctPaths(ledger, summary);
-    const receipts = readLedger(ledger);
-    assertDistinctPaths(ledger, summary);
+  return withLedgerLock(ledger, canonical => {
+    assertDistinctPaths(canonical, summary);
+    const receipts = readLedger(canonical);
+    assertDistinctPaths(canonical, summary);
     writeSummary(summary, receipts);
     return receipts.length;
   });
@@ -625,12 +647,12 @@ export function recordCycle(o) {
     return buildCycleReceipt(run, metadata, readLedger(ledger));
   }
 
-  return withLedgerLock(ledger, () => {
-    assertDistinctPaths(ledger, summary);
-    const prior = readLedger(ledger);
+  return withLedgerLock(ledger, canonical => {
+    assertDistinctPaths(canonical, summary);
+    const prior = readLedger(canonical);
     const receipt = buildCycleReceipt(run, metadata, prior);
-    appendReceiptUnlocked(ledger, receipt, prior);
-    assertDistinctPaths(ledger, summary);
+    appendReceiptUnlocked(canonical, receipt, prior);
+    assertDistinctPaths(canonical, summary);
     writeSummary(summary, [...prior, receipt]);
     return receipt;
   });
