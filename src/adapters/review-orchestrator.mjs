@@ -12,7 +12,7 @@ import { evaluateDiffScale } from "../core/graph-router.mjs";
 import { aggregateConsensus } from "../core/loop.mjs";
 import { evaluateGateDecision } from "../core/harness.mjs";
 import { convertProviderResultToSentryReport } from "./provider-contract.mjs";
-import { normalizeCanonicalPath } from "../core/scoring.mjs";
+import { evaluateCoverageContract, COVERAGE_OMISSION_CODES } from "./staged-review.mjs";
 
 function isCoverageComplete(changeSet, providerResult) {
   if (!providerResult || !providerResult.ok) return false;
@@ -21,23 +21,20 @@ function isCoverageComplete(changeSet, providerResult) {
   const coverage = providerResult.coverage;
   if (!coverage) return false;
 
-  if (Array.isArray(coverage.omittedFiles) && coverage.omittedFiles.length > 0) {
-    return false;
-  }
+  const coveredFiles = Array.isArray(coverage.coveredFiles) ? coverage.coveredFiles : [];
+  const omittedFiles = Array.isArray(coverage.omittedFiles) ? coverage.omittedFiles : [];
 
-  const coveredList = Array.isArray(coverage.coveredFiles)
-    ? coverage.coveredFiles.map(f => normalizeCanonicalPath(f))
-    : [];
-  const coveredSet = new Set(coveredList);
+  const coverageEval = evaluateCoverageContract(changeSet, coveredFiles, omittedFiles);
+  if (!coverageEval.isComplete) return false;
 
-  for (const f of changeSet.files) {
-    const normPath = normalizeCanonicalPath(f.path);
-    if (!coveredSet.has(normPath)) {
-      return false;
-    }
-  }
+  // In non-staged review, size-limit or timeout omissions indicate incomplete execution
+  // (files exceeding context budget require staged review / chunking).
+  const hasIncompleteOmission = omittedFiles.some(o => {
+    const code = (o && typeof o === "object" && typeof o.code === "string") ? o.code.trim() : "";
+    return code === COVERAGE_OMISSION_CODES.SIZE_LIMIT || code === COVERAGE_OMISSION_CODES.TIMEOUT;
+  });
 
-  return true;
+  return !hasIncompleteOmission;
 }
 
 export async function orchestrateReview(changeSet, adapters = {}, options = {}) {
