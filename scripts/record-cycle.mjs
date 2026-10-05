@@ -14,6 +14,7 @@ const CYCLE_RE = /^CYCLE-[A-Z0-9][A-Z0-9._-]*$/;
 const SHA_RE = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i;
 const ISO_RE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?(Z|([+-])(\d{2}):(\d{2}))$/;
 
+const LOCK_OWNER_GRACE_MS = 1000;
 const num = (v, fallback = 0) => Number.isFinite(v) ? Number(v) : fallback;
 const sleepSync = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 
@@ -204,7 +205,16 @@ function recoverStaleLedgerLock(lockPath) {
   if (observed === null) return true;
 
   const pid = lockOwnerPid(lockPath);
-  if (pid === null || processIsAlive(pid)) return false;
+  if (pid !== null && processIsAlive(pid)) return false;
+
+  if (pid === null) {
+    try {
+      const ageMs = Date.now() - fs.statSync(lockPath).mtimeMs;
+      if (ageMs < LOCK_OWNER_GRACE_MS) return false;
+    } catch (err) {
+      return err?.code === "ENOENT";
+    }
+  }
 
   try {
     if (fs.readFileSync(lockPath, "utf8") !== observed) return false;
