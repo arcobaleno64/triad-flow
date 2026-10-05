@@ -12,32 +12,33 @@ import { evaluateDiffScale } from "../core/graph-router.mjs";
 import { aggregateConsensus } from "../core/loop.mjs";
 import { evaluateGateDecision } from "../core/harness.mjs";
 import { convertProviderResultToSentryReport } from "./provider-contract.mjs";
-import { normalizeCanonicalPath } from "../core/scoring.mjs";
+import { evaluateCoverageContract, COVERAGE_OMISSION_CODES } from "./staged-review.mjs";
 
 function isCoverageComplete(changeSet, providerResult) {
   if (!providerResult || !providerResult.ok) return false;
   if (!changeSet || !Array.isArray(changeSet.files)) return false;
 
   const coverage = providerResult.coverage;
-  if (!coverage) return false;
+  if (!coverage || typeof coverage !== "object") return false;
 
-  if (Array.isArray(coverage.omittedFiles) && coverage.omittedFiles.length > 0) {
+  if (!Array.isArray(coverage.coveredFiles) || !Array.isArray(coverage.omittedFiles)) {
     return false;
   }
 
-  const coveredList = Array.isArray(coverage.coveredFiles)
-    ? coverage.coveredFiles.map(f => normalizeCanonicalPath(f))
-    : [];
-  const coveredSet = new Set(coveredList);
+  const coveredFiles = coverage.coveredFiles;
+  const omittedFiles = coverage.omittedFiles;
 
-  for (const f of changeSet.files) {
-    const normPath = normalizeCanonicalPath(f.path);
-    if (!coveredSet.has(normPath)) {
-      return false;
-    }
-  }
+  const coverageEval = evaluateCoverageContract(changeSet, coveredFiles, omittedFiles);
+  if (!coverageEval.isComplete) return false;
 
-  return true;
+  // In non-staged review, size-limit or timeout omissions indicate incomplete execution
+  // (files exceeding context budget require staged review / chunking).
+  // Read from the sanitized declaration to avoid re-invoking stateful or throwing getters.
+  const hasIncompleteOmission = (coverageEval.declaration?.omittedFiles || []).some(o => {
+    return o && (o.code === COVERAGE_OMISSION_CODES.SIZE_LIMIT || o.code === COVERAGE_OMISSION_CODES.TIMEOUT);
+  });
+
+  return !hasIncompleteOmission;
 }
 
 export async function orchestrateReview(changeSet, adapters = {}, options = {}) {
