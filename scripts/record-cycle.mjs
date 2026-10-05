@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import fs from "node:fs";
 import path from "node:path";
+import crypto from "node:crypto";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
 
@@ -58,6 +59,20 @@ export function normalizeCommitSha(value) {
     throw new Error("Source commit must be a non-zero exact 40/64 hex SHA");
   }
   return sha;
+}
+
+export function normalizeRepositoryIdentity(value) {
+  const raw = typeof value === "string" ? value.trim().replace(/\\/g, "/") : "";
+  const normalized = raw.replace(/^https?:\/\/github\.com\//i, "")
+    .replace(/^ssh:\/\/git@github\.com\//i, "")
+    .replace(/^git@github\.com:/i, "")
+    .replace(/\.git$/i, "")
+    .replace(/^\/+|\/+$/g, "")
+    .toLowerCase();
+  if (!/^[a-z0-9_.-]+\/[a-z0-9_.-]+$/.test(normalized)) {
+    throw new Error("Repository identity must be canonical owner/repo syntax");
+  }
+  return normalized;
 }
 
 export function parseArgs(argv = process.argv.slice(2)) {
@@ -171,7 +186,10 @@ function validateCanonicalAppend(prior, receipt) {
     receipt.countsTowardMaturity === true &&
     prior.some(r =>
       r.countsTowardMaturity === true &&
-      r?.repository?.name === receipt.repository.name &&
+      (() => {
+        try { return normalizeRepositoryIdentity(r?.repository?.name) === receipt.repository.name; }
+        catch { return false; }
+      })() &&
       String(r?.repository?.commitSha || "").toLowerCase() === receipt.repository.commitSha
     )
   ) {
@@ -179,14 +197,11 @@ function validateCanonicalAppend(prior, receipt) {
   }
 }
 
-function lockOwnerPid(lockPath) {
-  try {
-    const raw = fs.readFileSync(lockPath, "utf8").trim();
-    const parsed = Number(raw);
-    return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
-  } catch {
-    return null;
-  }
+function parseLockOwner(raw) {
+  const match = typeof raw === "string" ? /^(\d+):([a-f0-9-]+)$/i.exec(raw.trim()) : null;
+  if (!match) return null;
+  const pid = Number(match[1]);
+  return Number.isSafeInteger(pid) && pid > 0 ? { pid, token: raw.trim() } : null;
 }
 
 function processIsAlive(pid) {
@@ -198,23 +213,17 @@ function processIsAlive(pid) {
   }
 }
 
-function recoverStaleLedgerLock(lockPath) {
-  const observed = (() => {
-    try { return fs.readFileSync(lockPath, "utf8"); } catch { return null; }
-  })();
-  if (observed === null) return true;
-
-  const pid = lockOwnerPid(lockPath);
-  if (pid !== null && processIsAlive(pid)) return false;
-
-  if (pid === null) {
-    try {
-      const ageMs = Date.now() - fs.statSync(lockPath).mtimeMs;
-      if (ageMs < LOCK_OWNER_GRACE_MS) return false;
-    } catch (err) {
-      return err?.code === "ENOENT";
-    }
+export function recoverStaleLedgerLock(lockPath) {
+  let observed;
+  try {
+    observed = fs.readFileSync(lockPath, "utf8");
+  } catch (err) {
+    return err?.code === "ENOENT";
   }
+
+  const owner = parseLockOwner(observed);
+  if (!owner) return false;
+  if (processIsAlive(owner.pid)) return false;
 
   try {
     if (fs.readFileSync(lockPath, "utf8") !== observed) return false;
@@ -225,29 +234,47 @@ function recoverStaleLedgerLock(lockPath) {
   }
 }
 
+function tryCreateOwnedLock(lockPath) {
+  const token = `${process.pid}:${crypto.randomUUID()}`;
+  const tempPath = `${lockPath}.owner-${token.replace(":", "-")}`;
+  try {
+    fs.writeFileSync(tempPath, token, { encoding: "utf8", flag: "wx" });
+    try {
+      fs.linkSync(tempPath, lockPath);
+      return token;
+    } catch (err) {
+      if (err?.code === "EEXIST") return null;
+      throw err;
+    }
+  } finally {
+    try { fs.unlinkSync(tempPath); } catch (err) {
+      if (err?.code !== "ENOENT") throw err;
+    }
+  }
+}
+
 function withLedgerLock(file, fn, timeoutMs = 5000) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const lockPath = `${file}.lock`;
   const deadline = Date.now() + timeoutMs;
-  let fd = null;
+  let ownerToken = null;
 
-  while (fd === null) {
-    try {
-      fd = fs.openSync(lockPath, "wx");
-      fs.writeFileSync(fd, String(process.pid), "utf8");
-    } catch (err) {
-      if (err?.code !== "EEXIST") throw err;
-      if (recoverStaleLedgerLock(lockPath)) continue;
-      if (Date.now() >= deadline) throw new Error(`Timed out waiting for canonical ledger lock: ${lockPath}`);
-      sleepSync(10);
-    }
+  while (ownerToken === null) {
+    ownerToken = tryCreateOwnedLock(lockPath);
+    if (ownerToken !== null) break;
+    if (recoverStaleLedgerLock(lockPath)) continue;
+    if (Date.now() >= deadline) throw new Error(`Timed out waiting for canonical ledger lock: ${lockPath}`);
+    sleepSync(10);
   }
 
   try {
     return fn();
   } finally {
-    try { fs.closeSync(fd); } catch {}
-    try { fs.unlinkSync(lockPath); } catch {}
+    try {
+      if (fs.readFileSync(lockPath, "utf8").trim() === ownerToken) fs.unlinkSync(lockPath);
+    } catch (err) {
+      if (err?.code !== "ENOENT") throw err;
+    }
   }
 }
 
@@ -297,7 +324,15 @@ export function buildCycleReceipt(run, m, prior = []) {
     throw new Error("sourceRunId override rejected: receipt identity must come from source run");
   }
 
-  const repoName = String(m.repository || run?.repository?.name || "").trim();
+  let repoName;
+  try {
+    repoName = normalizeRepositoryIdentity(run?.repository?.name);
+  } catch {
+    throw new Error("Source run requires an authoritative canonical repository identity");
+  }
+  if (m.repository !== undefined && normalizeRepositoryIdentity(m.repository) !== repoName) {
+    throw new Error("Repository override rejected: receipt identity must come from source run");
+  }
   const branch = String(run?.repository?.branch || "").trim();
   let sha;
   try {
@@ -316,7 +351,10 @@ export function buildCycleReceipt(run, m, prior = []) {
     counts &&
     prior.some(r =>
       r.countsTowardMaturity === true &&
-      r?.repository?.name === repoName &&
+      (() => {
+        try { return normalizeRepositoryIdentity(r?.repository?.name) === repoName; }
+        catch { return false; }
+      })() &&
       String(r?.repository?.commitSha || "").toLowerCase() === sha
     )
   ) {
