@@ -99,6 +99,9 @@ test("strict ISO validation rejects parseable-but-non-ISO timestamp text", () =>
   assert.throws(() => parseStrictIso("October 4, 2026 00:20 UTC", "t"), /strict ISO-8601/);
   assert.throws(() => parseStrictIso("2026-10-04 00:20:00Z", "t"), /strict ISO-8601/);
   assert.throws(() => parseStrictIso("2026-10-04T00:20:00+08:00", "t", { utc: true }), /UTC/);
+  assert.throws(() => parseStrictIso("2026-02-30T00:00:00Z", "t"), /valid ISO-8601 calendar timestamp/);
+  assert.throws(() => parseStrictIso("2026-01-01T24:00:00Z", "t"), /valid ISO-8601 calendar timestamp/);
+  assert.throws(() => parseStrictIso("2026-13-01T00:00:00Z", "t"), /valid ISO-8601 calendar timestamp/);
 });
 
 test("truth table keeps binary false rates separate from abstention/escalation outcomes", () => {
@@ -156,7 +159,7 @@ test("commit provenance accepts exactly 40 or 64 hex chars", () => {
     meta({ cycleId: "CYCLE-0064" })
   );
   assert.equal(sixtyFour.repository.commitSha.length, 64);
-  for (const bad of ["c".repeat(39), "c".repeat(41), "c".repeat(63), "c".repeat(65), "g".repeat(40)]) {
+  for (const bad of ["0".repeat(40), "0".repeat(64), "c".repeat(39), "c".repeat(41), "c".repeat(63), "c".repeat(65), "g".repeat(40)]) {
     assert.throws(
       () => buildCycleReceipt(baseRun({ repository: { commitSha: bad, branch: "bad" } }), meta({ cycleId: `CYCLE-BAD-${bad.length}` })),
       /40\/64 hex commit SHA/
@@ -180,6 +183,19 @@ test("same live change cannot enter maturity ledger twice under a different cycl
   assert.throws(() => buildCycleReceipt(
     baseRun({ runId: "dogfood-source-retry" }),
     meta({ cycleId: "CYCLE-RETRY-0001" }),
+    [first]
+  ), /Canonical live change already recorded/);
+});
+
+test("commit identity is canonicalized before duplicate comparison", () => {
+  const first = buildCycleReceipt(baseRun(), meta());
+  const upper = "A".repeat(40);
+  assert.throws(() => buildCycleReceipt(
+    baseRun({
+      runId: "dogfood-source-case-retry",
+      repository: { commitSha: upper, branch: "feature/example" }
+    }),
+    meta({ cycleId: "CYCLE-CASE-RETRY" }),
     [first]
   ), /Canonical live change already recorded/);
 });
@@ -291,6 +307,57 @@ test("concurrent duplicate attempts serialize duplicate check plus append", asyn
     assert.deepEqual(results.map(r => r.code).sort(), [0, 1]);
     assert.equal(readLedger(ledger).length, 1);
     assert.ok(results.some(r => /Duplicate cycleId rejected/.test(r.stderr)));
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("stale crashed-owner ledger lock is recovered before append", () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tf-cycle-stale-lock-"));
+  try {
+    const ledger = path.join(tmp, "dogfood-receipts.jsonl");
+    fs.writeFileSync(`${ledger}.lock`, "2147483647", "utf8");
+    appendReceipt(ledger, buildCycleReceipt(baseRun(), meta()));
+    assert.equal(readLedger(ledger).length, 1);
+    assert.equal(fs.existsSync(`${ledger}.lock`), false);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("hard-link summary alias to ledger is rejected without truncating canonical bytes", () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tf-cycle-hardlink-"));
+  try {
+    const ledger = path.join(tmp, "ledger.jsonl");
+    const summary = path.join(tmp, "summary.md");
+    appendReceipt(ledger, buildCycleReceipt(baseRun(), meta()));
+    const before = fs.readFileSync(ledger, "utf8");
+    fs.linkSync(ledger, summary);
+    assert.throws(() => rebuildSummary(ledger, summary), /aliases the canonical ledger/);
+    assert.equal(fs.readFileSync(ledger, "utf8"), before);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("symlink summary alias to ledger is rejected without truncating canonical bytes", (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tf-cycle-symlink-"));
+  try {
+    const ledger = path.join(tmp, "ledger.jsonl");
+    const summary = path.join(tmp, "summary.md");
+    appendReceipt(ledger, buildCycleReceipt(baseRun(), meta()));
+    const before = fs.readFileSync(ledger, "utf8");
+    try {
+      fs.symlinkSync(ledger, summary, "file");
+    } catch (err) {
+      if (["EPERM", "EACCES"].includes(err?.code)) {
+        t.skip("Host does not permit file symlink creation");
+        return;
+      }
+      throw err;
+    }
+    assert.throws(() => rebuildSummary(ledger, summary), /aliases the canonical ledger/);
+    assert.equal(fs.readFileSync(ledger, "utf8"), before);
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
