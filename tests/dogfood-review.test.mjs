@@ -58,7 +58,10 @@ test("Dogfood Contract 2: runDogfoodReview in mock mode executes and generates d
       log: false
     });
 
-    assert.equal(report.schemaVersion, "1.0.0");
+    assert.equal(report.schemaVersion, "1.1.0");
+    assert.equal(report.executionMode, "mock");
+    assert.match(report.runStartedAt, /^\\d{4}-\\d{2}-\\d{2}T.*Z$/);
+    assert.ok(report.runId.startsWith("dogfood-"));
     assert.equal(report.track, "Track D1: SHADOW_DOGFOOD");
     assert.equal(report.authority, "NONE (ADVISORY_ONLY)");
     assert.ok(fs.existsSync(tmpOut));
@@ -712,6 +715,9 @@ test("RB2-B: Verifier timeout results in verificationRecord.ok === false and exe
     assert.equal(report.verificationRecord.ok, false);
     assert.equal(report.consensus.quorumReached, true);
     assert.equal(report.telemetryMetrics.executionComplete, false);
+    assert.equal(report.telemetryMetrics.reviewerTimeoutCount, 0);
+    assert.equal(report.telemetryMetrics.verifierTimeoutCount, 1);
+    assert.equal(report.telemetryMetrics.timeoutCount, 1);
   } finally {
     try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
   }
@@ -849,3 +855,118 @@ test("RB2-E: Zero consensus findings means verificationRecord === null and prese
   }
 });
 
+
+
+test("Observation producer authority: runStartedAt precedes every reviewer invocation", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-test-producer-authority-"));
+  const tmpOut = path.join(tmpDir, "dogfood-run.json");
+  let firstInvocationAt = Number.POSITIVE_INFINITY;
+
+  const makeAdapter = (provider, family, model) => ({
+    executeReview: async () => {
+      firstInvocationAt = Math.min(firstInvocationAt, Date.now());
+      return {
+        ok: true,
+        executionStatus: "success",
+        findings: [],
+        coverage: { coveredFiles: ["scripts/example.mjs"], omittedFiles: [] },
+        providerIdentity: { provider, family, model }
+      };
+    }
+  });
+
+  try {
+    const report = await runDogfoodReview({
+      live: true,
+      changeSet: {
+        ok: true,
+        schemaVersion: "1.0.0",
+        totalFiles: 1,
+        totalAdditions: 1,
+        totalDeletions: 0,
+        files: [{ path: "scripts/example.mjs", additions: 1, deletions: 0, riskTier: 2 }],
+        diffHunks: "diff --git a/scripts/example.mjs b/scripts/example.mjs\n--- a/scripts/example.mjs\n+++ b/scripts/example.mjs\n@@ -0,0 +1 @@\n+export const x = 1;"
+      },
+      reviewAdapters: {
+        agy: makeAdapter("agy", "google", "gemini-3.8-flash"),
+        claude: makeAdapter("claude", "anthropic", "claude-5.5-sonnet"),
+        codex: makeAdapter("codex", "openai", "gpt-6.1-sol")
+      },
+      out: tmpOut,
+      log: false
+    });
+
+    assert.equal(report.executionMode, "live");
+    assert.match(report.runStartedAt, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+    assert.ok(Date.parse(report.runStartedAt) <= firstInvocationAt);
+    assert.ok(report.runId.startsWith("dogfood-"));
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("Observation producer authority: genuine staged fallback is preserved explicitly", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-test-staged-signal-"));
+  const tmpOut = path.join(tmpDir, "dogfood-run.json");
+  let agyCalls = 0;
+
+  const agy = {
+    executeReview: async ({ changeSet }) => {
+      agyCalls++;
+      if (agyCalls === 1) {
+        return {
+          ok: false,
+          executionStatus: EXECUTION_STATUS.PAYLOAD_TOO_LARGE,
+          error: "input prompt too large",
+          providerIdentity: { provider: "agy", family: "google", model: "gemini-3.8-flash" }
+        };
+      }
+      return {
+        ok: true,
+        executionStatus: "success",
+        findings: [],
+        coverage: { coveredFiles: (changeSet.files || []).map(f => f.path), omittedFiles: [] },
+        providerIdentity: { provider: "agy", family: "google", model: "gemini-3.8-flash" }
+      };
+    }
+  };
+  const clean = (provider, family, model) => ({
+    executeReview: async () => ({
+      ok: true,
+      executionStatus: "success",
+      findings: [],
+      coverage: { coveredFiles: ["scripts/example.mjs"], omittedFiles: [] },
+      providerIdentity: { provider, family, model }
+    })
+  });
+
+  try {
+    const report = await runDogfoodReview({
+      live: true,
+      changeSet: {
+        ok: true,
+        schemaVersion: "1.0.0",
+        totalFiles: 1,
+        totalAdditions: 1,
+        totalDeletions: 0,
+        files: [{ path: "scripts/example.mjs", additions: 1, deletions: 0, riskTier: 2 }],
+        diffHunks: "diff --git a/scripts/example.mjs b/scripts/example.mjs\n--- a/scripts/example.mjs\n+++ b/scripts/example.mjs\n@@ -0,0 +1 @@\n+export const x = 1;"
+      },
+      reviewAdapters: {
+        agy,
+        claude: clean("claude", "anthropic", "claude-5.5-sonnet"),
+        codex: clean("codex", "openai", "gpt-6.1-sol")
+      },
+      out: tmpOut,
+      log: false
+    });
+
+    assert.ok(agyCalls >= 2);
+    assert.equal(report.telemetryMetrics.stagedFallbackUsed, true);
+    assert.equal(report.providerTelemetry.agy.stagedFallbackUsed, true);
+    assert.ok(Number.isInteger(report.telemetryMetrics.chunkCount));
+    assert.ok(report.telemetryMetrics.chunkCount >= 1);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
