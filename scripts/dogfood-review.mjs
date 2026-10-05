@@ -67,6 +67,29 @@ export function getCurrentBranch() {
   return "main";
 }
 
+export function normalizeRepositoryIdentity(value) {
+  const raw = typeof value === "string" ? value.trim().replace(/\\/g, "/") : "";
+  const normalized = raw.replace(/^https?:\/\/github\.com\//i, "")
+    .replace(/^ssh:\/\/git@github\.com\//i, "")
+    .replace(/^git@github\.com:/i, "")
+    .replace(/\.git$/i, "")
+    .replace(/^\/+|\/+$/g, "")
+    .toLowerCase();
+  return /^[a-z0-9_.-]+\/[a-z0-9_.-]+$/.test(normalized) ? normalized : null;
+}
+
+export function getRepositoryIdentityFromGit() {
+  try {
+    const remote = execFileSync("git", ["remote", "get-url", "origin"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"]
+    }).trim();
+    return normalizeRepositoryIdentity(remote);
+  } catch {
+    return null;
+  }
+}
+
 export function parseArgs(argv = process.argv.slice(2)) {
   const options = {
     help: false,
@@ -430,6 +453,15 @@ function instrumentVerifierAdapter(adapter, onTimeout) {
   if (typeof adapter === "function") return wrap(adapter, null);
   if (!adapter || typeof adapter !== "object") return adapter;
 
+  if (
+    typeof adapter.command === "string" &&
+    typeof adapter.executeVerification !== "function" &&
+    typeof adapter.verify !== "function" &&
+    typeof adapter.execFn !== "function"
+  ) {
+    return instrumentVerifierAdapter(new CliVerifierAdapter(adapter), onTimeout);
+  }
+
   return new Proxy(adapter, {
     get(target, prop, receiver) {
       const value = Reflect.get(target, prop, receiver);
@@ -499,6 +531,12 @@ export async function runDogfoodReview(userOptions = {}) {
     throw new Error(`Reviewed ChangeSet head SHA '${changeSetHeadSha}' does not match requested --head '${requestedHeadSha}'`);
   }
   const commitSha = requestedHeadSha;
+  const repositoryName =
+    normalizeRepositoryIdentity(changeSet?.repository?.name) ||
+    getRepositoryIdentityFromGit();
+  if (!repositoryName) {
+    throw new Error("Reviewed repository identity cannot be resolved to canonical owner/repo");
+  }
 
   const relOut = path.relative(process.cwd(), outPath).replace(/\\/g, "/");
   changeSet = filterChangeSetExclusions(changeSet, [relOut]);
@@ -751,6 +789,7 @@ export async function runDogfoodReview(userOptions = {}) {
     authority: "NONE (ADVISORY_ONLY)",
     triadFlowVersion: TOOL_VERSION,
     repository: {
+      name: repositoryName,
       commitSha,
       branch,
       base,
