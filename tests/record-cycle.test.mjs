@@ -12,6 +12,7 @@ import {
   parseStrictIso,
   readLedger,
   rebuildSummary,
+  recoverStaleLedgerLock,
   recordCycle,
   recurrenceCount,
   renderSummary,
@@ -27,6 +28,7 @@ function baseRun(overrides = {}) {
     runStartedAt: "2026-10-04T00:30:00.000Z",
     timestamp: "2026-10-04T02:00:00.000Z",
     repository: {
+      name: "arcobaleno64/triad-flow",
       commitSha: "a".repeat(40),
       branch: "feature/example"
     },
@@ -155,13 +157,13 @@ test("sourceRunId comes from source and override attempts fail closed", () => {
 test("commit provenance accepts exactly 40 or 64 hex chars", () => {
   assert.equal(buildCycleReceipt(baseRun(), meta()).repository.commitSha.length, 40);
   const sixtyFour = buildCycleReceipt(
-    baseRun({ repository: { commitSha: "b".repeat(64), branch: "feature/sha256" } }),
+    baseRun({ repository: { name: "arcobaleno64/triad-flow", commitSha: "b".repeat(64), branch: "feature/sha256" } }),
     meta({ cycleId: "CYCLE-0064" })
   );
   assert.equal(sixtyFour.repository.commitSha.length, 64);
   for (const bad of ["0".repeat(40), "0".repeat(64), "c".repeat(39), "c".repeat(41), "c".repeat(63), "c".repeat(65), "g".repeat(40)]) {
     assert.throws(
-      () => buildCycleReceipt(baseRun({ repository: { commitSha: bad, branch: "bad" } }), meta({ cycleId: `CYCLE-BAD-${bad.length}` })),
+      () => buildCycleReceipt(baseRun({ repository: { name: "arcobaleno64/triad-flow", commitSha: bad, branch: "bad" } }), meta({ cycleId: `CYCLE-BAD-${bad.length}` })),
       /40\/64 hex commit SHA/
     );
   }
@@ -175,6 +177,32 @@ test("source timestamps require strict ISO syntax", () => {
   assert.throws(
     () => buildCycleReceipt(baseRun({ timestamp: "Sun, 04 Oct 2026 02:00:00 GMT" }), meta()),
     /strict ISO-8601/
+  );
+});
+
+test("repository identity is producer-bound and canonicalized before duplicate comparison", () => {
+  const first = buildCycleReceipt(baseRun(), meta());
+  assert.equal(first.repository.name, "arcobaleno64/triad-flow");
+
+  assert.throws(
+    () => buildCycleReceipt(baseRun(), meta({ repository: "other-owner/triad-flow" })),
+    /Repository override rejected/
+  );
+
+  assert.throws(
+    () => buildCycleReceipt(
+      baseRun({
+        runId: "dogfood-source-repo-case",
+        repository: {
+          name: "Arcobaleno64/Triad-Flow",
+          commitSha: "a".repeat(40),
+          branch: "feature/example"
+        }
+      }),
+      meta({ cycleId: "CYCLE-REPO-CASE", repository: "ARCOBALENO64/TRIAD-FLOW" }),
+      [first]
+    ),
+    /Canonical live change already recorded/
   );
 });
 
@@ -193,7 +221,7 @@ test("commit identity is canonicalized before duplicate comparison", () => {
   assert.throws(() => buildCycleReceipt(
     baseRun({
       runId: "dogfood-source-case-retry",
-      repository: { commitSha: upper, branch: "feature/example" }
+      repository: { name: "arcobaleno64/triad-flow", commitSha: upper, branch: "feature/example" }
     }),
     meta({ cycleId: "CYCLE-CASE-RETRY" }),
     [first]
@@ -270,7 +298,7 @@ test("unterminated JSONL receives a separator before append", () => {
     fs.writeFileSync(ledger, JSON.stringify(first), "utf8");
 
     const second = buildCycleReceipt(
-      baseRun({ runId: "dogfood-source-002", repository: { commitSha: "b".repeat(40), branch: "feature/two" } }),
+      baseRun({ runId: "dogfood-source-002", repository: { name: "arcobaleno64/triad-flow", commitSha: "b".repeat(40), branch: "feature/two" } }),
       meta({ cycleId: "CYCLE-0002" }),
       [first]
     );
@@ -325,17 +353,16 @@ test("stale crashed-owner ledger lock is recovered before append", () => {
   }
 });
 
-test("ownerless stale ledger lock from crash before PID write is recovered", () => {
+test("ownerless lock is never reclaimed by age heuristic", () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tf-cycle-ownerless-lock-"));
   try {
     const ledger = path.join(tmp, "dogfood-receipts.jsonl");
     const lock = `${ledger}.lock`;
     fs.writeFileSync(lock, "", "utf8");
-    const stale = new Date(Date.now() - 5000);
+    const stale = new Date(Date.now() - 60000);
     fs.utimesSync(lock, stale, stale);
-    appendReceipt(ledger, buildCycleReceipt(baseRun(), meta()));
-    assert.equal(readLedger(ledger).length, 1);
-    assert.equal(fs.existsSync(lock), false);
+    assert.equal(recoverStaleLedgerLock(lock), false);
+    assert.equal(fs.existsSync(lock), true, "Ambiguous ownerless lock must not be stolen from a possibly delayed live owner");
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
