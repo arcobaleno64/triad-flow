@@ -302,3 +302,45 @@ Triple-Loop: NO PERSISTENT CHANGE
 ```
 
 This implementation operationalizes the already-approved SHADOW_DOGFOOD contract. It does not change Breadth Governor logic or Triad-Flow governance philosophy.
+
+
+---
+
+## PR #33 Contract Closure Amendments
+
+The pre-closure observation contract is tightened as follows:
+
+1. `scripts/dogfood-review.mjs` is the authority for:
+   - `executionMode: "live" | "mock"`
+   - `runStartedAt` captured before any reviewer/provider invocation
+   - source `runId`
+   - `stagedFallbackUsed`
+   - reviewer/verifier timeout contribution
+   - staged `chunkCount` when actually preserved
+
+2. Recorder CLI values are annotations/checks only:
+   - `--execution-mode` MUST equal producer mode.
+   - `--source-run-id` MUST equal producer `runId`.
+   - Neither option can substitute producer authority.
+
+3. Maturity eligibility requires:
+   - producer `executionMode === "live"`
+   - real diff files > 0
+   - human oracle timestamp strictly earlier than producer `runStartedAt`
+   - authoritative source run ID and exact 40- or 64-hex commit SHA.
+
+4. Ledger writes serialize duplicate validation + append under an exclusive lock. Existing non-empty JSONL without a trailing LF receives a separator before the new record.
+
+5. `--rebuild-summary` regenerates the Markdown projection from the canonical ledger. The ledger remains authoritative if summary generation fails.
+
+6. Signal semantics:
+   - `verifierOverturns` evaluates `verdict` and `classification` independently.
+   - unknown `chunkCount` is `null`.
+   - staged fallback is read only from producer-preserved telemetry.
+   - `timeoutCount` includes reviewer and independent-verifier timeout contributions.
+
+### CYCLE-0001 pre-closure disposition
+
+`CYCLE-0001` remains preserved as the first real live shadow observation, but its source run predates producer-authoritative `executionMode` and `runStartedAt`. It is therefore retained as historical operational evidence but marked `countsTowardMaturity = false`.
+
+The 20–30 maturity denominator begins with the first post-closure run satisfying the producer-bound eligibility contract. This is a one-time pre-merge schema correction; after contract closure the canonical ledger is append-only.
