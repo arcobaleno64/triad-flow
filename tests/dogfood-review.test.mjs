@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 
 import {
   parseArgs,
@@ -966,6 +966,125 @@ test("Observation producer authority: genuine staged fallback is preserved expli
     assert.equal(report.providerTelemetry.agy.stagedFallbackUsed, true);
     assert.ok(Number.isInteger(report.telemetryMetrics.chunkCount));
     assert.ok(report.telemetryMetrics.chunkCount >= 1);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+
+test("Observation producer authority: report commit matches the actually reviewed --head ref", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-test-reviewed-head-"));
+  const tmpOut = path.join(tmpDir, "dogfood-run.json");
+  const parentSha = execFileSync("git", ["rev-parse", "--verify", "HEAD^"], { encoding: "utf8" }).trim().toLowerCase();
+  const currentSha = execFileSync("git", ["rev-parse", "--verify", "HEAD"], { encoding: "utf8" }).trim().toLowerCase();
+
+  const clean = (provider, family, model) => ({
+    executeReview: async () => ({
+      ok: true,
+      executionStatus: "success",
+      findings: [],
+      coverage: { coveredFiles: ["scripts/example.mjs"], omittedFiles: [] },
+      providerIdentity: { provider, family, model }
+    })
+  });
+
+  try {
+    const report = await runDogfoodReview({
+      live: true,
+      head: parentSha,
+      changeSet: {
+        ok: true,
+        schemaVersion: "1.0.0",
+        repository: { headSha: parentSha },
+        totalFiles: 1,
+        totalAdditions: 1,
+        totalDeletions: 0,
+        files: [{ path: "scripts/example.mjs", additions: 1, deletions: 0, riskTier: 2 }],
+        diffHunks: "diff --git a/scripts/example.mjs b/scripts/example.mjs\n--- a/scripts/example.mjs\n+++ b/scripts/example.mjs\n@@ -0,0 +1 @@\n+export const x = 1;"
+      },
+      reviewAdapters: {
+        agy: clean("agy", "google", "gemini-3.8-flash"),
+        claude: clean("claude", "anthropic", "claude-5.5-sonnet"),
+        codex: clean("codex", "openai", "gpt-6.1-sol")
+      },
+      out: tmpOut,
+      log: false
+    });
+
+    assert.equal(report.repository.commitSha, parentSha);
+    assert.equal(report.repository.head, parentSha);
+    assert.notEqual(report.repository.commitSha, currentSha);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("Observation producer authority: staged chunk timeout contributes to reviewer and total timeout counts", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-test-staged-timeout-"));
+  const tmpOut = path.join(tmpDir, "dogfood-run.json");
+  let agyCalls = 0;
+
+  const agy = {
+    providerName: "agy",
+    family: "google",
+    modelName: "gemini-3.8-flash",
+    executeReview: async () => {
+      agyCalls++;
+      if (agyCalls === 1) {
+        return {
+          ok: false,
+          executionStatus: EXECUTION_STATUS.PAYLOAD_TOO_LARGE,
+          error: "input prompt too large",
+          providerIdentity: { provider: "agy", family: "google", model: "gemini-3.8-flash" }
+        };
+      }
+      return {
+        ok: false,
+        executionStatus: EXECUTION_STATUS.TIMEOUT,
+        status: "timeout",
+        error: "staged chunk timed out",
+        findings: [],
+        providerIdentity: { provider: "agy", family: "google", model: "gemini-3.8-flash" }
+      };
+    }
+  };
+
+  const clean = (provider, family, model) => ({
+    executeReview: async () => ({
+      ok: true,
+      executionStatus: "success",
+      findings: [],
+      coverage: { coveredFiles: ["scripts/example.mjs"], omittedFiles: [] },
+      providerIdentity: { provider, family, model }
+    })
+  });
+
+  try {
+    const report = await runDogfoodReview({
+      live: true,
+      changeSet: {
+        ok: true,
+        schemaVersion: "1.0.0",
+        totalFiles: 1,
+        totalAdditions: 1,
+        totalDeletions: 0,
+        files: [{ path: "scripts/example.mjs", additions: 1, deletions: 0, riskTier: 2 }],
+        diffHunks: "diff --git a/scripts/example.mjs b/scripts/example.mjs\n--- a/scripts/example.mjs\n+++ b/scripts/example.mjs\n@@ -0,0 +1 @@\n+export const x = 1;"
+      },
+      reviewAdapters: {
+        agy,
+        claude: clean("claude", "anthropic", "claude-5.5-sonnet"),
+        codex: clean("codex", "openai", "gpt-6.1-sol")
+      },
+      out: tmpOut,
+      log: false
+    });
+
+    assert.equal(report.telemetryMetrics.stagedFallbackUsed, true);
+    assert.equal(report.telemetryMetrics.reviewerTimeoutCount, 1);
+    assert.equal(report.telemetryMetrics.verifierTimeoutCount, 0);
+    assert.equal(report.telemetryMetrics.timeoutCount, 1);
+    assert.equal(report.telemetryMetrics.executionComplete, false);
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
