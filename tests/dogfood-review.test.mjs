@@ -17,7 +17,8 @@ import {
   getCurrentCommitSha,
   getCurrentBranch,
   normalizeTelemetryIdentity,
-  buildProviderTelemetry
+  buildProviderTelemetry,
+  instrumentVerifierAdapter
 } from "../scripts/dogfood-review.mjs";
 import { CliReviewAdapter } from "../src/adapters/cli-transport.mjs";
 import { EXECUTION_STATUS } from "../src/adapters/provider-contract.mjs";
@@ -60,6 +61,7 @@ test("Dogfood Contract 2: runDogfoodReview in mock mode executes and generates d
 
     assert.equal(report.schemaVersion, "1.1.0");
     assert.equal(report.executionMode, "mock");
+    assert.equal(report.repository.name, "arcobaleno64/triad-flow");
     assert.match(report.runStartedAt, /^\d{4}-\d{2}-\d{2}T.*Z$/);
     assert.ok(report.runId.startsWith("dogfood-"));
     assert.equal(report.track, "Track D1: SHADOW_DOGFOOD");
@@ -644,6 +646,17 @@ const makeFindingReviewAdapters = () => {
   };
 };
 
+test("Observation verifier timeout instrumentation materializes command-only verifier adapters", () => {
+  let timeoutSignals = 0;
+  const instrumented = instrumentVerifierAdapter(
+    { command: "claude", providerName: "claude", modelName: "claude-5.5-sonnet" },
+    () => { timeoutSignals++; }
+  );
+  assert.equal(typeof instrumented.executeVerification, "function");
+  assert.equal(instrumented.providerName, "claude");
+  assert.equal(timeoutSignals, 0);
+});
+
 test("RB2-A: Successful verifier allows executionComplete === true", async () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-test-rb2-a-"));
   const tmpOut = path.join(tmpDir, "dogfood-run.json");
@@ -997,6 +1010,7 @@ test("Observation producer authority: report commit matches the actually reviewe
     git("init");
     git("config", "user.email", "triad-flow-test@example.invalid");
     git("config", "user.name", "Triad Flow Test");
+    git("remote", "add", "origin", "https://github.com/Example/Reviewed.git");
     fs.writeFileSync(path.join(tmpDir, "one.txt"), "one\n", "utf8");
     git("add", "one.txt");
     git("commit", "-m", "first");
@@ -1031,6 +1045,7 @@ test("Observation producer authority: report commit matches the actually reviewe
       log: false
     });
 
+    assert.equal(report.repository.name, "example/reviewed");
     assert.equal(report.repository.commitSha, reviewedSha);
     assert.equal(report.repository.head, reviewedSha);
     assert.notEqual(report.repository.commitSha, checkoutSha);
