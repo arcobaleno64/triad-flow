@@ -325,6 +325,22 @@ test("stale crashed-owner ledger lock is recovered before append", () => {
   }
 });
 
+test("ownerless stale ledger lock from crash before PID write is recovered", () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tf-cycle-ownerless-lock-"));
+  try {
+    const ledger = path.join(tmp, "dogfood-receipts.jsonl");
+    const lock = `${ledger}.lock`;
+    fs.writeFileSync(lock, "", "utf8");
+    const stale = new Date(Date.now() - 5000);
+    fs.utimesSync(lock, stale, stale);
+    appendReceipt(ledger, buildCycleReceipt(baseRun(), meta()));
+    assert.equal(readLedger(ledger).length, 1);
+    assert.equal(fs.existsSync(lock), false);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 test("hard-link summary alias to ledger is rejected without truncating canonical bytes", () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tf-cycle-hardlink-"));
   try {
