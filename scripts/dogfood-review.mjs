@@ -436,7 +436,7 @@ export function isTimeoutLikeError(err) {
   );
 }
 
-function instrumentVerifierAdapter(adapter, onTimeout) {
+export function instrumentVerifierAdapter(adapter, onTimeout) {
   const inspectResult = (result) => {
     if (result?.executionStatus === EXECUTION_STATUS.TIMEOUT) onTimeout();
     return result;
