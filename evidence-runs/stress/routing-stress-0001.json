@@ -1,0 +1,1031 @@
+{
+  "schemaVersion": "1.1.0",
+  "runId": "dogfood-1791188635382-ec237087-fe94-4887-b5b3-ff33d65c7d87",
+  "executionMode": "live",
+  "runStartedAt": "2026-10-05T08:23:55.381Z",
+  "timestamp": "2026-10-05T08:24:21.966Z",
+  "track": "Track D1: SHADOW_DOGFOOD",
+  "authority": "NONE (ADVISORY_ONLY)",
+  "triadFlowVersion": "2.7.0",
+  "repository": {
+    "name": "arcobaleno64/council-forge",
+    "commitSha": "50e950e4953da75d2425bae735c49c283a1d15cd",
+    "branch": null,
+    "base": "669395e7db62c7a1078a8da5fc7229590d48baa7",
+    "head": "50e950e4953da75d2425bae735c49c283a1d15cd"
+  },
+  "changeSetSummary": {
+    "totalFiles": 158,
+    "totalAdditions": 7873,
+    "totalDeletions": 317,
+    "riskTier": 1,
+    "files": [
+      {
+        "path": ".github/memory-bank/project-facts.md",
+        "additions": 7,
+        "deletions": 2,
+        "riskTier": 2
+      },
+      {
+        "path": ".github/memory-bank/raci-violations-log.md",
+        "additions": 4,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": ".github/memory-bank/workflow-gates.md",
+        "additions": 8,
+        "deletions": 6,
+        "riskTier": 2
+      },
+      {
+        "path": ".github/workflows/workflow-guards.yml",
+        "additions": 38,
+        "deletions": 0,
+        "riskTier": 1
+      },
+      {
+        "path": ".well-known/release-manifest.json",
+        "additions": 61,
+        "deletions": 57,
+        "riskTier": 2
+      },
+      {
+        "path": "AGENTS.md",
+        "additions": 1,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "CLAUDE.md",
+        "additions": 10,
+        "deletions": 2,
+        "riskTier": 2
+      },
+      {
+        "path": "GEMINI.md",
+        "additions": 1,
+        "deletions": 1,
+        "riskTier": 2
+      },
+      {
+        "path": "README.md",
+        "additions": 2,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "README.zh-TW.md",
+        "additions": 2,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/code/TASK-1102.code.md",
+        "additions": 69,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/code/TASK-1103.code.md",
+        "additions": 68,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/code/TASK-1104.code.md",
+        "additions": 78,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/code/TASK-1105.code.md",
+        "additions": 84,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/code/TASK-1106.code.md",
+        "additions": 68,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/code/TASK-1107.code.md",
+        "additions": 92,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/code/TASK-1108.code.md",
+        "additions": 77,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/code/TASK-1109.code.md",
+        "additions": 75,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/code/TASK-1112.code.md",
+        "additions": 58,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/decisions/TASK-1107.decision.md",
+        "additions": 74,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/decisions/TASK-1108.decision.md",
+        "additions": 79,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/decisions/TASK-1109.decision.md",
+        "additions": 63,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/improvement/PROCESS_LEDGER.md",
+        "additions": 1,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/improvement/RELAXATION_LOG.md",
+        "additions": 49,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/improvement/TASK-1107.improvement.md",
+        "additions": 65,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/plans/TASK-1102.plan.md",
+        "additions": 132,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/plans/TASK-1103.plan.md",
+        "additions": 97,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/plans/TASK-1104.plan.md",
+        "additions": 116,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/plans/TASK-1105.plan.md",
+        "additions": 109,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/plans/TASK-1106.plan.md",
+        "additions": 102,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/plans/TASK-1107.plan.md",
+        "additions": 157,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/plans/TASK-1108.plan.md",
+        "additions": 149,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/plans/TASK-1109.plan.md",
+        "additions": 142,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/plans/TASK-1112.plan.md",
+        "additions": 83,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/research/TASK-1102.research.md",
+        "additions": 57,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/research/TASK-1103.research.md",
+        "additions": 56,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/research/TASK-1104.research.md",
+        "additions": 59,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/research/TASK-1105.research.md",
+        "additions": 60,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/research/TASK-1106.research.md",
+        "additions": 52,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/research/TASK-1107.research.md",
+        "additions": 56,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/research/TASK-1108.research.md",
+        "additions": 63,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/research/TASK-1109.research.md",
+        "additions": 54,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/research/TASK-1112.research.md",
+        "additions": 43,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/scripts/Invoke-CodexAgent.ps1",
+        "additions": 35,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/scripts/Invoke-GeminiAgent.ps1",
+        "additions": 35,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/scripts/conftest.py",
+        "additions": 3,
+        "deletions": 3,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/scripts/drills/prompt_regression_cases.json",
+        "additions": 156,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/scripts/guard_contract_validator.py",
+        "additions": 6,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/scripts/guard_status_validator.py",
+        "additions": 71,
+        "deletions": 12,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/scripts/red_team/case_builders.py",
+        "additions": 75,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/scripts/red_team/cases_metadata.json",
+        "additions": 10,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/scripts/test_guard_status_validator_artifacts.py",
+        "additions": 161,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/scripts/test_invoke_codex_agent.py",
+        "additions": 63,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/scripts/test_invoke_gemini_agent.py",
+        "additions": 63,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/scripts/test_workflow_constants.py",
+        "additions": 18,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/scripts/workflow_constants.py",
+        "additions": 2,
+        "deletions": 1,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/status/TASK-1102.status.json",
+        "additions": 15,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/status/TASK-1103.status.json",
+        "additions": 15,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/status/TASK-1104.status.json",
+        "additions": 28,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/status/TASK-1105.status.json",
+        "additions": 30,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/status/TASK-1106.status.json",
+        "additions": 28,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/status/TASK-1107.status.json",
+        "additions": 38,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/status/TASK-1108.status.json",
+        "additions": 29,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/status/TASK-1109.status.json",
+        "additions": 29,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/status/TASK-1112.status.json",
+        "additions": 27,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/tasks/TASK-1102.task.md",
+        "additions": 73,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/tasks/TASK-1103.task.md",
+        "additions": 79,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/tasks/TASK-1104.task.md",
+        "additions": 87,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/tasks/TASK-1105.task.md",
+        "additions": 71,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/tasks/TASK-1106.task.md",
+        "additions": 78,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/tasks/TASK-1107.task.md",
+        "additions": 83,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/tasks/TASK-1108.task.md",
+        "additions": 86,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/tasks/TASK-1109.task.md",
+        "additions": 83,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/tasks/TASK-1112.task.md",
+        "additions": 58,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/test/TASK-1102.test.md",
+        "additions": 39,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/test/TASK-1103.test.md",
+        "additions": 39,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/test/TASK-1104.test.md",
+        "additions": 40,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/test/TASK-1105.test.md",
+        "additions": 41,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/test/TASK-1106.test.md",
+        "additions": 38,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/test/TASK-1107.test.md",
+        "additions": 90,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/test/TASK-1108.test.md",
+        "additions": 38,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/test/TASK-1109.test.md",
+        "additions": 38,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/verify/TASK-1102.verify.md",
+        "additions": 185,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/verify/TASK-1103.verify.md",
+        "additions": 197,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/verify/TASK-1104.verify.md",
+        "additions": 219,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/verify/TASK-1105.verify.md",
+        "additions": 155,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/verify/TASK-1106.verify.md",
+        "additions": 156,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/verify/TASK-1107.verify.md",
+        "additions": 120,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/verify/TASK-1108.verify.md",
+        "additions": 239,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/verify/TASK-1109.verify.md",
+        "additions": 199,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "artifacts/verify/TASK-1112.verify.md",
+        "additions": 84,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "docs/dispatch_prompt_discipline.md",
+        "additions": 6,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "docs/orchestration-workflow.md",
+        "additions": 1,
+        "deletions": 1,
+        "riskTier": 2
+      },
+      {
+        "path": "docs/orchestration.md",
+        "additions": 20,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "docs/premortem_rules.md",
+        "additions": 43,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "docs/raci-matrix.md",
+        "additions": 2,
+        "deletions": 13,
+        "riskTier": 2
+      },
+      {
+        "path": "docs/red_team_backlog.md",
+        "additions": 15,
+        "deletions": 1,
+        "riskTier": 2
+      },
+      {
+        "path": "docs/red_team_runbook.md",
+        "additions": 2,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "docs/red_team_scorecard.md",
+        "additions": 2,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "docs/repo_structure_workflow_maturity_assessment.md",
+        "additions": 1,
+        "deletions": 1,
+        "riskTier": 2
+      },
+      {
+        "path": "docs/schemas/artifact-spec-code.md",
+        "additions": 1,
+        "deletions": 1,
+        "riskTier": 2
+      },
+      {
+        "path": "docs/schemas/artifact-spec-decision.md",
+        "additions": 36,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "docs/sop/dispatch_implementation.md",
+        "additions": 8,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "docs/sop/rule_lifecycle_audit.md",
+        "additions": 54,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "docs/subagent_roles.md",
+        "additions": 5,
+        "deletions": 3,
+        "riskTier": 2
+      },
+      {
+        "path": "docs/subagent_task_templates.md",
+        "additions": 2,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "docs/templates/architecture-synthesizer/TEMPLATE.md",
+        "additions": 1,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "docs/templates/archive/README.md",
+        "additions": 15,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "docs/templates/archive/adr/TEMPLATE.md",
+        "additions": 0,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "docs/templates/archive/debug/TEMPLATE.md",
+        "additions": 0,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "docs/templates/archive/rtm/TEMPLATE.md",
+        "additions": 0,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "docs/templates/archive/srs/TEMPLATE.md",
+        "additions": 0,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "docs/workflow_state_machine.md",
+        "additions": 10,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "template/.github/memory-bank/project-facts.md",
+        "additions": 7,
+        "deletions": 2,
+        "riskTier": 2
+      },
+      {
+        "path": "template/.github/workflows/workflow-guards.yml",
+        "additions": 38,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "template/AGENTS.md",
+        "additions": 1,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "template/CLAUDE.md",
+        "additions": 10,
+        "deletions": 2,
+        "riskTier": 2
+      },
+      {
+        "path": "template/GEMINI.md",
+        "additions": 1,
+        "deletions": 1,
+        "riskTier": 2
+      },
+      {
+        "path": "template/README.md",
+        "additions": 2,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "template/README.zh-TW.md",
+        "additions": 2,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "template/artifacts/improvement/PROCESS_LEDGER.md",
+        "additions": 1,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "template/artifacts/improvement/RELAXATION_LOG.md",
+        "additions": 22,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "template/artifacts/scripts/Invoke-CodexAgent.ps1",
+        "additions": 35,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "template/artifacts/scripts/Invoke-GeminiAgent.ps1",
+        "additions": 35,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "template/artifacts/scripts/conftest.py",
+        "additions": 3,
+        "deletions": 3,
+        "riskTier": 2
+      },
+      {
+        "path": "template/artifacts/scripts/drills/prompt_regression_cases.json",
+        "additions": 156,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "template/artifacts/scripts/guard_contract_validator.py",
+        "additions": 6,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "template/artifacts/scripts/guard_status_validator.py",
+        "additions": 71,
+        "deletions": 12,
+        "riskTier": 2
+      },
+      {
+        "path": "template/artifacts/scripts/red_team/case_builders.py",
+        "additions": 75,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "template/artifacts/scripts/red_team/cases_metadata.json",
+        "additions": 10,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "template/artifacts/scripts/test_guard_status_validator_artifacts.py",
+        "additions": 161,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "template/artifacts/scripts/test_invoke_codex_agent.py",
+        "additions": 63,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "template/artifacts/scripts/test_invoke_gemini_agent.py",
+        "additions": 63,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "template/artifacts/scripts/test_workflow_constants.py",
+        "additions": 18,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "template/artifacts/scripts/workflow_constants.py",
+        "additions": 2,
+        "deletions": 1,
+        "riskTier": 2
+      },
+      {
+        "path": "template/docs/dispatch_prompt_discipline.md",
+        "additions": 6,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "template/docs/orchestration-workflow.md",
+        "additions": 1,
+        "deletions": 1,
+        "riskTier": 2
+      },
+      {
+        "path": "template/docs/orchestration.md",
+        "additions": 20,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "template/docs/premortem_rules.md",
+        "additions": 43,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "template/docs/raci-matrix.md",
+        "additions": 2,
+        "deletions": 13,
+        "riskTier": 2
+      },
+      {
+        "path": "template/docs/red_team_backlog.md",
+        "additions": 15,
+        "deletions": 1,
+        "riskTier": 2
+      },
+      {
+        "path": "template/docs/red_team_runbook.md",
+        "additions": 2,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "template/docs/red_team_scorecard.generated.md",
+        "additions": 0,
+        "deletions": 77,
+        "riskTier": 2
+      },
+      {
+        "path": "template/docs/red_team_scorecard.md",
+        "additions": 2,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "template/docs/repo_structure_workflow_maturity_assessment.md",
+        "additions": 355,
+        "deletions": 91,
+        "riskTier": 2
+      },
+      {
+        "path": "template/docs/schemas/artifact-spec-code.md",
+        "additions": 1,
+        "deletions": 1,
+        "riskTier": 2
+      },
+      {
+        "path": "template/docs/schemas/artifact-spec-decision.md",
+        "additions": 36,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "template/docs/security_cadence.md",
+        "additions": 31,
+        "deletions": 5,
+        "riskTier": 2
+      },
+      {
+        "path": "template/docs/sop/dispatch_implementation.md",
+        "additions": 8,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "template/docs/sop/rule_lifecycle_audit.md",
+        "additions": 54,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "template/docs/subagent_roles.md",
+        "additions": 5,
+        "deletions": 3,
+        "riskTier": 2
+      },
+      {
+        "path": "template/docs/subagent_task_templates.md",
+        "additions": 2,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "template/docs/templates/architecture-synthesizer/TEMPLATE.md",
+        "additions": 1,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "template/docs/templates/archive/adr/TEMPLATE.md",
+        "additions": 0,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "template/docs/templates/archive/debug/TEMPLATE.md",
+        "additions": 0,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "template/docs/templates/archive/rtm/TEMPLATE.md",
+        "additions": 0,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "template/docs/templates/archive/srs/TEMPLATE.md",
+        "additions": 0,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "template/docs/workflow_state_machine.md",
+        "additions": 10,
+        "deletions": 0,
+        "riskTier": 2
+      }
+    ],
+    "excludedFiles": []
+  },
+  "providerTelemetry": {
+    "agy": {
+      "provider": "agy",
+      "family": "google",
+      "model": "gemini-3.8-flash",
+      "executionStatus": "incomplete",
+      "findingsCount": 0,
+      "latencyMs": 1917,
+      "stagedFallbackUsed": true
+    },
+    "claude": {
+      "provider": "claude",
+      "family": "anthropic",
+      "model": "claude-5.5-sonnet",
+      "executionStatus": "success",
+      "findingsCount": 3,
+      "latencyMs": 25824,
+      "stagedFallbackUsed": false
+    },
+    "codex": {
+      "provider": "codex",
+      "family": "openai",
+      "model": "gpt-6.1-sol",
+      "executionStatus": "error",
+      "findingsCount": 0,
+      "latencyMs": 6590,
+      "stagedFallbackUsed": false
+    }
+  },
+  "consensus": {
+    "verdict": "error",
+    "quorumReached": false,
+    "totalFindings": 0,
+    "findings": []
+  },
+  "advisoryGate": {
+    "decision": "block",
+    "reason": "Quorum Failure: High-risk Tier 1 changesets require at least 2 healthy heterogeneous sentries (Fail-Closed).",
+    "effectiveMergeAuthority": "NONE",
+    "simulatedGateBlock": true,
+    "mergeBlockedInProduction": false
+  },
+  "telemetryMetrics": {
+    "totalDurationMs": 25829,
+    "reviewerPhaseDurationMs": 25828,
+    "avgProviderLatencyMs": 11444,
+    "executionComplete": false,
+    "malformedOutputCount": 0,
+    "reviewerTimeoutCount": 1,
+    "verifierTimeoutCount": 0,
+    "timeoutCount": 1,
+    "authFailureCount": 0,
+    "otherFailureCount": 2,
+    "stagedFallbackUsed": true,
+    "chunkCount": 1
+  },
+  "verificationRecord": null
+}
