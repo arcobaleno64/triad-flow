@@ -41,15 +41,19 @@ import {
 } from "../src/core/independent-verifier.mjs";
 import { TOOL_VERSION } from "../src/core/review-run-report.mjs";
 
-export function getCurrentCommitSha() {
+export function getCommitShaForRef(ref = "HEAD") {
   try {
-    const out = execFileSync("git", ["rev-parse", "HEAD"], {
+    const out = execFileSync("git", ["rev-parse", "--verify", `${ref}^{commit}`], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"]
     }).trim();
-    if (/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i.test(out)) return out;
+    if (/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i.test(out) && !/^0+$/.test(out)) return out.toLowerCase();
   } catch {}
-  return "0000000000000000000000000000000000000000";
+  return null;
+}
+
+export function getCurrentCommitSha() {
+  return getCommitShaForRef("HEAD") || "0000000000000000000000000000000000000000";
 }
 
 export function getCurrentBranch() {
@@ -451,15 +455,18 @@ export async function runDogfoodReview(userOptions = {}) {
   const log = userOptions.log !== false;
   const outPath = path.resolve(userOptions.out || "dogfood-run.json");
 
-  const commitSha = getCurrentCommitSha();
   const branch = getCurrentBranch();
+  const requestedHeadSha = getCommitShaForRef(head);
+  if (!requestedHeadSha) {
+    throw new Error(`Reviewed head ref '${head}' cannot be resolved to a non-zero commit SHA`);
+  }
 
   if (log) {
     console.log("==================================================================================");
     console.log("  Triad-Flow Track D1: Shadow Dogfood Review");
     console.log(`  Authority Mode: SHADOW_DOGFOOD (Advisory / Observation Only, Zero Merge Authority)`);
     console.log(`  Execution Mode: ${isLive ? "LIVE (Real Provider CLIs)" : "MOCK (Deterministic Simulation)"}`);
-    console.log(`  Git Scope: ${base}...${head} (Branch: ${branch}, HEAD: ${commitSha.slice(0, 10)})`);
+    console.log(`  Git Scope: ${base}...${head} (Branch: ${branch}, Reviewed Head: ${requestedHeadSha.slice(0, 10)})`);
     console.log("==================================================================================\n");
   }
 
@@ -484,6 +491,14 @@ export async function runDogfoodReview(userOptions = {}) {
   if (!changeSet || !changeSet.ok) {
     throw new Error(`Failed to capture ChangeSet: ${changeSet?.error?.message || "Unknown Git inspection failure"}`);
   }
+
+  const changeSetHeadSha = typeof changeSet?.repository?.headSha === "string"
+    ? changeSet.repository.headSha.trim().toLowerCase()
+    : requestedHeadSha;
+  if (changeSetHeadSha !== requestedHeadSha) {
+    throw new Error(`Reviewed ChangeSet head SHA '${changeSetHeadSha}' does not match requested --head '${requestedHeadSha}'`);
+  }
+  const commitSha = requestedHeadSha;
 
   const relOut = path.relative(process.cwd(), outPath).replace(/\\/g, "/");
   changeSet = filterChangeSetExclusions(changeSet, [relOut]);
@@ -583,6 +598,7 @@ export async function runDogfoodReview(userOptions = {}) {
 
   let stagedFallbackUsed = false;
   let stagedChunkCount = null;
+  let stagedTimeoutCount = 0;
   const tAgy0 = Date.now();
   const executeAgyReview = async () => {
     const providerRunId = `${runId}-agy`;
@@ -606,6 +622,9 @@ export async function runDogfoodReview(userOptions = {}) {
         signal: userOptions.signal || null
       });
       stagedChunkCount = Array.isArray(res?.receipts) ? res.receipts.length : null;
+      stagedTimeoutCount = Array.isArray(res?.receipts)
+        ? res.receipts.filter(r => r?.status === "timeout").length
+        : 0;
     }
     return res;
   };
@@ -708,7 +727,9 @@ export async function runDogfoodReview(userOptions = {}) {
 
   const providerOutputs = [rawReports.agy, rawReports.claude, rawReports.codex];
   const malformedCount = providerOutputs.filter(r => r.executionStatus === "malformed_output").length;
-  const reviewerTimeoutCount = providerOutputs.filter(r => r.executionStatus === "timeout").length;
+  const reviewerTimeoutCount =
+    providerOutputs.filter(r => r.executionStatus === "timeout").length +
+    stagedTimeoutCount;
   const verifierTimeoutCount = verifierTimedOut ? 1 : 0;
   const timeoutCount = reviewerTimeoutCount + verifierTimeoutCount;
   const authFailureCount = providerOutputs.filter(r => r.executionStatus === "auth_failure").length;
