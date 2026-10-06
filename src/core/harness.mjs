@@ -217,9 +217,7 @@ export function normalizeFinding(raw) {
       ruleId: typeof raw.ruleId === "string" ? raw.ruleId.trim() : undefined,
       cwe: typeof raw.cwe === "string" ? raw.cwe.trim() : undefined,
       type: typeof raw.type === "string" ? raw.type.trim() : undefined,
-      recommendation: typeof raw.recommendation === "string" ? raw.recommendation.trim() : (typeof raw.body === "string" ? raw.body.trim() : undefined),
-      acceptanceRelevance: typeof raw.acceptanceRelevance === "string" ? raw.acceptanceRelevance.trim().toUpperCase() : undefined,
-      falsifiesPatchObjective: typeof raw.falsifiesPatchObjective === "boolean" ? raw.falsifiesPatchObjective : undefined
+      recommendation: typeof raw.recommendation === "string" ? raw.recommendation.trim() : (typeof raw.body === "string" ? raw.body.trim() : undefined)
     }
   };
 }
@@ -333,67 +331,13 @@ export function evaluateGateDecision(consensus, options = {}) {
 }
 
 /**
- * Resolves whether a finding has blocking acceptance relevance (e.g. directly falsifies
- * the stated patch objective or required correctness contract) vs advisory relevance.
- * (LOOP2-REMEDIATION-002)
- *
- * @param {object} f - Finding object
- * @param {object|null} evalMatch - Verifier evaluation match
- * @returns {boolean}
- */
-export function isBlockingAcceptanceRelevance(f = {}, evalMatch = null) {
-  // 1. Explicit evaluation declaration
-  if (evalMatch && typeof evalMatch.acceptanceRelevance === "string") {
-    const val = evalMatch.acceptanceRelevance.trim().toUpperCase();
-    if (val === "BLOCKING") return true;
-    if (val === "ADVISORY") return false;
-  }
-  if (evalMatch && evalMatch.falsifiesPatchObjective !== undefined) {
-    return Boolean(evalMatch.falsifiesPatchObjective);
-  }
-
-  // 2. Explicit finding declaration
-  if (f && typeof f.acceptanceRelevance === "string") {
-    const val = f.acceptanceRelevance.trim().toUpperCase();
-    if (val === "BLOCKING") return true;
-    if (val === "ADVISORY") return false;
-  }
-  if (f && f.falsifiesPatchObjective !== undefined) {
-    return Boolean(f.falsifiesPatchObjective);
-  }
-
-  // 3. Fallback semantic check on verified reasoning / dissent / recommendation
-  const textCorpus = [
-    evalMatch?.reasoning,
-    evalMatch?.dissent,
-    f?.recommendation,
-    f?.title
-  ].filter(Boolean).join(" ");
-
-  if (textCorpus.length > 0) {
-    const OBJECTIVE_FALSIFICATION_PATTERNS = [
-      /same\s+(?:[\w-]+\s+){0,4}problem\s+the\s+patch\s+targets.*?diff\s+does\s+not\s+address/i,
-      /(?:falsif(?:y|ies|ying)|violat(?:e|es|ing)|defeat(?:s|ed|ing)?|contradict(?:s|ed|ing)?)\s+(?:the\s+)?(?:patch|stated|claimed|targeted|core)\s+(?:objective|contract|goal|invariance?|purpose)/i,
-      /patch\s+(?:claims?|aims?)\s+to\s+.*?(?:but\s+still\s+fails|does\s+not\s+guarantee|leaves\s+.*?\s+un(?:handled|addressed|closed))/i,
-      /(?:fails|fails\s+to\s+ensure)\s+mounted\s+transports\s+are\s+closed/i
-    ];
-
-    if (OBJECTIVE_FALSIFICATION_PATTERNS.some(pat => pat.test(textCorpus))) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
-/**
  * Evaluates Post-Verification Gate decision incorporating Independent Verification authority.
- * Adheres to normative LOOP2-REMEDIATION-001 & LOOP2-REMEDIATION-002 authority rules:
+ * Adheres to normative LOOP2-REMEDIATION-001 authority rules:
  * - Critical/High findings remain strictly fail-closed BLOCK (or HUMAN_REVIEW_REQUIRED if contested)
  * - Supported Low/Medium findings block in Tier 1
  * - Supported Medium findings block in Tier 2
- * - Supported Low findings with BLOCKING acceptance relevance (falsifies patch objective) BLOCK in Tier 2
- * - Supported Low findings with ADVISORY acceptance relevance pass as advisory in Tier 2
+ * - Supported Low findings pass as advisory in Tier 2 unless independent verification marks them as directly falsifying the stated patch objective
+ * - Any independently SUPPORTED finding marked FALSIFIES_PATCH_OBJECTIVE blocks regardless of impact severity
  * - Solitary non-Critical/High findings with INSUFFICIENT_EVIDENCE map to HUMAN_REVIEW_REQUIRED
  * - Solitary findings with CONTESTED verdict are removed from blocking set (advisory pass)
  * - Corroborated findings with CONTESTED verdict map to HUMAN_REVIEW_REQUIRED
@@ -410,6 +354,9 @@ export function evaluatePostVerificationGate(consensus, verificationRecord, opti
 
   const findings = Array.isArray(consensus.findings) ? consensus.findings : [];
   const evaluations = Array.isArray(verificationRecord.evaluations) ? verificationRecord.evaluations : [];
+  const hasBoundPatchObjective =
+    typeof verificationRecord.patchObjective === "string" &&
+    verificationRecord.patchObjective.trim().length > 0;
   const isTier1 = options?.tier === 1;
   const isStrict = Boolean(options && (options.strict || isTier1));
 
@@ -434,6 +381,12 @@ export function evaluatePostVerificationGate(consensus, verificationRecord, opti
     const isContested = verdict === "CONTESTED" || classification === "CONTRADICTED";
     const isSupported = verdict === "SUPPORTED";
     const isInsufficient = verdict === "INSUFFICIENT_EVIDENCE" || classification === "UNVERIFIABLE";
+    const objectiveImpact = String(evalMatch?.objectiveImpact || "NOT_ASSESSED").toUpperCase();
+    const falsifiesPatchObjective =
+      isSupported &&
+      !isContested &&
+      hasBoundPatchObjective &&
+      objectiveImpact === "FALSIFIES_PATCH_OBJECTIVE";
 
     const corroborations = Number(f.corroborations || f.sources?.length || 1);
     const isSolitary = corroborations <= 1;
@@ -446,10 +399,17 @@ export function evaluatePostVerificationGate(consensus, verificationRecord, opti
       if (rawSeverity === "critical" || rawSeverity === "high") {
         hasHumanReview = true;
         humanReviewReasons.push(`Critical/high severity contested by verifier: "${f.title}"`);
-        continue;
+        if (!falsifiesPatchObjective) continue;
       } else if (rawSeverity === "medium" && isSupported) {
         effectiveSeverity = "low";
       }
+    }
+
+    if (falsifiesPatchObjective) {
+      hasBlocker = true;
+      if (rawSeverity === "critical" || rawSeverity === "high") criticals.push(f);
+      blockReasons.push(`Verified finding directly falsifies stated patch objective: "${f.title}"`);
+      continue;
     }
 
     if (effectiveSeverity === "critical" || effectiveSeverity === "high") {
@@ -484,28 +444,20 @@ export function evaluatePostVerificationGate(consensus, verificationRecord, opti
           : `Verified medium finding blocks merge: "${f.title}"`);
       }
     } else if (effectiveSeverity === "low") {
-      const isBlockingRelevance = isBlockingAcceptanceRelevance(f, evalMatch);
-
       if (isContested) {
         // Contested low finding -> removed from blocking set
       } else if (isInsufficient) {
         if (isTier1 && isStrict) {
           hasHumanReview = true;
           humanReviewReasons.push(`Tier 1 low finding unverifiable: "${f.title}"`);
-        } else if (isBlockingRelevance) {
-          hasHumanReview = true;
-          humanReviewReasons.push(`Unverified low finding with claimed blocking acceptance relevance requires adjudication: "${f.title}"`);
         }
-        // In Tier 2: unverified low finding without blocking relevance does not block
+        // In Tier 2: unverified low finding does not block
       } else if (isSupported) {
         if (isTier1 || isStrict) {
           hasBlocker = true;
           blockReasons.push(`Tier 1 policy: verified low finding blocks merge: "${f.title}"`);
-        } else if (isBlockingRelevance) {
-          hasBlocker = true;
-          blockReasons.push(`Verified finding falsifies patch objective/acceptance criteria: "${f.title}"`);
         }
-        // In Tier 2 non-strict: verified low finding with advisory relevance passes as advisory
+        // In Tier 2 non-strict: verified low finding passes as advisory
       }
     }
   }

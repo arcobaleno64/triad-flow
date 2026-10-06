@@ -118,7 +118,6 @@ export function validateConsensusSemantics(report) {
         return { ok: false, valid: false, code: "MALFORMED_FINDING_FILE", reason: `Finding at index ${i} contains illegal NUL byte in file path.` };
       }
       cleanFindings.push({
-        id: f.id !== undefined && f.id !== null ? String(f.id) : undefined,
         title,
         severity,
         file,
@@ -128,8 +127,6 @@ export function validateConsensusSemantics(report) {
         cwe: typeof f.cwe === "string" ? f.cwe.trim() : undefined,
         type: typeof f.type === "string" ? f.type.trim() : undefined,
         recommendation: typeof f.recommendation === "string" ? f.recommendation : (typeof f.body === "string" ? f.body : undefined),
-        acceptanceRelevance: typeof f.acceptanceRelevance === "string" ? f.acceptanceRelevance.trim().toUpperCase() : undefined,
-        falsifiesPatchObjective: typeof f.falsifiesPatchObjective === "boolean" ? f.falsifiesPatchObjective : undefined,
         sources: Array.isArray(f.sources) ? [...f.sources] : ["sentry-node"],
         corroborations: Number(f.corroborations || 1)
       });
