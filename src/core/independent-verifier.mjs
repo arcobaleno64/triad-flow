@@ -53,6 +53,14 @@ export const VERIFICATION_VERDICTS = Object.freeze({
 
 export const VALID_VERDICTS = Object.freeze(new Set(Object.values(VERIFICATION_VERDICTS)));
 
+export const OBJECTIVE_IMPACTS = Object.freeze({
+  FALSIFIES_PATCH_OBJECTIVE: "FALSIFIES_PATCH_OBJECTIVE",
+  DOES_NOT_FALSIFY_PATCH_OBJECTIVE: "DOES_NOT_FALSIFY_PATCH_OBJECTIVE",
+  NOT_ASSESSED: "NOT_ASSESSED"
+});
+
+export const VALID_OBJECTIVE_IMPACTS = Object.freeze(new Set(Object.values(OBJECTIVE_IMPACTS)));
+
 /**
  * Standard Disagreement Ledger classifications.
  */
@@ -252,6 +260,7 @@ export function buildVerificationPrompt(changeSet = {}, producerFindings = [], o
 
   const scope = changeSet?.scopeMode || "working-tree";
   const contentDigest = changeSet?.contentDigest || "none";
+  const patchObjective = typeof options.patchObjective === "string" ? options.patchObjective.trim() : "";
 
   return [
     `You are a strict read-only independent verification sentry (${role} role).`,
@@ -263,15 +272,17 @@ export function buildVerificationPrompt(changeSet = {}, producerFindings = [], o
     `2. Locator Accuracy: Verify whether the file path and line numbers are accurate.`,
     `3. Type Accuracy: Verify whether the reported defect type, classification, or CWE is accurate.`,
     `4. Severity Accuracy: Verify whether the assigned severity level is justified.`,
-    `5. Verdict Selection: Assign one of the following exact verdicts:`,
+    `5. Patch Objective Relevance: If a stated patch objective is provided below, independently determine whether a SUPPORTED finding directly falsifies that objective. Do not infer objective failure merely from severity or general code quality.`,
+    `6. Verdict Selection: Assign one of the following exact verdicts:`,
     `   - "SUPPORTED": The finding is conclusively backed by the diff evidence.`,
     `   - "CONTESTED": The finding is factually incorrect, false-positive, or ungrounded. You MUST provide 'dissent' reasoning.`,
     `   - "INSUFFICIENT_EVIDENCE": The diff contains insufficient context to corroborate or refute the finding.`,
-    `6. Independent Omissions: If you find security vulnerabilities or bugs in the diff that the producer missed, report them in 'verifierOmissions'.`,
-    `7. Immutability Guarantee: You cannot overwrite, delete, or silently merge producer findings.`,
+    `7. Independent Omissions: If you find security vulnerabilities or bugs in the diff that the producer missed, report them in 'verifierOmissions'.`,
+    `8. Immutability Guarantee: You cannot overwrite, delete, or silently merge producer findings.`,
     ``,
     `Scope: ${scope}`,
     `Content Digest: ${contentDigest}`,
+    `Stated Patch Objective: ${patchObjective || "(not provided; objectiveImpact MUST be NOT_ASSESSED)"}`,
     `Files Changed:`,
     fileList,
     truncatedNotice,
@@ -292,6 +303,7 @@ export function buildVerificationPrompt(changeSet = {}, producerFindings = [], o
     `      "locatorAccurate": true,`,
     `      "typeAccurate": true,`,
     `      "severityAccurate": true,`,
+    `      "objectiveImpact": "FALSIFIES_PATCH_OBJECTIVE|DOES_NOT_FALSIFY_PATCH_OBJECTIVE|NOT_ASSESSED",`,
     `      "reasoning": "Concrete evidence-based explanation",`,
     `      "dissent": null`,
     `    }`,
@@ -474,6 +486,21 @@ export function validateVerificationOutput(rawOutput, context = {}) {
     const locatorAccurate = parseBoolean(item.locatorAccurate);
     const typeAccurate = parseBoolean(item.typeAccurate);
     const severityAccurate = parseBoolean(item.severityAccurate);
+    const rawObjectiveImpact = item.objectiveImpact === undefined || item.objectiveImpact === null
+      ? OBJECTIVE_IMPACTS.NOT_ASSESSED
+      : String(item.objectiveImpact).toUpperCase().trim();
+    if (!VALID_OBJECTIVE_IMPACTS.has(rawObjectiveImpact)) {
+      return Object.freeze({
+        ok: false,
+        valid: false,
+        executionStatus: EXECUTION_STATUS.MALFORMED_OUTPUT,
+        evaluations: Object.freeze([]),
+        verifierOmissions: Object.freeze([]),
+        usage: null,
+        error: `Invalid objectiveImpact '${item.objectiveImpact}' for finding '${findingId}'.`
+      });
+    }
+    const objectiveImpact = rawObjectiveImpact;
     const reasoning = item.reasoning !== undefined && item.reasoning !== null
       ? String(item.reasoning).trim()
       : "";
@@ -500,6 +527,7 @@ export function validateVerificationOutput(rawOutput, context = {}) {
       locatorAccurate,
       typeAccurate,
       severityAccurate,
+      objectiveImpact,
       reasoning,
       dissent
     }));
@@ -1025,6 +1053,7 @@ export async function conductIndependentVerification(changeSet, producerFindings
         locatorAccurate: matched.locatorAccurate,
         typeAccurate: matched.typeAccurate,
         severityAccurate: matched.severityAccurate,
+        objectiveImpact: matched.objectiveImpact || OBJECTIVE_IMPACTS.NOT_ASSESSED,
         reasoning: matched.reasoning,
         dissent: matched.dissent
       }));
@@ -1037,6 +1066,7 @@ export async function conductIndependentVerification(changeSet, producerFindings
         locatorAccurate: false,
         typeAccurate: false,
         severityAccurate: false,
+        objectiveImpact: OBJECTIVE_IMPACTS.NOT_ASSESSED,
         reasoning: validated.ok
           ? "Finding omitted from verifier evaluation; unverified under Default-Deny."
           : `Verification unavailable: ${validated.error || "adapter failure"}`,
@@ -1074,6 +1104,7 @@ export async function conductIndependentVerification(changeSet, producerFindings
         locatorAccurate: ev.locatorAccurate,
         typeAccurate: ev.typeAccurate,
         severityAccurate: ev.severityAccurate,
+        objectiveImpact: ev.objectiveImpact || OBJECTIVE_IMPACTS.NOT_ASSESSED,
         reasoning: ev.reasoning,
         dissent: ev.dissent || "Disagreement recorded in independent verification"
       }));
@@ -1199,6 +1230,9 @@ export function validateVerificationRecord(record) {
         if (typeof ev.locatorAccurate !== "boolean") errors.push(`Evaluation at index ${i} requires boolean 'locatorAccurate'.`);
         if (typeof ev.typeAccurate !== "boolean") errors.push(`Evaluation at index ${i} requires boolean 'typeAccurate'.`);
         if (typeof ev.severityAccurate !== "boolean") errors.push(`Evaluation at index ${i} requires boolean 'severityAccurate'.`);
+        if (ev.objectiveImpact !== undefined && !VALID_OBJECTIVE_IMPACTS.has(ev.objectiveImpact)) {
+          errors.push(`Evaluation at index ${i} has invalid objectiveImpact '${ev.objectiveImpact}'.`);
+        }
       }
     }
   }
@@ -1337,6 +1371,9 @@ export function createMockVerifierAdapter(providerName = "claude", options = {})
           locatorAccurate: true,
           typeAccurate: true,
           severityAccurate: true,
+          objectiveImpact: options.patchObjective
+            ? OBJECTIVE_IMPACTS.DOES_NOT_FALSIFY_PATCH_OBJECTIVE
+            : OBJECTIVE_IMPACTS.NOT_ASSESSED,
           reasoning: `Offline mock verifier verified finding '${findingId}' against changeSet diff.`,
           dissent: null
         };
