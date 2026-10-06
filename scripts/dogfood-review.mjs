@@ -120,7 +120,8 @@ export function parseArgs(argv = process.argv.slice(2)) {
     base: "main",
     head: "HEAD",
     out: "dogfood-run.json",
-    timeoutMs: null
+    timeoutMs: null,
+    patchObjective: null
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -176,6 +177,13 @@ export function parseArgs(argv = process.argv.slice(2)) {
         throw new Error(`Invalid --timeout value: '${val}'. Must be a positive integer.`);
       }
       options.timeoutMs = parsed;
+    } else if (arg === "--patch-objective") {
+      if (i + 1 >= argv.length || argv[i + 1].startsWith("-")) {
+        throw new Error("Missing value for --patch-objective");
+      }
+      options.patchObjective = argv[++i];
+    } else if (arg.startsWith("--patch-objective=")) {
+      options.patchObjective = arg.slice("--patch-objective=".length);
     } else if (arg === "--strict") {
       options.strict = true;
     } else {
@@ -205,6 +213,7 @@ Options:
   --repository <id>   Canonical owner/repo for a repository without a resolvable remote; must match any resolved identity
   --out <file>        Output report path (default: dogfood-run.json)
   --timeout <ms>      Per-provider timeout in milliseconds (default: 300000 live / 30000 mock)
+  --patch-objective <text>  Stated patch objective used only for independent objective-relevance verification
   --help, -h          Show this help message
 `);
 }
@@ -804,6 +813,7 @@ export async function runDogfoodReview(userOptions = {}) {
         verifierName: "claude",
         verifierModel: "claude-5.5-sonnet",
         changeSetDigest: changeSet.contentDigest,
+        patchObjective: userOptions.patchObjective || null,
         timeoutMs,
         signal: userOptions.signal || null
       }
@@ -855,6 +865,7 @@ export async function runDogfoodReview(userOptions = {}) {
       head
     },
     changeSetSummary: {
+      ...(userOptions.patchObjective ? { patchObjective: String(userOptions.patchObjective) } : {}),
       totalFiles: files.length,
       totalAdditions: changeSet.totalAdditions,
       totalDeletions: changeSet.totalDeletions,
