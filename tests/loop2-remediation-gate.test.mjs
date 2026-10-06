@@ -250,6 +250,84 @@ test("LOOP2-REMEDIATION-001 Replay: CYCLE-0005 maintains strictly BLOCK on priva
   assert.equal(discrepancy, "MATCH", "CYCLE-0005 genuine BLOCK must be preserved");
 });
 
+test("CYCLE-0021 Replay: Tier 2 SUPPORTED Low directly falsifying patch objective BLOCKS", () => {
+  const finding = {
+    id: "finding-1",
+    title: "Mounted cleanup stops after the first mounted transport failure",
+    severity: "low",
+    file: "httpx/_client.py",
+    line: 1275,
+    corroborations: 1,
+    sources: ["codex"]
+  };
+  const consensus = makeTrustedConsensus([finding], { tier: 2 });
+  const verificationRecord = {
+    ok: true,
+    evaluations: [{
+      findingId: "finding-1",
+      verdict: "SUPPORTED",
+      classification: "SUPPORTED",
+      locatorAccurate: true,
+      typeAccurate: true,
+      severityAccurate: true,
+      objectiveImpact: "FALSIFIES_PATCH_OBJECTIVE",
+      reasoning: "A mounted close failure aborts the loop, so later mounted transports are not closed despite the stated all-transports cleanup objective."
+    }]
+  };
+
+  const gate = evaluateGateDecision(consensus, { tier: 2, strict: false, verificationRecord });
+  assert.equal(gate.decision, "block");
+  assert.match(gate.reason, /falsifies stated patch objective/i);
+
+  const triadDisposition = deriveTriadDisposition({
+    advisoryGate: gate,
+    telemetryMetrics: { executionComplete: true },
+    consensus: { quorumReached: true }
+  });
+  assert.equal(triadDisposition, "BLOCK");
+  assert.equal(classifyDiscrepancy(triadDisposition, "REQUEST_CHANGES"), "MATCH");
+});
+
+test("CYCLE-0010 receipt-signature replay: Tier 2 verified Low remains APPROVE when it does not falsify the patch objective", () => {
+  // The canonical CYCLE-0010 receipt records Tier 2, one finding, successful verification,
+  // zero disagreement, and final APPROVE. The historical run artifact does not retain the
+  // finding text here, so this replay intentionally preserves that gate-relevant signature.
+  const finding = {
+    id: "finding-1",
+    title: "Verified advisory issue outside the IPv4 no_proxy port fix objective",
+    severity: "low",
+    file: "src/requests/utils.py",
+    line: 840,
+    corroborations: 1,
+    sources: ["codex"]
+  };
+  const consensus = makeTrustedConsensus([finding], { tier: 2 });
+  const verificationRecord = {
+    ok: true,
+    evaluations: [{
+      findingId: "finding-1",
+      verdict: "SUPPORTED",
+      classification: "SUPPORTED",
+      locatorAccurate: true,
+      typeAccurate: true,
+      severityAccurate: true,
+      objectiveImpact: "DOES_NOT_FALSIFY_PATCH_OBJECTIVE",
+      reasoning: "The advisory issue does not invalidate the stated IPv4 no_proxy host:port behavior."
+    }]
+  };
+
+  const gate = evaluateGateDecision(consensus, { tier: 2, strict: false, verificationRecord });
+  assert.equal(gate.decision, "approve");
+
+  const triadDisposition = deriveTriadDisposition({
+    advisoryGate: gate,
+    telemetryMetrics: { executionComplete: true },
+    consensus: { quorumReached: true }
+  });
+  assert.equal(triadDisposition, "APPROVE");
+  assert.equal(classifyDiscrepancy(triadDisposition, "APPROVE"), "MATCH");
+});
+
 // ==============================================================================
 // Group 2: Synthetic Authority Matrix Tests (Exhaustive Coverage)
 // ==============================================================================
@@ -370,4 +448,118 @@ test("Synthetic Matrix 8: Structural failures never approve regardless of verifi
   const brokenRec = { ok: false, error: "TIMEOUT" };
   const consensusClean = makeTrustedConsensus([{ id: "f1", title: "Low finding", file: "a.js", severity: "low", corroborations: 1 }], { tier: 2 });
   assert.equal(evaluateGateDecision(consensusClean, { tier: 2, verificationRecord: brokenRec }).decision, "block");
+});
+
+
+test("Synthetic Objective Boundary 1: ordinary Tier 2 SUPPORTED Low remains advisory", () => {
+  const consensus = makeTrustedConsensus([
+    { id: "f-low", title: "Minor formatting defect", severity: "low", file: "fmt.js", corroborations: 1 }
+  ], { tier: 2 });
+  const rec = {
+    ok: true,
+    evaluations: [{
+      findingId: "f-low",
+      verdict: "SUPPORTED",
+      classification: "SUPPORTED",
+      locatorAccurate: true,
+      typeAccurate: true,
+      severityAccurate: true,
+      objectiveImpact: "DOES_NOT_FALSIFY_PATCH_OBJECTIVE"
+    }]
+  };
+  assert.equal(evaluateGateDecision(consensus, { tier: 2, verificationRecord: rec }).decision, "approve");
+});
+
+test("Synthetic Objective Boundary 2: missing objectiveImpact preserves legacy Tier 2 Low advisory behavior", () => {
+  const consensus = makeTrustedConsensus([
+    { id: "f-low", title: "Legacy low finding", severity: "low", file: "legacy.js", corroborations: 1 }
+  ], { tier: 2 });
+  const rec = {
+    ok: true,
+    evaluations: [{
+      findingId: "f-low",
+      verdict: "SUPPORTED",
+      classification: "SUPPORTED",
+      locatorAccurate: true,
+      typeAccurate: true,
+      severityAccurate: true
+    }]
+  };
+  assert.equal(evaluateGateDecision(consensus, { tier: 2, verificationRecord: rec }).decision, "approve");
+});
+
+test("Synthetic Objective Boundary 3: severity downgrade cannot hide a verified objective falsification", () => {
+  const consensus = makeTrustedConsensus([
+    { id: "f-med", title: "Patch still violates its contract", severity: "medium", file: "api.js", corroborations: 1 }
+  ], { tier: 2 });
+  const rec = {
+    ok: true,
+    evaluations: [{
+      findingId: "f-med",
+      verdict: "SUPPORTED",
+      classification: "PARTIALLY_SUPPORTED",
+      locatorAccurate: true,
+      typeAccurate: true,
+      severityAccurate: false,
+      objectiveImpact: "FALSIFIES_PATCH_OBJECTIVE"
+    }]
+  };
+  assert.equal(evaluateGateDecision(consensus, { tier: 2, verificationRecord: rec }).decision, "block");
+});
+
+test("Synthetic Objective Boundary 4: objective marker alone cannot override a CONTESTED verdict", () => {
+  const consensus = makeTrustedConsensus([
+    { id: "f-low", title: "Contested objective claim", severity: "low", file: "api.js", corroborations: 1 }
+  ], { tier: 2 });
+  const rec = {
+    ok: true,
+    evaluations: [{
+      findingId: "f-low",
+      verdict: "CONTESTED",
+      classification: "CONTRADICTED",
+      locatorAccurate: true,
+      typeAccurate: true,
+      severityAccurate: true,
+      objectiveImpact: "FALSIFIES_PATCH_OBJECTIVE"
+    }]
+  };
+  assert.equal(evaluateGateDecision(consensus, { tier: 2, verificationRecord: rec }).decision, "approve");
+});
+
+test("Synthetic Objective Boundary 5: objective marker alone cannot override INSUFFICIENT_EVIDENCE", () => {
+  const consensus = makeTrustedConsensus([
+    { id: "f-low", title: "Unverified objective claim", severity: "low", file: "api.js", corroborations: 1 }
+  ], { tier: 2 });
+  const rec = {
+    ok: true,
+    evaluations: [{
+      findingId: "f-low",
+      verdict: "INSUFFICIENT_EVIDENCE",
+      classification: "UNVERIFIABLE",
+      locatorAccurate: false,
+      typeAccurate: true,
+      severityAccurate: true,
+      objectiveImpact: "FALSIFIES_PATCH_OBJECTIVE"
+    }]
+  };
+  assert.equal(evaluateGateDecision(consensus, { tier: 2, verificationRecord: rec }).decision, "approve");
+});
+
+test("Synthetic Objective Boundary 6: Medium still blocks on severity even when objective is unaffected", () => {
+  const consensus = makeTrustedConsensus([
+    { id: "f-med", title: "Independent medium-impact defect", severity: "medium", file: "api.js", corroborations: 1 }
+  ], { tier: 2 });
+  const rec = {
+    ok: true,
+    evaluations: [{
+      findingId: "f-med",
+      verdict: "SUPPORTED",
+      classification: "SUPPORTED",
+      locatorAccurate: true,
+      typeAccurate: true,
+      severityAccurate: true,
+      objectiveImpact: "DOES_NOT_FALSIFY_PATCH_OBJECTIVE"
+    }]
+  };
+  assert.equal(evaluateGateDecision(consensus, { tier: 2, verificationRecord: rec }).decision, "block");
 });
