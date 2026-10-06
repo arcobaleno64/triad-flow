@@ -354,6 +354,9 @@ export function evaluatePostVerificationGate(consensus, verificationRecord, opti
 
   const findings = Array.isArray(consensus.findings) ? consensus.findings : [];
   const evaluations = Array.isArray(verificationRecord.evaluations) ? verificationRecord.evaluations : [];
+  const hasBoundPatchObjective =
+    typeof verificationRecord.patchObjective === "string" &&
+    verificationRecord.patchObjective.trim().length > 0;
   const isTier1 = options?.tier === 1;
   const isStrict = Boolean(options && (options.strict || isTier1));
 
@@ -382,6 +385,7 @@ export function evaluatePostVerificationGate(consensus, verificationRecord, opti
     const falsifiesPatchObjective =
       isSupported &&
       !isContested &&
+      hasBoundPatchObjective &&
       objectiveImpact === "FALSIFIES_PATCH_OBJECTIVE";
 
     const corroborations = Number(f.corroborations || f.sources?.length || 1);
