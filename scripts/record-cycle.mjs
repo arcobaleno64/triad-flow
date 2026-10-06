@@ -384,10 +384,7 @@ export function buildCycleReceipt(run, m, prior = []) {
 
   const triad = deriveTriadDisposition(run);
   const discrepancy = classifyDiscrepancy(triad, human);
-  let family = validateFailureFamily(m.failureFamily);
-  if (family === "NONE" && discrepancy === "FALSE_HOLD") {
-    family = "false-hold";
-  }
+  const family = validateFailureFamily(m.failureFamily);
   if (m.telemetryOnly && family === "NONE") throw new Error("telemetry-only requires a failure family");
   const recurrence = recurrenceCount(prior, family, counts);
 
