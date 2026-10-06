@@ -54,6 +54,15 @@ export const VERIFICATION_VERDICTS = Object.freeze({
 export const VALID_VERDICTS = Object.freeze(new Set(Object.values(VERIFICATION_VERDICTS)));
 
 /**
+ * Normative finding acceptance relevance (LOOP2-REMEDIATION-002).
+ */
+export const ACCEPTANCE_RELEVANCE = Object.freeze({
+  BLOCKING: "BLOCKING",
+  ADVISORY: "ADVISORY"
+});
+export const VALID_ACCEPTANCE_RELEVANCE = Object.freeze(new Set(Object.values(ACCEPTANCE_RELEVANCE)));
+
+/**
  * Standard Disagreement Ledger classifications.
  */
 export const DISAGREEMENT_CLASSIFICATIONS = Object.freeze({
@@ -263,12 +272,15 @@ export function buildVerificationPrompt(changeSet = {}, producerFindings = [], o
     `2. Locator Accuracy: Verify whether the file path and line numbers are accurate.`,
     `3. Type Accuracy: Verify whether the reported defect type, classification, or CWE is accurate.`,
     `4. Severity Accuracy: Verify whether the assigned severity level is justified.`,
-    `5. Verdict Selection: Assign one of the following exact verdicts:`,
+    `5. Acceptance Relevance: Determine whether the finding directly falsifies the patch's stated objective or core correctness contract:`,
+    `   - "BLOCKING": The finding proves the patch fails to achieve its stated fix/goal, introduces a regression in the targeted behavior, or violates the patch's acceptance contract.`,
+    `   - "ADVISORY": The finding is an incidental, pre-existing, or non-goal observation that does not invalidate the patch's primary objective.`,
+    `6. Verdict Selection: Assign one of the following exact verdicts:`,
     `   - "SUPPORTED": The finding is conclusively backed by the diff evidence.`,
     `   - "CONTESTED": The finding is factually incorrect, false-positive, or ungrounded. You MUST provide 'dissent' reasoning.`,
     `   - "INSUFFICIENT_EVIDENCE": The diff contains insufficient context to corroborate or refute the finding.`,
-    `6. Independent Omissions: If you find security vulnerabilities or bugs in the diff that the producer missed, report them in 'verifierOmissions'.`,
-    `7. Immutability Guarantee: You cannot overwrite, delete, or silently merge producer findings.`,
+    `7. Independent Omissions: If you find security vulnerabilities or bugs in the diff that the producer missed, report them in 'verifierOmissions'.`,
+    `8. Immutability Guarantee: You cannot overwrite, delete, or silently merge producer findings.`,
     ``,
     `Scope: ${scope}`,
     `Content Digest: ${contentDigest}`,
@@ -289,6 +301,7 @@ export function buildVerificationPrompt(changeSet = {}, producerFindings = [], o
     `    {`,
     `      "findingId": "finding-1",`,
     `      "verdict": "SUPPORTED|CONTESTED|INSUFFICIENT_EVIDENCE",`,
+    `      "acceptanceRelevance": "BLOCKING|ADVISORY",`,
     `      "locatorAccurate": true,`,
     `      "typeAccurate": true,`,
     `      "severityAccurate": true,`,
@@ -478,6 +491,16 @@ export function validateVerificationOutput(rawOutput, context = {}) {
       ? String(item.reasoning).trim()
       : "";
 
+    let acceptanceRelevance = null;
+    if (item.acceptanceRelevance !== undefined && item.acceptanceRelevance !== null) {
+      const arStr = String(item.acceptanceRelevance).trim().toUpperCase();
+      if (VALID_ACCEPTANCE_RELEVANCE.has(arStr)) {
+        acceptanceRelevance = arStr;
+      }
+    } else if (item.falsifiesPatchObjective !== undefined) {
+      acceptanceRelevance = item.falsifiesPatchObjective ? ACCEPTANCE_RELEVANCE.BLOCKING : ACCEPTANCE_RELEVANCE.ADVISORY;
+    }
+
     let dissent = null;
     if (item.dissent !== undefined && item.dissent !== null) {
       const dStr = String(item.dissent).trim();
@@ -497,6 +520,7 @@ export function validateVerificationOutput(rawOutput, context = {}) {
     normalizedEvaluations.push(deepFreeze({
       findingId,
       verdict: rawVerdict,
+      acceptanceRelevance,
       locatorAccurate,
       typeAccurate,
       severityAccurate,
@@ -1022,6 +1046,7 @@ export async function conductIndependentVerification(changeSet, producerFindings
         findingId,
         verdict: matched.verdict,
         classification,
+        acceptanceRelevance: matched.acceptanceRelevance || null,
         locatorAccurate: matched.locatorAccurate,
         typeAccurate: matched.typeAccurate,
         severityAccurate: matched.severityAccurate,
@@ -1034,6 +1059,7 @@ export async function conductIndependentVerification(changeSet, producerFindings
         findingId,
         verdict: VERIFICATION_VERDICTS.INSUFFICIENT_EVIDENCE,
         classification: DISAGREEMENT_CLASSIFICATIONS.UNVERIFIABLE,
+        acceptanceRelevance: null,
         locatorAccurate: false,
         typeAccurate: false,
         severityAccurate: false,
@@ -1071,6 +1097,7 @@ export async function conductIndependentVerification(changeSet, producerFindings
         producerFinding: origFinding ? deepFreeze(cloneDeep(origFinding)) : null,
         verdict: ev.verdict,
         classification: ev.classification,
+        acceptanceRelevance: ev.acceptanceRelevance || null,
         locatorAccurate: ev.locatorAccurate,
         typeAccurate: ev.typeAccurate,
         severityAccurate: ev.severityAccurate,

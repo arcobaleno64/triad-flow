@@ -11,6 +11,7 @@ function makeTrustedConsensus(findings = [], { tier = 2, quorumReached = true } 
 
   for (const f of findings) {
     const rawF = {
+      ...f,
       id: f.id,
       title: f.title,
       severity: f.severity,
@@ -250,6 +251,97 @@ test("LOOP2-REMEDIATION-001 Replay: CYCLE-0005 maintains strictly BLOCK on priva
   assert.equal(discrepancy, "MATCH", "CYCLE-0005 genuine BLOCK must be preserved");
 });
 
+test("LOOP2-REMEDIATION-002 Replay: CYCLE-0021 produces BLOCK on verified objective-falsifying low finding, eliminating false advance", () => {
+  const finding = {
+    id: "finding-1",
+    title: "Failure in one mounted transport still skips the remaining mounts",
+    severity: "low",
+    file: "httpx/_client.py",
+    line_start: 1270,
+    line_end: 1275,
+    ruleId: "RESOURCE-CLEANUP-PARTIAL",
+    cwe: "CWE-404",
+    type: "resource-leak",
+    recommendation: "try/finally protects only the main transport. If any mounted transport's close()/__exit__/aclose()/__aexit__ raises, the loop aborts and later mounts are never closed...",
+    corroborations: 1,
+    sources: ["claude"]
+  };
+  const consensus = makeTrustedConsensus([finding], { tier: 2 });
+
+  const verificationRecord = {
+    ok: true,
+    evaluations: [
+      {
+        findingId: "finding-1",
+        verdict: "SUPPORTED",
+        classification: "PARTIALLY_SUPPORTED",
+        locatorAccurate: false,
+        typeAccurate: true,
+        severityAccurate: true,
+        reasoning: "The diff shows try/finally wrapping only the main transport. The mounts loop sits inside `finally` with no per-transport guard. If one mounted transport's close()/__exit__/aclose()/__aexit__ raises, the loop aborts and the remaining mounts are never closed, so their connections can leak. This is the same partial-cleanup problem the patch targets, just one level down, and the diff does not address it. CWE-404 and the resource-leak classification fit. Low severity is reasonable because the trigger is an exception during transport close, which is rare. The reported lines 1270-1275 match only the sync Client.close hunk (new-file lines 1267-1275). The recommendation also cites other locations, so the locator is only partly accurate. The recommendation's extra point also holds: an exception raised inside `finally` replaces the in-flight exception from the main transport's close. In __exit__, it can also mask the original exc_value."
+      }
+    ]
+  };
+
+  const gate = evaluateGateDecision(consensus, { tier: 2, strict: false, verificationRecord });
+  assert.equal(gate.decision, "block");
+  assert.match(gate.reason, /falsifies patch objective/i);
+
+  const triadDisposition = deriveTriadDisposition({
+    advisoryGate: gate,
+    telemetryMetrics: { executionComplete: true },
+    consensus: { quorumReached: true }
+  });
+  assert.equal(triadDisposition, "BLOCK");
+
+  // With Human Oracle REQUEST_CHANGES, Triad BLOCK is a non-discrepant MATCH
+  const discrepancy = classifyDiscrepancy(triadDisposition, "REQUEST_CHANGES");
+  assert.equal(discrepancy, "MATCH", "CYCLE-0021 replay must eliminate false advance and match REQUEST_CHANGES");
+});
+
+test("LOOP2-REMEDIATION-002 Replay: CYCLE-0010 produces APPROVE on advisory verified low finding in Tier 2", () => {
+  const finding = {
+    id: "finding-1",
+    title: "IPv4 分支新增對 parsed.port 的存取，可能對畸形連接埠拋出 ValueError",
+    severity: "low",
+    file: "src/requests/utils.py",
+    line: 840,
+    corroborations: 1,
+    sources: ["claude"]
+  };
+  const consensus = makeTrustedConsensus([finding], { tier: 2 });
+
+  const verificationRecord = {
+    ok: true,
+    evaluations: [
+      {
+        findingId: "finding-1",
+        verdict: "SUPPORTED",
+        classification: "SUPPORTED",
+        acceptanceRelevance: "ADVISORY",
+        locatorAccurate: true,
+        typeAccurate: true,
+        severityAccurate: true,
+        reasoning: "The diff adds `if parsed.port:` at lines 840-842 inside the `is_ipv4_address(hostname)` branch. Low severity is reasonable, because requests' normal flow calls `prepare_url`, which rejects invalid ports with InvalidURL first. The exposure is only direct callers of the public `should_bypass_proxies` helper."
+      }
+    ]
+  };
+
+  const gate = evaluateGateDecision(consensus, { tier: 2, strict: false, verificationRecord });
+  assert.equal(gate.decision, "approve");
+  assert.match(gate.reason, /No blocking vulnerabilities/i);
+
+  const triadDisposition = deriveTriadDisposition({
+    advisoryGate: gate,
+    telemetryMetrics: { executionComplete: true },
+    consensus: { quorumReached: true }
+  });
+  assert.equal(triadDisposition, "APPROVE");
+
+  const discrepancy = classifyDiscrepancy(triadDisposition, "APPROVE");
+  assert.equal(discrepancy, "MATCH", "CYCLE-0010 replay must preserve APPROVE on advisory low finding");
+});
+
 // ==============================================================================
 // Group 2: Synthetic Authority Matrix Tests (Exhaustive Coverage)
 // ==============================================================================
@@ -370,4 +462,121 @@ test("Synthetic Matrix 8: Structural failures never approve regardless of verifi
   const brokenRec = { ok: false, error: "TIMEOUT" };
   const consensusClean = makeTrustedConsensus([{ id: "f1", title: "Low finding", file: "a.js", severity: "low", corroborations: 1 }], { tier: 2 });
   assert.equal(evaluateGateDecision(consensusClean, { tier: 2, verificationRecord: brokenRec }).decision, "block");
+});
+
+test("Synthetic Matrix 9: Tier 2 Low finding with explicit acceptanceRelevance: BLOCKING blocks", () => {
+  const consensus = makeTrustedConsensus([
+    { id: "f1", title: "Defect violates patch goal", severity: "low", file: "helper.js", corroborations: 1 }
+  ], { tier: 2 });
+  const rec = {
+    ok: true,
+    evaluations: [
+      {
+        findingId: "f1",
+        verdict: "SUPPORTED",
+        classification: "SUPPORTED",
+        acceptanceRelevance: "BLOCKING",
+        locatorAccurate: true,
+        typeAccurate: true,
+        severityAccurate: true,
+        reasoning: "Defect prevents patch from achieving its contract."
+      }
+    ]
+  };
+  const gate = evaluateGateDecision(consensus, { tier: 2, strict: false, verificationRecord: rec });
+  assert.equal(gate.decision, "block");
+  assert.match(gate.reason, /falsifies patch objective/i);
+});
+
+test("Synthetic Matrix 10: Tier 2 Low finding with explicit acceptanceRelevance: ADVISORY passes as advisory", () => {
+  const consensus = makeTrustedConsensus([
+    { id: "f1", title: "Incidental edge case", severity: "low", file: "helper.js", corroborations: 1 }
+  ], { tier: 2 });
+  const rec = {
+    ok: true,
+    evaluations: [
+      {
+        findingId: "f1",
+        verdict: "SUPPORTED",
+        classification: "SUPPORTED",
+        acceptanceRelevance: "ADVISORY",
+        locatorAccurate: true,
+        typeAccurate: true,
+        severityAccurate: true,
+        reasoning: "Minor edge case does not affect patch goal."
+      }
+    ]
+  };
+  const gate = evaluateGateDecision(consensus, { tier: 2, strict: false, verificationRecord: rec });
+  assert.equal(gate.decision, "approve");
+});
+
+test("Synthetic Matrix 11: Tier 2 Low finding with falsifiesPatchObjective: true blocks", () => {
+  const consensus = makeTrustedConsensus([
+    { id: "f1", title: "Contract bypass", severity: "low", file: "helper.js", corroborations: 1, falsifiesPatchObjective: true }
+  ], { tier: 2 });
+  const rec = {
+    ok: true,
+    evaluations: [
+      {
+        findingId: "f1",
+        verdict: "SUPPORTED",
+        classification: "SUPPORTED",
+        locatorAccurate: true,
+        typeAccurate: true,
+        severityAccurate: true,
+        reasoning: "Confirmed contract bypass."
+      }
+    ]
+  };
+  const gate = evaluateGateDecision(consensus, { tier: 2, strict: false, verificationRecord: rec });
+  assert.equal(gate.decision, "block");
+  assert.match(gate.reason, /falsifies patch objective/i);
+});
+
+test("Synthetic Matrix 12: Tier 2 Low finding with INSUFFICIENT_EVIDENCE and BLOCKING relevance produces HUMAN_REVIEW_REQUIRED", () => {
+  const consensus = makeTrustedConsensus([
+    { id: "f1", title: "Claimed objective break", severity: "low", file: "helper.js", corroborations: 1 }
+  ], { tier: 2 });
+  const rec = {
+    ok: true,
+    evaluations: [
+      {
+        findingId: "f1",
+        verdict: "INSUFFICIENT_EVIDENCE",
+        classification: "UNVERIFIABLE",
+        acceptanceRelevance: "BLOCKING",
+        locatorAccurate: false,
+        typeAccurate: false,
+        severityAccurate: false,
+        reasoning: "Cannot verify whether objective is broken from diff alone."
+      }
+    ]
+  };
+  const gate = evaluateGateDecision(consensus, { tier: 2, strict: false, verificationRecord: rec });
+  assert.equal(gate.decision, "human_review_required");
+  assert.match(gate.reason, /blocking acceptance relevance requires adjudication/i);
+});
+
+test("Synthetic Matrix 13: Tier 2 Low finding with CONTESTED and BLOCKING relevance is removed from blocking set", () => {
+  const consensus = makeTrustedConsensus([
+    { id: "f1", title: "Refuted claim", severity: "low", file: "helper.js", corroborations: 1 }
+  ], { tier: 2 });
+  const rec = {
+    ok: true,
+    evaluations: [
+      {
+        findingId: "f1",
+        verdict: "CONTESTED",
+        classification: "CONTRADICTED",
+        acceptanceRelevance: "BLOCKING",
+        locatorAccurate: true,
+        typeAccurate: true,
+        severityAccurate: true,
+        reasoning: "Claim is completely refuted by line 42."
+      }
+    ]
+  };
+  const gate = evaluateGateDecision(consensus, { tier: 2, strict: false, verificationRecord: rec });
+  assert.equal(gate.decision, "approve");
 });
