@@ -41,9 +41,10 @@ import {
 } from "../src/core/independent-verifier.mjs";
 import { TOOL_VERSION } from "../src/core/review-run-report.mjs";
 
-export function getCommitShaForRef(ref = "HEAD") {
+export function getCommitShaForRef(ref = "HEAD", cwd = process.cwd()) {
   try {
     const out = execFileSync("git", ["rev-parse", "--verify", `${ref}^{commit}`], {
+      cwd,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"]
     }).trim();
@@ -52,13 +53,14 @@ export function getCommitShaForRef(ref = "HEAD") {
   return null;
 }
 
-export function getCurrentCommitSha() {
-  return getCommitShaForRef("HEAD") || "0000000000000000000000000000000000000000";
+export function getCurrentCommitSha(cwd = process.cwd()) {
+  return getCommitShaForRef("HEAD", cwd) || "0000000000000000000000000000000000000000";
 }
 
-export function getBranchForRef(ref = "HEAD") {
+export function getBranchForRef(ref = "HEAD", cwd = process.cwd()) {
   try {
     const out = execFileSync("git", ["rev-parse", "--symbolic-full-name", ref], {
+      cwd,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"]
     }).trim();
@@ -69,8 +71,8 @@ export function getBranchForRef(ref = "HEAD") {
   return null;
 }
 
-export function getCurrentBranch() {
-  return getBranchForRef("HEAD");
+export function getCurrentBranch(cwd = process.cwd()) {
+  return getBranchForRef("HEAD", cwd);
 }
 
 export function normalizeRepositoryIdentity(value) {
@@ -84,10 +86,11 @@ export function normalizeRepositoryIdentity(value) {
   return /^[a-z0-9_.-]+\/[a-z0-9_.-]+$/.test(normalized) ? normalized : null;
 }
 
-export function getRepositoryIdentityFromGit(requestedIdentity = null) {
+export function getRepositoryIdentityFromGit(requestedIdentity = null, cwd = process.cwd()) {
   let remotes;
   try {
     remotes = execFileSync("git", ["remote"], {
+      cwd,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"]
     }).trim().split(/\r?\n/).filter(Boolean);
@@ -98,6 +101,7 @@ export function getRepositoryIdentityFromGit(requestedIdentity = null) {
   for (const remote of remotes) {
     try {
       const url = execFileSync("git", ["remote", "get-url", remote], {
+        cwd,
         encoding: "utf8", stdio: ["ignore", "pipe", "pipe"]
       }).trim();
       const identity = normalizeRepositoryIdentity(url);
@@ -178,6 +182,15 @@ export function parseArgs(argv = process.argv.slice(2)) {
       options.timeoutMs = parsed;
     } else if (arg === "--strict") {
       options.strict = true;
+    } else if (arg === "--repo-dir" || arg === "--cwd") {
+      if (i + 1 >= argv.length || argv[i + 1].startsWith("-")) {
+        throw new Error(`Missing value for ${arg}`);
+      }
+      options.repoDir = argv[++i];
+    } else if (arg.startsWith("--repo-dir=")) {
+      options.repoDir = arg.slice("--repo-dir=".length);
+    } else if (arg.startsWith("--cwd=")) {
+      options.repoDir = arg.slice("--cwd=".length);
     } else {
       throw new Error(`Unknown argument: '${arg}'`);
     }
@@ -517,14 +530,15 @@ export async function runDogfoodReview(userOptions = {}) {
   const isMock = !isLive;
   const base = userOptions.base || "main";
   const head = userOptions.head || "HEAD";
+  const repoDir = path.resolve(userOptions.repoDir || userOptions.cwd || process.cwd());
   const timeoutMs = userOptions.timeoutMs || (isLive ? 300000 : 30000);
   const log = userOptions.log !== false;
   const outPath = path.resolve(userOptions.out || "dogfood-run.json");
 
-  const branch = getBranchForRef(head);
-  const requestedHeadSha = getCommitShaForRef(head);
+  const branch = getBranchForRef(head, repoDir);
+  const requestedHeadSha = getCommitShaForRef(head, repoDir);
   if (!requestedHeadSha) {
-    throw new Error(`Reviewed head ref '${head}' cannot be resolved to a non-zero commit SHA`);
+    throw new Error(`Reviewed head ref '${head}' cannot be resolved to a non-zero commit SHA in repository at '${repoDir}'`);
   }
 
   if (log) {
@@ -542,16 +556,16 @@ export async function runDogfoodReview(userOptions = {}) {
     if (log) console.log(`[1/5] Inspecting Git changes between '${base}' and '${head}'...`);
     let resolvedBase = base;
     try {
-      execFileSync("git", ["rev-parse", "--verify", base], { stdio: "ignore" });
+      execFileSync("git", ["rev-parse", "--verify", base], { cwd: repoDir, stdio: "ignore" });
     } catch {
       try {
-        execFileSync("git", ["rev-parse", "--verify", `origin/${base}`], { stdio: "ignore" });
+        execFileSync("git", ["rev-parse", "--verify", `origin/${base}`], { cwd: repoDir, stdio: "ignore" });
         resolvedBase = `origin/${base}`;
       } catch {
         resolvedBase = "HEAD";
       }
     }
-    changeSet = buildChangeSet(process.cwd(), { base: resolvedBase, head });
+    changeSet = buildChangeSet(repoDir, { base: resolvedBase, head });
   }
 
   if (!changeSet || !changeSet.ok) {
@@ -572,7 +586,7 @@ export async function runDogfoodReview(userOptions = {}) {
   }
   const resolvedRepository =
     normalizeRepositoryIdentity(changeSet?.repository?.name) ||
-    getRepositoryIdentityFromGit(requestedRepository);
+    getRepositoryIdentityFromGit(requestedRepository, repoDir);
   if (requestedRepository && resolvedRepository && requestedRepository !== resolvedRepository) {
     throw new Error("Requested repository identity does not match the reviewed repository");
   }
@@ -581,7 +595,7 @@ export async function runDogfoodReview(userOptions = {}) {
     throw new Error("Reviewed repository identity cannot be resolved to canonical owner/repo; provide --repository");
   }
 
-  const relOut = path.relative(process.cwd(), outPath).replace(/\\/g, "/");
+  const relOut = path.relative(repoDir, outPath).replace(/\\/g, "/");
   changeSet = filterChangeSetExclusions(changeSet, [relOut]);
 
   const files = (changeSet.files || []).map(f => ({
