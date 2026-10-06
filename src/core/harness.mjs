@@ -277,7 +277,28 @@ export function evaluateGateDecision(consensus, options = {}) {
     };
   }
 
+  if (options?.coverageOk === false || consensus?.coverageOk === false) {
+    return {
+      decision: "block",
+      reason: "Coverage Incomplete: Sentry omitted file(s) from review.",
+      criticals: []
+    };
+  }
+
   const findings = Array.isArray(consensus.findings) ? consensus.findings : [];
+  if (findings.length === 0) {
+    return {
+      decision: "approve",
+      reason: "No blocking vulnerabilities found. CI/CD Gate passed.",
+      criticals: []
+    };
+  }
+
+  // If verificationRecord is provided, execute post-verification gate authority
+  if (options?.verificationRecord) {
+    return evaluatePostVerificationGate(consensus, options.verificationRecord, options);
+  }
+
   const criticals = findings.filter(f => f && (f.severity === "critical" || f.severity === "high"));
 
   if (criticals.length > 0) {
@@ -298,6 +319,144 @@ export function evaluateGateDecision(consensus, options = {}) {
       reason: isTier1
         ? `Tier 1 high-risk policy: ${findings.length} findings must be resolved before merge. Merge blocked.`
         : `Strict mode enabled: ${findings.length} findings must be resolved.`,
+      criticals: []
+    };
+  }
+
+  return {
+    decision: "approve",
+    reason: "No blocking vulnerabilities found. CI/CD Gate passed.",
+    criticals: []
+  };
+}
+
+/**
+ * Evaluates Post-Verification Gate decision incorporating Independent Verification authority.
+ * Adheres to normative LOOP2-REMEDIATION-001 authority rules:
+ * - Critical/High findings remain strictly fail-closed BLOCK (or HUMAN_REVIEW_REQUIRED if contested)
+ * - Supported Low/Medium findings block in Tier 1
+ * - Supported Medium findings block in Tier 2
+ * - Supported Low findings pass as advisory in Tier 2
+ * - Solitary non-Critical/High findings with INSUFFICIENT_EVIDENCE map to HUMAN_REVIEW_REQUIRED
+ * - Solitary findings with CONTESTED verdict are removed from blocking set (advisory pass)
+ * - Corroborated findings with CONTESTED verdict map to HUMAN_REVIEW_REQUIRED
+ * - Structural failures (coverage, quorum, capability, verification error) strictly FAIL-CLOSED BLOCK
+ */
+export function evaluatePostVerificationGate(consensus, verificationRecord, options = {}) {
+  if (!verificationRecord || verificationRecord.ok === false) {
+    return {
+      decision: "block",
+      reason: "Gate Fail-Closed: Verifier execution failed, timed out, or incomplete.",
+      criticals: []
+    };
+  }
+
+  const findings = Array.isArray(consensus.findings) ? consensus.findings : [];
+  const evaluations = Array.isArray(verificationRecord.evaluations) ? verificationRecord.evaluations : [];
+  const isTier1 = options?.tier === 1;
+  const isStrict = Boolean(options && (options.strict || isTier1));
+
+  let hasBlocker = false;
+  let hasHumanReview = false;
+  const blockReasons = [];
+  const humanReviewReasons = [];
+  const criticals = [];
+
+  for (let i = 0; i < findings.length; i++) {
+    const f = findings[i];
+    if (!f) continue;
+
+    const evalMatch = evaluations.find(e =>
+      (f.id && String(e.findingId) === String(f.id)) ||
+      (f.findingId && String(e.findingId) === String(f.findingId)) ||
+      String(e.findingId) === `finding-${i + 1}`
+    ) || evaluations[i];
+
+    const verdict = String(evalMatch?.verdict || "INSUFFICIENT_EVIDENCE").toUpperCase();
+    const classification = String(evalMatch?.classification || "").toUpperCase();
+    const isContested = verdict === "CONTESTED" || classification === "CONTRADICTED";
+    const isSupported = verdict === "SUPPORTED";
+    const isInsufficient = verdict === "INSUFFICIENT_EVIDENCE" || classification === "UNVERIFIABLE";
+
+    const corroborations = Number(f.corroborations || f.sources?.length || 1);
+    const isSolitary = corroborations <= 1;
+    const isCorroborated = corroborations >= 2;
+
+    const rawSeverity = String(f.severity || "medium").toLowerCase();
+    let effectiveSeverity = rawSeverity;
+
+    if (evalMatch && evalMatch.severityAccurate === false) {
+      if (rawSeverity === "critical" || rawSeverity === "high") {
+        hasHumanReview = true;
+        humanReviewReasons.push(`Critical/high severity contested by verifier: "${f.title}"`);
+        continue;
+      } else if (rawSeverity === "medium" && isSupported) {
+        effectiveSeverity = "low";
+      }
+    }
+
+    if (effectiveSeverity === "critical" || effectiveSeverity === "high") {
+      if (isContested) {
+        hasHumanReview = true;
+        humanReviewReasons.push(`Critical/high severity finding contested by verifier: "${f.title}"`);
+      } else {
+        hasBlocker = true;
+        criticals.push(f);
+        blockReasons.push(`Found critical/high severity finding: "${f.title}"`);
+      }
+    } else if (effectiveSeverity === "medium") {
+      if (isContested) {
+        if (isCorroborated) {
+          hasHumanReview = true;
+          humanReviewReasons.push(`Corroborated medium finding contested by verifier: "${f.title}"`);
+        } else {
+          // Solitary medium finding contested by verifier -> removed from blocking set (advisory)
+        }
+      } else if (isInsufficient) {
+        if (isCorroborated) {
+          hasBlocker = true;
+          blockReasons.push(`Corroborated medium finding cannot be substantiated by verifier: "${f.title}"`);
+        } else {
+          hasHumanReview = true;
+          humanReviewReasons.push(`Solitary medium finding cannot be substantiated by verifier (INSUFFICIENT_EVIDENCE): "${f.title}"`);
+        }
+      } else if (isSupported) {
+        hasBlocker = true;
+        blockReasons.push(isTier1
+          ? `Tier 1 high-risk policy: verified medium finding blocks merge: "${f.title}"`
+          : `Verified medium finding blocks merge: "${f.title}"`);
+      }
+    } else if (effectiveSeverity === "low") {
+      if (isContested) {
+        // Contested low finding -> removed from blocking set
+      } else if (isInsufficient) {
+        if (isTier1 && isStrict) {
+          hasHumanReview = true;
+          humanReviewReasons.push(`Tier 1 low finding unverifiable: "${f.title}"`);
+        }
+        // In Tier 2: unverified low finding does not block
+      } else if (isSupported) {
+        if (isTier1 || isStrict) {
+          hasBlocker = true;
+          blockReasons.push(`Tier 1 policy: verified low finding blocks merge: "${f.title}"`);
+        }
+        // In Tier 2 non-strict: verified low finding passes as advisory
+      }
+    }
+  }
+
+  if (hasBlocker) {
+    return {
+      decision: "block",
+      reason: blockReasons[0] || "Blocking findings identified by verified review.",
+      criticals
+    };
+  }
+
+  if (hasHumanReview) {
+    return {
+      decision: "human_review_required",
+      reason: humanReviewReasons[0] || "Review requires human adjudication.",
       criticals: []
     };
   }

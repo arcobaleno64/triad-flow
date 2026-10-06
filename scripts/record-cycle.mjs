@@ -384,7 +384,10 @@ export function buildCycleReceipt(run, m, prior = []) {
 
   const triad = deriveTriadDisposition(run);
   const discrepancy = classifyDiscrepancy(triad, human);
-  const family = validateFailureFamily(m.failureFamily);
+  let family = validateFailureFamily(m.failureFamily);
+  if (family === "NONE" && discrepancy === "FALSE_HOLD") {
+    family = "false-hold";
+  }
   if (m.telemetryOnly && family === "NONE") throw new Error("telemetry-only requires a failure family");
   const recurrence = recurrenceCount(prior, family, counts);
 
@@ -432,7 +435,7 @@ export function buildCycleReceipt(run, m, prior = []) {
     humanDisposition: human,
     ...(m.humanNotes ? { humanNotes: String(m.humanNotes) } : {}),
     triadDisposition: triad,
-    gateDecision: gateSource === "approve" || gateSource === "pass" || triad === "APPROVE" ? "pass" : "block",
+    gateDecision: gateSource === "approve" || gateSource === "pass" || triad === "APPROVE" ? "pass" : (gateSource === "human_review_required" || gateSource === "escalate" || triad === "HUMAN_REVIEW_REQUIRED" ? "escalate" : "block"),
     discrepancy,
     robustness: {
       executionComplete: run?.telemetryMetrics?.executionComplete === true,

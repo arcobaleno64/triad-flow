@@ -176,6 +176,8 @@ export function parseArgs(argv = process.argv.slice(2)) {
         throw new Error(`Invalid --timeout value: '${val}'. Must be a positive integer.`);
       }
       options.timeoutMs = parsed;
+    } else if (arg === "--strict") {
+      options.strict = true;
     } else {
       throw new Error(`Unknown argument: '${arg}'`);
     }
@@ -756,22 +758,23 @@ export async function runDogfoodReview(userOptions = {}) {
     console.log(`  ✔ OpenAI codex: status=${rawReports.codex.executionStatus} (${rawReports.codex.findings?.length || 0} findings, ${codexOut.latencyMs}ms)${codexOut.res?.error ? ` - error: ${codexOut.res.error}` : ""}`);
   }
 
-  // 4. Consensus & Policy Evaluation
-  if (log) console.log("\n[4/5] Evaluating consensus & disagreement ledger...");
+  // 4. Consensus & Pre-Verification Gate Evaluation
+  if (log) console.log("\n[4/5] Evaluating consensus & pre-verification gate...");
   const consensus = aggregateConsensus(rawReports, {
     policy: "TRI_PARTY_HETEROGENEOUS",
     tier: diffTier
   });
 
-  const gate = evaluateGateDecision(consensus, {
+  const isStrict = Boolean(userOptions.strict || false);
+  const preGate = evaluateGateDecision(consensus, {
     tier: diffTier,
-    strict: true
+    strict: isStrict
   });
 
   const findings = consensus.findings || [];
   if (log) {
     console.log(`  ★ Consensus Verdict: ${consensus.verdict} (Quorum reached: ${consensus.quorumReached})`);
-    console.log(`  🛡️ Policy Gate: ${gate.decision.toUpperCase()} (${gate.reason})`);
+    console.log(`  🛡️ Pre-Verification Gate: ${preGate.decision.toUpperCase()} (${preGate.reason})`);
     console.log(`  📋 Consensus Findings: ${findings.length}`);
     for (const f of findings) {
       console.log(`    • [${f.severity?.toUpperCase() || "MEDIUM"}] ${f.title} (${f.file}:${f.line_start || 1})`);
@@ -782,7 +785,12 @@ export async function runDogfoodReview(userOptions = {}) {
   if (log) console.log("\n[5/5] Compiling operational telemetry into dogfood-run.json...");
   let verificationRecord = null;
   let verifierTimedOut = false;
-  if (findings.length > 0) {
+  const isStructuralFailure = !consensus.quorumReached ||
+    consensus.verdict === "error" ||
+    preGate.reason?.includes("UNTRUSTED_CONSENSUS") ||
+    preGate.reason?.includes("Quorum failure");
+
+  if (findings.length > 0 && !isStructuralFailure) {
     const instrumentedVerifier = instrumentVerifierAdapter(verifierAdapter, () => {
       verifierTimedOut = true;
     });
@@ -800,6 +808,16 @@ export async function runDogfoodReview(userOptions = {}) {
         signal: userOptions.signal || null
       }
     );
+  }
+
+  // Evaluate authoritative Final Advisory Gate integrating verificationRecord
+  const gate = evaluateGateDecision(consensus, {
+    tier: diffTier,
+    strict: isStrict,
+    verificationRecord
+  });
+  if (log) {
+    console.log(`  🛡️ Final Advisory Gate: ${gate.decision.toUpperCase()} (${gate.reason})`);
   }
 
   const totalDurationMs = Date.now() - t0;
@@ -865,6 +883,7 @@ export async function runDogfoodReview(userOptions = {}) {
     advisoryGate: {
       decision: gate.decision,
       reason: gate.reason,
+      preVerificationDecision: preGate.decision,
       effectiveMergeAuthority: "NONE",
       simulatedGateBlock: gate.decision === "block",
       mergeBlockedInProduction: false
