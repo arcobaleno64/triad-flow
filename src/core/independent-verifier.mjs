@@ -502,6 +502,20 @@ export function validateVerificationOutput(rawOutput, context = {}) {
       });
     }
     const objectiveImpact = rawObjectiveImpact;
+    const hasPatchObjective =
+      typeof context.patchObjective === "string" &&
+      context.patchObjective.trim().length > 0;
+    if (!hasPatchObjective && objectiveImpact !== OBJECTIVE_IMPACTS.NOT_ASSESSED) {
+      return Object.freeze({
+        ok: false,
+        valid: false,
+        executionStatus: EXECUTION_STATUS.MALFORMED_OUTPUT,
+        evaluations: Object.freeze([]),
+        verifierOmissions: Object.freeze([]),
+        usage: null,
+        error: `objectiveImpact for finding '${findingId}' must be NOT_ASSESSED when no patch objective is bound.`
+      });
+    }
     const reasoning = item.reasoning !== undefined && item.reasoning !== null
       ? String(item.reasoning).trim()
       : "";
@@ -1017,7 +1031,8 @@ export async function conductIndependentVerification(changeSet, producerFindings
     changeSet,
     producerFindings: preservedProducerFindings,
     providerName: verifierAdapter?.providerName || options.verifierName,
-    modelName: verifierAdapter?.modelName || options.verifierModel
+    modelName: verifierAdapter?.modelName || options.verifierModel,
+    patchObjective: typeof options.patchObjective === "string" ? options.patchObjective.trim() : ""
   });
 
   if (!validated.ok && options.throwOnError && !verifierError) {
