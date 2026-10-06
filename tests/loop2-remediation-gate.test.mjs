@@ -263,6 +263,7 @@ test("CYCLE-0021 Replay: Tier 2 SUPPORTED Low directly falsifying patch objectiv
   const consensus = makeTrustedConsensus([finding], { tier: 2 });
   const verificationRecord = {
     ok: true,
+    patchObjective: "Ensure all mounted transports are closed even if the main transport raises.",
     evaluations: [{
       findingId: "finding-1",
       verdict: "SUPPORTED",
@@ -304,6 +305,7 @@ test("CYCLE-0010 receipt-signature replay: Tier 2 verified Low remains APPROVE w
   const consensus = makeTrustedConsensus([finding], { tier: 2 });
   const verificationRecord = {
     ok: true,
+    patchObjective: "Honor host:port entries for IPv4 addresses in no_proxy while preserving existing matching.",
     evaluations: [{
       findingId: "finding-1",
       verdict: "SUPPORTED",
@@ -457,6 +459,7 @@ test("Synthetic Objective Boundary 1: ordinary Tier 2 SUPPORTED Low remains advi
   ], { tier: 2 });
   const rec = {
     ok: true,
+    patchObjective: "Implement the stated behavior without changing unrelated output formatting.",
     evaluations: [{
       findingId: "f-low",
       verdict: "SUPPORTED",
@@ -494,6 +497,7 @@ test("Synthetic Objective Boundary 3: severity downgrade cannot hide a verified 
   ], { tier: 2 });
   const rec = {
     ok: true,
+    patchObjective: "Guarantee the patched API contract in all documented cases.",
     evaluations: [{
       findingId: "f-med",
       verdict: "SUPPORTED",
@@ -513,6 +517,7 @@ test("Synthetic Objective Boundary 4: objective marker alone cannot override a C
   ], { tier: 2 });
   const rec = {
     ok: true,
+    patchObjective: "Guarantee the patched API contract in all documented cases.",
     evaluations: [{
       findingId: "f-low",
       verdict: "CONTESTED",
@@ -532,6 +537,7 @@ test("Synthetic Objective Boundary 5: objective marker alone cannot override INS
   ], { tier: 2 });
   const rec = {
     ok: true,
+    patchObjective: "Guarantee the patched API contract in all documented cases.",
     evaluations: [{
       findingId: "f-low",
       verdict: "INSUFFICIENT_EVIDENCE",
@@ -551,6 +557,7 @@ test("Synthetic Objective Boundary 6: Medium still blocks on severity even when 
   ], { tier: 2 });
   const rec = {
     ok: true,
+    patchObjective: "Implement the primary behavior change.",
     evaluations: [{
       findingId: "f-med",
       verdict: "SUPPORTED",
@@ -562,4 +569,23 @@ test("Synthetic Objective Boundary 6: Medium still blocks on severity even when 
     }]
   };
   assert.equal(evaluateGateDecision(consensus, { tier: 2, verificationRecord: rec }).decision, "block");
+});
+
+test("Synthetic Objective Boundary 7: FALSIFIES marker without a bound patchObjective cannot block", () => {
+  const consensus = makeTrustedConsensus([
+    { id: "f-low-unbound", title: "Unbound relevance assertion", severity: "low", file: "api.js", corroborations: 1 }
+  ], { tier: 2 });
+  const rec = {
+    ok: true,
+    evaluations: [{
+      findingId: "f-low-unbound",
+      verdict: "SUPPORTED",
+      classification: "SUPPORTED",
+      locatorAccurate: true,
+      typeAccurate: true,
+      severityAccurate: true,
+      objectiveImpact: "FALSIFIES_PATCH_OBJECTIVE"
+    }]
+  };
+  assert.equal(evaluateGateDecision(consensus, { tier: 2, verificationRecord: rec }).decision, "approve");
 });
