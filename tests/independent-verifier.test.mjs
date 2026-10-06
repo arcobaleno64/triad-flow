@@ -1086,3 +1086,47 @@ test("Disagreement Ledger: categorizes findings into canonical classifications",
 });
 
 
+
+
+test("Objective relevance validation: FALSIFIES_PATCH_OBJECTIVE requires a bound patch objective", () => {
+  const raw = {
+    evaluations: [{
+      findingId: "finding-1",
+      verdict: "SUPPORTED",
+      locatorAccurate: true,
+      typeAccurate: true,
+      severityAccurate: true,
+      objectiveImpact: "FALSIFIES_PATCH_OBJECTIVE",
+      reasoning: "The defect directly defeats the claimed contract."
+    }],
+    verifierOmissions: []
+  };
+
+  const unbound = validateVerificationOutput(structuredClone(raw), {});
+  assert.equal(unbound.ok, false);
+  assert.match(unbound.error, /NOT_ASSESSED when no patch objective is bound/i);
+
+  const bound = validateVerificationOutput(structuredClone(raw), {
+    patchObjective: "Guarantee cleanup of every mounted transport."
+  });
+  assert.equal(bound.ok, true);
+  assert.equal(bound.evaluations[0].objectiveImpact, "FALSIFIES_PATCH_OBJECTIVE");
+});
+
+test("Objective relevance validation: legacy verifier output defaults to NOT_ASSESSED", () => {
+  const raw = {
+    evaluations: [{
+      findingId: "finding-1",
+      verdict: "SUPPORTED",
+      locatorAccurate: true,
+      typeAccurate: true,
+      severityAccurate: true,
+      reasoning: "Verified advisory issue."
+    }],
+    verifierOmissions: []
+  };
+
+  const result = validateVerificationOutput(raw, {});
+  assert.equal(result.ok, true);
+  assert.equal(result.evaluations[0].objectiveImpact, "NOT_ASSESSED");
+});
