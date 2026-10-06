@@ -12,12 +12,12 @@
 
 ## Scorecard
 
-- Ledger receipts: **20**
-- Maturity-counting cycles: **19 / 20–30**
-- False advance: **0**
+- Ledger receipts: **21**
+- Maturity-counting cycles: **20 / 20–30**
+- False advance: **1**
 - False hold: **3**
 - Timeout-cycle rate: **0.0%**
-- Average wall-clock latency: **57872 ms**
+- Average wall-clock latency: **57770 ms**
 
 False-advance/false-hold rates use only binary autonomous Triad outcomes (`APPROVE` / `BLOCK`). `DEGRADED`, `INCOMPLETE`, and `HUMAN_REVIEW_REQUIRED` never enter those rates automatically.
 
@@ -47,17 +47,19 @@ False-advance/false-hold rates use only binary autonomous Triad outcomes (`APPRO
 | CYCLE-0018 | live | yes | APPROVE | APPROVE | MATCH | NOT_ATTEMPTED | NONE | 0 | NONE |
 | CYCLE-0019 | live | yes | APPROVE | APPROVE | MATCH | NOT_ATTEMPTED | NONE | 0 | NONE |
 | CYCLE-0020 | live | yes | APPROVE | APPROVE | MATCH | NOT_ATTEMPTED | NONE | 0 | NONE |
+| CYCLE-0021 | live | yes | REQUEST_CHANGES | APPROVE | FALSE_ADVANCE | SUCCESS | false-advance | 1 | IMMEDIATE_BLOCKER |
 
 ## Active Failure Families
 
 | Failure family | Qualifying occurrences |
 |---|---:|
+| false-advance | 1 |
 | false-hold | 1 |
 
 ## SHADOW -> ADVISORY Maturity Gate
 
-- [ ] At least 20 qualifying real change cycles (target range 20–30).
-- [x] No observed false advance in the qualifying sample.
+- [x] At least 20 qualifying real change cycles (target range 20–30).
+- [ ] No observed false advance in the qualifying sample.
 - [ ] No known systemic false-approve path.
 - [ ] No new P0/P1 authority, provenance, or coverage truthfulness family.
 - [ ] PASS / BLOCK / DEGRADED / INCOMPLETE / HUMAN_REVIEW_REQUIRED classification is operationally stable.
