@@ -336,7 +336,8 @@ export function evaluateGateDecision(consensus, options = {}) {
  * - Critical/High findings remain strictly fail-closed BLOCK (or HUMAN_REVIEW_REQUIRED if contested)
  * - Supported Low/Medium findings block in Tier 1
  * - Supported Medium findings block in Tier 2
- * - Supported Low findings pass as advisory in Tier 2
+ * - Supported Low findings pass as advisory in Tier 2 unless independent verification marks them as directly falsifying the stated patch objective
+ * - Any independently SUPPORTED finding marked FALSIFIES_PATCH_OBJECTIVE blocks regardless of impact severity
  * - Solitary non-Critical/High findings with INSUFFICIENT_EVIDENCE map to HUMAN_REVIEW_REQUIRED
  * - Solitary findings with CONTESTED verdict are removed from blocking set (advisory pass)
  * - Corroborated findings with CONTESTED verdict map to HUMAN_REVIEW_REQUIRED
@@ -377,6 +378,11 @@ export function evaluatePostVerificationGate(consensus, verificationRecord, opti
     const isContested = verdict === "CONTESTED" || classification === "CONTRADICTED";
     const isSupported = verdict === "SUPPORTED";
     const isInsufficient = verdict === "INSUFFICIENT_EVIDENCE" || classification === "UNVERIFIABLE";
+    const objectiveImpact = String(evalMatch?.objectiveImpact || "NOT_ASSESSED").toUpperCase();
+    const falsifiesPatchObjective =
+      isSupported &&
+      !isContested &&
+      objectiveImpact === "FALSIFIES_PATCH_OBJECTIVE";
 
     const corroborations = Number(f.corroborations || f.sources?.length || 1);
     const isSolitary = corroborations <= 1;
@@ -389,10 +395,17 @@ export function evaluatePostVerificationGate(consensus, verificationRecord, opti
       if (rawSeverity === "critical" || rawSeverity === "high") {
         hasHumanReview = true;
         humanReviewReasons.push(`Critical/high severity contested by verifier: "${f.title}"`);
-        continue;
+        if (!falsifiesPatchObjective) continue;
       } else if (rawSeverity === "medium" && isSupported) {
         effectiveSeverity = "low";
       }
+    }
+
+    if (falsifiesPatchObjective) {
+      hasBlocker = true;
+      if (rawSeverity === "critical" || rawSeverity === "high") criticals.push(f);
+      blockReasons.push(`Verified finding directly falsifies stated patch objective: "${f.title}"`);
+      continue;
     }
 
     if (effectiveSeverity === "critical" || effectiveSeverity === "high") {
