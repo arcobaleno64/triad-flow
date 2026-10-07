@@ -485,15 +485,22 @@ export function renderSummary(receipts) {
   }
   const pct = m.length ? `${((timeouts / m.length) * 100).toFixed(1)}%` : "0.0%";
 
+  const post005Start = receipts.findIndex(r => r.cycleId === "CYCLE-0025");
+  const post005 = post005Start >= 0 ? receipts.slice(post005Start).filter(r => r.countsTowardMaturity === true) : [];
+  const post005Fa = post005.filter(r => r.discrepancy === "FALSE_ADVANCE").length;
+
   const lines = [
     "# Triad-Flow Shadow Dogfood Observation", "",
     "> **Authority boundary:** `dogfood-receipts.jsonl` is the canonical append-only observation ledger. This Markdown file is a derived projection only, may be deleted and regenerated, and has no independent evidence authority.", "",
     "## Operational Baseline", "",
     "- Release: `v2.7.0`",
     "- Canonical release commit: `fdcabf861368edbe552a0427efcb89da47fd4cb7`",
+    "- Phase 4.3 Track D1 Status: `COMPLETE (Observation Target 30/30 Satisfied)`",
     "- Stage: `SHADOW_DOGFOOD`",
+    "- Promotion Review Status: `REJECTED / STRICT_HOLD`",
     "- Runtime merge authority: `NONE`",
-    "- Maturity target: `SHADOW -> ADVISORY` after 20–30 qualifying real change cycles", "",
+    "- Maturity target: `SHADOW -> ADVISORY` after 20–30 qualifying real change cycles",
+    `- Post-005 Fresh Cohort: \`${post005.length} consecutive / ${post005Fa} FALSE_ADVANCE\` (Eligibility: ${post005.length}/15)`, "",
     "## Scorecard", "",
     `- Ledger receipts: **${receipts.length}**`,
     `- Maturity-counting cycles: **${m.length} / 20–30**`,
@@ -535,6 +542,12 @@ export function renderSummary(receipts) {
     "- [ ] No new P0/P1 authority, provenance, or coverage truthfulness family.",
     "- [ ] PASS / BLOCK / DEGRADED / INCOMPLETE / HUMAN_REVIEW_REQUIRED classification is operationally stable.",
     "- [ ] False-hold / override / latency / cost baseline has been reviewed by human authority.", "",
+    "### Governance Adjudication (Phase 4.3 Dogfood Observation Closure)", "",
+    "- Disposition: **REJECTED / STRICT_HOLD**",
+    "- Runtime Authority: **NONE**",
+    "- Observation Status: **PHASE_4_3_TRACK_D1 = COMPLETE (30/30 cycles observed)**",
+    `- Post-005 Fresh Cohort: **${post005.length} consecutive cycles / ${post005Fa} FALSE_ADVANCE**`,
+    "- Next Promotion Eligibility Gate: Requires **>=15 consecutive fresh cycles / 0 FALSE_ADVANCE** before re-reviewing `SHADOW -> ADVISORY` promotion.", "",
     "Promotion remains a human governance decision. This projection never promotes Triad-Flow automatically.", ""
   );
   return lines.join("\n");

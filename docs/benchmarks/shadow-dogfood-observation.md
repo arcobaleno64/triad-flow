@@ -6,9 +6,12 @@
 
 - Release: `v2.7.0`
 - Canonical release commit: `fdcabf861368edbe552a0427efcb89da47fd4cb7`
+- Phase 4.3 Track D1 Status: `COMPLETE (Observation Target 30/30 Satisfied)`
 - Stage: `SHADOW_DOGFOOD`
+- Promotion Review Status: `REJECTED / STRICT_HOLD`
 - Runtime merge authority: `NONE`
 - Maturity target: `SHADOW -> ADVISORY` after 20–30 qualifying real change cycles
+- Post-005 Fresh Cohort: `7 consecutive / 0 FALSE_ADVANCE` (Eligibility: 7/15)
 
 ## Scorecard
 
@@ -74,5 +77,13 @@ False-advance/false-hold rates use only binary autonomous Triad outcomes (`APPRO
 - [ ] No new P0/P1 authority, provenance, or coverage truthfulness family.
 - [ ] PASS / BLOCK / DEGRADED / INCOMPLETE / HUMAN_REVIEW_REQUIRED classification is operationally stable.
 - [ ] False-hold / override / latency / cost baseline has been reviewed by human authority.
+
+### Governance Adjudication (Phase 4.3 Dogfood Observation Closure)
+
+- Disposition: **REJECTED / STRICT_HOLD**
+- Runtime Authority: **NONE**
+- Observation Status: **PHASE_4_3_TRACK_D1 = COMPLETE (30/30 cycles observed)**
+- Post-005 Fresh Cohort: **7 consecutive cycles / 0 FALSE_ADVANCE**
+- Next Promotion Eligibility Gate: Requires **>=15 consecutive fresh cycles / 0 FALSE_ADVANCE** before re-reviewing `SHADOW -> ADVISORY` promotion.
 
 Promotion remains a human governance decision. This projection never promotes Triad-Flow automatically.
