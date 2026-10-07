@@ -12,12 +12,12 @@
 
 ## Scorecard
 
-- Ledger receipts: **23**
-- Maturity-counting cycles: **22 / 20–30**
-- False advance: **2**
+- Ledger receipts: **24**
+- Maturity-counting cycles: **23 / 20–30**
+- False advance: **3**
 - False hold: **3**
 - Timeout-cycle rate: **0.0%**
-- Average wall-clock latency: **57875 ms**
+- Average wall-clock latency: **57195 ms**
 
 False-advance/false-hold rates use only binary autonomous Triad outcomes (`APPROVE` / `BLOCK`). `DEGRADED`, `INCOMPLETE`, and `HUMAN_REVIEW_REQUIRED` never enter those rates automatically.
 
@@ -50,12 +50,13 @@ False-advance/false-hold rates use only binary autonomous Triad outcomes (`APPRO
 | CYCLE-0021 | live | yes | REQUEST_CHANGES | APPROVE | FALSE_ADVANCE | SUCCESS | false-advance | 1 | IMMEDIATE_BLOCKER |
 | CYCLE-0022 | live | yes | REQUEST_CHANGES | APPROVE | FALSE_ADVANCE | NOT_ATTEMPTED | false-advance | 2 | IMMEDIATE_BLOCKER |
 | CYCLE-0023 | live | yes | APPROVE | APPROVE | MATCH | NOT_ATTEMPTED | NONE | 0 | NONE |
+| CYCLE-0024 | live | yes | REQUEST_CHANGES | APPROVE | FALSE_ADVANCE | NOT_ATTEMPTED | false-advance | 3 | IMMEDIATE_BLOCKER |
 
 ## Active Failure Families
 
 | Failure family | Qualifying occurrences |
 |---|---:|
-| false-advance | 2 |
+| false-advance | 3 |
 | false-hold | 1 |
 
 ## SHADOW -> ADVISORY Maturity Gate
