@@ -218,6 +218,7 @@ export function validateProviderInput(input = {}) {
         limits: Object.freeze(limits),
         prompt: typeof safeGet(input, "prompt") === "string" ? safeGet(input, "prompt") : undefined,
         patchObjective: typeof safeGet(input, "patchObjective") === "string" ? safeGet(input, "patchObjective").trim() : undefined,
+        objectiveContract: (safeGet(input, "objectiveContract") && typeof safeGet(input, "objectiveContract") === "object") ? safeGet(input, "objectiveContract") : undefined,
         options: (safeGet(input, "options") && typeof safeGet(input, "options") === "object") ? safeGet(input, "options") : undefined
       })
     };

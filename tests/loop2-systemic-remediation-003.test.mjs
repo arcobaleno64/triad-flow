@@ -161,10 +161,10 @@ test("WP-02: buildVerificationPrompt includes the algebraic objective completene
     patchObjective: "Ensure mounted transports are closed even if main transport raises"
   });
 
-  assert.match(prompt, /Objective Completeness = Declared Scope \* Documented Exclusions \* Observable Residual Counterexample/);
+  assert.match(prompt, /Objective Completeness = Declared Scope \* (?:Documented|Authorized Pre-Bound) Exclusions \* Observable Residual Counterexample/);
   assert.match(prompt, /Assign "FALSIFIES_PATCH_OBJECTIVE" if and only if:/);
-  assert.match(prompt, /The counterexample falls strictly within the Declared Scope/);
-  assert.match(prompt, /The counterexample is NOT an explicitly documented exclusion/);
+  assert.match(prompt, /The counterexample falls strictly within the (?:Declared Scope|Stated Patch Objective)/);
+  assert.match(prompt, /The counterexample is NOT (?:an explicitly documented exclusion|listed in the Authorized Pre-Bound Exclusions)/);
   assert.match(prompt, /Assign "DOES_NOT_FALSIFY_PATCH_OBJECTIVE" if:/);
   assert.match(prompt, /Assign "NOT_ASSESSED" if no stated patch objective was provided/);
 });

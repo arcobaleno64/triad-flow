@@ -445,7 +445,11 @@ export function evaluatePostVerificationGate(consensus, verificationRecord, opti
       }
     } else if (effectiveSeverity === "low") {
       if (isContested) {
-        // Contested low finding -> removed from blocking set
+        if (isCorroborated && (f.type === "OBJECTIVE_CONTRADICTION" || f.ruleId === "OBJECTIVE-CONTRADICTION")) {
+          hasHumanReview = true;
+          humanReviewReasons.push(`Corroborated objective contradiction contested by verifier requires human adjudication: "${f.title}"`);
+        }
+        // Otherwise solitary contested low finding -> removed from blocking set
       } else if (isInsufficient) {
         if (isTier1 && isStrict) {
           hasHumanReview = true;

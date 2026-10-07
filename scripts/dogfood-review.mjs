@@ -126,6 +126,7 @@ export function parseArgs(argv = process.argv.slice(2)) {
     out: "dogfood-run.json",
     timeoutMs: null,
     patchObjective: null,
+    patchExclusions: [],
     repoDir: null
   };
 
@@ -189,6 +190,13 @@ export function parseArgs(argv = process.argv.slice(2)) {
       options.patchObjective = argv[++i];
     } else if (arg.startsWith("--patch-objective=")) {
       options.patchObjective = arg.slice("--patch-objective=".length);
+    } else if (arg === "--patch-exclusion") {
+      if (i + 1 >= argv.length || argv[i + 1].startsWith("-")) {
+        throw new Error("Missing value for --patch-exclusion");
+      }
+      options.patchExclusions.push(argv[++i]);
+    } else if (arg.startsWith("--patch-exclusion=")) {
+      options.patchExclusions.push(arg.slice("--patch-exclusion=".length));
     } else if (arg === "--strict") {
       options.strict = true;
     } else if (arg === "--repo-dir" || arg === "--cwd") {
@@ -702,6 +710,12 @@ export async function runDogfoodReview(userOptions = {}) {
   if (log) console.log("\n[3/5] Executing tri-party review on PR changeset...");
   const t0 = Date.now();
 
+  const objectiveContract = userOptions.objectiveContract || (userOptions.patchObjective ? {
+    objective: String(userOptions.patchObjective).trim(),
+    exclusions: Array.isArray(userOptions.patchExclusions) ? userOptions.patchExclusions : [],
+    finalizedBeforeRun: true
+  } : null);
+
   let stagedFallbackUsed = false;
   let stagedChunkCount = null;
   let stagedTimeoutCount = 0;
@@ -715,6 +729,7 @@ export async function runDogfoodReview(userOptions = {}) {
       policyId: "TRI_PARTY_HETEROGENEOUS",
       timeoutMs,
       patchObjective: userOptions.patchObjective || null,
+      objectiveContract,
       signal: userOptions.signal || null
     });
 
@@ -727,6 +742,7 @@ export async function runDogfoodReview(userOptions = {}) {
         policyId: "TRI_PARTY_HETEROGENEOUS",
         timeoutMs,
         patchObjective: userOptions.patchObjective || null,
+        objectiveContract,
         signal: userOptions.signal || null
       });
       stagedChunkCount = Array.isArray(res?.receipts) ? res.receipts.length : null;
@@ -746,6 +762,7 @@ export async function runDogfoodReview(userOptions = {}) {
     policyId: "TRI_PARTY_HETEROGENEOUS",
     timeoutMs,
     patchObjective: userOptions.patchObjective || null,
+    objectiveContract,
     signal: userOptions.signal || null
   }).then(res => ({ res, latencyMs: Date.now() - tClaude0 }));
 
@@ -757,6 +774,7 @@ export async function runDogfoodReview(userOptions = {}) {
     policyId: "TRI_PARTY_HETEROGENEOUS",
     timeoutMs,
     patchObjective: userOptions.patchObjective || null,
+    objectiveContract,
     signal: userOptions.signal || null
   }).then(res => ({ res, latencyMs: Date.now() - tCodex0 }));
 
@@ -834,6 +852,7 @@ export async function runDogfoodReview(userOptions = {}) {
         verifierModel: "claude-5.5-sonnet",
         changeSetDigest: changeSet.contentDigest,
         patchObjective: userOptions.patchObjective || null,
+        objectiveContract,
         timeoutMs,
         signal: userOptions.signal || null
       }
@@ -886,6 +905,7 @@ export async function runDogfoodReview(userOptions = {}) {
     },
     changeSetSummary: {
       ...(userOptions.patchObjective ? { patchObjective: String(userOptions.patchObjective) } : {}),
+      ...(objectiveContract ? { objectiveContract } : {}),
       totalFiles: files.length,
       totalAdditions: changeSet.totalAdditions,
       totalDeletions: changeSet.totalDeletions,
