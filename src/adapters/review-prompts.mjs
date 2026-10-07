@@ -64,6 +64,18 @@ export const TAXONOMY_CHECKLISTS = Object.freeze({
       "Verify symlink resolution using realpath or containment assertions.",
       "Check write operations to user-specified filenames."
     ])
+  }),
+  STATE_INVARIANT_CONCURRENCY: Object.freeze({
+    id: "CHECKLIST-CWE-362-400",
+    cwe: "CWE-362/CWE-400",
+    title: "State Machine, Concurrency & Resource Accounting Invariants (CWE-362 / CWE-400)",
+    rules: Object.freeze([
+      "Extract protected invariant: identify what capacity, quota, reference count, or lifecycle truth must continuously hold.",
+      "Evaluate mutation relocation across 4 paths: success, failure/rollback, concurrent interference, and retry/cancellation.",
+      "Verify check-and-reserve atomicity: check whether moving or delaying an increment/decrement opens a race window where multiple callers exceed limits.",
+      "Construct interleaving counterexample: can two concurrent actors observe preconditions before either commits state?",
+      "Verify failure rollback: ensure reservation slots or allocated resources are rolled back on constructor or initialization failures."
+    ])
   })
 });
 
@@ -120,6 +132,12 @@ export function selectChecklists(changeSet, options = {}) {
   // Path Traversal: Relevant for filesystem or path manipulation
   if (mentionsFsOrPath || /\.\.|\/|\\/i.test(hunks)) {
     selected.set(TAXONOMY_CHECKLISTS.PATH_TRAVERSAL.id, TAXONOMY_CHECKLISTS.PATH_TRAVERSAL);
+  }
+
+  // State Invariant & Concurrency: Relevant when pools, counters, locks, or lifecycle transitions are modified
+  const mentionsStateOrConcurrency = /(?:pool|connection|capacity|max_|count|quota|acquire|release|lock|mutex|thread|concurren|atomic|reserve|slot|holder|state|transition|rollback)/i.test(hunks);
+  if (mentionsStateOrConcurrency) {
+    selected.set(TAXONOMY_CHECKLISTS.STATE_INVARIANT_CONCURRENCY.id, TAXONOMY_CHECKLISTS.STATE_INVARIANT_CONCURRENCY);
   }
 
   // Fallback: If no heuristics triggered (or small diff), supply standard JS security checklists
@@ -307,6 +325,42 @@ export function buildEvidenceReviewPrompt(changeSet, role = "macro", limits = DE
   }
 
   sections.push(
+    ``,
+    `[STATE MUTATION & INVARIANT PRESERVATION RUBRIC]`,
+    `Core Analytical Principle:`,
+    `When a patch changes when, where, or whether state is mutated, does every invariant previously protected by that mutation still hold across success, failure, retry, cancellation, and interference paths?`,
+    ``,
+    `1. Invariant Extraction (Not Syntactic Keyword Matching):`,
+    `When reviewing diffs that touch counters, pool sizes, quotas, capacities, ownership, locks, reference counts, or lifecycle states:`,
+    `- Identify the continuous invariant: What system property must remain true at all times?`,
+    `  (e.g., active_plus_reserved <= max_limit; allocated resources have exactly one owner and are freed on all exit paths; transitions preserve legal ordering).`,
+    `- Do NOT focus solely on what the patch claims to fix (such as fixing a failure leak); actively verify what older invariant depended on the original mutation timing.`,
+    ``,
+    `2. Mutation-Relocation 4-Path Evaluation:`,
+    `If a patch relocates, delays, defers, removes, or guards a state mutation (such as moving a counter increment from before an operation to after its completion):`,
+    `You MUST systematically evaluate the invariant across ALL four execution paths:`,
+    `- Success Path: Normal execution completes and state remains coherent.`,
+    `- Failure & Rollback Path: Exceptions or aborts cleanly rollback state without leaks.`,
+    `- Concurrent Interference Path: Multiple concurrent callers interleaving operations do not violate safety or bounds.`,
+    `- Retry & Cancellation Path: Aborted operations restore the invariant before subsequent attempts.`,
+    `MANDATORY RULE: A patch MUST NOT fix a failure-path leak by destroying reservation atomicity on the concurrent interference path!`,
+    ``,
+    `3. Interleaving Counterexample Obligation:`,
+    `For any change altering the timing of state reservations or bounds checks:`,
+    `- Actively construct a minimal interleaving sequence:`,
+    `  Can Actor 1 and Actor 2 both observe the precondition (e.g. count < max) before either commits state?`,
+    `  If yes, and both proceed to construct/allocate, the capacity ceiling is violated.`,
+    `- If moving a mutation after a fallible or blocking call opens a race window, you MUST report this as an invariant violation.`,
+    `- The correct pattern is: reserve first, rollback in an exception handler upon failure, rather than postponing the reservation until success.`,
+    ``,
+    `4. Precision Discipline:`,
+    `- Do NOT flag thread-local or purely unshared variables where concurrency is impossible.`,
+    `- Do NOT flag patterns that already hold synchronization locks across the check-and-mutation or safely use atomic compare-and-swap.`,
+    `- When reporting an invariant violation:`,
+    `  - severity: "high" (or "medium" if bounded capacity drift)`,
+    `  - type: "INVARIANT_VIOLATION"`,
+    `  - title: Concise explanation of the broken invariant (e.g. "Delayed state mutation breaks concurrent capacity reservation")`,
+    `  - recommendation: Concrete fix (e.g. "Reserve capacity before construction and roll back in an exception handler on failure")`,
     ``,
     `[UNTRUSTED CODE MODIFICATIONS (DIFF)]`,
     `Diff:`,
