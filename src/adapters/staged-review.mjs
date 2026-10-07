@@ -391,7 +391,7 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
       ...changeSet,
       diffHunks: chunk.diffHunks,
       files: chunk.targetFiles.map(p => ({ path: p, additions: 0, deletions: 0 }))
-    }, role, limits, contextPkg);
+    }, role, limits, contextPkg, { patchObjective: options.patchObjective });
 
     const chunkStartTime = Date.now();
     let chunkResult;

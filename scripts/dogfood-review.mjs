@@ -714,6 +714,7 @@ export async function runDogfoodReview(userOptions = {}) {
       changeSet,
       policyId: "TRI_PARTY_HETEROGENEOUS",
       timeoutMs,
+      patchObjective: userOptions.patchObjective || null,
       signal: userOptions.signal || null
     });
 
@@ -725,6 +726,7 @@ export async function runDogfoodReview(userOptions = {}) {
         role: "agy",
         policyId: "TRI_PARTY_HETEROGENEOUS",
         timeoutMs,
+        patchObjective: userOptions.patchObjective || null,
         signal: userOptions.signal || null
       });
       stagedChunkCount = Array.isArray(res?.receipts) ? res.receipts.length : null;
@@ -743,6 +745,7 @@ export async function runDogfoodReview(userOptions = {}) {
     changeSet,
     policyId: "TRI_PARTY_HETEROGENEOUS",
     timeoutMs,
+    patchObjective: userOptions.patchObjective || null,
     signal: userOptions.signal || null
   }).then(res => ({ res, latencyMs: Date.now() - tClaude0 }));
 
@@ -753,6 +756,7 @@ export async function runDogfoodReview(userOptions = {}) {
     changeSet,
     policyId: "TRI_PARTY_HETEROGENEOUS",
     timeoutMs,
+    patchObjective: userOptions.patchObjective || null,
     signal: userOptions.signal || null
   }).then(res => ({ res, latencyMs: Date.now() - tCodex0 }));
 

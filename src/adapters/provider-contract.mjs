@@ -216,7 +216,9 @@ export function validateProviderInput(input = {}) {
         timeoutMs,
         signal: signal || null,
         limits: Object.freeze(limits),
-        prompt: typeof safeGet(input, "prompt") === "string" ? safeGet(input, "prompt") : undefined
+        prompt: typeof safeGet(input, "prompt") === "string" ? safeGet(input, "prompt") : undefined,
+        patchObjective: typeof safeGet(input, "patchObjective") === "string" ? safeGet(input, "patchObjective").trim() : undefined,
+        options: (safeGet(input, "options") && typeof safeGet(input, "options") === "object") ? safeGet(input, "options") : undefined
       })
     };
   } catch (err) {

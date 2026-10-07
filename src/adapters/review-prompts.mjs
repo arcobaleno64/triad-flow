@@ -261,6 +261,37 @@ export function buildEvidenceReviewPrompt(changeSet, role = "macro", limits = DE
     sections.push(``, `[CODE CONTEXT & AST ENCLOSURES]`, contextBlock);
   }
 
+  const patchObjective = typeof options?.patchObjective === "string"
+    ? options.patchObjective.trim()
+    : (typeof changeSet?.patchObjective === "string" ? changeSet.patchObjective.trim() : "");
+
+  if (patchObjective) {
+    sections.push(
+      ``,
+      `[DECLARED OBJECTIVE & EXCEPTIONAL BEHAVIOR CROSS-EXAMINATION]`,
+      `Declared Patch Objective:`,
+      `"${patchObjective}"`,
+      ``,
+      `Mandatory Cross-Examination Rule:`,
+      `When evaluating the diff, you must actively inspect all retained or introduced exceptional constructs, including:`,
+      `- Test annotations: @pytest.mark.xfail, @pytest.mark.skip, it.skip, test.skip`,
+      `- Control flow guards: version checks, platform guards, stubbed returns, unhandled fallback branches`,
+      `- Lingering markers: TODO, FIXME, XXX, stub implementations`,
+      ``,
+      `Evaluate against this exact criterion:`,
+      `"Does retained exceptional behavior contradict the scope the change explicitly claims to complete?"`,
+      ``,
+      `Discipline Constraints:`,
+      `- Do NOT blindly flag every xfail or skip as a blocker. If the exception covers an explicitly documented exclusion or out-of-scope subsystem, it is acceptable.`,
+      `- You MUST report a finding if the retained exception directly negates or restricts the scope that the patch explicitly claims to satisfy.`,
+      `- When reporting an objective contradiction, set:`,
+      `  - severity: "low" (or "medium" if user-facing regression)`,
+      `  - type: "OBJECTIVE_CONTRADICTION"`,
+      `  - title: "Retained exceptional behavior contradicts declared patch objective"`,
+      `  - recommendation: Explain what residual condition remains unmet.`
+    );
+  }
+
   sections.push(
     ``,
     `[UNTRUSTED CODE MODIFICATIONS (DIFF)]`,
@@ -319,6 +350,6 @@ export function buildEvidenceReviewPrompt(changeSet, role = "macro", limits = DE
  * Backward-compatible review prompt builder.
  * Retains exact compatibility with legacy expectations while supporting enhanced structured outputs.
  */
-export function buildReviewPrompt(changeSet, role = "macro", limits = DEFAULT_LIMITS) {
-  return buildEvidenceReviewPrompt(changeSet, role, limits, null);
+export function buildReviewPrompt(changeSet, role = "macro", limits = DEFAULT_LIMITS, options = {}) {
+  return buildEvidenceReviewPrompt(changeSet, role, limits, null, options);
 }

@@ -133,7 +133,8 @@ export class CliReviewAdapter {
     }
 
     const input = inputValidation.input;
-    const prompt = input.prompt || buildReviewPrompt(input.changeSet, input.role, input.limits);
+    const patchObjective = input.patchObjective || input.changeSet?.patchObjective || input.options?.patchObjective;
+    const prompt = input.prompt || buildReviewPrompt(input.changeSet, input.role, input.limits, { patchObjective });
     const context = {
       runId: input.runId,
       role: input.role,
@@ -141,7 +142,8 @@ export class CliReviewAdapter {
       providerName: this.providerName,
       family: this.family,
       modelName: this.modelName,
-      transport: "cli"
+      transport: "cli",
+      patchObjective
     };
 
     if (this.cwd && !fs.existsSync(this.cwd)) {
