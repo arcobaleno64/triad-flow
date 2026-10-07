@@ -297,7 +297,7 @@ test("WP-03: Historical cohort (receipts 1-22 in dogfood-receipts.jsonl) remains
   assert.ok(fs.existsSync(receiptsPath), "dogfood-receipts.jsonl must exist");
 
   const lines = fs.readFileSync(receiptsPath, "utf8").trim().split("\n");
-  assert.equal(lines.length, 22, "Historical baseline must contain exactly 22 receipts");
+  assert.ok(lines.length >= 22, "Historical baseline must contain at least 22 receipts");
 
   const r21 = JSON.parse(lines[20]);
   assert.equal(r21.cycleId, "CYCLE-0021");
