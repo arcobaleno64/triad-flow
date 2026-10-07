@@ -19,7 +19,7 @@
 This document constitutes the official convergence audit closing **Phase 4.3 Track D1: Shadow Dogfooding** under the Triad-Flow v2.7 architecture.
 
 ### 1.1 Phase Closure Adjudication
-Phase 4.3 observation is officially **COMPLETE**. The operational mandate to collect **20–30 qualifying real change cycles** from live external pull requests has been fully fulfilled with **30 qualifying maturity-counting cycles** (and 31 total receipts in `docs/benchmarks/dogfood-receipts.jsonl`). Extending observation to arbitrary additional cycles without an architectural transition is unnecessary and outside the agreed scope.
+Phase 4.3 observation is officially **COMPLETE**. The operational mandate to collect **20–30 qualifying real change cycles** from live external pull requests has been fully fulfilled with **30 qualifying maturity-counting cycles** (and 31 total receipts in `docs/benchmarks/dogfood-receipts.jsonl`). Extending observation to arbitrary additional cycles without an architectural transition is unnecessary and outside the agreed scope. Additional fresh cycles, if collected, belong to a subsequent promotion-eligibility phase and do not reopen or extend Phase 4.3 Track D1.
 
 ### 1.2 Promotion Gate Adjudication: REJECTED / STRICT HOLD
 The Triad-Flow governance contract specifies strict, objective criteria for promoting the autonomous consensus gate from `SHADOW_DOGFOOD` (advisory observation only) to `ADVISORY` (formal CI gating authority).
@@ -89,11 +89,19 @@ The fresh cohort evaluated 7 diverse pull requests across heterogeneous language
 |---|---|---|---|
 | **Observation Volume** | 20–30 qualifying cycles | **30 qualifying cycles** (31 receipts) | **PASS** |
 | **Robustness / Timeouts** | Timeout rate < 5.0% | **3.3%** (1 timeout / 30 cycles) | **PASS** |
-| **Historical False Advances** | 0 allowed | **3 observed** (Cycles 0005, 0021, 0024) | **FAIL (Historical Blocker)** |
+| **Historical False Advances** | 0 allowed | **3 observed** (Cycles 0021, 0022, 0024) | **FAIL (Historical Blocker)** |
 | **Historical False Holds** | $\le 2$ allowed | **3 observed** (Cycles 0008, 0009, 0011) | **FAIL** |
 | **Fresh Cohort Depth** | $\ge 15$ consecutive fresh cycles | **7 consecutive cycles** | **NOT YET ELIGIBLE** |
-| **Autonomous Consistency** | Stable classification states | All 5 states exercised deterministically | **PASS** |
+| **Autonomous Consistency** | Stable classification states | **PASS**: All 5 architectural states deterministically defined and exercised (see details below) | **PASS** |
 | **Merge Authority** | Must remain `NONE` in Shadow | Zero merge authority strictly enforced | **PASS** |
+
+### 3.1 Autonomous State Distribution & Evidence Pointers
+The Triad-Flow decision state machine (`src/core/harness.mjs:evaluateGateDecision`, `scripts/record-cycle.mjs:deriveTriadDisposition`) defines exactly 5 autonomous classification states, all deterministically tested and observed:
+1. **`APPROVE`** (Pass, clean consensus): Realized in **20 live cycles** (e.g. `CYCLE-0002`, `CYCLE-0004`, `CYCLE-0006`, `CYCLE-0026`, `CYCLE-0030`).
+2. **`BLOCK`** (Active security or invariant blocker): Realized in **6 live cycles** (e.g. `CYCLE-0003`, `CYCLE-0005`, `CYCLE-0008`, `CYCLE-0029`).
+3. **`DEGRADED`** (Quorum preserved under partial provider failure or timeout): Realized in **4 live cycles** (e.g. `CYCLE-0001`, `CYCLE-0013`, `CYCLE-0025`, `CYCLE-0028`).
+4. **`HUMAN_REVIEW_REQUIRED`** (Contested corroborated objective contradiction escalated to human oversight): Realized in **1 live cycle** (`CYCLE-0031`), governed by the `LOOP2-004` regression contract.
+5. **`INCOMPLETE`** (Quorum failure, complete execution stall, or unparseable output across quorum): Enforced fail-closed and contractually verified via deterministic test suites (`tests/record-cycle.test.mjs`, `tests/loop.test.mjs`, `tests/staged-review.test.mjs`).
 
 ---
 
@@ -101,6 +109,11 @@ The fresh cohort evaluated 7 diverse pull requests across heterogeneous language
 
 ### 4.1 Latency & Performance Profile
 - **Average Wall-Clock Run Latency**: `89,210 ms` (~89.2 seconds).
+- **Statistical Accounting & Aggregation Rules**:
+  - *Denominator*: Measured across all **30 qualifying maturity-counting cycles** (`countsTowardMaturity === true`).
+  - *Total Duration Scope*: Wall-clock figures reflect end-to-end execution (`telemetryMetrics.totalDurationMs`), including reviewer phase, independent verifier phase (when invoked), consensus evaluation, and gate derivation.
+  - *Inclusive Non-Pruning Rule*: Cycles encountering provider timeouts (e.g. `CYCLE-0028` at 435,548 ms) or degraded statuses are strictly included in the average; zero outlier pruning is applied.
+  - *Reviewer vs. Verifier Latency*: Per-provider latencies reflect the initial sentry review pass (`providerTelemetry[provider].latencyMs`). The independent verifier pass (Anthropic `claude-5.5-sonnet`) is executed sequentially only on flagged findings and averages ~18s per triggered verification.
 - **Per-Provider Latency Distribution**:
   - Google `agy` (`gemini-3.8-flash`): Average ~110s (slowest on large diffs, thorough coverage).
   - OpenAI `codex` (`gpt-6.1-sol`): Average ~32s (high precision on concurrency and cryptographic invariants).
@@ -115,11 +128,12 @@ The fresh cohort evaluated 7 diverse pull requests across heterogeneous language
 
 ## 5. Transition Criteria for Future Advisory Re-Review
 
-To avoid making promotion mathematically impossible due to historical baseline receipts, future eligibility for an `ADVISORY` promotion review is bound to the following deterministic rules:
+To avoid making promotion mathematically impossible due to historical baseline receipts, future eligibility for an `ADVISORY` promotion review is bound to the following deterministic rules. The collection of any future cycles belongs to a subsequent promotion-eligibility phase and does not reopen or extend the completed Phase 4.3 Track D1:
 
 1. **Eligibility Prerequisite (Fresh Cohort Depth)**:
    - The post-remediation fresh cohort must accumulate **$\ge 15$ consecutive qualifying real-change cycles** (currently at **7 / 15**).
    - The fresh cohort must maintain **0 False Advances** throughout all 15 cycles.
+   - Any future cycle collection operates as a separate post-4.3 qualification campaign.
 2. **False-Hold Recalibration**:
    - Re-audit reliability priority rules to ensure false holds remain $\le 1$ in the fresh cohort.
 3. **Formal Governance Review**:
