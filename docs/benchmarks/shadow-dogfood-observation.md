@@ -11,16 +11,16 @@
 - Promotion Review Status: `REJECTED / STRICT_HOLD`
 - Runtime merge authority: `NONE`
 - Maturity target: `SHADOW -> ADVISORY` after 20–30 qualifying real change cycles
-- Post-005 Fresh Cohort: `22 consecutive / 0 FALSE_ADVANCE` (Eligibility: 22/15)
+- Post-005 Fresh Cohort: `23 consecutive / 1 FALSE_ADVANCE` (Eligibility: 23/15)
 
 ## Scorecard
 
-- Ledger receipts: **46**
-- Maturity-counting cycles: **45 / 20–30**
-- False advance: **3**
+- Ledger receipts: **47**
+- Maturity-counting cycles: **46 / 20–30**
+- False advance: **4**
 - False hold: **5**
-- Timeout-cycle rate: **6.7%**
-- Average wall-clock latency: **105413 ms**
+- Timeout-cycle rate: **6.5%**
+- Average wall-clock latency: **104307 ms**
 
 False-advance/false-hold rates use only binary autonomous Triad outcomes (`APPROVE` / `BLOCK`). `DEGRADED`, `INCOMPLETE`, and `HUMAN_REVIEW_REQUIRED` never enter those rates automatically.
 
@@ -76,12 +76,13 @@ False-advance/false-hold rates use only binary autonomous Triad outcomes (`APPRO
 | CYCLE-0044 | live | yes | APPROVE | APPROVE | MATCH | NOT_ATTEMPTED | NONE | 0 | NONE |
 | CYCLE-0045 | live | yes | REQUEST_CHANGES | BLOCK | MATCH | SUCCESS | NONE | 0 | NONE |
 | CYCLE-0046 | live | yes | APPROVE | BLOCK | FALSE_HOLD | SUCCESS | NONE | 0 | RELIABILITY_PRIORITY |
+| CYCLE-0047 | live | yes | REQUEST_CHANGES | APPROVE | FALSE_ADVANCE | NOT_ATTEMPTED | false-advance | 4 | IMMEDIATE_BLOCKER |
 
 ## Active Failure Families
 
 | Failure family | Qualifying occurrences |
 |---|---:|
-| false-advance | 3 |
+| false-advance | 4 |
 | false-hold | 1 |
 
 ## SHADOW -> ADVISORY Maturity Gate
@@ -98,7 +99,7 @@ False-advance/false-hold rates use only binary autonomous Triad outcomes (`APPRO
 - Disposition: **REJECTED / STRICT_HOLD**
 - Runtime Authority: **NONE**
 - Observation Status: **PHASE_4_3_TRACK_D1 = COMPLETE (30/30 cycles observed)**
-- Post-005 Fresh Cohort: **22 consecutive cycles / 0 FALSE_ADVANCE**
+- Post-005 Fresh Cohort: **23 consecutive cycles / 1 FALSE_ADVANCE**
 - Next Promotion Eligibility Gate: Requires **>=15 consecutive fresh cycles / 0 FALSE_ADVANCE** before re-reviewing `SHADOW -> ADVISORY` promotion.
 
 Promotion remains a human governance decision. This projection never promotes Triad-Flow automatically.
