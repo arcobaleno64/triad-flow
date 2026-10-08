@@ -392,7 +392,7 @@ test("006-C: AbortSignal cleanly aborts all concurrent workers without orphan ex
 
   assert.equal(result.ok, false);
   assert.equal(result.status, "incomplete");
-  assert.ok(result.receipts.every(r => r.status === "timeout" || r.status === "failed"));
+  assert.ok(result.receipts.every(r => r.status === "timeout" || r.status === "failed" || r.status === "cancelled"));
 
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
@@ -626,4 +626,214 @@ test("006-A P1-02: Dogfood review partitions top-level reviewer, verifier, and c
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
+});
+
+// -----------------------------------------------------------------------------
+// P1-04: Stream-JSON Read-Only Safety Argument Filtering Tests
+// -----------------------------------------------------------------------------
+
+test("006-B P1-04: streamJson filters prohibited arguments and guarantees mandatory safety args", () => {
+  const adapter = new CliReviewAdapter({
+    command: "agy",
+    streamJson: true,
+    args: ["apply", "--approve-for-me", "--user-custom-flag=true", "--mode=edit"]
+  });
+
+  assert.ok(!adapter.args.includes("apply"), "Must strip prohibited argument 'apply'");
+  assert.ok(!adapter.args.includes("--approve-for-me"), "Must strip prohibited argument '--approve-for-me'");
+  assert.ok(!adapter.args.includes("--print"), "Must strip '--print' in streamJson mode");
+  assert.ok(!adapter.args.includes("--mode=edit"), "Must not allow overriding --mode=plan with --mode=edit");
+  assert.ok(adapter.args.includes("--mode=plan"), "Must guarantee mandatory safety flag --mode=plan");
+  assert.ok(adapter.args.includes("--disable-slash-commands"), "Must guarantee mandatory safety flag --disable-slash-commands");
+  assert.ok(adapter.args.includes("--input-format=stream-json"), "Must include --input-format=stream-json");
+  assert.ok(adapter.args.includes("--output-format=stream-json"), "Must include --output-format=stream-json");
+  assert.ok(adapter.args.includes("--user-custom-flag=true"), "Must preserve safe user flags");
+});
+
+test("006-B P1-01 / Codex: extractStreamJsonResponse rejects non-terminal result events", () => {
+  // Case A: Trailing non-blank error line after result
+  const trailingErrorStream = [
+    JSON.stringify({ event: "init" }),
+    JSON.stringify({ event: "result", result: { status: "SUCCESS", response: "{}" } }),
+    JSON.stringify({ event: "error", error: "Connection lost after result" })
+  ].join("\n");
+  assert.equal(extractStreamJsonResponse(trailingErrorStream), null, "Must reject result followed by trailing events");
+
+  // Case B: Trailing unparseable garbage after result
+  const trailingGarbageStream = [
+    JSON.stringify({ event: "result", result: { status: "SUCCESS", response: "{}" } }),
+    "FATAL UNHANDLED REJECTION IN SUBPROCESS"
+  ].join("\n");
+  assert.equal(extractStreamJsonResponse(trailingGarbageStream), null, "Must reject result followed by trailing garbage");
+
+  // Case C: Valid terminal result with trailing empty newlines
+  const validTerminalStream = [
+    JSON.stringify({ event: "init" }),
+    JSON.stringify({ event: "result", result: { status: "SUCCESS", response: "{}" } }),
+    "",
+    "   "
+  ].join("\n");
+  const extracted = extractStreamJsonResponse(validTerminalStream);
+  assert.ok(extracted, "Must accept terminal result with trailing whitespace/empty lines");
+  assert.equal(extracted.event, "result");
+});
+
+// -----------------------------------------------------------------------------
+// P1-05: Dynamic Wave Budgeting Tests
+// -----------------------------------------------------------------------------
+
+test("006-C P1-05: Dynamic wave budgeting reclaims budget from fast early waves for later waves", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-dyn-budget-"));
+  const files = [
+    { path: "src/w0.js" },
+    { path: "src/w1.js" },
+    { path: "src/w2.js" },
+    { path: "src/w3.js" }
+  ];
+  const diffHunks = files.map(f => `diff --git a/${f.path} b/${f.path}\n@@ -1 +1 @@\n-old\n+new`).join("\n");
+  const cs = { scopeMode: "working-tree", files, diffHunks };
+
+  const allocatedBudgets = [];
+  const adapter = {
+    providerName: "mock-agy",
+    executeReview: async (params) => {
+      allocatedBudgets.push(params.timeoutMs);
+      const target = (params.changeSet.files || [])[0]?.path;
+      // Fast wave 1 (w0, w1): finishes immediately
+      // Slow wave 2 (w2, w3): should receive reclaimed budget
+      return {
+        ok: true,
+        findings: [],
+        coverage: { coveredFiles: target ? [target] : [], omittedFiles: [] }
+      };
+    }
+  };
+
+  // 4 chunks, maxConcurrency 2 -> 2 waves. Total budget: 100,000 ms.
+  // Initial wave budget = 100,000 / 2 = 50,000 ms.
+  // When wave 1 finishes immediately:
+  // Wave 2 starts with remainingGlobalMs ~ 100,000 ms, remainingWaves = 1 -> budget calculates 100,000 -> capped at 60,000 ms!
+  const result = await executeStagedReview(cs, adapter, {
+    cwd: tmpDir,
+    timeoutMs: 100000,
+    maxChunkBytes: 50,
+    maxConcurrency: 2,
+    minChunkBudgetMs: 10000
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(allocatedBudgets.length, 4);
+
+  // Early wave chunks received ~50,000ms
+  assert.ok(allocatedBudgets[0] >= 49000 && allocatedBudgets[0] <= 50000, `allocatedBudgets[0] (${allocatedBudgets[0]}) must be ~50000ms`);
+  assert.ok(allocatedBudgets[1] >= 49000 && allocatedBudgets[1] <= 50000, `allocatedBudgets[1] (${allocatedBudgets[1]}) must be ~50000ms`);
+
+  // Later wave chunks received reclaimed budget capped at 60,000ms (NOT constrained to initial 50,000ms!)
+  assert.ok(allocatedBudgets[2] > 50000, `Reclaimed budget ${allocatedBudgets[2]} must exceed initial 50000ms`);
+  assert.equal(allocatedBudgets[2], 60000, "Reclaimed budget should reach 60,000ms ceiling");
+  assert.equal(allocatedBudgets[3], 60000, "Reclaimed budget should reach 60,000ms ceiling");
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+// -----------------------------------------------------------------------------
+// P1-06: Scheduler Timeout vs External Cancellation Classification Tests
+// -----------------------------------------------------------------------------
+
+test("006-C P1-06: Scheduler timeout abort maps to TIMEOUT receipt and omission, not failed/cancelled", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-scheduler-timeout-"));
+  const cs = {
+    scopeMode: "working-tree",
+    files: [{ path: "src/hang.js" }],
+    diffHunks: "diff --git a/src/hang.js b/src/hang.js\n@@ -1 +1 @@\n-old\n+new"
+  };
+
+  // Mock adapter that listens to signal and returns executionStatus: "cancelled" (exact CliReviewAdapter behavior)
+  const adapter = {
+    providerName: "mock-agy",
+    executeReview: async (params) => {
+      return new Promise((resolve) => {
+        if (params.signal) {
+          params.signal.addEventListener("abort", () => {
+            resolve({
+              ok: false,
+              executionStatus: EXECUTION_STATUS.CANCELLED,
+              error: "CLI reviewer cancelled via signal",
+              findings: []
+            });
+          }, { once: true });
+        }
+      });
+    }
+  };
+
+  const result = await executeStagedReview(cs, adapter, {
+    cwd: tmpDir,
+    timeoutMs: 200,
+    maxChunkBytes: 50,
+    minChunkBudgetMs: 50
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, "incomplete");
+  assert.equal(result.receipts.length, 1);
+  assert.equal(result.receipts[0].status, "timeout", "Receipt status must be 'timeout' when scheduler timer aborts");
+  assert.equal(result.telemetry.chunkTimeoutCount, 1, "chunkTimeoutCount must count scheduler deadline aborts");
+
+  const omission = result.coverage.omittedFiles.find(o => o.file === "src/hang.js");
+  assert.ok(omission);
+  assert.equal(omission.code, COVERAGE_OMISSION_CODES.TIMEOUT, "Omission code must be TIMEOUT, not SIZE_LIMIT");
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+test("006-C P1-06: External cancellation signal is preserved as cancelled, not timeout", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-ext-cancel-"));
+  const cs = {
+    scopeMode: "working-tree",
+    files: [{ path: "src/cancel.js" }],
+    diffHunks: "diff --git a/src/cancel.js b/src/cancel.js\n@@ -1 +1 @@\n-old\n+new"
+  };
+
+  const externalAbortController = new AbortController();
+  const adapter = {
+    providerName: "mock-agy",
+    executeReview: async (params) => {
+      return new Promise((resolve) => {
+        if (params.signal) {
+          params.signal.addEventListener("abort", () => {
+            resolve({
+              ok: false,
+              executionStatus: EXECUTION_STATUS.CANCELLED,
+              error: "Execution cancelled via external signal",
+              findings: []
+            });
+          }, { once: true });
+        }
+      });
+    }
+  };
+
+  const promise = executeStagedReview(cs, adapter, {
+    cwd: tmpDir,
+    timeoutMs: 60000,
+    maxChunkBytes: 50,
+    signal: externalAbortController.signal
+  });
+
+  // External cancellation after 50ms
+  setTimeout(() => externalAbortController.abort("User cancelled"), 50);
+  const result = await promise;
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, "incomplete", "Run status must be 'incomplete' for external signal abort");
+  assert.equal(result.executionStatus, EXECUTION_STATUS.CANCELLED, "Execution status must be 'cancelled' for external signal abort");
+  assert.equal(result.receipts[0].status, "cancelled", "Receipt status must be 'cancelled'");
+  assert.equal(result.telemetry.chunkTimeoutCount, 0, "External cancellation must NOT increment chunkTimeoutCount");
+
+  const omission = result.coverage.omittedFiles.find(o => o.file === "src/cancel.js");
+  assert.ok(omission);
+  assert.equal(omission.code, COVERAGE_OMISSION_CODES.OUT_OF_SCOPE, "Omission code must be OUT_OF_SCOPE for cancellation, not TIMEOUT");
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
 });

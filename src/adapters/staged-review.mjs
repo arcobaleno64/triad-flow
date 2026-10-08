@@ -327,10 +327,17 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
     : 300000;
   const reviewStartTime = Date.now();
   const globalDeadline = reviewStartTime + totalBudgetMs;
-  const maxConcurrency = Math.max(1, Math.min(4, Number(options.concurrency || options.maxConcurrency || 1)));
+
+  const rawConcurrency = options.concurrency ?? options.maxConcurrency;
+  const parsedConcurrency = Number(rawConcurrency);
+  const maxConcurrency = (Number.isFinite(parsedConcurrency) && parsedConcurrency > 0)
+    ? Math.max(1, Math.min(4, Math.floor(parsedConcurrency)))
+    : 1;
 
   // REMEDIATION-006: Pre-flight feasibility check (006-C)
-  const minViableChunkBudgetMs = Number(options.minChunkBudgetMs || (chunks.length > 4 ? 10000 : 1));
+  const minViableChunkBudgetMs = (Number.isFinite(Number(options.minChunkBudgetMs)) && Number(options.minChunkBudgetMs) > 0)
+    ? Number(options.minChunkBudgetMs)
+    : 10000;
   const estimatedWaves = Math.ceil(chunks.length / maxConcurrency);
   const minRequiredBudgetMs = estimatedWaves * minViableChunkBudgetMs;
   const isFeasible = totalBudgetMs >= minRequiredBudgetMs;
@@ -344,18 +351,63 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
     warning: isFeasible ? null : `Total budget ${totalBudgetMs}ms may be insufficient for ${chunks.length} chunks across ${estimatedWaves} waves (min required: ${minRequiredBudgetMs}ms)`
   };
 
-  const nominalChunkBudgetMs = Math.min(60000, Math.max(minViableChunkBudgetMs, Math.floor(totalBudgetMs / estimatedWaves)));
-
-  // Stage 2: Bounded Concurrency Chunk Execution
+  // Stage 2: Bounded Concurrency Chunk Execution with Dynamic Wave Budgeting
   const chunkRawOutcomes = new Array(chunks.length);
   const activeChunkControllers = new Set();
   let tier1ExecutionFailed = false;
+  let completedChunkCount = 0;
+  let contiguousCommittedPrefix = 0;
+  const committedFindings = [];
 
+  function tryCommitCheckpoints() {
+    try {
+      while (contiguousCommittedPrefix < chunks.length && chunkRawOutcomes[contiguousCommittedPrefix]) {
+        const outcome = chunkRawOutcomes[contiguousCommittedPrefix];
+        const res = outcome?.result;
+        if (res && res.ok) {
+          const rawFindings = safeGet(res, "findings");
+          const len = safeArrayLength(rawFindings);
+          if (safeIsArray(rawFindings) && len >= 0) {
+            let valid = true;
+            const validFindings = [];
+            for (let i = 0; i < len; i++) {
+              const item = safeGet(rawFindings, i);
+              const canon = canonicalizeFinding(item);
+              if (!canon) {
+                valid = false;
+                break;
+              }
+              validFindings.push(canon);
+            }
+            if (valid) {
+              committedFindings.push(...validFindings);
+            }
+          }
+        }
+        contiguousCommittedPrefix++;
+        checkpointStore.saveCheckpoint(runId, {
+          runId,
+          stage: STAGED_REVIEW_STAGES.STAGE_2_DEEP_REVIEW,
+          salvagedFindings: [...committedFindings],
+          completedChunks: contiguousCommittedPrefix,
+          totalChunks: chunks.length
+        });
+      }
+    } catch {
+      // Checkpoint commit failure must never throw or crash the scheduler
+    }
+  }
+
+  let timedOutByGlobal = false;
   const globalDeadlineTimer = setTimeout(() => {
+    timedOutByGlobal = true;
     for (const ctrl of activeChunkControllers) {
       ctrl.abort("Global staged review budget exhausted.");
     }
   }, Math.max(1, totalBudgetMs));
+  if (typeof globalDeadlineTimer.unref === "function") {
+    globalDeadlineTimer.unref();
+  }
 
   let externalGlobalAbortHandler = null;
   if (options.signal) {
@@ -376,25 +428,40 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
   async function executeChunk(chunk, idx) {
     const chunkTarget = chunk.targetFiles[0] || "index.js";
     const now = Date.now();
-    const remainingGlobalMs = globalDeadline - now;
+    const remainingGlobalMs = Math.max(0, globalDeadline - now);
+    const wasCancelledExternally = Boolean(options.signal && options.signal.aborted);
 
-    if (remainingGlobalMs <= 0 || (options.signal && options.signal.aborted)) {
+    if (remainingGlobalMs <= 0 || wasCancelledExternally) {
       return {
         idx,
         chunk,
-        status: "timeout",
-        timeoutCategory: "global_exhaustion",
+        status: wasCancelledExternally ? "cancelled" : "timeout",
+        timeoutCategory: wasCancelledExternally ? "none" : "global_exhaustion",
         durationMs: 0,
         budgetAllocatedMs: 0,
         result: {
           ok: false,
-          status: "timeout",
-          executionStatus: EXECUTION_STATUS.TIMEOUT,
-          error: `Staged review global budget exhausted (${totalBudgetMs}ms) before chunk ${chunk.chunkId} could execute.`
+          status: wasCancelledExternally ? "cancelled" : "timeout",
+          executionStatus: wasCancelledExternally ? EXECUTION_STATUS.CANCELLED : EXECUTION_STATUS.TIMEOUT,
+          error: wasCancelledExternally
+            ? `Execution cancelled before chunk ${chunk.chunkId} could execute: ${options.signal.reason || "signal aborted"}`
+            : `Staged review global budget exhausted (${totalBudgetMs}ms) before chunk ${chunk.chunkId} could execute.`
         }
       };
     }
 
+    // Dynamic wave budget (006-C / P1-05): Recompute allowable timeout from remainingGlobalMs and remaining waves
+    const isDynamicBudgeting = maxConcurrency > 1 || Boolean(options.dynamicWaveBudget);
+    let nominalChunkBudgetMs;
+    if (isDynamicBudgeting) {
+      const totalWaves = Math.max(1, Math.ceil(chunks.length / maxConcurrency));
+      const currentWaveIndex = Math.min(totalWaves - 1, Math.floor(idx / maxConcurrency));
+      const remainingWaves = Math.max(1, totalWaves - currentWaveIndex);
+      const dynamicWaveBudgetMs = Math.floor(remainingGlobalMs / remainingWaves);
+      nominalChunkBudgetMs = Math.min(60000, Math.max(minViableChunkBudgetMs, dynamicWaveBudgetMs));
+    } else {
+      nominalChunkBudgetMs = Math.min(60000, Math.max(minViableChunkBudgetMs, Math.floor(totalBudgetMs / estimatedWaves)));
+    }
     const effectiveChunkTimeoutMs = Math.max(1, Math.min(nominalChunkBudgetMs, remainingGlobalMs));
 
     const contextPkg = buildContextPackage({
@@ -413,14 +480,27 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
     }, role, limits, contextPkg, { patchObjective: options.patchObjective });
 
     const chunkStartTime = Date.now();
+    let timedOutByScheduler = false;
+    let cancelledByExternalSignal = false;
     const chunkController = new AbortController();
     activeChunkControllers.add(chunkController);
 
-    if (options.signal && options.signal.aborted) {
-      chunkController.abort(options.signal.reason);
+    let externalSignalHandler = null;
+    if (options.signal) {
+      if (options.signal.aborted) {
+        cancelledByExternalSignal = true;
+        chunkController.abort(options.signal.reason);
+      } else {
+        externalSignalHandler = () => {
+          cancelledByExternalSignal = true;
+          chunkController.abort(options.signal.reason);
+        };
+        options.signal.addEventListener("abort", externalSignalHandler, { once: true });
+      }
     }
 
     const chunkTimer = setTimeout(() => {
+      timedOutByScheduler = true;
       chunkController.abort("Chunk timeout budget exhausted.");
     }, effectiveChunkTimeoutMs);
 
@@ -450,18 +530,55 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
       };
     } finally {
       clearTimeout(chunkTimer);
+      if (options.signal && externalSignalHandler) {
+        options.signal.removeEventListener("abort", externalSignalHandler);
+      }
       activeChunkControllers.delete(chunkController);
     }
 
     const chunkDurationMs = Date.now() - chunkStartTime;
-    const isTimeout = chunkResult?.status === "timeout" ||
+    const isExternalCancellation = Boolean(
+      cancelledByExternalSignal ||
+      (options.signal && options.signal.aborted)
+    );
+
+    const isTimeout = !isExternalCancellation && (
+      timedOutByScheduler ||
+      timedOutByGlobal ||
+      chunkController.signal.aborted ||
+      chunkResult?.status === "timeout" ||
       chunkResult?.executionStatus === EXECUTION_STATUS.TIMEOUT ||
-      /timeout/i.test(chunkResult?.error || "");
+      chunkResult?.executionStatus === EXECUTION_STATUS.CANCELLED ||
+      /timeout/i.test(chunkResult?.error || "")
+    );
+
+    let status = "failed";
+    if (chunkResult && chunkResult.ok) {
+      status = "ok";
+    } else if (isTimeout) {
+      status = "timeout";
+      chunkResult = {
+        ok: false,
+        status: "timeout",
+        executionStatus: EXECUTION_STATUS.TIMEOUT,
+        error: chunkResult?.error && /timeout/i.test(chunkResult.error)
+          ? chunkResult.error
+          : `Chunk timeout budget of ${effectiveChunkTimeoutMs}ms exhausted.`
+      };
+    } else if (isExternalCancellation) {
+      status = "cancelled";
+      chunkResult = {
+        ok: false,
+        status: "cancelled",
+        executionStatus: EXECUTION_STATUS.CANCELLED,
+        error: `Execution cancelled via signal.`
+      };
+    }
 
     return {
       idx,
       chunk,
-      status: chunkResult?.ok ? "ok" : (isTimeout ? "timeout" : "failed"),
+      status,
       timeoutCategory: isTimeout ? (remainingGlobalMs <= chunkDurationMs ? "global_exhaustion" : "chunk_deadline") : "none",
       durationMs: chunkDurationMs,
       budgetAllocatedMs: effectiveChunkTimeoutMs,
@@ -479,34 +596,42 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
       const chunk = chunks[currentIdx];
       const outcome = await executeChunk(chunk, currentIdx);
       chunkRawOutcomes[currentIdx] = outcome;
+      completedChunkCount++;
+      tryCommitCheckpoints();
+
       if (chunk.priorityTier === RISK_TIERS.TIER_1_CRITICAL && (!outcome.result || !outcome.result.ok)) {
         tier1ExecutionFailed = true;
       }
     }
   }
 
-  const workerCount = Math.min(chunks.length, maxConcurrency);
-  await Promise.all(Array.from({ length: workerCount }, () => worker()));
-
-  clearTimeout(globalDeadlineTimer);
-  if (options.signal && externalGlobalAbortHandler) {
-    options.signal.removeEventListener("abort", externalGlobalAbortHandler);
+  try {
+    const workerCount = Math.min(chunks.length, maxConcurrency);
+    await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  } finally {
+    clearTimeout(globalDeadlineTimer);
+    if (options.signal && externalGlobalAbortHandler) {
+      options.signal.removeEventListener("abort", externalGlobalAbortHandler);
+    }
   }
 
+  const wasCancelledExternally = Boolean(options.signal && options.signal.aborted);
   for (let i = 0; i < chunks.length; i++) {
     if (!chunkRawOutcomes[i]) {
       chunkRawOutcomes[i] = {
         idx: i,
         chunk: chunks[i],
-        status: "timeout",
-        timeoutCategory: "global_exhaustion",
+        status: wasCancelledExternally ? "cancelled" : "timeout",
+        timeoutCategory: wasCancelledExternally ? "none" : "global_exhaustion",
         durationMs: 0,
         budgetAllocatedMs: 0,
         result: {
           ok: false,
-          status: "timeout",
-          executionStatus: EXECUTION_STATUS.TIMEOUT,
-          error: `Staged review global budget exhausted (${totalBudgetMs}ms) before chunk ${chunks[i].chunkId} could execute.`
+          status: wasCancelledExternally ? "cancelled" : "timeout",
+          executionStatus: wasCancelledExternally ? EXECUTION_STATUS.CANCELLED : EXECUTION_STATUS.TIMEOUT,
+          error: wasCancelledExternally
+            ? `Execution cancelled before chunk ${chunks[i].chunkId} could execute: ${options.signal.reason || "signal aborted"}`
+            : `Staged review global budget exhausted (${totalBudgetMs}ms) before chunk ${chunks[i].chunkId} could execute.`
         }
       };
     }
@@ -826,24 +951,31 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
         }
       }
     } else {
-      // Chunk Failed or Timed Out
-      const isTimeout = chunkResult?.status === "timeout" ||
+      // Chunk Failed, Cancelled, or Timed Out (P1-06)
+      const isChunkCancelled = outcome.status === "cancelled" || chunkResult?.executionStatus === EXECUTION_STATUS.CANCELLED;
+      const isTimeout = !isChunkCancelled && (
+        outcome.status === "timeout" ||
+        chunkResult?.status === "timeout" ||
         chunkResult?.executionStatus === EXECUTION_STATUS.TIMEOUT ||
-        /timeout/i.test(chunkResult?.error || "");
+        /timeout/i.test(chunkResult?.error || "")
+      );
+
       for (const tf of chunk.targetFiles) {
         omittedFiles.push({
           file: tf,
-          code: isTimeout ? COVERAGE_OMISSION_CODES.TIMEOUT : COVERAGE_OMISSION_CODES.SIZE_LIMIT,
-          reason: chunkResult?.error || `Chunk ${chunk.chunkId} failed to complete execution.`
+          code: isTimeout
+            ? COVERAGE_OMISSION_CODES.TIMEOUT
+            : (isChunkCancelled ? COVERAGE_OMISSION_CODES.OUT_OF_SCOPE : COVERAGE_OMISSION_CODES.SIZE_LIMIT),
+          reason: chunkResult?.error || (isChunkCancelled ? "Execution cancelled via signal" : `Chunk ${chunk.chunkId} failed to complete execution.`)
         });
       }
       chunkReceipts.push({
         chunkId: chunk.chunkId,
         chunkIndex: chunk.chunkIndex,
         totalChunks: chunk.totalChunks,
-        status: isTimeout ? "timeout" : "failed",
+        status: isTimeout ? "timeout" : (isChunkCancelled ? "cancelled" : "failed"),
         durationMs: chunkDurationMs,
-        error: chunkResult?.error || "Execution failed"
+        error: chunkResult?.error || (isChunkCancelled ? "Execution cancelled" : "Execution failed")
       });
 
       // Persist salvage checkpoint before stopping or continuing
@@ -879,7 +1011,8 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
 
   const allReceiptsSucceeded = chunkReceipts.length > 0 && chunkReceipts.every(r => r.status === "completed");
   const hasTimeouts = omittedFiles.some(o => o.code === COVERAGE_OMISSION_CODES.TIMEOUT) || chunkReceipts.some(r => r.status === "timeout");
-  const isComplete = coverageEval.isComplete && allReceiptsSucceeded && !hasTimeouts && !reconciliationFailed;
+  const hasCancellations = chunkReceipts.some(r => r.status === "cancelled");
+  const isComplete = coverageEval.isComplete && allReceiptsSucceeded && !hasTimeouts && !hasCancellations && !reconciliationFailed;
   const finalStatus = isComplete ? "completed" : "incomplete";
 
   // Clean up checkpoint on complete success
@@ -890,8 +1023,8 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
   return {
     runId,
     ok: isComplete,
-    executionStatus: isComplete ? EXECUTION_STATUS.SUCCESS : EXECUTION_STATUS.INCOMPLETE,
-    error: isComplete ? undefined : (reconciliationError || coverageEval.violations?.[0] || (hasTimeouts ? "One or more chunks timed out during review." : "Staged review execution incomplete.")),
+    executionStatus: isComplete ? EXECUTION_STATUS.SUCCESS : (hasCancellations ? EXECUTION_STATUS.CANCELLED : EXECUTION_STATUS.INCOMPLETE),
+    error: isComplete ? undefined : (reconciliationError || coverageEval.violations?.[0] || (hasCancellations ? "Execution cancelled via signal." : (hasTimeouts ? "One or more chunks timed out during review." : "Staged review execution incomplete."))),
     providerIdentity: {
       provider: adapter.providerName || role,
       model: adapter.modelName || "unknown-model",

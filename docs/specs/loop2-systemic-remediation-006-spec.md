@@ -36,7 +36,7 @@ Analysis of full execution records from the 15 fresh Phase 4.4 cycles isolates t
 - **`CYCLE-0033`:** `rust-lang/rust#163058` (Commit `4dd5eb42b9ff5a513cdb069e354c9dc99c3fece9`, 71 files, 555 additions, 435 deletions)
   - `stagedFallbackUsed: true`, 28 chunks, 27 chunk timeouts, `agy` latency: 300,095 ms, duration: 342,935 ms
 - **`CYCLE-0037`:** `nodejs/node#65370` (Commit `7954bfc0106774a90cd910c2d8baa1155d52fc51`, 6 files, 579 additions, 0 deletions)
-  - `stagedFallbackUsed: true`, 8 chunks, 5 chunk timeouts, `agy` latency: 296,358 ms, duration: 318,171 ms
+  - `stagedFallbackUsed: true`, 8 chunks, 5 chunk timeouts, `agy` latency: 263,614 ms, duration: 296,358 ms
 - **Root Cause Chain:**
   1. **Premature Chunking on Windows:** Canonical `agy` had `supportsStdin: false`. When prompt bytes exceeded `SAFE_ARGV_THRESHOLD_BYTES` (8 KB) or Windows argv limit (30,000 chars), `CliReviewAdapter` failed with `PAYLOAD_TOO_LARGE`, forcing medium and large diffs into staged chunking.
   2. **Equal-Split Budget Starvation:** `src/adapters/staged-review.mjs` divided the 300,000 ms global budget equally across chunks: `nominalChunkBudgetMs = min(60000, floor(totalBudgetMs / chunks.length))`. For 28 chunks, this allocated only **10,714 ms** per chunk.

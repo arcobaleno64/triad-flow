@@ -28,24 +28,23 @@ export { extractJsonFromText } from "./provider-contract.mjs";
 
 /**
  * Extracts final result payload from NDJSON stream-json output.
+ * Enforces that the result event must be the terminal non-empty record in the stream.
  * @param {string} text
  * @returns {object|null}
  */
 export function extractStreamJsonResponse(text) {
   if (!text || typeof text !== "string") return null;
-  const lines = text.split(/\r?\n/);
-  let resultEvent = null;
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    try {
-      const parsed = JSON.parse(trimmed);
-      if (parsed && typeof parsed === "object" && parsed.event === "result") {
-        resultEvent = parsed;
-      }
-    } catch {}
-  }
-  return resultEvent;
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  if (lines.length === 0) return null;
+
+  const lastLine = lines[lines.length - 1];
+  try {
+    const parsed = JSON.parse(lastLine);
+    if (parsed && typeof parsed === "object" && parsed.event === "result") {
+      return parsed;
+    }
+  } catch {}
+  return null;
 }
 
 
@@ -143,17 +142,13 @@ export class CliReviewAdapter {
     this.useStdin = options.useStdin !== undefined ? Boolean(options.useStdin) : null;
     this.env = options.env || null;
     this.cwd = options.cwd || null;
+    const assembledArgs = assembleProviderArgs(profile, options.args);
     if (this.streamJson && (profile?.id === "agy" || this.command === "agy")) {
-      const streamBaseArgs = ["--input-format=stream-json", "--output-format=stream-json"];
-      const mandatory = Array.isArray(profile?.mandatorySafetyArgs)
-        ? profile.mandatorySafetyArgs
-        : (Array.isArray(profile?.readOnlyFlags) ? profile.readOnlyFlags : ["--mode=plan", "--disable-slash-commands"]);
-      const merged = [...mandatory, ...streamBaseArgs];
-      this.args = Array.isArray(options.args)
-        ? options.args.filter(a => a !== "--print" && !streamBaseArgs.includes(a)).concat(merged)
-        : merged;
+      const streamFlags = ["--input-format=stream-json", "--output-format=stream-json"];
+      const withoutPrint = assembledArgs.filter(a => a !== "--print" && !streamFlags.includes(a));
+      this.args = [...withoutPrint, ...streamFlags];
     } else {
-      this.args = assembleProviderArgs(profile, options.args);
+      this.args = assembledArgs;
     }
     this.maxRetries = options.maxRetries !== undefined
       ? Number(options.maxRetries)

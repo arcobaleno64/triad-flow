@@ -741,7 +741,7 @@ export async function runDogfoodReview(userOptions = {}) {
   let stagedFallbackUsed = false;
   let stagedChunkCount = null;
   let stagedTimeoutCount = 0;
-  let stagedFeasibility = null;
+  let stagedTelemetry = null;
   const tAgy0 = Date.now();
   const executeAgyReview = async () => {
     const providerRunId = `${runId}-agy`;
@@ -773,7 +773,7 @@ export async function runDogfoodReview(userOptions = {}) {
       stagedTimeoutCount = Array.isArray(res?.receipts)
         ? res.receipts.filter(r => r?.status === "timeout").length
         : 0;
-      stagedFeasibility = res?.telemetry?.feasibility || null;
+      stagedTelemetry = res?.telemetry || null;
     }
     return res;
   };
@@ -980,15 +980,24 @@ export async function runDogfoodReview(userOptions = {}) {
       otherFailureCount,
       stagedFallbackUsed,
       chunkCount: stagedFallbackUsed ? stagedChunkCount : null,
-      phaseMetrics: {
+      phaseMetrics: stagedFallbackUsed && stagedTelemetry ? {
+        platform: process.platform,
+        transport: userOptions.agyStreamJson ? "stream-json" : "argv",
+        budgetAllocatedMs: stagedTelemetry.budgetAllocatedMs,
+        globalDeadlineRemainingMs: stagedTelemetry.globalDeadlineRemainingMs,
+        stagedFallbackUsed: true,
+        chunkCount: stagedTelemetry.chunkCount,
+        maxConcurrency: stagedTelemetry.maxConcurrency,
+        feasibility: stagedTelemetry.feasibility
+      } : {
         platform: process.platform,
         transport: userOptions.agyStreamJson ? "stream-json" : "argv",
         budgetAllocatedMs: timeoutMs,
         globalDeadlineRemainingMs: Math.max(0, timeoutMs - reviewerPhaseDurationMs),
-        stagedFallbackUsed,
-        chunkCount: stagedFallbackUsed ? stagedChunkCount : null,
-        maxConcurrency: stagedFallbackUsed ? (userOptions.stagedConcurrency || 2) : 1,
-        feasibility: stagedFallbackUsed ? stagedFeasibility : { isFeasible: true, reason: "Direct review unchunked" }
+        stagedFallbackUsed: false,
+        chunkCount: null,
+        maxConcurrency: 1,
+        feasibility: { isFeasible: true, reason: "Direct review unchunked" }
       }
     },
     verificationRecord
