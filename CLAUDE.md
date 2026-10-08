@@ -18,6 +18,7 @@ Adaptive Multi-Agent Closed-Loop Control Architecture for resilient code generat
 - **Strict Fail-Closed Quorum**: Single-sentry error or timeout triggers quorum failure and gate block.
 - **Evidence First**: Verify before proposing changes. Always run `npm test` before declaring completion.
 - **Token Efficiency**: Context is reserved for business logic and adversarial review, not process boilerplate.
+- **Long Tasks**: Multi-commit or resumable work follows the `long-task` skill (`.claude/skills/long-task/SKILL.md`): baseline first, fixed checks, `checks.md` + `progress.md` handoff.
 
 ## 3. Common Commands
 

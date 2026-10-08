@@ -1,0 +1,16 @@
+# Checks: long-task skill
+
+Review method: no separate reviewer was spawned (subagents need the user's request in this session); a distinct second pass compared the skill section by section against the source prompt image and the repo files.
+
+| # | requirement | verdict | evidence | correction |
+|---|---|---|---|---|
+| C1 | `.claude/skills/long-task/SKILL.md` exists with YAML frontmatter (`name`, `description`) | pass | `sed -n '1,5p'` shows `name: long-task`, `description: ...`, `argument-hint`, closing `---` | |
+| C2 | Every prompt section maps to the skill: goal, role, principles, inputs, layers 1–7, execution_loop, handoff, delivery | pass | goal/role/principles → header paragraphs; inputs → §0; layers 1–7 → §1–§4, §6–§8; execution_loop → §5; handoff → §9; delivery → §10 | Second pass found gaps: layer_1 "load only needed passages", layer_3 "exact file / focused output / configured connection", layer_2 "reusable across source sets"; added to §1, §3, §2 |
+| C3 | Every repo path, script, and command named in the skill exists | pass | `docs/specs`, `docs/rfc`, `docs/roadmap`, `scripts/record-cycle.mjs`, 9× `scripts/assemble-evidence-*.mjs`, `tests/fixtures/real-oss-fixtures.mjs`, `docs/benchmarks/{dogfood-receipts.jsonl,track-d1-convergence-audit.md,phase-4-4-promotion-audit.md}`, `evidence-runs/TF-EVIDENCE-0010` all exist; npm scripts `test`, `doctor`, `bump-version`, `bench:real:live` exist; `--macro-cmd`/`--micro-cmd` in `src/cli.mjs`; doctor emits stage `READY` (`src/core/doctor.mjs:113`) | First draft said "frozen audits under `docs/benchmarks/`"; `shadow-dogfood-observation.md` there is rewritten by `record-cycle`, so the line now names the two frozen audits and the append-only ledger |
+| C4 | No conflict with CLAUDE.md guardrails | pass | Zero Fabricated Claims → §3 no mock substitution, §6 missing evidence stays visible; Fail-Closed → §6 INCOMPLETE is not a pass; Evidence First → §2 baseline, §5/§8 `npm test`; Token Efficiency → body loads only on invocation, CLAUDE.md +1 line | |
+| C5 | Attribution names @beamnxw and the sources; Karpathy not presented as author or endorser | pass | SKILL.md line 11: "Adapted from @beamnxw's ... Not written or endorsed by Andrej Karpathy." with both footer links | |
+| C6 | CLAUDE.md change is a pointer of at most 2 lines | pass | `git diff CLAUDE.md`: 1 insertion (Guardrails → **Long Tasks**) | |
+| C7 | `npm test` after the change matches baseline (676 pass / 0 fail / 3 skip) | pass | Baseline at `9886cb8`: tests 679, pass 676, fail 0, skipped 3. After final edits: tests 679, pass 676, fail 0, skipped 3 (Node v22.22.0). Run on the working tree whose only later diff is this file and `progress.md` | |
+| C8 | Only Scope paths changed | pass | `git status --short`: ` M CLAUDE.md`, `?? .claude/` (skill + this task dir only) | |
+| C9 | No stray `$` placeholder besides `$ARGUMENTS` in SKILL.md | pass | `grep -n '\$'` → only line 9 `Task: $ARGUMENTS` | |
+| C10 | Claude Code discovers and loads the skill in a new session | unresolved | The current session's skill list was fixed at start; no fresh session was started (it would spend the user's usage) | Verify by typing `/long-task` in a new session on this branch |
