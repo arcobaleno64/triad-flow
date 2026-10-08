@@ -11,16 +11,16 @@
 - Promotion Review Status: `REJECTED / STRICT_HOLD`
 - Runtime merge authority: `NONE`
 - Maturity target: `SHADOW -> ADVISORY` after 20–30 qualifying real change cycles
-- Post-005 Fresh Cohort: `21 consecutive / 0 FALSE_ADVANCE` (Eligibility: 21/15)
+- Post-005 Fresh Cohort: `22 consecutive / 0 FALSE_ADVANCE` (Eligibility: 22/15)
 
 ## Scorecard
 
-- Ledger receipts: **45**
-- Maturity-counting cycles: **44 / 20–30**
+- Ledger receipts: **46**
+- Maturity-counting cycles: **45 / 20–30**
 - False advance: **3**
-- False hold: **4**
-- Timeout-cycle rate: **6.8%**
-- Average wall-clock latency: **103194 ms**
+- False hold: **5**
+- Timeout-cycle rate: **6.7%**
+- Average wall-clock latency: **105413 ms**
 
 False-advance/false-hold rates use only binary autonomous Triad outcomes (`APPROVE` / `BLOCK`). `DEGRADED`, `INCOMPLETE`, and `HUMAN_REVIEW_REQUIRED` never enter those rates automatically.
 
@@ -75,6 +75,7 @@ False-advance/false-hold rates use only binary autonomous Triad outcomes (`APPRO
 | CYCLE-0043 | live | yes | REQUEST_CHANGES | DEGRADED | NEUTRAL_DISAGREEMENT | SUCCESS | NONE | 0 | NONE |
 | CYCLE-0044 | live | yes | APPROVE | APPROVE | MATCH | NOT_ATTEMPTED | NONE | 0 | NONE |
 | CYCLE-0045 | live | yes | REQUEST_CHANGES | BLOCK | MATCH | SUCCESS | NONE | 0 | NONE |
+| CYCLE-0046 | live | yes | APPROVE | BLOCK | FALSE_HOLD | SUCCESS | NONE | 0 | RELIABILITY_PRIORITY |
 
 ## Active Failure Families
 
@@ -97,7 +98,7 @@ False-advance/false-hold rates use only binary autonomous Triad outcomes (`APPRO
 - Disposition: **REJECTED / STRICT_HOLD**
 - Runtime Authority: **NONE**
 - Observation Status: **PHASE_4_3_TRACK_D1 = COMPLETE (30/30 cycles observed)**
-- Post-005 Fresh Cohort: **21 consecutive cycles / 0 FALSE_ADVANCE**
+- Post-005 Fresh Cohort: **22 consecutive cycles / 0 FALSE_ADVANCE**
 - Next Promotion Eligibility Gate: Requires **>=15 consecutive fresh cycles / 0 FALSE_ADVANCE** before re-reviewing `SHADOW -> ADVISORY` promotion.
 
 Promotion remains a human governance decision. This projection never promotes Triad-Flow automatically.
