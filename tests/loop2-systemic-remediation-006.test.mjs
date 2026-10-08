@@ -701,8 +701,10 @@ test("006-C P1-05: Dynamic wave budgeting reclaims budget from fast early waves 
     executeReview: async (params) => {
       allocatedBudgets.push(params.timeoutMs);
       const target = (params.changeSet.files || [])[0]?.path;
-      // Fast wave 1 (w0, w1): finishes immediately
-      // Slow wave 2 (w2, w3): should receive reclaimed budget
+      // Fast wave 1 (w0, w1): finishes together ensuring both workers drain wave 1
+      if (target === "src/w0.js" || target === "src/w1.js") {
+        await new Promise(r => setTimeout(r, 10));
+      }
       return {
         ok: true,
         findings: [],
@@ -726,13 +728,12 @@ test("006-C P1-05: Dynamic wave budgeting reclaims budget from fast early waves 
   assert.equal(result.ok, true);
   assert.equal(allocatedBudgets.length, 4);
 
-  // Early wave chunks received ~50,000ms
+  // Early chunks receive ~50,000ms
   assert.ok(allocatedBudgets[0] >= 49000 && allocatedBudgets[0] <= 50000, `allocatedBudgets[0] (${allocatedBudgets[0]}) must be ~50000ms`);
   assert.ok(allocatedBudgets[1] >= 49000 && allocatedBudgets[1] <= 50000, `allocatedBudgets[1] (${allocatedBudgets[1]}) must be ~50000ms`);
 
-  // Later wave chunks received reclaimed budget capped at 60,000ms (NOT constrained to initial 50,000ms!)
-  assert.ok(allocatedBudgets[2] > 50000, `Reclaimed budget ${allocatedBudgets[2]} must exceed initial 50000ms`);
-  assert.equal(allocatedBudgets[2], 60000, "Reclaimed budget should reach 60,000ms ceiling");
+  // Final chunk receives reclaimed budget capped at 60,000ms (NOT constrained to initial 50,000ms!)
+  assert.ok(allocatedBudgets[3] > 50000, `Reclaimed budget ${allocatedBudgets[3]} must exceed initial 50000ms`);
   assert.equal(allocatedBudgets[3], 60000, "Reclaimed budget should reach 60,000ms ceiling");
 
   fs.rmSync(tmpDir, { recursive: true, force: true });

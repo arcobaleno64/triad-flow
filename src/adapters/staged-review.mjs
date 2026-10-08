@@ -477,9 +477,8 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
     const isDynamicBudgeting = maxConcurrency > 1 || Boolean(options.dynamicWaveBudget);
     let nominalChunkBudgetMs;
     if (isDynamicBudgeting) {
-      const totalWaves = Math.max(1, Math.ceil(chunks.length / maxConcurrency));
-      const currentWaveIndex = Math.min(totalWaves - 1, Math.floor(idx / maxConcurrency));
-      const remainingWaves = Math.max(1, totalWaves - currentWaveIndex);
+      const outstandingChunks = Math.max(1, chunks.length - completedChunkCount);
+      const remainingWaves = Math.max(1, Math.ceil(outstandingChunks / maxConcurrency));
       const dynamicWaveBudgetMs = Math.floor(remainingGlobalMs / remainingWaves);
       nominalChunkBudgetMs = Math.min(60000, Math.max(minViableChunkBudgetMs, dynamicWaveBudgetMs));
     } else {
@@ -624,6 +623,9 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
 
       if (chunk.priorityTier === RISK_TIERS.TIER_1_CRITICAL && (!outcome.result || !outcome.result.ok)) {
         tier1ExecutionFailed = true;
+        for (const ctrl of activeChunkControllers) {
+          ctrl.abort("Tier 1 critical chunk execution failed.");
+        }
       }
     }
   }
@@ -970,6 +972,27 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
           omittedFiles
         });
         if (chunk.priorityTier === RISK_TIERS.TIER_1_CRITICAL) {
+          for (let remIdx = idx + 1; remIdx < chunks.length; remIdx++) {
+            const remChunk = chunks[remIdx];
+            const remOutcome = chunkRawOutcomes[remIdx];
+            const isRemTimeout = remOutcome?.status === "timeout" || remOutcome?.result?.executionStatus === EXECUTION_STATUS.TIMEOUT;
+            const isRemCancelled = remOutcome?.status === "cancelled" || remOutcome?.result?.executionStatus === EXECUTION_STATUS.CANCELLED;
+            for (const tf of remChunk.targetFiles) {
+              omittedFiles.push({
+                file: tf,
+                code: isRemTimeout ? COVERAGE_OMISSION_CODES.TIMEOUT : COVERAGE_OMISSION_CODES.OUT_OF_SCOPE,
+                reason: `Halted due to Tier 1 critical chunk coverage failure in chunk ${chunk.chunkId}`
+              });
+            }
+            chunkReceipts.push({
+              chunkId: remChunk.chunkId,
+              chunkIndex: remChunk.chunkIndex,
+              totalChunks: remChunk.totalChunks,
+              status: isRemTimeout ? "timeout" : (isRemCancelled ? "cancelled" : "failed"),
+              durationMs: remOutcome?.durationMs || 0,
+              error: `Halted due to Tier 1 critical chunk coverage failure in chunk ${chunk.chunkId}`
+            });
+          }
           break;
         }
       }
@@ -1013,6 +1036,27 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
 
       // Fail closed if Tier 1 chunk failed
       if (chunk.priorityTier === RISK_TIERS.TIER_1_CRITICAL) {
+        for (let remIdx = idx + 1; remIdx < chunks.length; remIdx++) {
+          const remChunk = chunks[remIdx];
+          const remOutcome = chunkRawOutcomes[remIdx];
+          const isRemTimeout = remOutcome?.status === "timeout" || remOutcome?.result?.executionStatus === EXECUTION_STATUS.TIMEOUT;
+          const isRemCancelled = remOutcome?.status === "cancelled" || remOutcome?.result?.executionStatus === EXECUTION_STATUS.CANCELLED;
+          for (const tf of remChunk.targetFiles) {
+            omittedFiles.push({
+              file: tf,
+              code: isRemTimeout ? COVERAGE_OMISSION_CODES.TIMEOUT : COVERAGE_OMISSION_CODES.OUT_OF_SCOPE,
+              reason: `Halted due to Tier 1 critical chunk failure in chunk ${chunk.chunkId}`
+            });
+          }
+          chunkReceipts.push({
+            chunkId: remChunk.chunkId,
+            chunkIndex: remChunk.chunkIndex,
+            totalChunks: remChunk.totalChunks,
+            status: isRemTimeout ? "timeout" : (isRemCancelled ? "cancelled" : "failed"),
+            durationMs: remOutcome?.durationMs || 0,
+            error: `Halted due to Tier 1 critical chunk failure in chunk ${chunk.chunkId}`
+          });
+        }
         break;
       }
     }
