@@ -127,7 +127,9 @@ export function parseArgs(argv = process.argv.slice(2)) {
     timeoutMs: null,
     patchObjective: null,
     patchExclusions: [],
-    repoDir: null
+    repoDir: null,
+    agyStreamJson: false,
+    stagedConcurrency: 2
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -208,6 +210,23 @@ export function parseArgs(argv = process.argv.slice(2)) {
       options.repoDir = arg.slice("--repo-dir=".length);
     } else if (arg.startsWith("--cwd=")) {
       options.repoDir = arg.slice("--cwd=".length);
+    } else if (arg === "--agy-stream-json") {
+      options.agyStreamJson = true;
+    } else if (arg === "--staged-concurrency") {
+      if (i + 1 >= argv.length || argv[i + 1].startsWith("-")) {
+        throw new Error("Missing value for --staged-concurrency");
+      }
+      const val = parseInt(argv[++i], 10);
+      if (isNaN(val) || val <= 0) {
+        throw new Error(`Invalid --staged-concurrency value: '${argv[i]}'. Must be a positive integer.`);
+      }
+      options.stagedConcurrency = val;
+    } else if (arg.startsWith("--staged-concurrency=")) {
+      const val = parseInt(arg.slice("--staged-concurrency=".length), 10);
+      if (isNaN(val) || val <= 0) {
+        throw new Error(`Invalid --staged-concurrency value: '${arg}'. Must be a positive integer.`);
+      }
+      options.stagedConcurrency = val;
     } else {
       throw new Error(`Unknown argument: '${arg}'`);
     }
@@ -237,6 +256,8 @@ Options:
   --out <file>        Output report path (default: dogfood-run.json)
   --timeout <ms>      Per-provider timeout in milliseconds (default: 300000 live / 30000 mock)
   --patch-objective <text>  Stated patch objective used only for independent objective-relevance verification
+  --agy-stream-json   Enable agy stream-json transport via stdin (bypasses Windows argv limit)
+  --staged-concurrency <n> Bounded concurrency for staged chunk review (default: 2)
   --help, -h          Show this help message
 `);
 }
@@ -678,7 +699,8 @@ export async function runDogfoodReview(userOptions = {}) {
           command: "agy",
           providerName: "agy",
           modelName: "gemini-3.8-flash",
-          actualModel: { value: "gemini-3.8-flash", source: "reported" }
+          actualModel: { value: "gemini-3.8-flash", source: "reported" },
+          streamJson: Boolean(userOptions.agyStreamJson)
         }),
         claude: new CliReviewAdapter({
           command: "claude",
@@ -743,7 +765,8 @@ export async function runDogfoodReview(userOptions = {}) {
         timeoutMs,
         patchObjective: userOptions.patchObjective || null,
         objectiveContract,
-        signal: userOptions.signal || null
+        signal: userOptions.signal || null,
+        maxConcurrency: userOptions.stagedConcurrency || 2
       });
       stagedChunkCount = Array.isArray(res?.receipts) ? res.receipts.length : null;
       stagedTimeoutCount = Array.isArray(res?.receipts)
@@ -948,10 +971,21 @@ export async function runDogfoodReview(userOptions = {}) {
       reviewerTimeoutCount,
       verifierTimeoutCount,
       timeoutCount,
+      providerTimeoutCount: reviewerTimeoutCount + verifierTimeoutCount,
+      chunkTimeoutCount: stagedTimeoutCount,
+      timeoutCycle: timeoutCount > 0,
       authFailureCount,
       otherFailureCount,
       stagedFallbackUsed,
-      chunkCount: stagedFallbackUsed ? stagedChunkCount : null
+      chunkCount: stagedFallbackUsed ? stagedChunkCount : null,
+      phaseMetrics: {
+        platform: process.platform,
+        budgetAllocatedMs: timeoutMs,
+        globalDeadlineRemainingMs: Math.max(0, timeoutMs - reviewerPhaseDurationMs),
+        stagedFallbackUsed,
+        chunkCount: stagedFallbackUsed ? stagedChunkCount : null,
+        maxConcurrency: stagedFallbackUsed ? (userOptions.stagedConcurrency || 2) : 1
+      }
     },
     verificationRecord
   };

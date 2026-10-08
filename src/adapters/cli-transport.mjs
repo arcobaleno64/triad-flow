@@ -26,6 +26,29 @@ import {
 export { resolveProviderProfile, assembleProviderArgs, SAFE_ARGV_THRESHOLD_BYTES } from "./provider-profiles.mjs";
 export { extractJsonFromText } from "./provider-contract.mjs";
 
+/**
+ * Extracts final result payload from NDJSON stream-json output.
+ * @param {string} text
+ * @returns {object|null}
+ */
+export function extractStreamJsonResponse(text) {
+  if (!text || typeof text !== "string") return null;
+  const lines = text.split(/\r?\n/);
+  let resultEvent = null;
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (parsed && typeof parsed === "object" && parsed.event === "result") {
+        resultEvent = parsed;
+      }
+    } catch {}
+  }
+  return resultEvent;
+}
+
+
 const AUTH_ERROR_PATTERNS = [
   /not logged in/i,
   /\b(?:401\s+unauthorized|unauthorized\s*(?:client|access\s+token|api\s+key))\b/i,
@@ -109,15 +132,29 @@ export class CliReviewAdapter {
     this.modelName = options.modelName || "cli-default";
     this.actualModel = options.actualModel || null;
     this.family = options.family || profile.family;
-    this.inputChannel = options.inputChannel || profile.inputChannel || "argv";
+    this.streamJson = options.streamJson !== undefined
+      ? Boolean(options.streamJson)
+      : Boolean(profile.streamJson);
+    this.inputChannel = options.inputChannel || (this.streamJson ? "stdin" : (profile.inputChannel || "argv"));
     this.supportsStdin = options.supportsStdin !== undefined
       ? Boolean(options.supportsStdin)
-      : (profile.supportsStdin ?? true);
+      : (this.streamJson ? true : (profile.supportsStdin ?? true));
     this.execFn = typeof options.execFn === "function" ? options.execFn : null;
     this.useStdin = options.useStdin !== undefined ? Boolean(options.useStdin) : null;
     this.env = options.env || null;
     this.cwd = options.cwd || null;
-    this.args = assembleProviderArgs(profile, options.args);
+    if (this.streamJson && (profile?.id === "agy" || this.command === "agy")) {
+      const streamBaseArgs = ["--input-format=stream-json", "--output-format=stream-json"];
+      const mandatory = Array.isArray(profile?.mandatorySafetyArgs)
+        ? profile.mandatorySafetyArgs
+        : (Array.isArray(profile?.readOnlyFlags) ? profile.readOnlyFlags : ["--mode=plan", "--disable-slash-commands"]);
+      const merged = [...mandatory, ...streamBaseArgs];
+      this.args = Array.isArray(options.args)
+        ? options.args.filter(a => a !== "--print" && !streamBaseArgs.includes(a)).concat(merged)
+        : merged;
+    } else {
+      this.args = assembleProviderArgs(profile, options.args);
+    }
     this.maxRetries = options.maxRetries !== undefined
       ? Number(options.maxRetries)
       : (this.family === "google" ? 2 : 0);
@@ -246,13 +283,26 @@ export class CliReviewAdapter {
     // Use injected execution function if provided (e.g. for mock unit tests)
     if (this.execFn) {
       try {
+        const promptBytes = Buffer.byteLength(prompt, "utf8");
+        let useStdin = false;
+        if (this.useStdin !== null) {
+          useStdin = this.useStdin;
+        } else if (this.inputChannel === "stdin") {
+          useStdin = true;
+        } else if (this.supportsStdin && promptBytes > SAFE_ARGV_THRESHOLD_BYTES) {
+          useStdin = true;
+        }
         const injectedArgs = tempOutputFile
-          ? [...this.args, this.profile.outputFileFlag, tempOutputFile, prompt]
-          : [...this.args, prompt];
+          ? [...this.args, this.profile.outputFileFlag, tempOutputFile, ...(useStdin ? [] : [prompt])]
+          : (useStdin ? [...this.args] : [...this.args, prompt]);
+        const stdinPayload = (this.streamJson && (this.profile?.id === "agy" || this.command === "agy"))
+          ? JSON.stringify({ event: "user", message: { content: prompt } }) + "\n"
+          : (useStdin ? prompt : undefined);
         const res = await this.execFn({
           command: this.command,
           args: injectedArgs,
           prompt,
+          stdin: stdinPayload,
           input,
           cwd: effectiveCwd,
           env: effectiveEnv,
@@ -338,7 +388,10 @@ export class CliReviewAdapter {
 
       if (useStdin && child.stdin) {
         child.stdin.on("error", () => {});
-        child.stdin.write(prompt, "utf8", () => {
+        const stdinPayload = (this.streamJson && (this.profile?.id === "agy" || this.command === "agy"))
+          ? JSON.stringify({ event: "user", message: { content: prompt } }) + "\n"
+          : prompt;
+        child.stdin.write(stdinPayload, "utf8", () => {
           child.stdin.end();
         });
       }
@@ -459,7 +512,21 @@ export class CliReviewAdapter {
         }
 
         // 3. Try to extract JSON from fileOutput or stdout
-        const outputToParse = fileOutputContent || stdout;
+        let outputToParse = fileOutputContent || stdout;
+        if (this.streamJson && !fileOutputContent) {
+          const streamResult = extractStreamJsonResponse(outputToParse);
+          if (streamResult) {
+            if (streamResult.result?.status === "SUCCESS" && typeof streamResult.result.response === "string") {
+              outputToParse = streamResult.result.response;
+            } else if (streamResult.result?.status && streamResult.result.status !== "SUCCESS") {
+              resolve(validateProviderOutput({
+                executionStatus: EXECUTION_STATUS.ERROR,
+                error: `Stream-json result reported non-success status: ${streamResult.result.status}`
+              }, context));
+              return;
+            }
+          }
+        }
         const parsed = extractJsonFromText(outputToParse);
         if (!parsed) {
           if (AUTH_ERROR_PATTERNS.some(p => p.test(outputToParse))) {
@@ -551,7 +618,20 @@ export class CliReviewAdapter {
       }, context);
     }
 
-    const outputToParse = fileContent !== null ? fileContent : (res?.stdout || "");
+    let outputToParse = fileContent !== null ? fileContent : (res?.stdout || "");
+    if (this.streamJson && fileContent === null) {
+      const streamResult = extractStreamJsonResponse(outputToParse);
+      if (streamResult) {
+        if (streamResult.result?.status === "SUCCESS" && typeof streamResult.result.response === "string") {
+          outputToParse = streamResult.result.response;
+        } else if (streamResult.result?.status && streamResult.result.status !== "SUCCESS") {
+          return validateProviderOutput({
+            executionStatus: EXECUTION_STATUS.ERROR,
+            error: `Stream-json result reported non-success status: ${streamResult.result.status}`
+          }, context);
+        }
+      }
+    }
 
     if (res?.stderr && AUTH_ERROR_PATTERNS.some(p => p.test(res.stderr))) {
       return validateProviderOutput({
