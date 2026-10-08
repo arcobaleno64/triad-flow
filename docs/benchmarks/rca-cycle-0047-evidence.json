@@ -1,0 +1,70 @@
+{
+  "schemaVersion": "1.1.0",
+  "rcaId": "RCA-CYCLE-0047",
+  "timestamp": "2026-10-08T13:18:40.361Z",
+  "status": "FROZEN_DIAGNOSTIC",
+  "cycleReceipt": {
+    "cycleId": "CYCLE-0047",
+    "sourceRunId": "dogfood-1791463161311-0c457c1f-05d2-4738-ba3e-e8ae5fb2eb7e",
+    "executionMode": "live",
+    "repository": {
+      "name": "clickhouse/clickhouse",
+      "commitSha": "18f9c9d0db2fb7374b0545f3fa9542809107702a",
+      "prNumber": 123335,
+      "base": "HEAD~5",
+      "head": "18f9c9d0db2fb7374b0545f3fa9542809107702a",
+      "diffStat": {
+        "files": 4,
+        "additions": 367,
+        "deletions": 8
+      }
+    },
+    "patchObjective": "Prevent false-negative query results when ClickHouse evaluates hasAnyTokens, hasAllTokens, or hasPhrase predicates on map elements using a text index built over mapValues. Preserve rows whose missing map keys evaluate to default values that match after tokenizer and postprocessor transformations, including default-valued search inputs. Maintain query-result equivalence between indexed and non-indexed execution while preserving valid index-pruning optimizations.",
+    "exclusions": [],
+    "triadDisposition": "APPROVE",
+    "humanOracle": "REQUEST_CHANGES",
+    "humanReviewer": "Ergus (GitHub MEMBER)",
+    "humanFinalizedAt": "2026-10-08T11:26:47.000Z",
+    "humanCounterexample": "hasAnyTokens(m['k'], repeat(char(0), 3))",
+    "discrepancy": "FALSE_ADVANCE",
+    "failureFamily": "false-advance",
+    "escalationAction": "IMMEDIATE_BLOCKER",
+    "sentryOutcomes": {
+      "agy": {
+        "status": "empty",
+        "findings": 0,
+        "latencyMs": 54526,
+        "model": "gemini-3.8-flash"
+      },
+      "claude": {
+        "status": "empty",
+        "findings": 0,
+        "latencyMs": 30144,
+        "model": "claude-5.5-sonnet"
+      },
+      "codex": {
+        "status": "empty",
+        "findings": 0,
+        "latencyMs": 35746,
+        "model": "gpt-6.1-sol"
+      }
+    },
+    "quorumReached": true,
+    "consensusFindingsCount": 0,
+    "verificationStatus": "NOT_ATTEMPTED",
+    "gateDecision": "pass"
+  },
+  "contextAvailability": {
+    "traverseMapElementValueNodeDefinitionLine": 2209,
+    "isMapValueDefaultDefinitionLines": "1260-1263",
+    "isMapValueDefaultInDiffHunks": true,
+    "traverseMapElementValueNodeInDiffHunks": false,
+    "callToTraverseMapElementValueNodeInDiff": true,
+    "diffContextRadiusLines": 3
+  },
+  "systemicBlindspotConfirmation": {
+    "findingCountZeroSkipsVerificationInDogfood": true,
+    "harnessShortCircuitsZeroFindingsBeforeVerificationRecord": true,
+    "evaluatePostVerificationGateIgnoresVerifierOmissions": true
+  }
+}
