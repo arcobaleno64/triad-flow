@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "rcaId": "RCA-CYCLE-0047-DIAGNOSTICS",
-  "timestamp": "2026-10-08T13:18:40.364Z",
+  "timestamp": "2026-10-08T14:44:42.098Z",
   "executionMode": "post-hoc diagnostic",
   "findings": {
     "physicalCausalChain": [
@@ -31,6 +31,16 @@
       "verifierCriticalOmissions": 1,
       "evaluatedGateDecision": "approve",
       "vulnerabilityConfirmed": true
-    }
+    },
+    "evidenceLimitations": [
+      {
+        "code": "LIMITATION-01-RAW-STDOUT",
+        "detail": "Raw provider stdout was not captured in receipt; findings count and empty status are confirmed, but verbatim transcripts are not archived."
+      },
+      {
+        "code": "LIMITATION-02-POST-HOC-OFFLINE",
+        "detail": "Counterfactual prompt with injected callee context was verified via offline diagnostic assembly; it was not re-run against live model APIs."
+      }
+    ]
   }
 }

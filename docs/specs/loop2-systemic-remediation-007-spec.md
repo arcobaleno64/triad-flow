@@ -1,7 +1,7 @@
 # LOOP2-SYSTEMIC-REMEDIATION-007 Specification
-## Zero-Finding Quorum Verification, Verifier Omission Gate & Local Callee Context Architecture
+## Zero-Finding Quorum Verification, Verifier Omission Assessment & Local Callee Context Architecture
 
-**Status:** PROPOSED FOR IMPLEMENTATION
+**Status:** REVISED SPECIFICATION (Addressing Formal Review Feedback)
 **Classification:** LOOP 2 (Systemic Remediation)
 **Issue Reference:** GitHub Issue #37
 **Authority Mode:** SHADOW_DOGFOOD (Advisory Only, Runtime Authority: NONE)
@@ -33,7 +33,7 @@ Pursuant to governance policy:
 
 ## 2. Root Cause Analysis (Workstream 007-A)
 
-Detailed diagnostic evaluation (`scripts/rca-cycle-0047-diagnostics.mjs`, `docs/benchmarks/rca-cycle-0047-evidence.json`) establishes four interlocking root causes:
+Detailed diagnostic evaluation (`scripts/rca-cycle-0047-diagnostics.mjs`, `docs/benchmarks/rca-cycle-0047-evidence.json`, `docs/benchmarks/rca-cycle-0047-diagnostic-report.json`) establishes four interlocking root causes alongside explicitly documented evidence limitations:
 
 ### 2.1 ClickHouse Defect Mechanism (Physical Fact)
 1. In `src/Storages/MergeTree/MergeTreeIndexConditionText.cpp`:
@@ -92,52 +92,116 @@ Detailed diagnostic evaluation (`scripts/rca-cycle-0047-diagnostics.mjs`, `docs/
    **Line 289 short-circuits to `approve` BEFORE `options.verificationRecord` is checked.**
 2. In `evaluatePostVerificationGate`:
    The gate evaluates only producer findings (`consensus.findings`). It completely ignores `verificationRecord.verifierOmissions`.
-3. Deterministic test in `rca-cycle-0047-diagnostics.mjs` proved:
+3. Deterministic unit diagnostic in `rca-cycle-0047-diagnostics.mjs` proved:
    Passing a clean consensus with a `verificationRecord` containing a **CRITICAL** omission still returned **`APPROVE`**!
+
+### 2.5 Explicit Evidence Limitations (EVIDENCE_LIMITATION)
+1. **Raw Provider Stdout Unarchived:** Full raw stdout text emitted by live provider processes in CYCLE-0047 was not captured in the dogfood ledger prior to git restore; status (`empty`), latency, and 0 findings are verified, but raw stdout strings are unarchived.
+2. **Counterfactual Context Not Live Executed:** The counterfactual prompt with injected callee context was verified for structural and syntactic assembly in unit diagnostics, but has not been submitted to live provider APIs. It remains a diagnostic hypothesis, not empirical proof of live model detection.
 
 ---
 
 ## 3. Architecture Specification
 
-### 3.1 Workstream 007-B: Zero-Finding Quorum Verification (Clean Challenge)
-When the tri-party consensus yields 0 findings (`consensus.findings.length === 0`), Triad-Flow must NOT immediately issue an unverified approval.
+### 3.1 Workstream 007-B: Clean Challenge Decision Matrix & Execution Contract
+When the tri-party consensus yields 0 findings (`consensus.findings.length === 0`), Triad-Flow must NOT immediately issue an unverified approval. It must execute a formal **Clean Challenge** verification stage.
 
-1. **Clean Challenge Invocation:**
-   - In `scripts/dogfood-review.mjs`:
-     When `consensus.quorumReached === true` and `consensus.findings.length === 0`, `conductIndependentVerification` MUST be invoked with `mode: "clean_challenge"`.
-2. **Clean Challenge Prompting:**
-   - The verifier is explicitly presented with:
-     - The stated `patchObjective` and pre-bound exclusions.
-     - The fact that sentries reported 0 findings.
-     - An adversarial mandate: "Actively cross-examine whether the implementation has edge-case omissions, unhandled data types, or contradictions with the declared objective (especially boundary inputs mentioned in the objective)."
-     - Verifier reports any newly discovered defects in `verifierOmissions`.
-3. **False Hold Prevention Invariant:**
-   - The Clean Challenge does NOT invert the gate to `BLOCK` by default.
-   - If the verifier confirms no defects (`verifierOmissions.length === 0`), the gate cleanly issues `APPROVE`.
-   - Only confirmed, objective-falsifying, or critical/high omissions alter the disposition.
+#### 3.1.1 Clean Challenge Decision Matrix
+The Advisory Gate disposition is governed strictly by the following deterministic truth table:
 
-### 3.2 Workstream 007-C: Gate Harness Authority over Verifier Omissions
-Modify `src/core/harness.mjs` to establish full gate authority over `verifierOmissions`:
+| Clean Challenge Result | Evaluated Condition | Advisory Gate Decision | Rationale |
+|---|---|---|---|
+| **Clean Confirmation** | Verifier execution complete (`ok: true`), 0 omissions (`verifierOmissions.length === 0`), complete file coverage | `APPROVE` | Unanimous clean quorum independently verified against declared objective. |
+| **Confirmed Objective Violation** | Omission verified with `evidenceSupport: "SUPPORTED"` AND `objectiveImpact: "FALSIFIES_PATCH_OBJECTIVE"` | `BLOCK` | Verified functional regression directly contradicting patch claims. |
+| **Confirmed High/Critical Omission** | Omission verified with `evidenceSupport: "SUPPORTED"` AND severity `critical` or `high` | `BLOCK` | Verified high-severity security/functional vulnerability missed by sentries. |
+| **Unverified / Solitary Concern** | Omission reported but `evidenceSupport: "INSUFFICIENT_EVIDENCE"` OR lacks corroborating proof | `HUMAN_REVIEW_REQUIRED` | Potential defect lacks conclusive proof; prevents False Hold while halting unverified advance. |
+| **Execution Failure / Timeout** | Verifier execution timed out, auth failure, or malformed JSON output | `BLOCK` (Fail-Closed) | Verification incomplete; zero capability forgery under fail-closed contract. |
+| **Context Insufficient / Uncertain** | Verifier explicitly declares `UNCERTAIN` due to missing callee/AST context | `HUMAN_REVIEW_REQUIRED` | Cleanliness cannot be certified without missing contextual boundaries. |
 
-1. **Eliminate Short-Circuit Before Verification:**
-   - Move `if (options?.verificationRecord) return evaluatePostVerificationGate(...)` **above** the `if (findings.length === 0)` check.
-   - When a `verificationRecord` is present, it MUST always govern gate evaluation.
-2. **Incorporate `verifierOmissions` into `evaluatePostVerificationGate`:**
-   - Iterate over `verificationRecord.verifierOmissions`:
-     - Omission with severity `critical` or `high` -> `decision: "block"`.
-     - Omission marked `falsifiesPatchObjective === true` -> `decision: "block"`.
-     - Omission in Tier 1 with severity `medium` -> `decision: "block"`.
-     - Omission in Tier 2 with severity `low` (not falsifying objective) -> advisory, does not block.
-3. **Ensure Complete Verification Coverage Reporting:**
-   - In `review-run-report.mjs` and SARIF export, surface verified omissions as distinct findings with provenance `source: "verifier_omission"`.
+#### 3.1.2 Execution Isolation Constraints
+1. **Zero Oracle Leakage:** The Clean Challenge prompt must NEVER receive Human Oracle verdicts, GitHub issue discussions, or reviewer comments.
+2. **Verifier Provenance Isolation:** The verifier is invoked in a clean execution context with a specialized prompt (`mode: "clean_challenge"`). When Claude is used as the verifier, its provenance must be logged explicitly as `verifier_identity: "claude-5.5-sonnet (independent_verifier_stage)"`, acknowledging same-model-family status while enforcing strict prompt and execution session isolation.
 
-### 3.3 Workstream 007-D: Local Callee Context Enclosure Injection
-Enhance `src/adapters/review-prompts.mjs` and `src/core/git-collector.mjs`:
+---
 
-1. When a unified diff calls a member function or local function in the same modified file that is not part of the diff hunks:
-   - Extract the function signature and first N lines (or complete definition if < 30 lines) into `contextPackage.layers.layer1AstEnclosure.enclosingFunctions`.
-   - Provide this context package to `buildEvidenceReviewPrompt`.
-2. Sentries now have direct visibility into internal preconditions (such as `isMapValueDefault`) of called functions.
+### 3.2 Workstream 007-C: Omission Assessment Contract & Gate Authority (P1 Fix)
+
+Directly awarding blocking authority to unvalidated verifier omissions risks converting False Advances into an explosion of False Holds. To prevent single-model authoritarian vetoes, `REMEDIATION-007` defines a formal **Omission Assessment Contract** and **Gate Anti-Forgery Verification**.
+
+#### 3.2.1 Structured Omission Assessment Schema
+Every omission emitted in `verificationRecord.verifierOmissions` must adhere to this exact normalized schema:
+
+```json
+{
+  "findingId": "omission-1",
+  "title": "Concise issue title",
+  "severity": "critical|high|medium|low|info",
+  "evidenceSupport": "SUPPORTED|CONTESTED|INSUFFICIENT_EVIDENCE",
+  "objectiveImpact": "FALSIFIES_PATCH_OBJECTIVE|DOES_NOT_FALSIFY_PATCH_OBJECTIVE|NOT_ASSESSED",
+  "locatorAccurate": true,
+  "file": "path/to/file",
+  "line_start": 1,
+  "line_end": 1,
+  "confirmationSource": "independent_validation",
+  "reasoning": "Concrete, observable counterexample demonstrating failure",
+  "dissent": null
+}
+```
+
+1. **`evidenceSupport` Requirement:**
+   - `SUPPORTED`: Verifier supplies a concrete, line-bound counterexample or reproducible state path proving the defect.
+   - `INSUFFICIENT_EVIDENCE`: Verifier notes a theoretical concern or missing documentation without proof of failure.
+   - `CONTESTED`: Counter-evidence indicates the code path is unreachable or protected by existing invariants.
+2. **`confirmationSource` Requirement:**
+   - Must be set by the verifier pipeline (`"independent_validation"`), never forged by arbitrary inputs.
+
+#### 3.2.2 Gate Authority & Anti-Forgery Verification
+Before `evaluateGateDecision` or `evaluatePostVerificationGate` grants authority to any `verificationRecord`, it MUST cryptographically verify record authenticity:
+1. `verificationRecord.ok === true` and `verificationRecord.verificationMode` is valid (`"producer_findings"` or `"clean_challenge"`).
+2. `verificationRecord.changeSetDigest === changeSet.contentDigest`.
+3. `verificationRecord.patchObjective === changeSet.patchObjective`.
+4. `verificationRecord.headSha === changeSet.repository.headSha`.
+If any field mismatches or is missing, the gate MUST reject the record with `Gate Fail-Closed: Verification record binding mismatch (FORGED_OR_STALE_RECORD)`.
+
+#### 3.2.3 Gate Evaluation Reordering
+In `src/core/harness.mjs`:
+1. Move the `options?.verificationRecord` check **above** `if (findings.length === 0)`.
+2. When `findings.length === 0` and a valid `verificationRecord` is present:
+   - If `verificationRecord.verifierOmissions` contains an omission with `evidenceSupport === "SUPPORTED"` and (`objectiveImpact === "FALSIFIES_PATCH_OBJECTIVE"` or severity is `critical`/`high`): `decision: "block"`.
+   - If `verificationRecord.verifierOmissions` contains an omission with `evidenceSupport === "INSUFFICIENT_EVIDENCE"`: `decision: "human_review_required"`.
+   - If `verificationRecord.verifierOmissions` contains only `low` omissions with `DOES_NOT_FALSIFY_PATCH_OBJECTIVE`: `decision: "approve"` (with advisory findings).
+   - If `verificationRecord.verifierOmissions.length === 0`: `decision: "approve"`.
+
+---
+
+### 3.3 Workstream 007-D: Local Callee Context Engineering Contract
+To eliminate diff-context truncation without causing context bloat or hallucinations, `REMEDIATION-007` establishes four hard engineering constraints for local callee extraction:
+
+#### 3.3.1 Exact-Head Source Invariant
+Callee function definitions MUST be extracted directly from the target commit using:
+```bash
+git show <headSha>:<filePath>
+```
+Extracting code from the working tree directory is strictly prohibited, as the local workspace may contain uncommitted modifications or telemetry artifacts.
+
+#### 3.3.2 Deterministic Parsing & Unresolved Handling
+1. Extraction is restricted to member functions and file-local functions within the same file being modified by the diff.
+2. If a called symbol has multiple overloads, is generated by a C++ macro, is a dynamic dispatch / virtual interface, or cannot be unambiguously located, the context engine MUST NOT guess.
+3. It must record the callee in `contextPackage.layers.layer1AstEnclosure.unresolvedCallees` with reason `AMBIGUOUS_SYMBOL` or `MACRO_OR_DYNAMIC`.
+
+#### 3.3.3 Strict Content Budget & Extraction Bounds
+1. **Quantity Ceiling:** Maximum 5 callee functions per modified file; maximum 10 callee functions across the entire changeSet.
+2. **Snippet Size Bound:**
+   - If the callee function is short ($\le 30$ lines), extract the **complete function body**.
+   - If the callee function is long ($> 30$ lines), extract the function signature, argument preconditions, input validation checks, early-return guards, and the closing brace (maximum 60 lines or 2,000 bytes per function). Arbitrary truncation of the first 30 lines is prohibited.
+3. **Global Context Ceiling:** Total AST context package must not exceed **8,000 bytes**.
+4. **Diff Non-Interference:** AST context is additive and must NEVER displace, truncate, or starve the diff hunks. Diff hunks retain absolute budget priority.
+
+#### 3.3.4 Dual Visibility
+The generated `contextPackage` MUST be injected simultaneously into:
+1. Sentry review prompts (`buildEvidenceReviewPrompt` during primary review).
+2. Clean Challenge verifier prompts (`buildVerificationPrompt` during verification).
+Both sentries and verifiers operate on identical contextual enclosures.
 
 ---
 
@@ -154,12 +218,32 @@ Enhance `src/adapters/review-prompts.mjs` and `src/core/git-collector.mjs`:
 
 ---
 
-## 5. Acceptance Criteria
+## 5. Formal Acceptance Matrix (Gate Out)
 
-1. [ ] `docs/benchmarks/rca-cycle-0047-evidence.json` exists and is validated.
-2. [ ] `docs/benchmarks/rca-cycle-0047-diagnostic-report.json` exists and is validated.
-3. [ ] `docs/specs/loop2-systemic-remediation-007-spec.md` approved.
-4. [ ] `evaluateGateDecision` with 0 producer findings and 1 critical `verifierOmission` returns `BLOCK` (proven via regression test).
-5. [ ] `dogfood-review.mjs` invokes Clean Challenge when `findings.length === 0`.
-6. [ ] Full test suite passes (`npm test`, 679+ tests pass, 0 fail).
-7. [ ] Three-platform CI passes across macOS Node 22, Ubuntu Node 18, Windows Node 20.
+The implementation must strictly satisfy the 13 normative test contracts prior to milestone closure:
+
+| Test ID | Test Scenario | Expected Outcome |
+|---|---|---|
+| `007-B-01` | Clean Challenge completes successfully with 0 omissions | `decision: "approve"` |
+| `007-B-02` | Clean Challenge encounters timeout budget exhaustion | Gate fails closed (`BLOCK` / `DEGRADED`) |
+| `007-B-03` | Clean Challenge emits malformed or unparseable JSON | Gate fails closed (`BLOCK` / `DEGRADED`) |
+| `007-C-01` | Clean Challenge reports confirmed `FALSIFIES_PATCH_OBJECTIVE` omission | `decision: "block"` |
+| `007-C-02` | Clean Challenge reports solitary unconfirmed Critical omission (`INSUFFICIENT_EVIDENCE`) | `decision: "human_review_required"` |
+| `007-C-03` | Verification record with mismatched `changeSetDigest` or `headSha` passed to gate | Rejection / `BLOCK` (Anti-forgery fail-closed) |
+| `007-C-04` | Clean Challenge reports verified Low omission (`DOES_NOT_FALSIFY_PATCH_OBJECTIVE`) in Tier 2 | `decision: "approve"` + Advisory finding |
+| `007-D-01` | Exact head extraction of out-of-diff callee definition (CYCLE-0047 SHA) | Successfully extracts `traverseMapElementValueNode` into context |
+| `007-D-02` | Callee with ambiguous macro or dynamic overload | Recorded as `UNRESOLVED_CALLEE` without speculative hallucination |
+| `007-D-03` | Context size exceeds 8 KB ceiling | Bounded extraction preserves diff without budget exhaustion |
+| `007-R-01` | CYCLE-0047 post-hoc diagnostic re-test | Defect identified by Clean Challenge or callee context |
+| `007-R-02` | CYCLE-0042 / CYCLE-0044 known positive samples | Clean Challenge confirms clean status without False Hold |
+| `007-R-03` | Full test suite across 3 platforms (Node 18/20/22 on Ubuntu/macOS/Windows) | 679+ tests pass, 0 fail, 0 regressions |
+
+---
+
+## 6. Telemetry & Reliability Monitoring
+
+Because the Clean Challenge introduces a secondary verifier execution on zero-finding changesets, the implementation must track operational overhead in `dogfood-run.json`:
+1. `cleanChallengeAttempted: boolean`
+2. `cleanChallengeDurationMs: number`
+3. `cleanChallengeStatus: "SUCCESS" | "TIMEOUT" | "ERROR" | "SKIPPED"`
+4. Cumulative cycle timeout rate must remain $< 5.0\%$, preserving the reliability guarantees established under REMEDIATION-006.

@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.1.0",
   "rcaId": "RCA-CYCLE-0047",
-  "timestamp": "2026-10-08T13:18:40.361Z",
+  "timestamp": "2026-10-08T14:44:42.095Z",
   "status": "FROZEN_DIAGNOSTIC",
   "cycleReceipt": {
     "cycleId": "CYCLE-0047",
@@ -66,5 +66,15 @@
     "findingCountZeroSkipsVerificationInDogfood": true,
     "harnessShortCircuitsZeroFindingsBeforeVerificationRecord": true,
     "evaluatePostVerificationGateIgnoresVerifierOmissions": true
-  }
+  },
+  "evidenceLimitations": [
+    {
+      "limitation": "RAW_PROVIDER_STDOUT_UNARCHIVED",
+      "detail": "Full raw stdout text emitted by agy, claude, and codex subprocesses was not persisted in dogfood-run.json prior to git restore; verified receipt records status='empty', findings=0, and wall-clock latencies, but byte-level raw output strings are unarchived."
+    },
+    {
+      "limitation": "COUNTERFACTUAL_NOT_LIVE_EXECUTED",
+      "detail": "Counterfactual prompt with injected callee context was verified for structural and syntactic assembly offline; it has NOT been submitted to live provider APIs. The assumption that live models would detect the bug with context is a diagnostic hypothesis, not empirical proof."
+    }
+  ]
 }

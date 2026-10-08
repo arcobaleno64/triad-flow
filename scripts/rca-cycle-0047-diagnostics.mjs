@@ -101,7 +101,17 @@ async function main() {
       findingCountZeroSkipsVerificationInDogfood: true,
       harnessShortCircuitsZeroFindingsBeforeVerificationRecord: true,
       evaluatePostVerificationGateIgnoresVerifierOmissions: true
-    }
+    },
+    evidenceLimitations: [
+      {
+        limitation: "RAW_PROVIDER_STDOUT_UNARCHIVED",
+        detail: "Full raw stdout text emitted by agy, claude, and codex subprocesses was not persisted in dogfood-run.json prior to git restore; verified receipt records status='empty', findings=0, and wall-clock latencies, but byte-level raw output strings are unarchived."
+      },
+      {
+        limitation: "COUNTERFACTUAL_NOT_LIVE_EXECUTED",
+        detail: "Counterfactual prompt with injected callee context was verified for structural and syntactic assembly offline; it has NOT been submitted to live provider APIs. The assumption that live models would detect the bug with context is a diagnostic hypothesis, not empirical proof."
+      }
+    ]
   };
 
   const evidencePath = path.resolve("docs/benchmarks/rca-cycle-0047-evidence.json");
@@ -207,7 +217,17 @@ async function main() {
         verifierCriticalOmissions: 1,
         evaluatedGateDecision: gateResultOnCleanConsensus.decision,
         vulnerabilityConfirmed: isVulnerable
-      }
+      },
+      evidenceLimitations: [
+        {
+          code: "LIMITATION-01-RAW-STDOUT",
+          detail: "Raw provider stdout was not captured in receipt; findings count and empty status are confirmed, but verbatim transcripts are not archived."
+        },
+        {
+          code: "LIMITATION-02-POST-HOC-OFFLINE",
+          detail: "Counterfactual prompt with injected callee context was verified via offline diagnostic assembly; it was not re-run against live model APIs."
+        }
+      ]
     }
   };
 
