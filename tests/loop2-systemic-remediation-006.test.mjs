@@ -20,14 +20,16 @@ import {
 } from "../src/adapters/cli-transport.mjs";
 import {
   PROVIDER_PROFILES,
-  SAFE_ARGV_THRESHOLD_BYTES
+  SAFE_ARGV_THRESHOLD_BYTES,
+  resolveProviderProfile
 } from "../src/adapters/provider-profiles.mjs";
 import {
   EXECUTION_STATUS,
   COVERAGE_OMISSION_CODES
 } from "../src/adapters/provider-contract.mjs";
 import {
-  executeStagedReview
+  executeStagedReview,
+  CheckpointStore
 } from "../src/adapters/staged-review.mjs";
 import {
   parseArgs,
@@ -834,6 +836,65 @@ test("006-C P1-06: External cancellation signal is preserved as cancelled, not t
   const omission = result.coverage.omittedFiles.find(o => o.file === "src/cancel.js");
   assert.ok(omission);
   assert.equal(omission.code, COVERAGE_OMISSION_CODES.OUT_OF_SCOPE, "Omission code must be OUT_OF_SCOPE for cancellation, not TIMEOUT");
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+test("006-B / Codex: resolveProviderProfile preserves supportsStreamJson on resolved profile", () => {
+  const profile = resolveProviderProfile("agy");
+  assert.equal(profile.supportsStreamJson, true, "resolveProviderProfile('agy') must advertise supportsStreamJson: true");
+  assert.equal(resolveProviderProfile("claude").supportsStreamJson, false);
+  assert.equal(resolveProviderProfile("codex").supportsStreamJson, false);
+});
+
+test("006-C / Codex: Progressive checkpoints do not claim failed chunks as completed", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-chkpt-failed-"));
+  const files = [
+    { path: "src/f0.js" },
+    { path: "src/f1.js" }
+  ];
+  const diffHunks = files.map(f => `diff --git a/${f.path} b/${f.path}\n@@ -1 +1 @@\n-old\n+new`).join("\n");
+  const cs = { scopeMode: "working-tree", files, diffHunks };
+
+  let callCount = 0;
+  const adapter = {
+    providerName: "mock-agy",
+    executeReview: async (params) => {
+      callCount++;
+      const target = (params.changeSet.files || [])[0]?.path;
+      if (target === "src/f0.js") {
+        // First chunk fails
+        return {
+          ok: false,
+          status: "timeout",
+          executionStatus: EXECUTION_STATUS.TIMEOUT,
+          error: "Chunk timeout budget exhausted"
+        };
+      }
+      // Second chunk succeeds
+      return {
+        ok: true,
+        findings: [{ title: "Finding from f1", severity: "high", file: "src/f1.js", line_start: 1, line_end: 1 }],
+        coverage: { coveredFiles: ["src/f1.js"], omittedFiles: [] }
+      };
+    }
+  };
+
+  const result = await executeStagedReview(cs, adapter, {
+    cwd: tmpDir,
+    maxChunkBytes: 50,
+    maxConcurrency: 1
+  });
+
+  assert.equal(result.ok, false);
+  const store = new CheckpointStore({ cwd: tmpDir });
+  const checkpoint = store.readCheckpoint(result.runId);
+  assert.ok(checkpoint, "Checkpoint must exist for incomplete review");
+
+  // Verify that failed chunk was recorded as omitted in checkpoint rather than claiming completed
+  const f0Omission = result.coverage.omittedFiles.find(o => o.file === "src/f0.js");
+  assert.ok(f0Omission, "Failed chunk must be recorded in omittedFiles");
+  assert.equal(f0Omission.code, COVERAGE_OMISSION_CODES.TIMEOUT);
 
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });

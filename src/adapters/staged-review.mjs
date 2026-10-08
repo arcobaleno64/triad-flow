@@ -357,7 +357,8 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
   let tier1ExecutionFailed = false;
   let completedChunkCount = 0;
   let contiguousCommittedPrefix = 0;
-  const committedFindings = [];
+  let committedSuccessfulChunks = 0;
+  const committedOmittedFiles = [];
 
   function tryCommitCheckpoints() {
     try {
@@ -383,15 +384,37 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
               committedFindings.push(...validFindings);
             }
           }
+          committedSuccessfulChunks++;
+          contiguousCommittedPrefix++;
+          checkpointStore.saveCheckpoint(runId, {
+            runId,
+            stage: STAGED_REVIEW_STAGES.STAGE_2_DEEP_REVIEW,
+            salvagedFindings: [...committedFindings],
+            completedChunks: committedSuccessfulChunks,
+            totalChunks: chunks.length,
+            omittedFiles: committedOmittedFiles.length > 0 ? [...committedOmittedFiles] : undefined
+          });
+        } else {
+          // Chunk failed or timed out: persist failure state without claiming success
+          if (outcome?.chunk?.targetFiles) {
+            for (const tf of outcome.chunk.targetFiles) {
+              committedOmittedFiles.push({
+                file: tf,
+                code: outcome?.status === "timeout" ? COVERAGE_OMISSION_CODES.TIMEOUT : COVERAGE_OMISSION_CODES.SIZE_LIMIT,
+                reason: res?.error || "Chunk execution failed"
+              });
+            }
+          }
+          contiguousCommittedPrefix++;
+          checkpointStore.saveCheckpoint(runId, {
+            runId,
+            stage: STAGED_REVIEW_STAGES.STAGE_2_DEEP_REVIEW,
+            salvagedFindings: [...committedFindings],
+            completedChunks: committedSuccessfulChunks,
+            totalChunks: chunks.length,
+            omittedFiles: [...committedOmittedFiles]
+          });
         }
-        contiguousCommittedPrefix++;
-        checkpointStore.saveCheckpoint(runId, {
-          runId,
-          stage: STAGED_REVIEW_STAGES.STAGE_2_DEEP_REVIEW,
-          salvagedFindings: [...committedFindings],
-          completedChunks: contiguousCommittedPrefix,
-          totalChunks: chunks.length
-        });
       }
     } catch {
       // Checkpoint commit failure must never throw or crash the scheduler
