@@ -1,14 +1,14 @@
 # LOOP2-SYSTEMIC-REMEDIATION-007 Specification
 ## Zero-Finding Quorum Verification, Verifier Omission Assessment & Local Callee Context Architecture
 
-**Status:** REVISED SPECIFICATION (Addressing Formal Review Feedback)
+**Status:** REVISED SPECIFICATION (Addressing Formal Review Feedback v2)
 **Classification:** LOOP 2 (Systemic Remediation)
 **Issue Reference:** GitHub Issue #37
 **Authority Mode:** SHADOW_DOGFOOD (Advisory Only, Runtime Authority: NONE)
 **Origin Failure:** `CYCLE-0047` False Advance (`ClickHouse/ClickHouse#123335`, Commit `18f9c9d0db2fb7374b0545f3fa9542809107702a`)
 **Frozen Baseline:** Phase 4.5 Cohort `CYCLE-0040..0047` (8 cycles, 1 FA, 2 FH, 0 timeout cycles)
 **Escalation Action:** `IMMEDIATE_BLOCKER`
-**Primary Learning Owner:** Harness Gate Policy (`harness.mjs`), Verification Pipeline (`independent-verifier.mjs`, `dogfood-review.mjs`), Context Engine (`review-prompts.mjs`)
+**Primary Learning Owner:** Harness Gate Policy (`harness.mjs`), Verification Pipeline (`independent-verifier.mjs`, `dogfood-review.mjs`), Context Engine (`review-prompts.mjs`, `git-collector.mjs`)
 
 ---
 
@@ -96,7 +96,7 @@ Detailed diagnostic evaluation (`scripts/rca-cycle-0047-diagnostics.mjs`, `docs/
    Passing a clean consensus with a `verificationRecord` containing a **CRITICAL** omission still returned **`APPROVE`**!
 
 ### 2.5 Explicit Evidence Limitations (EVIDENCE_LIMITATION)
-1. **Raw Provider Stdout Unarchived:** Full raw stdout text emitted by live provider processes in CYCLE-0047 was not captured in the dogfood ledger prior to git restore; status (`empty`), latency, and 0 findings are verified, but raw stdout strings are unarchived.
+1. **Raw Provider Stdout Unarchived:** Full raw stdout text emitted by live provider processes in CYCLE-0047 was not captured in the dogfood ledger prior to workspace git restore; status (`empty`), latency, and 0 findings are verified, but raw stdout strings are unarchived.
 2. **Counterfactual Context Not Live Executed:** The counterfactual prompt with injected callee context was verified for structural and syntactic assembly in unit diagnostics, but has not been submitted to live provider APIs. It remains a diagnostic hypothesis, not empirical proof of live model detection.
 
 ---
@@ -106,17 +106,24 @@ Detailed diagnostic evaluation (`scripts/rca-cycle-0047-diagnostics.mjs`, `docs/
 ### 3.1 Workstream 007-B: Clean Challenge Decision Matrix & Execution Contract
 When the tri-party consensus yields 0 findings (`consensus.findings.length === 0`), Triad-Flow must NOT immediately issue an unverified approval. It must execute a formal **Clean Challenge** verification stage.
 
-#### 3.1.1 Clean Challenge Decision Matrix
+#### 3.1.1 Complete Clean Challenge Decision Matrix
 The Advisory Gate disposition is governed strictly by the following deterministic truth table:
 
 | Clean Challenge Result | Evaluated Condition | Advisory Gate Decision | Rationale |
 |---|---|---|---|
-| **Clean Confirmation** | Verifier execution complete (`ok: true`), 0 omissions (`verifierOmissions.length === 0`), complete file coverage | `APPROVE` | Unanimous clean quorum independently verified against declared objective. |
-| **Confirmed Objective Violation** | Omission verified with `evidenceSupport: "SUPPORTED"` AND `objectiveImpact: "FALSIFIES_PATCH_OBJECTIVE"` | `BLOCK` | Verified functional regression directly contradicting patch claims. |
-| **Confirmed High/Critical Omission** | Omission verified with `evidenceSupport: "SUPPORTED"` AND severity `critical` or `high` | `BLOCK` | Verified high-severity security/functional vulnerability missed by sentries. |
-| **Unverified / Solitary Concern** | Omission reported but `evidenceSupport: "INSUFFICIENT_EVIDENCE"` OR lacks corroborating proof | `HUMAN_REVIEW_REQUIRED` | Potential defect lacks conclusive proof; prevents False Hold while halting unverified advance. |
-| **Execution Failure / Timeout** | Verifier execution timed out, auth failure, or malformed JSON output | `BLOCK` (Fail-Closed) | Verification incomplete; zero capability forgery under fail-closed contract. |
-| **Context Insufficient / Uncertain** | Verifier explicitly declares `UNCERTAIN` due to missing callee/AST context | `HUMAN_REVIEW_REQUIRED` | Cleanliness cannot be certified without missing contextual boundaries. |
+| **Clean Confirmation** | Verifier execution complete (`ok: true`), 0 omissions, complete file coverage | `APPROVE` | Unanimous clean quorum independently verified against declared objective. |
+| **Confirmed Objective Violation** | Omission verified with `evidenceSupport: "SUPPORTED"` AND `objectiveImpact: "FALSIFIES_PATCH_OBJECTIVE"` (any severity) | `BLOCK` | Verified functional regression directly contradicting patch claims. |
+| **Confirmed Critical / High Omission** | Omission verified with `evidenceSupport: "SUPPORTED"` AND severity `critical` or `high` | `BLOCK` | Verified high-severity security/correctness defect missed by sentries. |
+| **Supported Medium Omission (Tier 1)** | Omission verified with `evidenceSupport: "SUPPORTED"`, severity `medium`, in Tier 1 high-risk policy | `BLOCK` | High-risk repository policy strictly blocks on confirmed medium defects. |
+| **Supported Medium Omission (Tier 2)** | Omission verified with `evidenceSupport: "SUPPORTED"`, severity `medium`, `DOES_NOT_FALSIFY_PATCH_OBJECTIVE` | `HUMAN_REVIEW_REQUIRED` | Defect confirmed but does not falsify objective; requires human adjudication without automatic hard block. |
+| **Supported Low Omission (Tier 1)** | Omission verified with `evidenceSupport: "SUPPORTED"`, severity `low`, `DOES_NOT_FALSIFY_PATCH_OBJECTIVE` | `HUMAN_REVIEW_REQUIRED` | Tier 1 high-risk policy surfaces confirmed defects for human confirmation. |
+| **Supported Low Omission (Tier 2)** | Omission verified with `evidenceSupport: "SUPPORTED"`, severity `low`, `DOES_NOT_FALSIFY_PATCH_OBJECTIVE` | `APPROVE` (Advisory) | Non-blocking minor finding; surfaces as advisory finding without blocking merge. |
+| **Contested Omission (Tier 2)** | Omission marked `evidenceSupport: "CONTESTED"` by verifier reasoning / invariants | `APPROVE` (Advisory) | Invariants protect code path; solitary contested omission removed from blocking set. |
+| **Contested Omission (Tier 1)** | Omission marked `evidenceSupport: "CONTESTED"` with severity `critical` or `high` | `HUMAN_REVIEW_REQUIRED` | High-severity contested defect under Tier 1 policy requires human adjudication. |
+| **Unverified / Insufficient Evidence** | Omission reported but `evidenceSupport: "INSUFFICIENT_EVIDENCE"` (lacks concrete counterexample) | `HUMAN_REVIEW_REQUIRED` | Potential defect lacks conclusive proof; prevents False Hold while halting unverified advance. |
+| **Context Insufficient / Uncertain** | Verifier explicitly declares `overallStatus: "UNCERTAIN"` or omission `evidenceSupport: "UNCERTAIN"` due to missing callee context | `HUMAN_REVIEW_REQUIRED` | Cleanliness cannot be certified without missing contextual boundaries; never APPROVE. |
+| **Clean Challenge Missing / Bypassed** | Zero findings consensus reached, but `verificationRecord` is null, omitted, or missing | `BLOCK` (Fail-Closed) | Preliminary `preGate=approve` cannot grant final release; clean claim without verification fails closed. |
+| **Execution Failure / Timeout / Malformed** | Verifier execution timed out, auth failure, or unparseable JSON output | `BLOCK` (Fail-Closed) | Verification incomplete; zero capability forgery under fail-closed contract. |
 
 #### 3.1.2 Execution Isolation Constraints
 1. **Zero Oracle Leakage:** The Clean Challenge prompt must NEVER receive Human Oracle verdicts, GitHub issue discussions, or reviewer comments.
@@ -124,9 +131,9 @@ The Advisory Gate disposition is governed strictly by the following deterministi
 
 ---
 
-### 3.2 Workstream 007-C: Omission Assessment Contract & Gate Authority (P1 Fix)
+### 3.2 Workstream 007-C: Record Trust Model & Run Context Binding (P1 Fix)
 
-Directly awarding blocking authority to unvalidated verifier omissions risks converting False Advances into an explosion of False Holds. To prevent single-model authoritarian vetoes, `REMEDIATION-007` defines a formal **Omission Assessment Contract** and **Gate Anti-Forgery Verification**.
+Directly awarding blocking authority to unvalidated verifier omissions risks converting False Advances into an explosion of False Holds. To establish authoritative, auditable, and unforgeable verification gates, `REMEDIATION-007` defines a **Dual-Layer Record Trust Model** and **Normalized Run Context Binding**.
 
 #### 3.2.1 Structured Omission Assessment Schema
 Every omission emitted in `verificationRecord.verifierOmissions` must adhere to this exact normalized schema:
@@ -136,7 +143,7 @@ Every omission emitted in `verificationRecord.verifierOmissions` must adhere to 
   "findingId": "omission-1",
   "title": "Concise issue title",
   "severity": "critical|high|medium|low|info",
-  "evidenceSupport": "SUPPORTED|CONTESTED|INSUFFICIENT_EVIDENCE",
+  "evidenceSupport": "SUPPORTED|CONTESTED|INSUFFICIENT_EVIDENCE|UNCERTAIN",
   "objectiveImpact": "FALSIFIES_PATCH_OBJECTIVE|DOES_NOT_FALSIFY_PATCH_OBJECTIVE|NOT_ASSESSED",
   "locatorAccurate": true,
   "file": "path/to/file",
@@ -148,29 +155,77 @@ Every omission emitted in `verificationRecord.verifierOmissions` must adhere to 
 }
 ```
 
-1. **`evidenceSupport` Requirement:**
-   - `SUPPORTED`: Verifier supplies a concrete, line-bound counterexample or reproducible state path proving the defect.
-   - `INSUFFICIENT_EVIDENCE`: Verifier notes a theoretical concern or missing documentation without proof of failure.
-   - `CONTESTED`: Counter-evidence indicates the code path is unreachable or protected by existing invariants.
-2. **`confirmationSource` Requirement:**
-   - Must be set by the verifier pipeline (`"independent_validation"`), never forged by arbitrary inputs.
+1. **`evidenceSupport` Strict Evaluation Rules:**
+   - `SUPPORTED`: Valid ONLY if the verifier supplies a non-empty `file`, valid positive `line_start`/`line_end`, non-empty `reasoning`, and a concrete, observable counterexample. A bare model self-claim without a verifiable failure path MUST be normalized by the verifier pipeline to `INSUFFICIENT_EVIDENCE`.
+   - `INSUFFICIENT_EVIDENCE`: Verifier notes a theoretical concern or missing documentation without an observable failure path.
+   - `CONTESTED`: Verifier demonstrates that the suspected flaw is unreachable, sanitized upstream, or protected by existing state invariants.
+   - `UNCERTAIN`: Verifier cannot confirm reachability or behavior due to external dependencies or declared context gaps.
+2. **`confirmationSource` Invariant:**
+   - Must be set strictly by the trusted verification pipeline (`"independent_validation"`), never self-assigned by raw model text.
 
-#### 3.2.2 Gate Authority & Anti-Forgery Verification
-Before `evaluateGateDecision` or `evaluatePostVerificationGate` grants authority to any `verificationRecord`, it MUST cryptographically verify record authenticity:
-1. `verificationRecord.ok === true` and `verificationRecord.verificationMode` is valid (`"producer_findings"` or `"clean_challenge"`).
-2. `verificationRecord.changeSetDigest === changeSet.contentDigest`.
-3. `verificationRecord.patchObjective === changeSet.patchObjective`.
-4. `verificationRecord.headSha === changeSet.repository.headSha`.
-If any field mismatches or is missing, the gate MUST reject the record with `Gate Fail-Closed: Verification record binding mismatch (FORGED_OR_STALE_RECORD)`.
+#### 3.2.2 Dual-Layer Record Trust Model (P1-01 Fix)
+To prevent forged or detached objects from wielding gate authority:
+1. **In-Process Capability Registry (`WeakSet`):**
+   - Triad-Flow maintains a module-private registry: `const trustedVerificationRegistry = new WeakSet();`.
+   - Only `conductIndependentVerification` can mint and register an active `verificationRecord` instance into this WeakSet upon successful validation.
+   - Any plain object, detached copy, or synthetic mock passed to `evaluateGateDecision` that is not an active member of `trustedVerificationRegistry` is rejected immediately with:
+     ```text
+     Gate Fail-Closed: Untrusted verification record capability (UNTRUSTED_VERIFICATION_RECORD).
+     ```
+2. **Cross-Process & Persistent Verification Boundaries:**
+   - When verification records are serialized across processes or persisted to disk, plain SHA-256 digests are treated strictly as Content Digests, NOT authentication proofs.
+   - Cross-process authority requires cryptographic HMAC or signature authentication using an ephemeral run-scoped secret key, preventing replay or manipulation.
 
-#### 3.2.3 Gate Evaluation Reordering
+#### 3.2.3 Normalized Run Context Binding (P1-02 Fix)
+To eliminate format collisions and mismatch rejections across internal components, Triad-Flow establishes a canonical `RunContext` structure and normalized comparison rules:
+
+```javascript
+export class RunContext {
+  constructor(options = {}) {
+    this.runId = String(options.runId || "");
+    this.headSha = normalizeCommitSha(options.headSha || options.head || "");
+    this.contentDigest = normalizeDigest(options.contentDigest || options.changeSetDigest || "");
+    this.patchObjective = normalizeObjective(options.patchObjective || options.objectiveContract?.objective || "");
+    this.objectiveContract = options.objectiveContract || null;
+  }
+}
+```
+
+1. **Digest Normalization (`normalizeDigest`):**
+   - Strips optional `sha256:` prefix, trims whitespace, and converts to 64-character lowercase hexadecimal:
+     ```javascript
+     export function normalizeDigest(digest) {
+       const raw = String(digest || "").trim().toLowerCase();
+       return raw.startsWith("sha256:") ? raw.slice(7) : raw;
+     }
+     ```
+   - Bound check: `normalizeDigest(verificationRecord.changeSetDigest) === normalizeDigest(runContext.contentDigest)`.
+2. **Objective Normalization (`normalizeObjective`):**
+   - Normalizes whitespace, trimming, and casing:
+     ```javascript
+     export function normalizeObjective(obj) {
+       return String(obj || "").trim().replace(/\s+/g, " ");
+     }
+     ```
+   - Source clarification: `patchObjective` is sourced from `runContext.patchObjective` (not assumed to exist on raw git `changeSet`).
+   - Bound check: If `runContext.patchObjective` is non-empty, `normalizeObjective(verificationRecord.patchObjective) === normalizeObjective(runContext.patchObjective)`.
+3. **Head SHA Normalization (`normalizeCommitSha`):**
+   - `conductIndependentVerification` is updated to accept and record `headSha: runContext.headSha`.
+   - Bound check: `normalizeCommitSha(verificationRecord.headSha) === normalizeCommitSha(runContext.headSha)`.
+4. **Mismatch Rejection:**
+   - If any bound check fails, the gate MUST reject the execution with:
+     ```text
+     Gate Fail-Closed: Verification record binding mismatch (FORGED_OR_STALE_RECORD).
+     ```
+
+#### 3.2.4 Gate Evaluation Pipeline Reordering
 In `src/core/harness.mjs`:
-1. Move the `options?.verificationRecord` check **above** `if (findings.length === 0)`.
-2. When `findings.length === 0` and a valid `verificationRecord` is present:
-   - If `verificationRecord.verifierOmissions` contains an omission with `evidenceSupport === "SUPPORTED"` and (`objectiveImpact === "FALSIFIES_PATCH_OBJECTIVE"` or severity is `critical`/`high`): `decision: "block"`.
-   - If `verificationRecord.verifierOmissions` contains an omission with `evidenceSupport === "INSUFFICIENT_EVIDENCE"`: `decision: "human_review_required"`.
-   - If `verificationRecord.verifierOmissions` contains only `low` omissions with `DOES_NOT_FALSIFY_PATCH_OBJECTIVE`: `decision: "approve"` (with advisory findings).
-   - If `verificationRecord.verifierOmissions.length === 0`: `decision: "approve"`.
+1. First, verify trusted capability: `isTrustedVerificationRecord(options.verificationRecord)`.
+2. Second, verify `RunContext` binding integrity.
+3. Third, move `verificationRecord` processing **strictly before** `if (findings.length === 0)`:
+   - When `findings.length === 0`:
+     - If `!options.verificationRecord`: `decision: "block"`, `reason: "Clean Challenge missing: zero-finding consensus requires independent verification record"`.
+     - If `options.verificationRecord`: Evaluate against §3.1.1 Clean Challenge Decision Matrix.
 
 ---
 
@@ -184,10 +239,14 @@ git show <headSha>:<filePath>
 ```
 Extracting code from the working tree directory is strictly prohibited, as the local workspace may contain uncommitted modifications or telemetry artifacts.
 
-#### 3.3.2 Deterministic Parsing & Unresolved Handling
+#### 3.3.2 Deterministic Parsing & Context Gap Propagation
 1. Extraction is restricted to member functions and file-local functions within the same file being modified by the diff.
 2. If a called symbol has multiple overloads, is generated by a C++ macro, is a dynamic dispatch / virtual interface, or cannot be unambiguously located, the context engine MUST NOT guess.
 3. It must record the callee in `contextPackage.layers.layer1AstEnclosure.unresolvedCallees` with reason `AMBIGUOUS_SYMBOL` or `MACRO_OR_DYNAMIC`.
+4. **Context Gap Propagation:**
+   - If an unresolved callee is on an execution path referenced by the diff and relates to input validation, default values, or error handling, the context engine records `contextGaps: [{ symbol, reason, file, line }]`.
+   - This `contextGaps` block is rendered into the prompt under `[UNRESOLVED CODE CONTEXT GAPS]`.
+   - **Verifier Mandate:** When a critical context gap exists, the Verifier MUST NOT certify clean; it must report `overallStatus: "UNCERTAIN"` or mark the boundary as `evidenceSupport: "UNCERTAIN"`, directing the Advisory Gate to `HUMAN_REVIEW_REQUIRED`.
 
 #### 3.3.3 Strict Content Budget & Extraction Bounds
 1. **Quantity Ceiling:** Maximum 5 callee functions per modified file; maximum 10 callee functions across the entire changeSet.
@@ -220,22 +279,28 @@ Both sentries and verifiers operate on identical contextual enclosures.
 
 ## 5. Formal Acceptance Matrix (Gate Out)
 
-The implementation must strictly satisfy the 13 normative test contracts prior to milestone closure:
+The implementation must strictly satisfy the 18 normative test contracts prior to milestone closure:
 
 | Test ID | Test Scenario | Expected Outcome |
 |---|---|---|
 | `007-B-01` | Clean Challenge completes successfully with 0 omissions | `decision: "approve"` |
 | `007-B-02` | Clean Challenge encounters timeout budget exhaustion | Gate fails closed (`BLOCK` / `DEGRADED`) |
 | `007-B-03` | Clean Challenge emits malformed or unparseable JSON | Gate fails closed (`BLOCK` / `DEGRADED`) |
+| `007-B-04` | 0 Findings consensus but Clean Challenge missing / null record | Gate fails closed (`BLOCK`, reason: `Clean Challenge missing`) |
 | `007-C-01` | Clean Challenge reports confirmed `FALSIFIES_PATCH_OBJECTIVE` omission | `decision: "block"` |
 | `007-C-02` | Clean Challenge reports solitary unconfirmed Critical omission (`INSUFFICIENT_EVIDENCE`) | `decision: "human_review_required"` |
-| `007-C-03` | Verification record with mismatched `changeSetDigest` or `headSha` passed to gate | Rejection / `BLOCK` (Anti-forgery fail-closed) |
-| `007-C-04` | Clean Challenge reports verified Low omission (`DOES_NOT_FALSIFY_PATCH_OBJECTIVE`) in Tier 2 | `decision: "approve"` + Advisory finding |
+| `007-C-03` | In-process capability forgery probe (plain object with matching fields rejected) | Gate fails closed (`BLOCK`, `UNTRUSTED_VERIFICATION_RECORD`) |
+| `007-C-04` | Verification record with mismatched `changeSetDigest`, `patchObjective`, or `headSha` | Rejection / `BLOCK` (`FORGED_OR_STALE_RECORD`) |
+| `007-C-05` | Clean Challenge reports verified Low omission (`DOES_NOT_FALSIFY_PATCH_OBJECTIVE`) in Tier 2 | `decision: "approve"` + Advisory finding |
+| `007-C-06` | Clean Challenge reports `CONTESTED` omission in Tier 2 | Advisory pass (`decision: "approve"`) |
+| `007-C-07` | Clean Challenge reports verified Medium omission (`DOES_NOT_FALSIFY`) in Tier 1 | `decision: "block"` (Tier 1 strict policy) |
+| `007-C-08` | Clean Challenge reports verified Medium omission (`DOES_NOT_FALSIFY`) in Tier 2 | `decision: "human_review_required"` |
+| `007-C-09` | Clean Challenge reports `UNCERTAIN` omission or state | `decision: "human_review_required"` |
 | `007-D-01` | Exact head extraction of out-of-diff callee definition (CYCLE-0047 SHA) | Successfully extracts `traverseMapElementValueNode` into context |
-| `007-D-02` | Callee with ambiguous macro or dynamic overload | Recorded as `UNRESOLVED_CALLEE` without speculative hallucination |
+| `007-D-02` | Callee with ambiguous macro or dynamic overload propagated as context gap | Verifier flags `UNCERTAIN` -> `decision: "human_review_required"` |
 | `007-D-03` | Context size exceeds 8 KB ceiling | Bounded extraction preserves diff without budget exhaustion |
 | `007-R-01` | CYCLE-0047 post-hoc diagnostic re-test | Defect identified by Clean Challenge or callee context |
-| `007-R-02` | CYCLE-0042 / CYCLE-0044 known positive samples | Clean Challenge confirms clean status without False Hold |
+| `007-R-02` | CYCLE-0042 / CYCLE-0044 known positive controls | Clean Challenge confirms clean status without False Hold |
 | `007-R-03` | Full test suite across 3 platforms (Node 18/20/22 on Ubuntu/macOS/Windows) | 679+ tests pass, 0 fail, 0 regressions |
 
 ---
