@@ -11,16 +11,16 @@
 - Promotion Review Status: `REJECTED / STRICT_HOLD`
 - Runtime merge authority: `NONE`
 - Maturity target: `SHADOW -> ADVISORY` after 20–30 qualifying real change cycles
-- Post-005 Fresh Cohort: `19 consecutive / 0 FALSE_ADVANCE` (Eligibility: 19/15)
+- Post-005 Fresh Cohort: `20 consecutive / 0 FALSE_ADVANCE` (Eligibility: 20/15)
 
 ## Scorecard
 
-- Ledger receipts: **43**
-- Maturity-counting cycles: **42 / 20–30**
+- Ledger receipts: **44**
+- Maturity-counting cycles: **43 / 20–30**
 - False advance: **3**
 - False hold: **4**
-- Timeout-cycle rate: **7.1%**
-- Average wall-clock latency: **105572 ms**
+- Timeout-cycle rate: **7.0%**
+- Average wall-clock latency: **103750 ms**
 
 False-advance/false-hold rates use only binary autonomous Triad outcomes (`APPROVE` / `BLOCK`). `DEGRADED`, `INCOMPLETE`, and `HUMAN_REVIEW_REQUIRED` never enter those rates automatically.
 
@@ -73,6 +73,7 @@ False-advance/false-hold rates use only binary autonomous Triad outcomes (`APPRO
 | CYCLE-0041 | live | yes | REQUEST_CHANGES | BLOCK | MATCH | SUCCESS | NONE | 0 | NONE |
 | CYCLE-0042 | live | yes | APPROVE | APPROVE | MATCH | NOT_ATTEMPTED | NONE | 0 | NONE |
 | CYCLE-0043 | live | yes | REQUEST_CHANGES | DEGRADED | NEUTRAL_DISAGREEMENT | SUCCESS | NONE | 0 | NONE |
+| CYCLE-0044 | live | yes | APPROVE | APPROVE | MATCH | NOT_ATTEMPTED | NONE | 0 | NONE |
 
 ## Active Failure Families
 
@@ -95,7 +96,7 @@ False-advance/false-hold rates use only binary autonomous Triad outcomes (`APPRO
 - Disposition: **REJECTED / STRICT_HOLD**
 - Runtime Authority: **NONE**
 - Observation Status: **PHASE_4_3_TRACK_D1 = COMPLETE (30/30 cycles observed)**
-- Post-005 Fresh Cohort: **19 consecutive cycles / 0 FALSE_ADVANCE**
+- Post-005 Fresh Cohort: **20 consecutive cycles / 0 FALSE_ADVANCE**
 - Next Promotion Eligibility Gate: Requires **>=15 consecutive fresh cycles / 0 FALSE_ADVANCE** before re-reviewing `SHADOW -> ADVISORY` promotion.
 
 Promotion remains a human governance decision. This projection never promotes Triad-Flow automatically.
