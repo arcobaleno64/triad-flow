@@ -294,16 +294,22 @@ export class CliReviewAdapter {
       };
     }
 
-    if (streamResult.result?.status !== "SUCCESS") {
+    const resultObj = streamResult.result || streamResult;
+    if (resultObj.status !== "SUCCESS") {
+      const resultErr = resultObj.error || resultObj.message || "";
+      const errorMsg = resultErr
+        ? `Stream-json result reported non-success status: ${resultObj.status || "UNKNOWN"} (${resultErr})`
+        : `Stream-json result reported non-success status: ${resultObj.status || "UNKNOWN"}`;
       return {
         errorResult: validateProviderOutput({
           executionStatus: EXECUTION_STATUS.ERROR,
-          error: `Stream-json result reported non-success status: ${streamResult.result?.status || "UNKNOWN"}`
+          rawOutput: outputToParse.slice(0, 1000),
+          error: errorMsg
         }, context)
       };
     }
 
-    if (typeof streamResult.result.response !== "string") {
+    if (typeof resultObj.response !== "string") {
       return {
         errorResult: validateProviderOutput({
           executionStatus: EXECUTION_STATUS.MALFORMED_OUTPUT,
@@ -313,7 +319,7 @@ export class CliReviewAdapter {
       };
     }
 
-    return { response: streamResult.result.response };
+    return { response: resultObj.response };
   }
 
   async _spawnAttempt(input, prompt, context, effectiveCwd, effectiveEnv) {

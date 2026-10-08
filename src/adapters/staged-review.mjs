@@ -666,20 +666,23 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
   const wasCancelledExternally = Boolean(options.signal && options.signal.aborted);
   for (let i = 0; i < chunks.length; i++) {
     if (!chunkRawOutcomes[i]) {
+      const isTier1Halt = Boolean(tier1ExecutionFailed && !wasCancelledExternally);
       chunkRawOutcomes[i] = {
         idx: i,
         chunk: chunks[i],
-        status: wasCancelledExternally ? "cancelled" : "timeout",
-        timeoutCategory: wasCancelledExternally ? "none" : "global_exhaustion",
+        status: wasCancelledExternally ? "cancelled" : (isTier1Halt ? "failed" : "timeout"),
+        timeoutCategory: (wasCancelledExternally || isTier1Halt) ? "none" : "global_exhaustion",
         durationMs: 0,
         budgetAllocatedMs: 0,
         result: {
           ok: false,
-          status: wasCancelledExternally ? "cancelled" : "timeout",
-          executionStatus: wasCancelledExternally ? EXECUTION_STATUS.CANCELLED : EXECUTION_STATUS.TIMEOUT,
+          status: wasCancelledExternally ? "cancelled" : (isTier1Halt ? "failed" : "timeout"),
+          executionStatus: wasCancelledExternally ? EXECUTION_STATUS.CANCELLED : (isTier1Halt ? EXECUTION_STATUS.ERROR : EXECUTION_STATUS.TIMEOUT),
           error: wasCancelledExternally
             ? `Execution cancelled before chunk ${chunks[i].chunkId} could execute: ${options.signal.reason || "signal aborted"}`
-            : `Staged review global budget exhausted (${totalBudgetMs}ms) before chunk ${chunks[i].chunkId} could execute.`
+            : (isTier1Halt
+              ? `Execution halted before chunk ${chunks[i].chunkId} could execute due to Tier 1 critical chunk failure.`
+              : `Staged review global budget exhausted (${totalBudgetMs}ms) before chunk ${chunks[i].chunkId} could execute.`)
         }
       };
     }

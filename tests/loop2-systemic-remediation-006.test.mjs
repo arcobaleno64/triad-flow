@@ -1033,3 +1033,90 @@ test("006-B / Codex: Spreading agy profile with streamJson: true forces stdin mo
   assert.equal(adapter.inputChannel, "stdin", "streamJson must force inputChannel to stdin");
   assert.equal(adapter.useStdin, true, "streamJson must force useStdin to true");
 });
+
+test("006-C / Codex: Unstarted chunks after Tier 1 failure are marked failed, not timeout", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-tier1-unstarted-"));
+  const files = [
+    { path: "src/critical.js" },
+    { path: "src/other1.js" },
+    { path: "src/other2.js" }
+  ];
+  const diffHunks = files.map(f => `diff --git a/${f.path} b/${f.path}\n@@ -1 +1 @@\n-old\n+new`).join("\n");
+  const cs = { scopeMode: "working-tree", files, diffHunks };
+
+  const adapter = {
+    providerName: "mock-agy",
+    executeReview: async (params) => {
+      const target = (params.changeSet.files || [])[0]?.path;
+      if (target === "src/critical.js") {
+        return {
+          ok: false,
+          executionStatus: EXECUTION_STATUS.ERROR,
+          error: "Critical failure"
+        };
+      }
+      return { ok: true, findings: [], coverage: { coveredFiles: [target], omittedFiles: [] } };
+    }
+  };
+
+  const result = await executeStagedReview(cs, adapter, {
+    cwd: tmpDir,
+    maxChunkBytes: 50,
+    maxConcurrency: 1
+  });
+
+  assert.equal(result.ok, false);
+  // Verify that unstarted chunks are marked failed, not timeout
+  assert.equal(result.telemetry.chunkTimeoutCount, 0, "Tier 1 halt must NOT increment chunkTimeoutCount");
+  for (const r of result.receipts) {
+    assert.notEqual(r.status, "timeout", "Receipt status must not be timeout when halted due to Tier 1 failure");
+  }
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+test("006-B / Codex: Transient refusal error details in non-success stream result are preserved for retry", async () => {
+  let callCount = 0;
+  const adapter = new CliReviewAdapter({
+    command: "agy",
+    streamJson: true,
+    maxRetries: 1,
+    execFn: async () => {
+      callCount++;
+      if (callCount === 1) {
+        // First attempt: stream result with safety filter refusal
+        return {
+          code: 0,
+          stdout: JSON.stringify({
+            event: "result",
+            status: "ERROR",
+            error: "Blocked by Gemini safety filters"
+          }) + "\n"
+        };
+      }
+      // Second attempt: succeeds
+      return {
+        code: 0,
+        stdout: JSON.stringify({
+          event: "result",
+          status: "SUCCESS",
+          response: JSON.stringify({
+            findings: [],
+            coverage: { coveredFiles: ["src/test.js"], omittedFiles: [] }
+          })
+        }) + "\n"
+      };
+    }
+  });
+
+  const res = await adapter.executeReview({
+    runId: "retry-test",
+    role: "security-reviewer",
+    policyId: "strict",
+    changeSet: makeChangeSet([{ path: "src/test.js" }]),
+    limits: { maxOutputBytes: 100000 }
+  });
+
+  assert.equal(callCount, 2, "Adapter must retry on stream-json safety filter refusal");
+  assert.equal(res.ok, true, "Retry must succeed");
+});
