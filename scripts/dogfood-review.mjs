@@ -127,7 +127,9 @@ export function parseArgs(argv = process.argv.slice(2)) {
     timeoutMs: null,
     patchObjective: null,
     patchExclusions: [],
-    repoDir: null
+    repoDir: null,
+    agyStreamJson: false,
+    stagedConcurrency: 2
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -208,6 +210,23 @@ export function parseArgs(argv = process.argv.slice(2)) {
       options.repoDir = arg.slice("--repo-dir=".length);
     } else if (arg.startsWith("--cwd=")) {
       options.repoDir = arg.slice("--cwd=".length);
+    } else if (arg === "--agy-stream-json") {
+      options.agyStreamJson = true;
+    } else if (arg === "--staged-concurrency") {
+      if (i + 1 >= argv.length || argv[i + 1].startsWith("-")) {
+        throw new Error("Missing value for --staged-concurrency");
+      }
+      const rawVal = argv[++i];
+      if (!/^\d+$/.test(rawVal) || Number(rawVal) <= 0) {
+        throw new Error(`Invalid --staged-concurrency value: '${rawVal}'. Must be a positive integer.`);
+      }
+      options.stagedConcurrency = Number(rawVal);
+    } else if (arg.startsWith("--staged-concurrency=")) {
+      const rawVal = arg.slice("--staged-concurrency=".length);
+      if (!/^\d+$/.test(rawVal) || Number(rawVal) <= 0) {
+        throw new Error(`Invalid --staged-concurrency value: '${arg}'. Must be a positive integer.`);
+      }
+      options.stagedConcurrency = Number(rawVal);
     } else {
       throw new Error(`Unknown argument: '${arg}'`);
     }
@@ -237,6 +256,8 @@ Options:
   --out <file>        Output report path (default: dogfood-run.json)
   --timeout <ms>      Per-provider timeout in milliseconds (default: 300000 live / 30000 mock)
   --patch-objective <text>  Stated patch objective used only for independent objective-relevance verification
+  --agy-stream-json   Enable agy stream-json transport via stdin (bypasses Windows argv limit)
+  --staged-concurrency <n> Bounded concurrency for staged chunk review (default: 2)
   --help, -h          Show this help message
 `);
 }
@@ -678,7 +699,8 @@ export async function runDogfoodReview(userOptions = {}) {
           command: "agy",
           providerName: "agy",
           modelName: "gemini-3.8-flash",
-          actualModel: { value: "gemini-3.8-flash", source: "reported" }
+          actualModel: { value: "gemini-3.8-flash", source: "reported" },
+          streamJson: Boolean(userOptions.agyStreamJson)
         }),
         claude: new CliReviewAdapter({
           command: "claude",
@@ -719,6 +741,7 @@ export async function runDogfoodReview(userOptions = {}) {
   let stagedFallbackUsed = false;
   let stagedChunkCount = null;
   let stagedTimeoutCount = 0;
+  let stagedTelemetry = null;
   const tAgy0 = Date.now();
   const executeAgyReview = async () => {
     const providerRunId = `${runId}-agy`;
@@ -743,12 +766,14 @@ export async function runDogfoodReview(userOptions = {}) {
         timeoutMs,
         patchObjective: userOptions.patchObjective || null,
         objectiveContract,
-        signal: userOptions.signal || null
+        signal: userOptions.signal || null,
+        maxConcurrency: userOptions.stagedConcurrency || 2
       });
       stagedChunkCount = Array.isArray(res?.receipts) ? res.receipts.length : null;
       stagedTimeoutCount = Array.isArray(res?.receipts)
         ? res.receipts.filter(r => r?.status === "timeout").length
         : 0;
+      stagedTelemetry = res?.telemetry || null;
     }
     return res;
   };
@@ -873,11 +898,11 @@ export async function runDogfoodReview(userOptions = {}) {
 
   const providerOutputs = [rawReports.agy, rawReports.claude, rawReports.codex];
   const malformedCount = providerOutputs.filter(r => r.executionStatus === "malformed_output").length;
-  const reviewerTimeoutCount =
-    providerOutputs.filter(r => r.executionStatus === "timeout").length +
-    stagedTimeoutCount;
+  const directReviewerTimeoutCount = providerOutputs.filter(r => r.executionStatus === "timeout").length;
   const verifierTimeoutCount = verifierTimedOut ? 1 : 0;
-  const timeoutCount = reviewerTimeoutCount + verifierTimeoutCount;
+  const chunkTimeoutCount = stagedTimeoutCount;
+  const providerTimeoutCount = directReviewerTimeoutCount + verifierTimeoutCount;
+  const timeoutCount = providerTimeoutCount + chunkTimeoutCount;
   const authFailureCount = providerOutputs.filter(r => r.executionStatus === "auth_failure").length;
   const otherFailureCount = providerOutputs.filter(r => !["success", "empty"].includes(r.executionStatus)).length;
   const allProvidersSucceeded = providerOutputs.every(r => ["success", "empty"].includes(r.executionStatus));
@@ -945,13 +970,35 @@ export async function runDogfoodReview(userOptions = {}) {
       avgProviderLatencyMs: Math.round((agyOut.latencyMs + claudeOut.latencyMs + codexOut.latencyMs) / 3),
       executionComplete: isExecutionComplete,
       malformedOutputCount: malformedCount,
-      reviewerTimeoutCount,
+      reviewerTimeoutCount: directReviewerTimeoutCount,
       verifierTimeoutCount,
+      chunkTimeoutCount,
+      providerTimeoutCount,
       timeoutCount,
+      timeoutCycle: timeoutCount > 0,
       authFailureCount,
       otherFailureCount,
       stagedFallbackUsed,
-      chunkCount: stagedFallbackUsed ? stagedChunkCount : null
+      chunkCount: stagedFallbackUsed ? stagedChunkCount : null,
+      phaseMetrics: stagedFallbackUsed && stagedTelemetry ? {
+        platform: process.platform,
+        transport: userOptions.agyStreamJson ? "stream-json" : "argv",
+        budgetAllocatedMs: stagedTelemetry.budgetAllocatedMs,
+        globalDeadlineRemainingMs: stagedTelemetry.globalDeadlineRemainingMs,
+        stagedFallbackUsed: true,
+        chunkCount: stagedTelemetry.chunkCount,
+        maxConcurrency: stagedTelemetry.maxConcurrency,
+        feasibility: stagedTelemetry.feasibility
+      } : {
+        platform: process.platform,
+        transport: userOptions.agyStreamJson ? "stream-json" : "argv",
+        budgetAllocatedMs: timeoutMs,
+        globalDeadlineRemainingMs: Math.max(0, timeoutMs - reviewerPhaseDurationMs),
+        stagedFallbackUsed: false,
+        chunkCount: null,
+        maxConcurrency: 1,
+        feasibility: { isFeasible: true, reason: "Direct review unchunked" }
+      }
     },
     verificationRecord
   };

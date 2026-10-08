@@ -325,58 +325,186 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
   const totalBudgetMs = typeof options.timeoutMs === "number" && options.timeoutMs > 0
     ? options.timeoutMs
     : 300000;
-  const nominalChunkBudgetMs = Math.min(60000, Math.max(1, Math.floor(totalBudgetMs / chunks.length)));
   const reviewStartTime = Date.now();
   const globalDeadline = reviewStartTime + totalBudgetMs;
 
-  const accumulatedFindings = [];
-  const coveredFiles = new Set();
-  const omittedFiles = [];
-  const chunkReceipts = [];
+  const rawConcurrency = options.concurrency ?? options.maxConcurrency;
+  const parsedConcurrency = Number(rawConcurrency);
+  const maxConcurrency = (Number.isFinite(parsedConcurrency) && parsedConcurrency > 0)
+    ? Math.max(1, Math.min(4, Math.floor(parsedConcurrency)))
+    : 1;
 
-  // Stage 2: Deep Contextual Review per Chunk
-  for (let idx = 0; idx < chunks.length; idx++) {
-    const chunk = chunks[idx];
-    const chunkTarget = chunk.targetFiles[0] || "index.js";
-    const now = Date.now();
-    const remainingGlobalMs = globalDeadline - now;
+  // REMEDIATION-006: Pre-flight feasibility check (006-C)
+  const minViableChunkBudgetMs = (Number.isFinite(Number(options.minChunkBudgetMs)) && Number(options.minChunkBudgetMs) > 0)
+    ? Number(options.minChunkBudgetMs)
+    : 10000;
+  const estimatedWaves = Math.ceil(chunks.length / maxConcurrency);
+  const minRequiredBudgetMs = estimatedWaves * minViableChunkBudgetMs;
+  const isFeasible = totalBudgetMs >= minRequiredBudgetMs;
+  const feasibility = {
+    isFeasible,
+    totalBudgetMs,
+    minRequiredBudgetMs,
+    plannedChunks: chunks.length,
+    maxConcurrency,
+    estimatedWaves,
+    warning: isFeasible ? null : `Total budget ${totalBudgetMs}ms may be insufficient for ${chunks.length} chunks across ${estimatedWaves} waves (min required: ${minRequiredBudgetMs}ms)`
+  };
 
-    // P1-2 Requirement 6: Global budget exhaustion before invoking provider
-    if (remainingGlobalMs <= 0) {
-      for (let remIdx = idx; remIdx < chunks.length; remIdx++) {
-        const remChunk = chunks[remIdx];
-        for (const tf of remChunk.targetFiles) {
-          omittedFiles.push({
-            file: tf,
-            code: COVERAGE_OMISSION_CODES.TIMEOUT,
-            reason: `Staged review global budget exhausted (${totalBudgetMs}ms) before chunk ${remChunk.chunkId} could execute.`
+  // Stage 2: Bounded Concurrency Chunk Execution with Dynamic Wave Budgeting
+  const chunkRawOutcomes = new Array(chunks.length);
+  const activeChunkControllers = new Set();
+  let tier1ExecutionFailed = false;
+  let completedChunkCount = 0;
+  let contiguousCommittedPrefix = 0;
+  let committedSuccessfulChunks = 0;
+  const committedOmittedFiles = [];
+  const committedFindings = [];
+
+  function tryCommitCheckpoints() {
+    try {
+      while (contiguousCommittedPrefix < chunks.length && chunkRawOutcomes[contiguousCommittedPrefix]) {
+        const outcome = chunkRawOutcomes[contiguousCommittedPrefix];
+        const res = outcome?.result;
+        if (res && res.ok) {
+          const rawFindings = safeGet(res, "findings");
+          const len = safeArrayLength(rawFindings);
+          if (safeIsArray(rawFindings) && len >= 0) {
+            let valid = true;
+            const validFindings = [];
+            for (let i = 0; i < len; i++) {
+              const item = safeGet(rawFindings, i);
+              const canon = canonicalizeFinding(item);
+              if (!canon) {
+                valid = false;
+                break;
+              }
+              validFindings.push(canon);
+            }
+            if (valid) {
+              committedFindings.push(...validFindings);
+            }
+          }
+          committedSuccessfulChunks++;
+          contiguousCommittedPrefix++;
+          checkpointStore.saveCheckpoint(runId, {
+            runId,
+            stage: STAGED_REVIEW_STAGES.STAGE_2_DEEP_REVIEW,
+            salvagedFindings: [...committedFindings],
+            completedChunks: committedSuccessfulChunks,
+            totalChunks: chunks.length,
+            omittedFiles: committedOmittedFiles.length > 0 ? [...committedOmittedFiles] : undefined
+          });
+        } else {
+          // Chunk failed or timed out: persist failure state without claiming success
+          const rawFindings = safeGet(res, "findings") || safeGet(outcome?.rawResult, "findings");
+          const len = safeArrayLength(rawFindings);
+          if (safeIsArray(rawFindings) && len > 0) {
+            let valid = true;
+            const validFindings = [];
+            for (let i = 0; i < len; i++) {
+              const item = safeGet(rawFindings, i);
+              const canon = canonicalizeFinding(item);
+              if (!canon) {
+                valid = false;
+                break;
+              }
+              validFindings.push(canon);
+            }
+            if (valid) {
+              committedFindings.push(...validFindings);
+            }
+          }
+          if (outcome?.chunk?.targetFiles) {
+            for (const tf of outcome.chunk.targetFiles) {
+              committedOmittedFiles.push({
+                file: tf,
+                code: outcome?.status === "timeout" ? COVERAGE_OMISSION_CODES.TIMEOUT : COVERAGE_OMISSION_CODES.SIZE_LIMIT,
+                reason: res?.error || "Chunk execution failed"
+              });
+            }
+          }
+          contiguousCommittedPrefix++;
+          checkpointStore.saveCheckpoint(runId, {
+            runId,
+            stage: STAGED_REVIEW_STAGES.STAGE_2_DEEP_REVIEW,
+            salvagedFindings: [...committedFindings],
+            completedChunks: committedSuccessfulChunks,
+            totalChunks: chunks.length,
+            omittedFiles: [...committedOmittedFiles]
           });
         }
-        chunkReceipts.push({
-          chunkId: remChunk.chunkId,
-          chunkIndex: remChunk.chunkIndex,
-          totalChunks: remChunk.totalChunks,
-          status: "timeout",
-          durationMs: 0,
-          findingsCount: 0,
-          error: "Global staged review budget exhausted."
-        });
       }
-      checkpointStore.saveCheckpoint(runId, {
-        runId,
-        stage: STAGED_REVIEW_STAGES.STAGE_2_DEEP_REVIEW,
-        salvagedFindings: accumulatedFindings,
-        completedChunks: idx,
-        totalChunks: chunks.length,
-        omittedFiles
-      });
-      break;
+    } catch {
+      // Checkpoint commit failure must never throw or crash the scheduler
+    }
+  }
+
+  let timedOutByGlobal = false;
+  const globalDeadlineTimer = setTimeout(() => {
+    timedOutByGlobal = true;
+    for (const ctrl of activeChunkControllers) {
+      ctrl.abort("Global staged review budget exhausted.");
+    }
+  }, Math.max(1, totalBudgetMs));
+  if (typeof globalDeadlineTimer.unref === "function") {
+    globalDeadlineTimer.unref();
+  }
+
+  let externalGlobalAbortHandler = null;
+  if (options.signal) {
+    if (options.signal.aborted) {
+      for (const ctrl of activeChunkControllers) {
+        ctrl.abort(options.signal.reason);
+      }
+    } else {
+      externalGlobalAbortHandler = () => {
+        for (const ctrl of activeChunkControllers) {
+          ctrl.abort(options.signal.reason);
+        }
+      };
+      options.signal.addEventListener("abort", externalGlobalAbortHandler, { once: true });
+    }
+  }
+
+  async function executeChunk(chunk, idx) {
+    const chunkTarget = chunk.targetFiles[0] || "index.js";
+    const now = Date.now();
+    const remainingGlobalMs = Math.max(0, globalDeadline - now);
+    const wasCancelledExternally = Boolean(options.signal && options.signal.aborted);
+
+    if (remainingGlobalMs <= 0 || wasCancelledExternally) {
+      return {
+        idx,
+        chunk,
+        status: wasCancelledExternally ? "cancelled" : "timeout",
+        timeoutCategory: wasCancelledExternally ? "none" : "global_exhaustion",
+        durationMs: 0,
+        budgetAllocatedMs: 0,
+        result: {
+          ok: false,
+          status: wasCancelledExternally ? "cancelled" : "timeout",
+          executionStatus: wasCancelledExternally ? EXECUTION_STATUS.CANCELLED : EXECUTION_STATUS.TIMEOUT,
+          error: wasCancelledExternally
+            ? `Execution cancelled before chunk ${chunk.chunkId} could execute: ${options.signal.reason || "signal aborted"}`
+            : `Staged review global budget exhausted (${totalBudgetMs}ms) before chunk ${chunk.chunkId} could execute.`
+        }
+      };
     }
 
-    // P1-2 Requirement 5: Effective chunk timeout
-    const effectiveChunkTimeoutMs = Math.max(1, Math.min(60000, nominalChunkBudgetMs, remainingGlobalMs));
+    // Dynamic wave budget (006-C / P1-05): Recompute allowable timeout from remainingGlobalMs and remaining waves
+    const isDynamicBudgeting = maxConcurrency > 1 || Boolean(options.dynamicWaveBudget);
+    let nominalChunkBudgetMs;
+    if (isDynamicBudgeting) {
+      const outstandingChunks = Math.max(1, chunks.length - completedChunkCount);
+      const remainingWaves = Math.max(1, Math.ceil(outstandingChunks / maxConcurrency));
+      const dynamicWaveBudgetMs = Math.floor(remainingGlobalMs / remainingWaves);
+      nominalChunkBudgetMs = Math.min(60000, Math.max(minViableChunkBudgetMs, dynamicWaveBudgetMs));
+    } else {
+      nominalChunkBudgetMs = Math.min(60000, Math.max(minViableChunkBudgetMs, Math.floor(totalBudgetMs / estimatedWaves)));
+    }
+    const effectiveChunkTimeoutMs = Math.max(1, Math.min(nominalChunkBudgetMs, remainingGlobalMs));
 
-    // Build AST Context Package for primary target file in chunk
     const contextPkg = buildContextPackage({
       ...changeSet,
       diffHunks: chunk.diffHunks,
@@ -386,7 +514,6 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
       repositoryRoot: options.cwd || process.cwd()
     });
 
-    // Build structured evidence prompt
     const prompt = buildEvidenceReviewPrompt({
       ...changeSet,
       diffHunks: chunk.diffHunks,
@@ -394,23 +521,31 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
     }, role, limits, contextPkg, { patchObjective: options.patchObjective });
 
     const chunkStartTime = Date.now();
-    let chunkResult;
-
+    let timedOutByScheduler = false;
+    let cancelledByExternalSignal = false;
     const chunkController = new AbortController();
-    let externalAbortHandler = null;
+    activeChunkControllers.add(chunkController);
+
+    let externalSignalHandler = null;
     if (options.signal) {
       if (options.signal.aborted) {
+        cancelledByExternalSignal = true;
         chunkController.abort(options.signal.reason);
       } else {
-        externalAbortHandler = () => chunkController.abort(options.signal.reason);
-        options.signal.addEventListener("abort", externalAbortHandler, { once: true });
+        externalSignalHandler = () => {
+          cancelledByExternalSignal = true;
+          chunkController.abort(options.signal.reason);
+        };
+        options.signal.addEventListener("abort", externalSignalHandler, { once: true });
       }
     }
 
-    const globalDeadlineTimer = setTimeout(() => {
-      chunkController.abort("Global staged review budget exhausted.");
-    }, remainingGlobalMs);
+    const chunkTimer = setTimeout(() => {
+      timedOutByScheduler = true;
+      chunkController.abort("Chunk timeout budget exhausted.");
+    }, effectiveChunkTimeoutMs);
 
+    let chunkResult;
     try {
       chunkResult = await adapter.executeReview({
         runId: `${runId}-chunk-${idx}`,
@@ -435,13 +570,135 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
         findings: []
       };
     } finally {
-      clearTimeout(globalDeadlineTimer);
-      if (options.signal && externalAbortHandler) {
-        options.signal.removeEventListener("abort", externalAbortHandler);
+      clearTimeout(chunkTimer);
+      if (options.signal && externalSignalHandler) {
+        options.signal.removeEventListener("abort", externalSignalHandler);
       }
+      activeChunkControllers.delete(chunkController);
     }
 
     const chunkDurationMs = Date.now() - chunkStartTime;
+    const isExternalCancellation = Boolean(
+      cancelledByExternalSignal ||
+      (options.signal && options.signal.aborted)
+    );
+
+    const isTimeout = !isExternalCancellation && (
+      timedOutByScheduler ||
+      timedOutByGlobal ||
+      chunkController.signal.aborted ||
+      chunkResult?.status === "timeout" ||
+      chunkResult?.executionStatus === EXECUTION_STATUS.TIMEOUT ||
+      chunkResult?.executionStatus === EXECUTION_STATUS.CANCELLED ||
+      /timeout/i.test(chunkResult?.error || "")
+    );
+
+    let status = "failed";
+    const rawResult = chunkResult;
+    if (isTimeout) {
+      status = "timeout";
+      chunkResult = {
+        ok: false,
+        status: "timeout",
+        executionStatus: EXECUTION_STATUS.TIMEOUT,
+        findings: Array.isArray(rawResult?.findings) ? rawResult.findings : [],
+        error: chunkResult?.error && /timeout/i.test(chunkResult.error)
+          ? chunkResult.error
+          : `Chunk timeout budget of ${effectiveChunkTimeoutMs}ms exhausted.`
+      };
+    } else if (isExternalCancellation) {
+      status = "cancelled";
+      chunkResult = {
+        ok: false,
+        status: "cancelled",
+        executionStatus: EXECUTION_STATUS.CANCELLED,
+        findings: Array.isArray(rawResult?.findings) ? rawResult.findings : [],
+        error: `Execution cancelled via signal.`
+      };
+    } else if (chunkResult && chunkResult.ok) {
+      status = "ok";
+    }
+
+    return {
+      idx,
+      chunk,
+      status,
+      timeoutCategory: isTimeout ? (remainingGlobalMs <= chunkDurationMs ? "global_exhaustion" : "chunk_deadline") : "none",
+      durationMs: chunkDurationMs,
+      budgetAllocatedMs: effectiveChunkTimeoutMs,
+      result: chunkResult,
+      rawResult
+    };
+  }
+
+  let nextIndexToRun = 0;
+  async function worker() {
+    while (nextIndexToRun < chunks.length) {
+      if (tier1ExecutionFailed || (globalDeadline - Date.now() <= 0) || (options.signal && options.signal.aborted)) {
+        break;
+      }
+      const currentIdx = nextIndexToRun++;
+      const chunk = chunks[currentIdx];
+      const outcome = await executeChunk(chunk, currentIdx);
+      chunkRawOutcomes[currentIdx] = outcome;
+      completedChunkCount++;
+      tryCommitCheckpoints();
+
+      if (chunk.priorityTier === RISK_TIERS.TIER_1_CRITICAL && (!outcome.result || !outcome.result.ok)) {
+        tier1ExecutionFailed = true;
+        for (const ctrl of activeChunkControllers) {
+          ctrl.abort("Tier 1 critical chunk execution failed.");
+        }
+      }
+    }
+  }
+
+  try {
+    const workerCount = Math.min(chunks.length, maxConcurrency);
+    await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  } finally {
+    clearTimeout(globalDeadlineTimer);
+    if (options.signal && externalGlobalAbortHandler) {
+      options.signal.removeEventListener("abort", externalGlobalAbortHandler);
+    }
+  }
+
+  const wasCancelledExternally = Boolean(options.signal && options.signal.aborted);
+  for (let i = 0; i < chunks.length; i++) {
+    if (!chunkRawOutcomes[i]) {
+      const isTier1Halt = Boolean(tier1ExecutionFailed && !wasCancelledExternally);
+      chunkRawOutcomes[i] = {
+        idx: i,
+        chunk: chunks[i],
+        status: wasCancelledExternally ? "cancelled" : (isTier1Halt ? "failed" : "timeout"),
+        timeoutCategory: (wasCancelledExternally || isTier1Halt) ? "none" : "global_exhaustion",
+        durationMs: 0,
+        budgetAllocatedMs: 0,
+        result: {
+          ok: false,
+          status: wasCancelledExternally ? "cancelled" : (isTier1Halt ? "failed" : "timeout"),
+          executionStatus: wasCancelledExternally ? EXECUTION_STATUS.CANCELLED : (isTier1Halt ? EXECUTION_STATUS.ERROR : EXECUTION_STATUS.TIMEOUT),
+          error: wasCancelledExternally
+            ? `Execution cancelled before chunk ${chunks[i].chunkId} could execute: ${options.signal.reason || "signal aborted"}`
+            : (isTier1Halt
+              ? `Execution halted before chunk ${chunks[i].chunkId} could execute due to Tier 1 critical chunk failure.`
+              : `Staged review global budget exhausted (${totalBudgetMs}ms) before chunk ${chunks[i].chunkId} could execute.`)
+        }
+      };
+    }
+  }
+
+  // Deterministic Reduction in strict chunkIndex order (RFC-027-01 §8.8 / REMEDIATION-006)
+  const accumulatedFindings = [];
+  const coveredFiles = new Set();
+  const omittedFiles = [];
+  const chunkReceipts = [];
+
+  for (let idx = 0; idx < chunks.length; idx++) {
+    const chunk = chunks[idx];
+    const outcome = chunkRawOutcomes[idx];
+    const chunkResult = outcome.result;
+    const chunkDurationMs = outcome.durationMs;
 
     // Handle chunk outcome
     if (chunkResult && chunkResult.ok) {
@@ -741,28 +998,76 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
           omittedFiles
         });
         if (chunk.priorityTier === RISK_TIERS.TIER_1_CRITICAL) {
+          for (let remIdx = idx + 1; remIdx < chunks.length; remIdx++) {
+            const remChunk = chunks[remIdx];
+            const remOutcome = chunkRawOutcomes[remIdx];
+            const isRemTimeout = remOutcome?.status === "timeout" || remOutcome?.result?.executionStatus === EXECUTION_STATUS.TIMEOUT;
+            const isRemCancelled = remOutcome?.status === "cancelled" || remOutcome?.result?.executionStatus === EXECUTION_STATUS.CANCELLED;
+            for (const tf of remChunk.targetFiles) {
+              omittedFiles.push({
+                file: tf,
+                code: isRemTimeout ? COVERAGE_OMISSION_CODES.TIMEOUT : COVERAGE_OMISSION_CODES.OUT_OF_SCOPE,
+                reason: `Halted due to Tier 1 critical chunk coverage failure in chunk ${chunk.chunkId}`
+              });
+            }
+            chunkReceipts.push({
+              chunkId: remChunk.chunkId,
+              chunkIndex: remChunk.chunkIndex,
+              totalChunks: remChunk.totalChunks,
+              status: isRemTimeout ? "timeout" : (isRemCancelled ? "cancelled" : "failed"),
+              durationMs: remOutcome?.durationMs || 0,
+              error: `Halted due to Tier 1 critical chunk coverage failure in chunk ${chunk.chunkId}`
+            });
+          }
           break;
         }
       }
     } else {
-      // Chunk Failed or Timed Out
-      const isTimeout = chunkResult?.status === "timeout" ||
+      // Chunk Failed, Cancelled, or Timed Out (P1-06)
+      const isChunkCancelled = outcome.status === "cancelled" || chunkResult?.executionStatus === EXECUTION_STATUS.CANCELLED;
+      const isTimeout = !isChunkCancelled && (
+        outcome.status === "timeout" ||
+        chunkResult?.status === "timeout" ||
         chunkResult?.executionStatus === EXECUTION_STATUS.TIMEOUT ||
-        /timeout/i.test(chunkResult?.error || "");
+        /timeout/i.test(chunkResult?.error || "")
+      );
+
+      // Salvage valid findings even if chunk timed out or failed (RFC-027-01 partial salvage)
+      const rawChunkFindings = safeGet(chunkResult, "findings") || safeGet(outcome.rawResult, "findings");
+      const findingsLen = safeArrayLength(rawChunkFindings);
+      if (safeIsArray(rawChunkFindings) && findingsLen > 0) {
+        let findingsValid = true;
+        const chunkCanonicalFindings = [];
+        for (let fIdx = 0; fIdx < findingsLen; fIdx++) {
+          const fItem = safeGet(rawChunkFindings, fIdx);
+          const canonical = canonicalizeFinding(fItem);
+          if (!canonical) {
+            findingsValid = false;
+            break;
+          }
+          chunkCanonicalFindings.push(canonical);
+        }
+        if (findingsValid) {
+          accumulatedFindings.push(...chunkCanonicalFindings);
+        }
+      }
+
       for (const tf of chunk.targetFiles) {
         omittedFiles.push({
           file: tf,
-          code: isTimeout ? COVERAGE_OMISSION_CODES.TIMEOUT : COVERAGE_OMISSION_CODES.SIZE_LIMIT,
-          reason: chunkResult?.error || `Chunk ${chunk.chunkId} failed to complete execution.`
+          code: isTimeout
+            ? COVERAGE_OMISSION_CODES.TIMEOUT
+            : (isChunkCancelled ? COVERAGE_OMISSION_CODES.OUT_OF_SCOPE : COVERAGE_OMISSION_CODES.SIZE_LIMIT),
+          reason: chunkResult?.error || (isChunkCancelled ? "Execution cancelled via signal" : `Chunk ${chunk.chunkId} failed to complete execution.`)
         });
       }
       chunkReceipts.push({
         chunkId: chunk.chunkId,
         chunkIndex: chunk.chunkIndex,
         totalChunks: chunk.totalChunks,
-        status: isTimeout ? "timeout" : "failed",
+        status: isTimeout ? "timeout" : (isChunkCancelled ? "cancelled" : "failed"),
         durationMs: chunkDurationMs,
-        error: chunkResult?.error || "Execution failed"
+        error: chunkResult?.error || (isChunkCancelled ? "Execution cancelled" : "Execution failed")
       });
 
       // Persist salvage checkpoint before stopping or continuing
@@ -777,6 +1082,27 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
 
       // Fail closed if Tier 1 chunk failed
       if (chunk.priorityTier === RISK_TIERS.TIER_1_CRITICAL) {
+        for (let remIdx = idx + 1; remIdx < chunks.length; remIdx++) {
+          const remChunk = chunks[remIdx];
+          const remOutcome = chunkRawOutcomes[remIdx];
+          const isRemTimeout = remOutcome?.status === "timeout" || remOutcome?.result?.executionStatus === EXECUTION_STATUS.TIMEOUT;
+          const isRemCancelled = remOutcome?.status === "cancelled" || remOutcome?.result?.executionStatus === EXECUTION_STATUS.CANCELLED;
+          for (const tf of remChunk.targetFiles) {
+            omittedFiles.push({
+              file: tf,
+              code: isRemTimeout ? COVERAGE_OMISSION_CODES.TIMEOUT : COVERAGE_OMISSION_CODES.OUT_OF_SCOPE,
+              reason: `Halted due to Tier 1 critical chunk failure in chunk ${chunk.chunkId}`
+            });
+          }
+          chunkReceipts.push({
+            chunkId: remChunk.chunkId,
+            chunkIndex: remChunk.chunkIndex,
+            totalChunks: remChunk.totalChunks,
+            status: isRemTimeout ? "timeout" : (isRemCancelled ? "cancelled" : "failed"),
+            durationMs: remOutcome?.durationMs || 0,
+            error: `Halted due to Tier 1 critical chunk failure in chunk ${chunk.chunkId}`
+          });
+        }
         break;
       }
     }
@@ -798,7 +1124,8 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
 
   const allReceiptsSucceeded = chunkReceipts.length > 0 && chunkReceipts.every(r => r.status === "completed");
   const hasTimeouts = omittedFiles.some(o => o.code === COVERAGE_OMISSION_CODES.TIMEOUT) || chunkReceipts.some(r => r.status === "timeout");
-  const isComplete = coverageEval.isComplete && allReceiptsSucceeded && !hasTimeouts && !reconciliationFailed;
+  const hasCancellations = chunkReceipts.some(r => r.status === "cancelled");
+  const isComplete = coverageEval.isComplete && allReceiptsSucceeded && !hasTimeouts && !hasCancellations && !reconciliationFailed;
   const finalStatus = isComplete ? "completed" : "incomplete";
 
   // Clean up checkpoint on complete success
@@ -809,8 +1136,8 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
   return {
     runId,
     ok: isComplete,
-    executionStatus: isComplete ? EXECUTION_STATUS.SUCCESS : EXECUTION_STATUS.INCOMPLETE,
-    error: isComplete ? undefined : (reconciliationError || coverageEval.violations?.[0] || (hasTimeouts ? "One or more chunks timed out during review." : "Staged review execution incomplete.")),
+    executionStatus: isComplete ? EXECUTION_STATUS.SUCCESS : (hasCancellations ? EXECUTION_STATUS.CANCELLED : EXECUTION_STATUS.INCOMPLETE),
+    error: isComplete ? undefined : (reconciliationError || coverageEval.violations?.[0] || (hasCancellations ? "Execution cancelled via signal." : (hasTimeouts ? "One or more chunks timed out during review." : "Staged review execution incomplete."))),
     providerIdentity: {
       provider: adapter.providerName || role,
       model: adapter.modelName || "unknown-model",
@@ -825,6 +1152,15 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
       isComplete
     },
     violations: coverageEval.violations,
-    receipts: chunkReceipts
+    receipts: chunkReceipts,
+    telemetry: {
+      stagedFallbackUsed: true,
+      chunkCount: chunks.length,
+      maxConcurrency,
+      budgetAllocatedMs: totalBudgetMs,
+      globalDeadlineRemainingMs: Math.max(0, globalDeadline - Date.now()),
+      feasibility,
+      chunkTimeoutCount: chunkReceipts.filter(r => r.status === "timeout").length
+    }
   };
 }

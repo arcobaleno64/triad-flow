@@ -27,7 +27,8 @@ export const PROVIDER_PROFILES = Object.freeze({
     args: Object.freeze(["--mode=plan", "--disable-slash-commands", "--print"]),
     readOnlyFlags: Object.freeze(["--mode=plan", "--disable-slash-commands"]),
     inputChannel: "argv",
-    supportsStdin: false
+    supportsStdin: false,
+    supportsStreamJson: true
   }),
   claude: Object.freeze({
     id: "claude",
@@ -219,6 +220,7 @@ function formatResolvedProfile(profile, cmd) {
     readOnlyFlags: [...(profile.readOnlyFlags || [])],
     inputChannel: profile.inputChannel,
     supportsStdin: profile.supportsStdin,
+    supportsStreamJson: profile.supportsStreamJson ?? false,
     outputChannel: profile.outputChannel || "stdout",
     outputFileFlag: profile.outputFileFlag || null,
     envAllowlist: profile.envAllowlist ? [...profile.envAllowlist] : null,

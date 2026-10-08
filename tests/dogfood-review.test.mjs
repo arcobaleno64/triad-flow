@@ -1225,9 +1225,12 @@ test("Observation producer authority: staged chunk timeout contributes to review
     });
 
     assert.equal(report.telemetryMetrics.stagedFallbackUsed, true);
-    assert.equal(report.telemetryMetrics.reviewerTimeoutCount, 1);
+    assert.equal(report.telemetryMetrics.reviewerTimeoutCount, 0);
+    assert.equal(report.telemetryMetrics.chunkTimeoutCount, 1);
+    assert.equal(report.telemetryMetrics.providerTimeoutCount, 0);
     assert.equal(report.telemetryMetrics.verifierTimeoutCount, 0);
     assert.equal(report.telemetryMetrics.timeoutCount, 1);
+    assert.equal(report.telemetryMetrics.timeoutCycle, true);
     assert.equal(report.telemetryMetrics.executionComplete, false);
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
