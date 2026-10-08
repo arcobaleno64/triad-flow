@@ -30,7 +30,8 @@ import {
   executeStagedReview
 } from "../src/adapters/staged-review.mjs";
 import {
-  parseArgs
+  parseArgs,
+  runDogfoodReview
 } from "../scripts/dogfood-review.mjs";
 
 function makeChangeSet(files = [{ path: "src/sample.js", additions: 10, deletions: 2 }], hunks = "+ const a = 1;") {
@@ -411,4 +412,218 @@ test("006-A: parseArgs recognizes --agy-stream-json and --staged-concurrency fla
 
   assert.throws(() => parseArgs(["--staged-concurrency", "invalid"]), /positive integer/i);
   assert.throws(() => parseArgs(["--staged-concurrency=-1"]), /positive integer/i);
+});
+
+// -----------------------------------------------------------------------------
+// P1-01: Negative & Strict Protocol Tests for Stream-JSON Mode
+// -----------------------------------------------------------------------------
+
+test("006-B P1-01: streamJson rejects zero-exit output lacking terminal result event even if legacy JSON is present (Fail-Closed)", async () => {
+  const adapter = new CliReviewAdapter({
+    command: "agy",
+    streamJson: true,
+    execFn: async () => ({
+      code: 0,
+      stdout: JSON.stringify({
+        findings: [],
+        coverage: { coveredFiles: ["src/sample.js"], omittedFiles: [] }
+      })
+    })
+  });
+
+  const res = await adapter.executeReview({
+    runId: "run-p101-missing-result",
+    role: "macro",
+    policyId: "SINGLE_SENTRY",
+    changeSet: makeChangeSet(),
+    timeoutMs: 5000,
+    limits: { maxInputBytes: 100000, maxOutputBytes: 100000, defaultTimeoutMs: 5000 }
+  });
+
+  assert.equal(res.ok, false, "Must fail closed when terminal result event is missing");
+  assert.equal(res.executionStatus, EXECUTION_STATUS.MALFORMED_OUTPUT);
+  assert.match(res.error, /requires a valid terminal 'result' event/i);
+});
+
+test("006-B P1-01: streamJson rejects terminal result event with non-success status (Fail-Closed)", async () => {
+  const adapter = new CliReviewAdapter({
+    command: "agy",
+    streamJson: true,
+    execFn: async () => ({
+      code: 0,
+      stdout: JSON.stringify({
+        event: "result",
+        result: {
+          status: "ERROR",
+          error: "Internal model execution failure"
+        }
+      })
+    })
+  });
+
+  const res = await adapter.executeReview({
+    runId: "run-p101-error-status",
+    role: "macro",
+    policyId: "SINGLE_SENTRY",
+    changeSet: makeChangeSet(),
+    timeoutMs: 5000,
+    limits: { maxInputBytes: 100000, maxOutputBytes: 100000, defaultTimeoutMs: 5000 }
+  });
+
+  assert.equal(res.ok, false);
+  assert.equal(res.executionStatus, EXECUTION_STATUS.ERROR);
+  assert.match(res.error, /Stream-json result reported non-success status: ERROR/i);
+});
+
+test("006-B P1-01: streamJson rejects terminal result event with non-string response (Fail-Closed)", async () => {
+  const adapter = new CliReviewAdapter({
+    command: "agy",
+    streamJson: true,
+    execFn: async () => ({
+      code: 0,
+      stdout: JSON.stringify({
+        event: "result",
+        result: {
+          status: "SUCCESS",
+          response: { findings: [], coverage: { coveredFiles: ["src/sample.js"], omittedFiles: [] } }
+        }
+      })
+    })
+  });
+
+  const res = await adapter.executeReview({
+    runId: "run-p101-non-string-response",
+    role: "macro",
+    policyId: "SINGLE_SENTRY",
+    changeSet: makeChangeSet(),
+    timeoutMs: 5000,
+    limits: { maxInputBytes: 100000, maxOutputBytes: 100000, defaultTimeoutMs: 5000 }
+  });
+
+  assert.equal(res.ok, false);
+  assert.equal(res.executionStatus, EXECUTION_STATUS.MALFORMED_OUTPUT);
+  assert.match(res.error, /missing a string response payload/i);
+});
+
+test("006-B P1-01: streamJson rejects terminal result event with invalid string response (Fail-Closed)", async () => {
+  const adapter = new CliReviewAdapter({
+    command: "agy",
+    streamJson: true,
+    execFn: async () => ({
+      code: 0,
+      stdout: JSON.stringify({
+        event: "result",
+        result: {
+          status: "SUCCESS",
+          response: "This is not valid JSON findings."
+        }
+      })
+    })
+  });
+
+  const res = await adapter.executeReview({
+    runId: "run-p101-invalid-response-string",
+    role: "macro",
+    policyId: "SINGLE_SENTRY",
+    changeSet: makeChangeSet(),
+    timeoutMs: 5000,
+    limits: { maxInputBytes: 100000, maxOutputBytes: 100000, defaultTimeoutMs: 5000 }
+  });
+
+  assert.equal(res.ok, false);
+  assert.equal(res.executionStatus, EXECUTION_STATUS.MALFORMED_OUTPUT);
+  assert.match(res.error, /Failed to (?:parse|extract) (?:valid )?JSON/i);
+});
+
+// -----------------------------------------------------------------------------
+// P1-02: Telemetry Metrics Independent Partitioning Tests
+// -----------------------------------------------------------------------------
+
+test("006-A P1-02: Dogfood review partitions top-level reviewer, verifier, and chunk timeouts independently", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-p102-partition-"));
+  const tmpOut = path.join(tmpDir, "dogfood-run.json");
+
+  let agyCalls = 0;
+  const agy = {
+    providerName: "agy",
+    family: "google",
+    modelName: "gemini-3.8-flash",
+    executeReview: async () => {
+      agyCalls++;
+      if (agyCalls === 1) {
+        return {
+          ok: false,
+          executionStatus: EXECUTION_STATUS.PAYLOAD_TOO_LARGE,
+          error: "Payload too large for Windows argv"
+        };
+      }
+      return {
+        ok: false,
+        executionStatus: EXECUTION_STATUS.TIMEOUT,
+        status: "timeout",
+        error: "Chunk timed out"
+      };
+    }
+  };
+
+  const clean = (provider, family, model) => ({
+    providerName: provider,
+    family,
+    modelName: model,
+    executeReview: async () => ({
+      ok: true,
+      executionStatus: "success",
+      findings: [],
+      coverage: { coveredFiles: ["src/sample.js"], omittedFiles: [] },
+      providerIdentity: { provider, family, model }
+    })
+  });
+
+  const timingOutCodex = {
+    providerName: "codex",
+    family: "openai",
+    modelName: "gpt-6.1-sol",
+    executeReview: async () => ({
+      ok: false,
+      executionStatus: "timeout",
+      findings: [],
+      coverage: { coveredFiles: [], omittedFiles: [] }
+    })
+  };
+
+  try {
+    const report = await runDogfoodReview({
+      live: true,
+      changeSet: {
+        ok: true,
+        schemaVersion: "1.0.0",
+        totalFiles: 1,
+        totalAdditions: 1,
+        totalDeletions: 0,
+        files: [{ path: "src/sample.js", additions: 1, deletions: 0, riskTier: 2 }],
+        diffHunks: "diff --git a/src/sample.js b/src/sample.js\n--- a/src/sample.js\n+++ b/src/sample.js\n@@ -0,0 +1 @@\n+export const x = 1;"
+      },
+      reviewAdapters: {
+        agy,
+        claude: clean("claude", "anthropic", "claude-5.5-sonnet"),
+        codex: timingOutCodex
+      },
+      out: tmpOut,
+      log: false
+    });
+
+    const metrics = report.telemetryMetrics;
+    assert.equal(metrics.stagedFallbackUsed, true);
+    assert.equal(metrics.reviewerTimeoutCount, 1, "reviewerTimeoutCount must reflect only top-level direct reviewer timeouts");
+    assert.equal(metrics.chunkTimeoutCount, 1, "chunkTimeoutCount must reflect staged chunk timeouts independently");
+    assert.equal(metrics.verifierTimeoutCount, 0);
+    assert.equal(metrics.providerTimeoutCount, 1, "providerTimeoutCount must NOT be polluted by chunk timeouts");
+    assert.equal(metrics.timeoutCount, 2, "timeoutCount is the sum of providerTimeoutCount and chunkTimeoutCount");
+    assert.equal(metrics.timeoutCycle, true);
+    assert.equal(metrics.phaseMetrics.transport, "argv");
+    assert.equal(metrics.phaseMetrics.maxConcurrency, 2);
+    assert.ok(metrics.phaseMetrics.feasibility);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
 });

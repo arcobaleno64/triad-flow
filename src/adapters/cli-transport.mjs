@@ -270,6 +270,57 @@ export class CliReviewAdapter {
     }
   }
 
+  _resolveStreamJsonPayload(outputToParse, context) {
+    const streamResult = extractStreamJsonResponse(outputToParse);
+    if (!streamResult) {
+      if (AUTH_ERROR_PATTERNS.some(p => p.test(outputToParse))) {
+        return {
+          errorResult: validateProviderOutput({
+            executionStatus: EXECUTION_STATUS.AUTH_FAILURE,
+            error: `Authentication failure detected in CLI reviewer output: ${outputToParse.trim()}`
+          }, context)
+        };
+      }
+      if (PROVIDER_REFUSAL_PATTERNS.some(p => p.test(outputToParse))) {
+        return {
+          errorResult: validateProviderOutput({
+            executionStatus: EXECUTION_STATUS.ERROR,
+            rawOutput: outputToParse.slice(0, 1000),
+            error: `Provider safety/content filter refusal detected: ${outputToParse.slice(0, 300).trim()}`
+          }, context)
+        };
+      }
+      return {
+        errorResult: validateProviderOutput({
+          executionStatus: EXECUTION_STATUS.MALFORMED_OUTPUT,
+          rawOutput: outputToParse.slice(0, 1000),
+          error: "Stream-json mode requires a valid terminal 'result' event in NDJSON output, but none was found."
+        }, context)
+      };
+    }
+
+    if (streamResult.result?.status !== "SUCCESS") {
+      return {
+        errorResult: validateProviderOutput({
+          executionStatus: EXECUTION_STATUS.ERROR,
+          error: `Stream-json result reported non-success status: ${streamResult.result?.status || "UNKNOWN"}`
+        }, context)
+      };
+    }
+
+    if (typeof streamResult.result.response !== "string") {
+      return {
+        errorResult: validateProviderOutput({
+          executionStatus: EXECUTION_STATUS.MALFORMED_OUTPUT,
+          rawOutput: outputToParse.slice(0, 1000),
+          error: "Stream-json terminal result event is missing a string response payload."
+        }, context)
+      };
+    }
+
+    return { response: streamResult.result.response };
+  }
+
   async _spawnAttempt(input, prompt, context, effectiveCwd, effectiveEnv) {
     // Determine temp file for file-based output channels
     let tempOutputFile = null;
@@ -514,18 +565,12 @@ export class CliReviewAdapter {
         // 3. Try to extract JSON from fileOutput or stdout
         let outputToParse = fileOutputContent || stdout;
         if (this.streamJson && !fileOutputContent) {
-          const streamResult = extractStreamJsonResponse(outputToParse);
-          if (streamResult) {
-            if (streamResult.result?.status === "SUCCESS" && typeof streamResult.result.response === "string") {
-              outputToParse = streamResult.result.response;
-            } else if (streamResult.result?.status && streamResult.result.status !== "SUCCESS") {
-              resolve(validateProviderOutput({
-                executionStatus: EXECUTION_STATUS.ERROR,
-                error: `Stream-json result reported non-success status: ${streamResult.result.status}`
-              }, context));
-              return;
-            }
+          const streamResolved = this._resolveStreamJsonPayload(outputToParse, context);
+          if (streamResolved.errorResult) {
+            resolve(streamResolved.errorResult);
+            return;
           }
+          outputToParse = streamResolved.response;
         }
         const parsed = extractJsonFromText(outputToParse);
         if (!parsed) {
@@ -620,17 +665,11 @@ export class CliReviewAdapter {
 
     let outputToParse = fileContent !== null ? fileContent : (res?.stdout || "");
     if (this.streamJson && fileContent === null) {
-      const streamResult = extractStreamJsonResponse(outputToParse);
-      if (streamResult) {
-        if (streamResult.result?.status === "SUCCESS" && typeof streamResult.result.response === "string") {
-          outputToParse = streamResult.result.response;
-        } else if (streamResult.result?.status && streamResult.result.status !== "SUCCESS") {
-          return validateProviderOutput({
-            executionStatus: EXECUTION_STATUS.ERROR,
-            error: `Stream-json result reported non-success status: ${streamResult.result.status}`
-          }, context);
-        }
+      const streamResolved = this._resolveStreamJsonPayload(outputToParse, context);
+      if (streamResolved.errorResult) {
+        return streamResolved.errorResult;
       }
+      outputToParse = streamResolved.response;
     }
 
     if (res?.stderr && AUTH_ERROR_PATTERNS.some(p => p.test(res.stderr))) {

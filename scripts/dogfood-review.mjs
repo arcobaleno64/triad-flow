@@ -741,6 +741,7 @@ export async function runDogfoodReview(userOptions = {}) {
   let stagedFallbackUsed = false;
   let stagedChunkCount = null;
   let stagedTimeoutCount = 0;
+  let stagedFeasibility = null;
   const tAgy0 = Date.now();
   const executeAgyReview = async () => {
     const providerRunId = `${runId}-agy`;
@@ -772,6 +773,7 @@ export async function runDogfoodReview(userOptions = {}) {
       stagedTimeoutCount = Array.isArray(res?.receipts)
         ? res.receipts.filter(r => r?.status === "timeout").length
         : 0;
+      stagedFeasibility = res?.telemetry?.feasibility || null;
     }
     return res;
   };
@@ -896,11 +898,11 @@ export async function runDogfoodReview(userOptions = {}) {
 
   const providerOutputs = [rawReports.agy, rawReports.claude, rawReports.codex];
   const malformedCount = providerOutputs.filter(r => r.executionStatus === "malformed_output").length;
-  const reviewerTimeoutCount =
-    providerOutputs.filter(r => r.executionStatus === "timeout").length +
-    stagedTimeoutCount;
+  const directReviewerTimeoutCount = providerOutputs.filter(r => r.executionStatus === "timeout").length;
   const verifierTimeoutCount = verifierTimedOut ? 1 : 0;
-  const timeoutCount = reviewerTimeoutCount + verifierTimeoutCount;
+  const chunkTimeoutCount = stagedTimeoutCount;
+  const providerTimeoutCount = directReviewerTimeoutCount + verifierTimeoutCount;
+  const timeoutCount = providerTimeoutCount + chunkTimeoutCount;
   const authFailureCount = providerOutputs.filter(r => r.executionStatus === "auth_failure").length;
   const otherFailureCount = providerOutputs.filter(r => !["success", "empty"].includes(r.executionStatus)).length;
   const allProvidersSucceeded = providerOutputs.every(r => ["success", "empty"].includes(r.executionStatus));
@@ -968,11 +970,11 @@ export async function runDogfoodReview(userOptions = {}) {
       avgProviderLatencyMs: Math.round((agyOut.latencyMs + claudeOut.latencyMs + codexOut.latencyMs) / 3),
       executionComplete: isExecutionComplete,
       malformedOutputCount: malformedCount,
-      reviewerTimeoutCount,
+      reviewerTimeoutCount: directReviewerTimeoutCount,
       verifierTimeoutCount,
+      chunkTimeoutCount,
+      providerTimeoutCount,
       timeoutCount,
-      providerTimeoutCount: reviewerTimeoutCount + verifierTimeoutCount,
-      chunkTimeoutCount: stagedTimeoutCount,
       timeoutCycle: timeoutCount > 0,
       authFailureCount,
       otherFailureCount,
@@ -980,11 +982,13 @@ export async function runDogfoodReview(userOptions = {}) {
       chunkCount: stagedFallbackUsed ? stagedChunkCount : null,
       phaseMetrics: {
         platform: process.platform,
+        transport: userOptions.agyStreamJson ? "stream-json" : "argv",
         budgetAllocatedMs: timeoutMs,
         globalDeadlineRemainingMs: Math.max(0, timeoutMs - reviewerPhaseDurationMs),
         stagedFallbackUsed,
         chunkCount: stagedFallbackUsed ? stagedChunkCount : null,
-        maxConcurrency: stagedFallbackUsed ? (userOptions.stagedConcurrency || 2) : 1
+        maxConcurrency: stagedFallbackUsed ? (userOptions.stagedConcurrency || 2) : 1,
+        feasibility: stagedFallbackUsed ? stagedFeasibility : { isFeasible: true, reason: "Direct review unchunked" }
       }
     },
     verificationRecord
