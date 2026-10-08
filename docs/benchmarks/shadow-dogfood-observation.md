@@ -11,16 +11,16 @@
 - Promotion Review Status: `REJECTED / STRICT_HOLD`
 - Runtime merge authority: `NONE`
 - Maturity target: `SHADOW -> ADVISORY` after 20–30 qualifying real change cycles
-- Post-005 Fresh Cohort: `10 consecutive / 0 FALSE_ADVANCE` (Eligibility: 10/15)
+- Post-005 Fresh Cohort: `11 consecutive / 0 FALSE_ADVANCE` (Eligibility: 11/15)
 
 ## Scorecard
 
-- Ledger receipts: **34**
-- Maturity-counting cycles: **33 / 20–30**
+- Ledger receipts: **35**
+- Maturity-counting cycles: **34 / 20–30**
 - False advance: **3**
 - False hold: **3**
-- Timeout-cycle rate: **6.1%**
-- Average wall-clock latency: **98147 ms**
+- Timeout-cycle rate: **5.9%**
+- Average wall-clock latency: **95947 ms**
 
 False-advance/false-hold rates use only binary autonomous Triad outcomes (`APPROVE` / `BLOCK`). `DEGRADED`, `INCOMPLETE`, and `HUMAN_REVIEW_REQUIRED` never enter those rates automatically.
 
@@ -64,6 +64,7 @@ False-advance/false-hold rates use only binary autonomous Triad outcomes (`APPRO
 | CYCLE-0032 | live | yes | APPROVE | APPROVE | MATCH | NOT_ATTEMPTED | NONE | 0 | NONE |
 | CYCLE-0033 | live | yes | REQUEST_CHANGES | DEGRADED | NEUTRAL_DISAGREEMENT | SUCCESS | NONE | 0 | NONE |
 | CYCLE-0034 | live | yes | APPROVE | APPROVE | MATCH | NOT_ATTEMPTED | NONE | 0 | NONE |
+| CYCLE-0035 | live | yes | APPROVE | APPROVE | MATCH | NOT_ATTEMPTED | NONE | 0 | NONE |
 
 ## Active Failure Families
 
@@ -86,7 +87,7 @@ False-advance/false-hold rates use only binary autonomous Triad outcomes (`APPRO
 - Disposition: **REJECTED / STRICT_HOLD**
 - Runtime Authority: **NONE**
 - Observation Status: **PHASE_4_3_TRACK_D1 = COMPLETE (30/30 cycles observed)**
-- Post-005 Fresh Cohort: **10 consecutive cycles / 0 FALSE_ADVANCE**
+- Post-005 Fresh Cohort: **11 consecutive cycles / 0 FALSE_ADVANCE**
 - Next Promotion Eligibility Gate: Requires **>=15 consecutive fresh cycles / 0 FALSE_ADVANCE** before re-reviewing `SHADOW -> ADVISORY` promotion.
 
 Promotion remains a human governance decision. This projection never promotes Triad-Flow automatically.
