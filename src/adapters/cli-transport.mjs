@@ -134,12 +134,12 @@ export class CliReviewAdapter {
     this.streamJson = options.streamJson !== undefined
       ? Boolean(options.streamJson)
       : Boolean(profile.streamJson);
-    this.inputChannel = options.inputChannel || (this.streamJson ? "stdin" : (profile.inputChannel || "argv"));
-    this.supportsStdin = options.supportsStdin !== undefined
+    this.inputChannel = this.streamJson ? "stdin" : (options.inputChannel || profile.inputChannel || "argv");
+    this.supportsStdin = this.streamJson ? true : (options.supportsStdin !== undefined
       ? Boolean(options.supportsStdin)
-      : (this.streamJson ? true : (profile.supportsStdin ?? true));
+      : (profile.supportsStdin ?? true));
     this.execFn = typeof options.execFn === "function" ? options.execFn : null;
-    this.useStdin = options.useStdin !== undefined ? Boolean(options.useStdin) : null;
+    this.useStdin = this.streamJson ? true : (options.useStdin !== undefined ? Boolean(options.useStdin) : null);
     this.env = options.env || null;
     this.cwd = options.cwd || null;
     const assembledArgs = assembleProviderArgs(profile, options.args);
@@ -658,6 +658,13 @@ export class CliReviewAdapter {
       }, context);
     }
 
+    if (res?.stderr && AUTH_ERROR_PATTERNS.some(p => p.test(res.stderr))) {
+      return validateProviderOutput({
+        executionStatus: EXECUTION_STATUS.AUTH_FAILURE,
+        error: `Authentication failure detected in CLI reviewer output: ${res.stderr.trim()}`
+      }, context);
+    }
+
     let outputToParse = fileContent !== null ? fileContent : (res?.stdout || "");
     if (this.streamJson && fileContent === null) {
       const streamResolved = this._resolveStreamJsonPayload(outputToParse, context);
@@ -665,13 +672,6 @@ export class CliReviewAdapter {
         return streamResolved.errorResult;
       }
       outputToParse = streamResolved.response;
-    }
-
-    if (res?.stderr && AUTH_ERROR_PATTERNS.some(p => p.test(res.stderr))) {
-      return validateProviderOutput({
-        executionStatus: EXECUTION_STATUS.AUTH_FAILURE,
-        error: `Authentication failure detected in CLI reviewer output: ${res.stderr.trim()}`
-      }, context);
     }
 
     const parsed = extractJsonFromText(outputToParse);

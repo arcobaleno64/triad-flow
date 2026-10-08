@@ -216,17 +216,17 @@ export function parseArgs(argv = process.argv.slice(2)) {
       if (i + 1 >= argv.length || argv[i + 1].startsWith("-")) {
         throw new Error("Missing value for --staged-concurrency");
       }
-      const val = parseInt(argv[++i], 10);
-      if (isNaN(val) || val <= 0) {
-        throw new Error(`Invalid --staged-concurrency value: '${argv[i]}'. Must be a positive integer.`);
+      const rawVal = argv[++i];
+      if (!/^\d+$/.test(rawVal) || Number(rawVal) <= 0) {
+        throw new Error(`Invalid --staged-concurrency value: '${rawVal}'. Must be a positive integer.`);
       }
-      options.stagedConcurrency = val;
+      options.stagedConcurrency = Number(rawVal);
     } else if (arg.startsWith("--staged-concurrency=")) {
-      const val = parseInt(arg.slice("--staged-concurrency=".length), 10);
-      if (isNaN(val) || val <= 0) {
+      const rawVal = arg.slice("--staged-concurrency=".length);
+      if (!/^\d+$/.test(rawVal) || Number(rawVal) <= 0) {
         throw new Error(`Invalid --staged-concurrency value: '${arg}'. Must be a positive integer.`);
       }
-      options.stagedConcurrency = val;
+      options.stagedConcurrency = Number(rawVal);
     } else {
       throw new Error(`Unknown argument: '${arg}'`);
     }

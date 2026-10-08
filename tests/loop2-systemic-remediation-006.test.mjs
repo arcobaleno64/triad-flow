@@ -899,3 +899,137 @@ test("006-C / Codex: Progressive checkpoints do not claim failed chunks as compl
 
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
+
+test("006-C / Codex: Progressive checkpoints accumulate salvaged findings correctly", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-chkpt-salvage-"));
+  const files = [
+    { path: "src/s0.js" },
+    { path: "src/s1.js" }
+  ];
+  const diffHunks = files.map(f => `diff --git a/${f.path} b/${f.path}\n@@ -1 +1 @@\n-old\n+new`).join("\n");
+  const cs = { scopeMode: "working-tree", files, diffHunks };
+
+  const adapter = {
+    providerName: "mock-agy",
+    executeReview: async (params) => {
+      const target = (params.changeSet.files || [])[0]?.path;
+      if (target === "src/s0.js") {
+        return {
+          ok: true,
+          findings: [{ title: "Finding from s0", severity: "high", file: "src/s0.js", line_start: 1, line_end: 1 }],
+          coverage: { coveredFiles: ["src/s0.js"], omittedFiles: [] }
+        };
+      }
+      return {
+        ok: false,
+        status: "timeout",
+        executionStatus: EXECUTION_STATUS.TIMEOUT,
+        error: "Chunk timeout budget exhausted"
+      };
+    }
+  };
+
+  const result = await executeStagedReview(cs, adapter, {
+    cwd: tmpDir,
+    maxChunkBytes: 50,
+    maxConcurrency: 1
+  });
+
+  assert.equal(result.ok, false);
+  const store = new CheckpointStore({ cwd: tmpDir });
+  const checkpoint = store.readCheckpoint(result.runId);
+  assert.ok(checkpoint, "Checkpoint must exist for incomplete review");
+  assert.equal(checkpoint.completedChunks, 1);
+  assert.ok(Array.isArray(checkpoint.salvagedFindings), "salvagedFindings must be an array");
+  assert.equal(checkpoint.salvagedFindings.length, 1);
+  assert.equal(checkpoint.salvagedFindings[0].title, "Finding from s0");
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+test("006-C / Codex: Timeout abort takes precedence over adapter success race", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-timeout-race-"));
+  const cs = {
+    scopeMode: "working-tree",
+    files: [{ path: "src/race.js" }],
+    diffHunks: "diff --git a/src/race.js b/src/race.js\n@@ -1 +1 @@\n-old\n+new"
+  };
+
+  const adapter = {
+    providerName: "mock-agy",
+    executeReview: async (params) => {
+      // Wait past the small chunk budget, then return ok: true
+      await new Promise(r => setTimeout(r, 60));
+      return {
+        ok: true,
+        findings: [{ title: "Late finding", severity: "low", file: "src/race.js", line_start: 1, line_end: 1 }],
+        coverage: { coveredFiles: ["src/race.js"], omittedFiles: [] }
+      };
+    }
+  };
+
+  const result = await executeStagedReview(cs, adapter, {
+    cwd: tmpDir,
+    timeoutMs: 30,
+    minChunkBudgetMs: 20,
+    maxChunkBytes: 50
+  });
+
+  assert.equal(result.ok, false, "Must fail closed when timeout occurred, even if adapter returned ok: true");
+  assert.equal(result.receipts[0].status, "timeout", "Receipt must be timeout");
+  assert.equal(result.telemetry.chunkTimeoutCount, 1, "Must count as chunk timeout");
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+test("006-A / Codex: parseArgs strictly validates --staged-concurrency", () => {
+  assert.throws(() => parseArgs(["--repository=test/repo", "--staged-concurrency=2workers"]), /Must be a positive integer/);
+  assert.throws(() => parseArgs(["--repository=test/repo", "--staged-concurrency=2.5"]), /Must be a positive integer/);
+  assert.throws(() => parseArgs(["--repository=test/repo", "--staged-concurrency", "0"]), /Must be a positive integer/);
+  assert.throws(() => parseArgs(["--repository=test/repo", "--staged-concurrency", "-1"]), /Missing value|Must be a positive integer/);
+
+  const validEquals = parseArgs(["--repository=test/repo", "--staged-concurrency=3"]);
+  assert.equal(validEquals.stagedConcurrency, 3);
+
+  const validSpace = parseArgs(["--repository=test/repo", "--staged-concurrency", "4"]);
+  assert.equal(validSpace.stagedConcurrency, 4);
+});
+
+test("006-B / Codex: Injected execFn with stderr auth error and streamJson returns AUTH_FAILURE", async () => {
+  const adapter = new CliReviewAdapter({
+    command: "agy",
+    streamJson: true,
+    execFn: async () => ({
+      code: 0,
+      stdout: "",
+      stderr: "Authentication failed. You are not logged into Antigravity."
+    })
+  });
+
+  const res = await adapter.executeReview({
+    runId: "auth-test",
+    role: "security-reviewer",
+    policyId: "strict",
+    changeSet: makeChangeSet([{ path: "src/test.js" }]),
+    limits: { maxOutputBytes: 100000 }
+  });
+
+  assert.equal(res.ok, false);
+  assert.equal(res.executionStatus, EXECUTION_STATUS.AUTH_FAILURE, "Must be classified as AUTH_FAILURE, not MALFORMED_OUTPUT");
+});
+
+test("006-B / Codex: Spreading agy profile with streamJson: true forces stdin mode", () => {
+  const agyProfile = resolveProviderProfile("agy");
+  assert.equal(agyProfile.supportsStdin, false);
+  assert.equal(agyProfile.inputChannel, "argv");
+
+  const adapter = new CliReviewAdapter({
+    ...agyProfile,
+    streamJson: true
+  });
+
+  assert.equal(adapter.streamJson, true);
+  assert.equal(adapter.supportsStdin, true, "streamJson must force supportsStdin to true");
+  assert.equal(adapter.inputChannel, "stdin", "streamJson must force inputChannel to stdin");
+  assert.equal(adapter.useStdin, true, "streamJson must force useStdin to true");
+});

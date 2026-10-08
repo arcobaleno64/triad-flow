@@ -359,6 +359,7 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
   let contiguousCommittedPrefix = 0;
   let committedSuccessfulChunks = 0;
   const committedOmittedFiles = [];
+  const committedFindings = [];
 
   function tryCommitCheckpoints() {
     try {
@@ -396,6 +397,24 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
           });
         } else {
           // Chunk failed or timed out: persist failure state without claiming success
+          const rawFindings = safeGet(res, "findings") || safeGet(outcome?.rawResult, "findings");
+          const len = safeArrayLength(rawFindings);
+          if (safeIsArray(rawFindings) && len > 0) {
+            let valid = true;
+            const validFindings = [];
+            for (let i = 0; i < len; i++) {
+              const item = safeGet(rawFindings, i);
+              const canon = canonicalizeFinding(item);
+              if (!canon) {
+                valid = false;
+                break;
+              }
+              validFindings.push(canon);
+            }
+            if (valid) {
+              committedFindings.push(...validFindings);
+            }
+          }
           if (outcome?.chunk?.targetFiles) {
             for (const tf of outcome.chunk.targetFiles) {
               committedOmittedFiles.push({
@@ -575,14 +594,14 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
     );
 
     let status = "failed";
-    if (chunkResult && chunkResult.ok) {
-      status = "ok";
-    } else if (isTimeout) {
+    const rawResult = chunkResult;
+    if (isTimeout) {
       status = "timeout";
       chunkResult = {
         ok: false,
         status: "timeout",
         executionStatus: EXECUTION_STATUS.TIMEOUT,
+        findings: Array.isArray(rawResult?.findings) ? rawResult.findings : [],
         error: chunkResult?.error && /timeout/i.test(chunkResult.error)
           ? chunkResult.error
           : `Chunk timeout budget of ${effectiveChunkTimeoutMs}ms exhausted.`
@@ -593,8 +612,11 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
         ok: false,
         status: "cancelled",
         executionStatus: EXECUTION_STATUS.CANCELLED,
+        findings: Array.isArray(rawResult?.findings) ? rawResult.findings : [],
         error: `Execution cancelled via signal.`
       };
+    } else if (chunkResult && chunkResult.ok) {
+      status = "ok";
     }
 
     return {
@@ -604,7 +626,8 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
       timeoutCategory: isTimeout ? (remainingGlobalMs <= chunkDurationMs ? "global_exhaustion" : "chunk_deadline") : "none",
       durationMs: chunkDurationMs,
       budgetAllocatedMs: effectiveChunkTimeoutMs,
-      result: chunkResult
+      result: chunkResult,
+      rawResult
     };
   }
 
@@ -1005,6 +1028,26 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
         chunkResult?.executionStatus === EXECUTION_STATUS.TIMEOUT ||
         /timeout/i.test(chunkResult?.error || "")
       );
+
+      // Salvage valid findings even if chunk timed out or failed (RFC-027-01 partial salvage)
+      const rawChunkFindings = safeGet(chunkResult, "findings") || safeGet(outcome.rawResult, "findings");
+      const findingsLen = safeArrayLength(rawChunkFindings);
+      if (safeIsArray(rawChunkFindings) && findingsLen > 0) {
+        let findingsValid = true;
+        const chunkCanonicalFindings = [];
+        for (let fIdx = 0; fIdx < findingsLen; fIdx++) {
+          const fItem = safeGet(rawChunkFindings, fIdx);
+          const canonical = canonicalizeFinding(fItem);
+          if (!canonical) {
+            findingsValid = false;
+            break;
+          }
+          chunkCanonicalFindings.push(canonical);
+        }
+        if (findingsValid) {
+          accumulatedFindings.push(...chunkCanonicalFindings);
+        }
+      }
 
       for (const tf of chunk.targetFiles) {
         omittedFiles.push({
