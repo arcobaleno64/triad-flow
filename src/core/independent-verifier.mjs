@@ -1226,6 +1226,18 @@ export class CliVerifierAdapter {
         stderr += chunk.toString("utf8");
       });
 
+      child.on("error", (err) => {
+        clearTimeout(timer);
+        if (signal) {
+          signal.removeEventListener("abort", abortHandler);
+        }
+        resolve({
+          ok: false,
+          executionStatus: EXECUTION_STATUS.ERROR,
+          error: `CLI verifier spawn error: ${err?.message || String(err)}`
+        });
+      });
+
       child.on("close", (code) => {
         clearTimeout(timer);
         if (signal) {

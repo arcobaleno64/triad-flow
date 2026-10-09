@@ -570,14 +570,23 @@ export async function runDogfoodReview(userOptions = {}) {
   const isLive = Boolean(userOptions.live);
   const isMock = !isLive;
   const base = userOptions.base || "main";
-  const head = userOptions.head || "HEAD";
+  const changeSetProvided = Boolean(userOptions.changeSet);
+  const fallbackHead = userOptions.changeSet?.repository?.headSha ||
+    userOptions.changeSet?.headSha ||
+    userOptions.changeSet?.head ||
+    "HEAD";
+  const head = userOptions.head || fallbackHead;
   const repoDir = path.resolve(userOptions.repoDir || userOptions.cwd || process.cwd());
   const timeoutMs = userOptions.timeoutMs || (isLive ? 300000 : 30000);
   const log = userOptions.log !== false;
   const outPath = path.resolve(userOptions.out || "dogfood-run.json");
 
   const branch = getBranchForRef(head, repoDir);
-  const requestedHeadSha = getCommitShaForRef(head, repoDir);
+  const requestedHeadSha = getCommitShaForRef(head, repoDir) || (
+    changeSetProvided && /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i.test(head) && !/^0+$/.test(head)
+      ? head.toLowerCase()
+      : null
+  );
   if (!requestedHeadSha) {
     throw new Error(`Reviewed head ref '${head}' cannot be resolved to a non-zero commit SHA in repository at '${repoDir}'`);
   }
@@ -717,7 +726,7 @@ export async function runDogfoodReview(userOptions = {}) {
   }
 
   if (!verifierAdapter) {
-    if (isLive) {
+    if (isLive && !userOptions.reviewAdapters) {
       verifierAdapter = new CliVerifierAdapter({
         command: "claude",
         providerName: "claude",
