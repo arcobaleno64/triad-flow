@@ -29,6 +29,49 @@ function gitExec(repoRoot, args, options = {}) {
   });
 }
 
+const exactHeadContentCache = new Map();
+
+/**
+ * Safely extracts file content at a specific Git commit SHA without touching the working tree.
+ * Enforces strict exact-head invariant (Spec §3.3.1).
+ * Caches content in memory keyed on `${headSha}:${filePath}`.
+ *
+ * @param {string} repoRoot - Absolute repository root path
+ * @param {string} headSha - Commit SHA (40 or 64 hex characters)
+ * @param {string} filePath - Path of file relative to repository root
+ * @returns {string|null} File content string or null if unresolvable / non-existent
+ */
+export function getExactHeadFileContent(repoRoot, headSha, filePath) {
+  if (!repoRoot || !headSha || !filePath) return null;
+  const normPath = filePath.replace(/\\/g, "/").replace(/^\.\//, "");
+  const normSha = String(headSha).trim();
+  if (!/^[0-9a-fA-F]{40,64}$/.test(normSha)) return null;
+
+  const cacheKey = `${normSha}:${normPath}`;
+  if (exactHeadContentCache.has(cacheKey)) {
+    return exactHeadContentCache.get(cacheKey);
+  }
+
+  try {
+    const content = gitExec(repoRoot, ["show", `${normSha}:${normPath}`], {
+      stdio: ["ignore", "pipe", "ignore"],
+      maxBuffer: 10 * 1024 * 1024
+    });
+    exactHeadContentCache.set(cacheKey, content);
+    return content;
+  } catch (_err) {
+    exactHeadContentCache.set(cacheKey, null);
+    return null;
+  }
+}
+
+/**
+ * Clears the in-memory exact-head file content cache.
+ */
+export function clearExactHeadCache() {
+  exactHeadContentCache.clear();
+}
+
 /**
  * Checks if buffer contains NUL bytes to determine if it is binary.
  */
@@ -160,12 +203,14 @@ export function collectGitWorkingState(cwd = process.cwd(), options = {}) {
   }
 
   // 2. Check if HEAD exists (Unborn repository support)
+  let headSha = null;
   try {
-    gitExec(repoRoot, ["rev-parse", "--verify", "HEAD"], {
-      stdio: "ignore"
-    });
+    headSha = gitExec(repoRoot, ["rev-parse", "--verify", "HEAD^{commit}"], {
+      stdio: ["ignore", "pipe", "ignore"]
+    }).trim();
   } catch (_err) {
     hasHead = false;
+    headSha = null;
   }
 
   // 3. Revision Range Mode (--base / --head)
@@ -272,7 +317,8 @@ export function collectGitWorkingState(cwd = process.cwd(), options = {}) {
         scopeMode: "staged",
         repository: {
           root: repoRoot,
-          hasHead
+          hasHead,
+          ...(headSha ? { headSha } : {})
         },
         files: Array.from(fileMap.values())
       };
@@ -343,7 +389,8 @@ export function collectGitWorkingState(cwd = process.cwd(), options = {}) {
       scopeMode: "working-tree",
       repository: {
         root: repoRoot,
-        hasHead
+        hasHead,
+        ...(headSha ? { headSha } : {})
       },
       files: Array.from(fileMap.values())
     };
@@ -440,6 +487,7 @@ export function buildChangeSet(cwd = process.cwd(), options = {}) {
     schemaVersion: "1.0.0",
     scopeMode,
     repository: state.repository,
+    ...(state.repository?.headSha ? { headSha: state.repository.headSha } : {}),
     contentDigest,
     totalFiles: files.length,
     totalAdditions,

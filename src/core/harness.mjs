@@ -6,6 +6,23 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { isTrustedConsensus, hasBlockingFindings, VALID_SEVERITY_SET } from "./consensus-state.mjs";
+import {
+  isTrustedVerificationRecord,
+  registerTrustedVerificationRecord,
+  RunContext,
+  normalizeDigest,
+  normalizeObjective,
+  normalizeCommitSha
+} from "./independent-verifier.mjs";
+
+export {
+  isTrustedVerificationRecord,
+  registerTrustedVerificationRecord,
+  RunContext,
+  normalizeDigest,
+  normalizeObjective,
+  normalizeCommitSha
+} from "./independent-verifier.mjs";
 
 export const SECRET_PATTERNS = [
   // Google API Keys
@@ -255,8 +272,9 @@ export function validateSentryReport(report) {
 }
 
 /**
- * Evaluates CI Gate decision with In-Process Trusted Consensus Capability requirement.
- * Rejects untrusted plain objects, clones or detached signatures with Fail-Closed.
+ * Evaluates CI Gate decision with In-Process Trusted Consensus Capability requirement
+ * and In-Process Trusted Verification Record Capability.
+ * Rejects untrusted plain objects, clones, detached signatures, or forged RunContext bindings with Fail-Closed.
  */
 export function evaluateGateDecision(consensus, options = {}) {
   // 1. Mandatory capability verification
@@ -264,7 +282,8 @@ export function evaluateGateDecision(consensus, options = {}) {
     return {
       decision: "block",
       reason: "Gate Fail-Closed: Untrusted consensus capability (UNTRUSTED_CONSENSUS).",
-      criticals: []
+      criticals: [],
+      advisoryFindings: []
     };
   }
 
@@ -273,7 +292,8 @@ export function evaluateGateDecision(consensus, options = {}) {
     return {
       decision: "block",
       reason: consensus.consensusProof || "Gate Fail-Closed: Quorum failure or error verdict.",
-      criticals: []
+      criticals: [],
+      advisoryFindings: []
     };
   }
 
@@ -281,22 +301,92 @@ export function evaluateGateDecision(consensus, options = {}) {
     return {
       decision: "block",
       reason: "Coverage Incomplete: Sentry omitted file(s) from review.",
-      criticals: []
+      criticals: [],
+      advisoryFindings: []
     };
+  }
+
+  // 3. Verification Record Capability & RunContext Integrity Check (evaluated BEFORE zero-finding check)
+  if (options?.verificationRecord) {
+    if (!isTrustedVerificationRecord(options.verificationRecord)) {
+      return {
+        decision: "block",
+        reason: "Gate Fail-Closed: Untrusted verification record capability (UNTRUSTED_VERIFICATION_RECORD).",
+        criticals: [],
+        advisoryFindings: []
+      };
+    }
+
+    if (options?.runContext) {
+      const rc = options.runContext instanceof RunContext
+        ? options.runContext
+        : new RunContext(options.runContext);
+      const vr = options.verificationRecord;
+
+      if (rc.contentDigest && vr.changeSetDigest) {
+        if (normalizeDigest(vr.changeSetDigest) !== normalizeDigest(rc.contentDigest)) {
+          return {
+            decision: "block",
+            reason: "Gate Fail-Closed: Verification record binding mismatch (FORGED_OR_STALE_RECORD).",
+            criticals: [],
+            advisoryFindings: []
+          };
+        }
+      }
+
+      if (rc.patchObjective && vr.patchObjective) {
+        if (normalizeObjective(vr.patchObjective) !== normalizeObjective(rc.patchObjective)) {
+          return {
+            decision: "block",
+            reason: "Gate Fail-Closed: Verification record binding mismatch (FORGED_OR_STALE_RECORD).",
+            criticals: [],
+            advisoryFindings: []
+          };
+        }
+      }
+
+      if (rc.headSha && vr.headSha) {
+        if (normalizeCommitSha(vr.headSha) !== normalizeCommitSha(rc.headSha)) {
+          return {
+            decision: "block",
+            reason: "Gate Fail-Closed: Verification record binding mismatch (FORGED_OR_STALE_RECORD).",
+            criticals: [],
+            advisoryFindings: []
+          };
+        }
+      }
+    }
+
+    // Reordered: execute post-verification gate authority
+    return evaluatePostVerificationGate(consensus, options.verificationRecord, options);
   }
 
   const findings = Array.isArray(consensus.findings) ? consensus.findings : [];
+
+  // When findings count is 0:
   if (findings.length === 0) {
+    const verificationRequired = Boolean(
+      (options && "verificationRecord" in options) ||
+      options?.requireVerification ||
+      options?.verificationMode ||
+      options?.cleanChallenge
+    );
+
+    if (verificationRequired) {
+      return {
+        decision: "block",
+        reason: "Clean Challenge missing: zero-finding consensus requires independent verification record",
+        criticals: [],
+        advisoryFindings: []
+      };
+    }
+
     return {
       decision: "approve",
       reason: "No blocking vulnerabilities found. CI/CD Gate passed.",
-      criticals: []
+      criticals: [],
+      advisoryFindings: []
     };
-  }
-
-  // If verificationRecord is provided, execute post-verification gate authority
-  if (options?.verificationRecord) {
-    return evaluatePostVerificationGate(consensus, options.verificationRecord, options);
   }
 
   const criticals = findings.filter(f => f && (f.severity === "critical" || f.severity === "high"));
@@ -305,7 +395,8 @@ export function evaluateGateDecision(consensus, options = {}) {
     return {
       decision: "block",
       reason: `Found ${criticals.length} critical/high severity findings. Merge blocked.`,
-      criticals
+      criticals,
+      advisoryFindings: []
     };
   }
 
@@ -319,20 +410,23 @@ export function evaluateGateDecision(consensus, options = {}) {
       reason: isTier1
         ? `Tier 1 high-risk policy: ${findings.length} findings must be resolved before merge. Merge blocked.`
         : `Strict mode enabled: ${findings.length} findings must be resolved.`,
-      criticals: []
+      criticals: [],
+      advisoryFindings: []
     };
   }
 
   return {
     decision: "approve",
     reason: "No blocking vulnerabilities found. CI/CD Gate passed.",
-    criticals: []
+    criticals: [],
+    advisoryFindings: []
   };
 }
 
 /**
- * Evaluates Post-Verification Gate decision incorporating Independent Verification authority.
- * Adheres to normative LOOP2-REMEDIATION-001 authority rules:
+ * Evaluates Post-Verification Gate decision incorporating Independent Verification authority
+ * and Structured Verifier Omissions (Spec §3.1.1).
+ * Adheres to normative LOOP2-REMEDIATION-001 and REMEDIATION-007 authority rules:
  * - Critical/High findings remain strictly fail-closed BLOCK (or HUMAN_REVIEW_REQUIRED if contested)
  * - Supported Low/Medium findings block in Tier 1
  * - Supported Medium findings block in Tier 2
@@ -342,18 +436,22 @@ export function evaluateGateDecision(consensus, options = {}) {
  * - Solitary findings with CONTESTED verdict are removed from blocking set (advisory pass)
  * - Corroborated findings with CONTESTED verdict map to HUMAN_REVIEW_REQUIRED
  * - Structural failures (coverage, quorum, capability, verification error) strictly FAIL-CLOSED BLOCK
+ * - Verifier omissions evaluated across Tier 1 and Tier 2 per 13-branch decision truth table (§3.1.1)
  */
 export function evaluatePostVerificationGate(consensus, verificationRecord, options = {}) {
+  // Row 13: Execution Failure / Timeout / Malformed
   if (!verificationRecord || verificationRecord.ok === false) {
     return {
       decision: "block",
-      reason: "Gate Fail-Closed: Verifier execution failed, timed out, or incomplete.",
-      criticals: []
+      reason: verificationRecord?.error || "Gate Fail-Closed: Verifier execution failed, timed out, or incomplete.",
+      criticals: [],
+      advisoryFindings: []
     };
   }
 
-  const findings = Array.isArray(consensus.findings) ? consensus.findings : [];
+  const findings = Array.isArray(consensus?.findings) ? consensus.findings : [];
   const evaluations = Array.isArray(verificationRecord.evaluations) ? verificationRecord.evaluations : [];
+  const omissions = Array.isArray(verificationRecord.verifierOmissions) ? verificationRecord.verifierOmissions : [];
   const hasBoundPatchObjective =
     typeof verificationRecord.patchObjective === "string" &&
     verificationRecord.patchObjective.trim().length > 0;
@@ -365,7 +463,15 @@ export function evaluatePostVerificationGate(consensus, verificationRecord, opti
   const blockReasons = [];
   const humanReviewReasons = [];
   const criticals = [];
+  const advisoryFindings = [];
 
+  // Row 11 (Record level): Verifier Context Insufficient / Uncertain
+  if (verificationRecord.overallStatus === "UNCERTAIN" || verificationRecord.status === "UNCERTAIN") {
+    hasHumanReview = true;
+    humanReviewReasons.push("Context Insufficient / Uncertain: Verifier declared UNCERTAIN due to missing callee context boundaries.");
+  }
+
+  // Phase A: Evaluate Producer Findings
   for (let i = 0; i < findings.length; i++) {
     const f = findings[i];
     if (!f) continue;
@@ -428,6 +534,7 @@ export function evaluatePostVerificationGate(consensus, verificationRecord, opti
           humanReviewReasons.push(`Corroborated medium finding contested by verifier: "${f.title}"`);
         } else {
           // Solitary medium finding contested by verifier -> removed from blocking set (advisory)
+          advisoryFindings.push(f);
         }
       } else if (isInsufficient) {
         if (isCorroborated) {
@@ -443,34 +550,126 @@ export function evaluatePostVerificationGate(consensus, verificationRecord, opti
           ? `Tier 1 high-risk policy: verified medium finding blocks merge: "${f.title}"`
           : `Verified medium finding blocks merge: "${f.title}"`);
       }
-    } else if (effectiveSeverity === "low") {
+    } else if (effectiveSeverity === "low" || effectiveSeverity === "info") {
       if (isContested) {
         if (isCorroborated && (f.type === "OBJECTIVE_CONTRADICTION" || f.ruleId === "OBJECTIVE-CONTRADICTION")) {
           hasHumanReview = true;
           humanReviewReasons.push(`Corroborated objective contradiction contested by verifier requires human adjudication: "${f.title}"`);
+        } else {
+          advisoryFindings.push(f);
         }
-        // Otherwise solitary contested low finding -> removed from blocking set
       } else if (isInsufficient) {
         if (isTier1 && isStrict) {
           hasHumanReview = true;
           humanReviewReasons.push(`Tier 1 low finding unverifiable: "${f.title}"`);
+        } else {
+          advisoryFindings.push(f);
         }
-        // In Tier 2: unverified low finding does not block
       } else if (isSupported) {
         if (isTier1 || isStrict) {
           hasBlocker = true;
           blockReasons.push(`Tier 1 policy: verified low finding blocks merge: "${f.title}"`);
+        } else {
+          advisoryFindings.push(f);
         }
-        // In Tier 2 non-strict: verified low finding passes as advisory
       }
     }
+  }
+
+  // Phase B: Evaluate Verifier Omissions (Spec §3.1.1 Rows 2-11)
+  for (let i = 0; i < omissions.length; i++) {
+    const omission = omissions[i];
+    if (!omission) continue;
+
+    const rawSev = String(omission.severity || "medium").toLowerCase();
+    const evidenceSupport = String(omission.evidenceSupport || "INSUFFICIENT_EVIDENCE").toUpperCase();
+    const objectiveImpact = String(omission.objectiveImpact || "NOT_ASSESSED").toUpperCase();
+    const falsifiesPatchObjective =
+      evidenceSupport === "SUPPORTED" &&
+      hasBoundPatchObjective &&
+      objectiveImpact === "FALSIFIES_PATCH_OBJECTIVE";
+
+    // Row 2: Confirmed Objective Violation (any severity)
+    if (falsifiesPatchObjective) {
+      hasBlocker = true;
+      if (rawSev === "critical" || rawSev === "high") criticals.push(omission);
+      blockReasons.push(`Confirmed Objective Violation: Verified omission directly falsifies stated patch objective: "${omission.title}"`);
+      continue;
+    }
+
+    // Row 3: Confirmed Critical / High Omission
+    if (evidenceSupport === "SUPPORTED" && (rawSev === "critical" || rawSev === "high")) {
+      hasBlocker = true;
+      criticals.push(omission);
+      blockReasons.push(`Confirmed Critical / High Omission: Verified omission missed by sentries: "${omission.title}"`);
+      continue;
+    }
+
+    // Row 4 & 5: Supported Medium Omission
+    if (evidenceSupport === "SUPPORTED" && rawSev === "medium") {
+      if (isTier1) {
+        // Row 4: Tier 1 -> BLOCK
+        hasBlocker = true;
+        blockReasons.push(`Supported Medium Omission (Tier 1): Verified medium omission blocks under Tier 1 policy: "${omission.title}"`);
+      } else {
+        // Row 5: Tier 2 -> HUMAN_REVIEW_REQUIRED
+        hasHumanReview = true;
+        humanReviewReasons.push(`Supported Medium Omission (Tier 2): Verified medium omission requires human adjudication: "${omission.title}"`);
+      }
+      continue;
+    }
+
+    // Row 6 & 7: Supported Low/Info Omission
+    if (evidenceSupport === "SUPPORTED" && (rawSev === "low" || rawSev === "info")) {
+      if (isTier1) {
+        // Row 6: Tier 1 -> HUMAN_REVIEW_REQUIRED
+        hasHumanReview = true;
+        humanReviewReasons.push(`Supported Low Omission (Tier 1): Verified low omission requires human confirmation: "${omission.title}"`);
+      } else {
+        // Row 7: Tier 2 -> APPROVE (Advisory)
+        advisoryFindings.push(omission);
+      }
+      continue;
+    }
+
+    // Row 8 & 9: Contested Omission
+    if (evidenceSupport === "CONTESTED") {
+      if (isTier1 && (rawSev === "critical" || rawSev === "high")) {
+        // Row 9: Tier 1 Critical/High -> HUMAN_REVIEW_REQUIRED
+        hasHumanReview = true;
+        humanReviewReasons.push(`Tier 1 contested high-severity omission requires human adjudication: "${omission.title}"`);
+      } else {
+        // Row 8: Tier 2 (or non-critical Tier 1) -> Advisory pass
+        advisoryFindings.push(omission);
+      }
+      continue;
+    }
+
+    // Row 10: Unverified / Insufficient Evidence
+    if (evidenceSupport === "INSUFFICIENT_EVIDENCE") {
+      hasHumanReview = true;
+      humanReviewReasons.push(`Unverified / Insufficient Evidence: Omission lacks verifiable counterexample: "${omission.title}"`);
+      continue;
+    }
+
+    // Row 11 (Omission level): Context Insufficient / Uncertain
+    if (evidenceSupport === "UNCERTAIN") {
+      hasHumanReview = true;
+      humanReviewReasons.push(`Context Insufficient / Uncertain: Omission declared UNCERTAIN: "${omission.title}"`);
+      continue;
+    }
+
+    // Fallback unknown evidence state -> fail-safe human review
+    hasHumanReview = true;
+    humanReviewReasons.push(`Unrecognized omission assessment state for "${omission.title}"`);
   }
 
   if (hasBlocker) {
     return {
       decision: "block",
       reason: blockReasons[0] || "Blocking findings identified by verified review.",
-      criticals
+      criticals,
+      advisoryFindings
     };
   }
 
@@ -478,14 +677,18 @@ export function evaluatePostVerificationGate(consensus, verificationRecord, opti
     return {
       decision: "human_review_required",
       reason: humanReviewReasons[0] || "Review requires human adjudication.",
-      criticals: []
+      criticals: [],
+      advisoryFindings
     };
   }
 
   return {
     decision: "approve",
-    reason: "No blocking vulnerabilities found. CI/CD Gate passed.",
-    criticals: []
+    reason: (findings.length === 0 && omissions.length === 0)
+      ? "Clean Challenge passed: zero findings and zero verified omissions."
+      : "No blocking vulnerabilities found. CI/CD Gate passed.",
+    criticals: [],
+    advisoryFindings
   };
 }
 
