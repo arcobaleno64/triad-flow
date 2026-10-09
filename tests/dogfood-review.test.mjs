@@ -893,7 +893,7 @@ test("RB2-D: Verifier execution error results in verificationRecord.ok === false
   }
 });
 
-test("RB2-E: Zero consensus findings means verificationRecord === null and preserves previous executionComplete semantics", async () => {
+test("RB2-E: Zero consensus findings triggers Clean Challenge verification and preserves executionComplete semantics", async () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-test-rb2-e-"));
   const tmpOut = path.join(tmpDir, "dogfood-run.json");
 
@@ -955,9 +955,89 @@ test("RB2-E: Zero consensus findings means verificationRecord === null and prese
     });
 
     assert.equal(report.consensus.totalFindings, 0);
-    assert.equal(report.verificationRecord, null, "No verification attempted when findings === 0");
+    assert.ok(report.verificationRecord !== null, "Clean Challenge verificationRecord must be populated when findings === 0");
+    assert.equal(report.verificationRecord.ok, true);
+    assert.equal(report.verificationRecord.verificationMode, "clean_challenge");
+    assert.equal(report.telemetryMetrics.cleanChallengeAttempted, true);
+    assert.equal(report.telemetryMetrics.cleanChallengeStatus, "SUCCESS");
+    assert.ok(typeof report.telemetryMetrics.cleanChallengeDurationMs === "number");
+    assert.equal(report.advisoryGate.decision, "approve");
     assert.equal(report.consensus.quorumReached, true);
     assert.equal(report.telemetryMetrics.executionComplete, true, "Clean review with quorum must complete successfully");
+    assert.ok(report.runContext);
+    assert.equal(typeof report.runContext.contentDigest, "string");
+  } finally {
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+  }
+});
+
+test("RB2-F: Passing cleanChallenge: false explicitly bypasses Clean Challenge verification", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-test-rb2-f-"));
+  const tmpOut = path.join(tmpDir, "dogfood-run.json");
+
+  const cleanReviewAdapters = {
+    agy: new CliReviewAdapter({
+      command: "agy",
+      providerName: "agy",
+      family: "google",
+      modelName: "gemini-3.8-flash",
+      execFn: async () => ({
+        stdout: JSON.stringify({
+          findings: [],
+          coverage: { coveredFiles: ["src/index.js"], omittedFiles: [] }
+        })
+      })
+    }),
+    claude: new CliReviewAdapter({
+      command: "claude",
+      providerName: "claude",
+      family: "anthropic",
+      modelName: "claude-5.5-sonnet",
+      execFn: async () => ({
+        stdout: JSON.stringify({
+          findings: [],
+          coverage: { coveredFiles: ["src/index.js"], omittedFiles: [] }
+        })
+      })
+    }),
+    codex: new CliReviewAdapter({
+      command: "codex",
+      providerName: "codex",
+      family: "openai",
+      modelName: "gpt-6.1-sol",
+      execFn: async () => ({
+        stdout: JSON.stringify({
+          findings: [],
+          coverage: { coveredFiles: ["src/index.js"], omittedFiles: [] }
+        })
+      })
+    })
+  };
+
+  try {
+    const report = await runDogfoodReview({
+      mock: false,
+      cleanChallenge: false,
+      changeSet: {
+        ok: true,
+        schemaVersion: "1.0.0",
+        repository: "test",
+        totalFiles: 1,
+        totalAdditions: 2,
+        totalDeletions: 1,
+        files: [{ path: "src/index.js", additions: 2, deletions: 1, riskTier: 2 }],
+        diffHunks: "+ const a = 1;"
+      },
+      reviewAdapters: cleanReviewAdapters,
+      out: tmpOut,
+      log: false
+    });
+
+    assert.equal(report.consensus.totalFindings, 0);
+    assert.equal(report.verificationRecord, null, "No verification attempted when cleanChallenge: false");
+    assert.equal(report.telemetryMetrics.cleanChallengeAttempted, false);
+    assert.equal(report.telemetryMetrics.cleanChallengeStatus, "SKIPPED");
+    assert.equal(report.telemetryMetrics.cleanChallengeDurationMs, 0);
   } finally {
     try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
   }

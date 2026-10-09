@@ -5,7 +5,16 @@
  * XML-delimited context sections, and Default-Deny sentry contracts.
  */
 
-import { DEFAULT_LIMITS, COVERAGE_OMISSION_CODES } from "./provider-contract.mjs";
+import { DEFAULT_LIMITS } from "./provider-contract.mjs";
+
+export const COVERAGE_OMISSION_CODES = Object.freeze({
+  UNMODIFIED: "OMIT_UNMODIFIED",
+  SIZE_LIMIT: "OMIT_SIZE_LIMIT",
+  BINARY: "OMIT_BINARY",
+  GENERATED: "OMIT_GENERATED",
+  OUT_OF_SCOPE: "OMIT_OUT_OF_SCOPE",
+  TIMEOUT: "OMIT_TIMEOUT"
+});
 
 const ALLOWED_OMISSION_CODES_LIST = Object.values(COVERAGE_OMISSION_CODES);
 
@@ -180,7 +189,11 @@ export function formatContextPackageXml(contextPackage) {
 
   const { layer1AstEnclosure, layer2ModuleScope, layer3CallGraph } = contextPackage.layers;
 
-  if (layer1AstEnclosure && (layer1AstEnclosure.enclosingFunctions?.length > 0 || layer1AstEnclosure.enclosingClasses?.length > 0)) {
+  if (layer1AstEnclosure && (
+    layer1AstEnclosure.enclosingFunctions?.length > 0 ||
+    layer1AstEnclosure.enclosingClasses?.length > 0 ||
+    layer1AstEnclosure.callees?.length > 0
+  )) {
     lines.push(`<enclosing_context targetFile="${contextPackage.targetFile || "unknown"}">`);
     if (layer1AstEnclosure.enclosingClasses?.length > 0) {
       lines.push("  <enclosing_classes>");
@@ -198,6 +211,20 @@ export function formatContextPackageXml(contextPackage) {
         }
       }
       lines.push("  </enclosing_functions>");
+    }
+    if (layer1AstEnclosure.callees?.length > 0) {
+      lines.push("  <callee_definitions>");
+      lines.push(`    <local_callees targetFile="${contextPackage.targetFile || "unknown"}">`);
+      for (const c of layer1AstEnclosure.callees) {
+        const lineAttr = c.startLine && c.endLine ? ` startLine="${c.startLine}" endLine="${c.endLine}" lines="${c.lines}"` : ` lines="${c.lines}"`;
+        lines.push(`      <callee symbol="${c.symbol}"${lineAttr} bytes="${c.bytes}">`);
+        if (c.definition) {
+          lines.push(`        ${c.definition.trim().replace(/\n/g, "\n        ")}`);
+        }
+        lines.push("      </callee>");
+      }
+      lines.push("    </local_callees>");
+      lines.push("  </callee_definitions>");
     }
     lines.push("</enclosing_context>");
   }
@@ -224,6 +251,29 @@ export function formatContextPackageXml(contextPackage) {
     lines.push("</call_graph>");
   }
 
+  return lines.join("\n");
+}
+
+/**
+ * Formats unresolved code context gaps into a structured prompt block.
+ * @param {Array<object>} contextGaps
+ * @returns {string}
+ */
+export function formatContextGaps(contextGaps) {
+  if (!Array.isArray(contextGaps) || contextGaps.length === 0) return "";
+  const lines = [
+    `The following referenced callee definitions on sensitive execution paths could not be deterministically extracted from the target commit:`,
+    ...contextGaps.map(gap => {
+      const loc = gap.line ? `${gap.file}:${gap.line}` : (gap.file || "unknown");
+      const cat = gap.category ? ` [Category: ${gap.category}]` : "";
+      return `  - Symbol: '${gap.symbol}' (Reason: ${gap.reason || "UNRESOLVED_SYMBOL"})${cat} at ${loc}`;
+    }),
+    ``,
+    `MANDATORY UNCERTAINTY INSTRUCTION:`,
+    `Callee definitions on sensitive execution paths could not be resolved.`,
+    `Under Default-Deny, when an unresolved code context gap affects execution reachability, input validation, default-value handling, or security invariants, you MUST NOT certify clean.`,
+    `You MUST explicitly report overallStatus: "UNCERTAIN" or mark affected assessments as evidenceSupport: "UNCERTAIN".`
+  ];
   return lines.join("\n");
 }
 
@@ -277,6 +327,12 @@ export function buildEvidenceReviewPrompt(changeSet, role = "macro", limits = DE
 
   if (contextBlock) {
     sections.push(``, `[CODE CONTEXT & AST ENCLOSURES]`, contextBlock);
+  }
+
+  const contextGaps = contextPackage?.contextGaps || options?.contextGaps || [];
+  const contextGapsBlock = formatContextGaps(contextGaps);
+  if (contextGapsBlock) {
+    sections.push(``, `[UNRESOLVED CODE CONTEXT GAPS]`, contextGapsBlock);
   }
 
   const objectiveContract = options?.objectiveContract || changeSet?.objectiveContract || null;

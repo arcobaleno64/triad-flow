@@ -37,7 +37,8 @@ import {
   buildDisagreementLedgerDocument,
   CliVerifierAdapter,
   createMockVerifierAdapter,
-  VERIFICATION_SCHEMA_VERSION
+  VERIFICATION_SCHEMA_VERSION,
+  RunContext
 } from "../src/core/independent-verifier.mjs";
 import { TOOL_VERSION } from "../src/core/review-run-report.mjs";
 
@@ -565,7 +566,7 @@ export function instrumentVerifierAdapter(adapter, onTimeout) {
  */
 export async function runDogfoodReview(userOptions = {}) {
   const runStartedAt = new Date().toISOString();
-  const runId = `dogfood-${Date.now()}-${crypto.randomUUID()}`;
+  const runId = String(userOptions.runId || `dogfood-${Date.now()}-${crypto.randomUUID()}`);
   const isLive = Boolean(userOptions.live);
   const isMock = !isLive;
   const base = userOptions.base || "main";
@@ -738,6 +739,23 @@ export async function runDogfoodReview(userOptions = {}) {
     finalizedBeforeRun: true
   } : null);
 
+  const exclusions = Array.isArray(userOptions.patchExclusions)
+    ? userOptions.patchExclusions
+    : (Array.isArray(objectiveContract?.exclusions)
+        ? objectiveContract.exclusions
+        : (Array.isArray(changeSet?.excludedFiles) ? changeSet.excludedFiles : []));
+
+  const runContext = userOptions.runContext instanceof RunContext
+    ? userOptions.runContext
+    : new RunContext({
+        runId,
+        headSha: commitSha,
+        contentDigest: changeSet.contentDigest,
+        patchObjective: userOptions.patchObjective || objectiveContract?.objective || null,
+        objectiveContract,
+        exclusions
+      });
+
   let stagedFallbackUsed = false;
   let stagedChunkCount = null;
   let stagedTimeoutCount = 0;
@@ -862,10 +880,18 @@ export async function runDogfoodReview(userOptions = {}) {
     preGate.reason?.includes("UNTRUSTED_CONSENSUS") ||
     preGate.reason?.includes("Quorum failure");
 
+  let cleanChallengeAttempted = false;
+  let cleanChallengeDurationMs = 0;
+  let cleanChallengeStatus = "SKIPPED";
+
+  const instrumentedVerifier = instrumentVerifierAdapter(verifierAdapter, () => {
+    verifierTimedOut = true;
+  });
+
   if (findings.length > 0 && !isStructuralFailure) {
-    const instrumentedVerifier = instrumentVerifierAdapter(verifierAdapter, () => {
-      verifierTimedOut = true;
-    });
+    cleanChallengeAttempted = false;
+    cleanChallengeDurationMs = 0;
+    cleanChallengeStatus = "SKIPPED";
     verificationRecord = await conductIndependentVerification(
       changeSet,
       findings,
@@ -878,17 +904,72 @@ export async function runDogfoodReview(userOptions = {}) {
         changeSetDigest: changeSet.contentDigest,
         patchObjective: userOptions.patchObjective || null,
         objectiveContract,
+        headSha: commitSha,
+        runContext,
         timeoutMs,
-        signal: userOptions.signal || null
+        signal: userOptions.signal || null,
+        verificationMode: "producer_verification"
       }
     );
+  } else if (consensus.quorumReached === true && findings.length === 0 && !isStructuralFailure && userOptions.cleanChallenge !== false) {
+    cleanChallengeAttempted = true;
+    if (log) console.log("  ⚡ Zero-finding quorum reached. Executing Clean Challenge verification...");
+    const tClean0 = Date.now();
+    try {
+      verificationRecord = await conductIndependentVerification(
+        changeSet,
+        [],
+        instrumentedVerifier,
+        {
+          producerName: "tri-party-quorum",
+          producerModel: "agy+claude+codex",
+          verifierName: "claude",
+          verifierModel: "claude-5.5-sonnet",
+          actualModel: {
+            value: "claude-5.5-sonnet (independent_verifier_stage)",
+            source: "reported"
+          },
+          changeSetDigest: changeSet.contentDigest,
+          patchObjective: userOptions.patchObjective || null,
+          objectiveContract,
+          headSha: commitSha,
+          runContext,
+          timeoutMs,
+          signal: userOptions.signal || null,
+          verificationMode: "clean_challenge"
+        }
+      );
+    } catch (err) {
+      verifierTimedOut = verifierTimedOut || isTimeoutLikeError(err);
+      verificationRecord = { ok: false, error: err?.message || String(err) };
+    } finally {
+      cleanChallengeDurationMs = Date.now() - tClean0;
+    }
+
+    if (verifierTimedOut || verificationRecord?.executionStatus === EXECUTION_STATUS.TIMEOUT || /timeout/i.test(verificationRecord?.error || "")) {
+      verifierTimedOut = true;
+      cleanChallengeStatus = "TIMEOUT";
+    } else if (verificationRecord && verificationRecord.ok === true) {
+      cleanChallengeStatus = "SUCCESS";
+    } else {
+      cleanChallengeStatus = "ERROR";
+    }
+
+    if (log) {
+      console.log(`  🛡️ Clean Challenge Status: ${cleanChallengeStatus} (${cleanChallengeDurationMs}ms)`);
+    }
+  } else {
+    cleanChallengeAttempted = false;
+    cleanChallengeDurationMs = 0;
+    cleanChallengeStatus = "SKIPPED";
   }
 
-  // Evaluate authoritative Final Advisory Gate integrating verificationRecord
+  // Evaluate authoritative Final Advisory Gate integrating verificationRecord and runContext
   const gate = evaluateGateDecision(consensus, {
     tier: diffTier,
     strict: isStrict,
-    verificationRecord
+    verificationRecord,
+    runContext
   });
   if (log) {
     console.log(`  🛡️ Final Advisory Gate: ${gate.decision.toUpperCase()} (${gate.reason})`);
@@ -910,6 +991,7 @@ export async function runDogfoodReview(userOptions = {}) {
   const isExecutionComplete =
     consensus.quorumReached &&
     allProvidersSucceeded &&
+    (!cleanChallengeAttempted || cleanChallengeStatus === "SUCCESS") &&
     (!verificationAttempted || verificationRecord.ok === true);
 
   const dogfoodDoc = {
@@ -921,6 +1003,14 @@ export async function runDogfoodReview(userOptions = {}) {
     track: "Track D1: SHADOW_DOGFOOD",
     authority: "NONE (ADVISORY_ONLY)",
     triadFlowVersion: TOOL_VERSION,
+    runContext: {
+      runId: runContext.runId,
+      headSha: runContext.headSha,
+      contentDigest: runContext.contentDigest,
+      patchObjective: runContext.patchObjective,
+      objectiveContract: runContext.objectiveContract,
+      exclusions: runContext.exclusions
+    },
     repository: {
       name: repositoryName,
       commitSha,
@@ -969,6 +1059,9 @@ export async function runDogfoodReview(userOptions = {}) {
       reviewerPhaseDurationMs,
       avgProviderLatencyMs: Math.round((agyOut.latencyMs + claudeOut.latencyMs + codexOut.latencyMs) / 3),
       executionComplete: isExecutionComplete,
+      cleanChallengeAttempted,
+      cleanChallengeDurationMs,
+      cleanChallengeStatus,
       malformedOutputCount: malformedCount,
       reviewerTimeoutCount: directReviewerTimeoutCount,
       verifierTimeoutCount,
