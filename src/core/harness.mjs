@@ -680,10 +680,17 @@ function _evaluatePostVerificationGateCore(consensus, verificationRecord, option
     humanReviewReasons.push("Context Insufficient / Uncertain: Verifier declared UNCERTAIN due to missing callee context boundaries.");
   }
 
-  // Record level: Verifier Defects Found without omissions (Thread 5)
-  if (omissions.length === 0 && (verificationRecord.overallStatus === "DEFECTS_FOUND" || verificationRecord.status === "DEFECTS_FOUND")) {
-    hasBlocker = true;
-    blockReasons.push("Clean Challenge failed: Verifier reported DEFECTS_FOUND without omissions.");
+  // Record level: Verifier Defects Found consistency (Thread 5 & P1-04)
+  const isDefectsFound = verificationRecord.overallStatus === "DEFECTS_FOUND" || verificationRecord.status === "DEFECTS_FOUND";
+  if (isDefectsFound) {
+    const hasSupportedOmission = omissions.some(o => String(o?.evidenceSupport || "").toUpperCase() === "SUPPORTED");
+    if (omissions.length === 0) {
+      hasBlocker = true;
+      blockReasons.push("Clean Challenge failed: Verifier reported DEFECTS_FOUND without omissions.");
+    } else if (!hasSupportedOmission) {
+      hasHumanReview = true;
+      humanReviewReasons.push("Verifier Status Inconsistent: Verifier declared DEFECTS_FOUND without any SUPPORTED omission; requires human adjudication.");
+    }
   }
 
   // Diff Truncation Fail-Closed (P1-03)

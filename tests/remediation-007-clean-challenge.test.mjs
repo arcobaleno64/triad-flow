@@ -50,6 +50,7 @@ import {
 } from "../src/core/harness.mjs";
 import * as harnessModule from "../src/core/harness.mjs";
 import { orchestrateReview } from "../src/adapters/review-orchestrator.mjs";
+import { runDogfoodReview } from "../scripts/dogfood-review.mjs";
 
 import { aggregateConsensus } from "../src/core/loop.mjs";
 
@@ -106,9 +107,6 @@ import {
   getCorpusCaseById
 } from "./fixtures/real-corpus-fixtures.mjs";
 
-import {
-  runDogfoodReview
-} from "../scripts/dogfood-review.mjs";
 
 import { CliReviewAdapter } from "../src/adapters/cli-transport.mjs";
 
@@ -2182,12 +2180,15 @@ test("007-AUDIT-THREAD-40: Nonempty consensus rejects clean_challenge verificati
 });
 
 test("007-AUDIT-THREAD-37: Orchestrator enforces canonical RunContext for current ChangeSet and blocks cross-ChangeSet verification records", async () => {
+  const digestA = crypto.createHash("sha256").update("+ const a = 'serviceA';", "utf8").digest("hex");
+  const digestB = crypto.createHash("sha256").update("+ const b = 'serviceB';", "utf8").digest("hex");
+
   const changeSetA = {
     ok: true,
     totalFiles: 1,
     files: [{ path: "src/fileA.js", additions: 1, deletions: 0, riskTier: 2 }],
     diffHunks: "+ const a = 'serviceA';",
-    contentDigest: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    contentDigest: digestA,
     headSha: "1111111111111111111111111111111111111111"
   };
 
@@ -2196,7 +2197,7 @@ test("007-AUDIT-THREAD-37: Orchestrator enforces canonical RunContext for curren
     totalFiles: 1,
     files: [{ path: "src/fileB.js", additions: 1, deletions: 0, riskTier: 2 }],
     diffHunks: "+ const b = 'serviceB';",
-    contentDigest: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    contentDigest: digestB,
     headSha: "2222222222222222222222222222222222222222"
   };
 
@@ -2238,7 +2239,7 @@ test("007-AUDIT-THREAD-37: Orchestrator enforces canonical RunContext for curren
 
   // Attack 2: Replay recA against changeSetB AND provide forged RunContext matching ChangeSet A.
   const rcA = new RunContext({
-    contentDigest: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    contentDigest: digestA,
     headSha: "1111111111111111111111111111111111111111"
   });
   const resultReplayWithRc = await orchestrateReview(changeSetB, { macro: cleanAdapter }, {
@@ -2587,4 +2588,176 @@ test("007-AUDIT-THREAD-43-NEGATIVE: formatBenchmarkSummary renders provisional n
   const summaryText = formatBenchmarkSummary(mockRunResult);
   assert.ok(summaryText.includes("[PROVISIONAL ONLY]"), "Summary must indicate provisional only");
   assert.ok(summaryText.includes("DISQUALIFIED"), "Summary must indicate promotion disqualification");
+});
+
+// ==============================================================================
+// DELTA REMEDIATION NEGATIVE REGRESSION TESTS (PR #39 Bounded Remediation)
+// ==============================================================================
+
+test("007-DELTA-P1-01-NEGATIVE: Orchestrator fails closed when declared digest conflicts with computed diff digest or replay attacks", async () => {
+  const diffContent = "+ const secret = 'sensitive-token';";
+  const realDiffDigest = crypto.createHash("sha256").update(diffContent, "utf8").digest("hex");
+  const conflictingDeclaredDigest = "0".repeat(64); // Conflicting fake digest
+
+  const changeSet = {
+    ok: true,
+    totalFiles: 1,
+    files: [{ path: "src/auth.js", additions: 1, deletions: 0, riskTier: 2 }],
+    diffHunks: diffContent,
+    contentDigest: conflictingDeclaredDigest,
+    headSha: "3".repeat(40)
+  };
+
+  const cleanAdapter = {
+    providerName: "clean-sentry",
+    modelName: "model-x",
+    executeReview: async () => ({
+      ok: true,
+      findings: [],
+      coverage: { coveredFiles: ["src/auth.js"], omittedFiles: [] }
+    })
+  };
+
+  const mockVerifier = createMockVerifierAdapter("claude", {
+    executeVerification: async () => ({
+      ok: true,
+      overallStatus: "CLEAN",
+      evaluations: [],
+      verifierOmissions: []
+    })
+  });
+
+  // Vector A: Even if verification record was minted with the conflicting declared digest, orchestrator fails closed
+  const recordWithFakeDigest = await conductIndependentVerification(
+    changeSet,
+    [],
+    mockVerifier,
+    {
+      verificationMode: "clean_challenge",
+      changeSetDigest: conflictingDeclaredDigest,
+      headSha: changeSet.headSha
+    }
+  );
+
+  const resConflictingDeclared = await orchestrateReview(changeSet, { macro: cleanAdapter, micro: cleanAdapter }, {
+    verificationRecord: recordWithFakeDigest
+  });
+  assert.equal(resConflictingDeclared.status, "incomplete");
+  assert.equal(resConflictingDeclared.gate.decision, "block");
+  assert.match(resConflictingDeclared.gate.reason, /FORGED_OR_STALE_RECORD/i);
+
+  // Vector B: Replay attack where diff was modified after record was minted
+  const modifiedChangeSet = {
+    ...changeSet,
+    diffHunks: "+ const secret = 'modified-tampered-token';",
+    contentDigest: realDiffDigest // Still has old digest before modification
+  };
+  const resModifiedDiff = await orchestrateReview(modifiedChangeSet, { macro: cleanAdapter, micro: cleanAdapter }, {
+    verificationRecord: recordWithFakeDigest
+  });
+  assert.equal(resModifiedDiff.status, "incomplete");
+  assert.equal(resModifiedDiff.gate.decision, "block");
+});
+
+test("007-DELTA-P1-02-NEGATIVE: Dogfood review routes to UNCERTAIN when exact-head context construction fails or repo root missing", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-test-p1-02-"));
+  const tmpOut = path.join(tmpDir, "dogfood-run.json");
+
+  try {
+    // Missing repository.root on external changeSet with modified files
+    const report = await runDogfoodReview({
+      mock: true,
+      changeSet: {
+        ok: true,
+        schemaVersion: "1.0.0",
+        repository: null, // Missing trusted repo root
+        totalFiles: 1,
+        totalAdditions: 2,
+        totalDeletions: 0,
+        files: [{ path: "src/auth.js", additions: 2, deletions: 0, riskTier: 2 }],
+        diffHunks: "+ const a = 1;"
+      },
+      head: "4".repeat(40),
+      out: tmpOut,
+      log: false
+    });
+
+    assert.equal(report.gate.decision, "human_review_required");
+    assert.equal(report.summary.cleanChallengeStatus, "UNCERTAIN");
+    assert.equal(report.isExecutionComplete, false);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("007-DELTA-P1-03-NEGATIVE: Qualified sensitive calls (object.method, this.method) are detected and emit context gaps when unresolvable", () => {
+  const diffHunks = [
+    "@@ -10,4 +10,6 @@",
+    "+ auth.validateAccess(request);",
+    "+ this.verifyToken(token);"
+  ].join("\n");
+
+  const candidates = extractCandidateCallSymbols(diffHunks);
+  const valCandidate = candidates.find(c => c.symbol === "validateAccess");
+  const verCandidate = candidates.find(c => c.symbol === "verifyToken");
+
+  assert.ok(valCandidate, "validateAccess qualified call must be extracted");
+  assert.equal(valCandidate.isSensitive, true);
+  assert.equal(valCandidate.qualifier, "auth");
+  assert.equal(valCandidate.isQualified, true);
+
+  assert.ok(verCandidate, "verifyToken qualified call must be extracted");
+  assert.equal(verCandidate.isSensitive, true);
+  assert.equal(verCandidate.qualifier, "this");
+  assert.equal(verCandidate.isQualified, true);
+
+  // Unresolvable in source text -> emits explicit context gaps
+  const sourceCode = `
+import auth from "auth-service";
+export function handle(request) {
+  auth.validateAccess(request);
+  this.verifyToken(token);
+}
+`;
+  const res = extractLocalCalleeContext(sourceCode, diffHunks, "src/handler.js");
+  const gapVal = res.contextGaps.find(g => g.symbol === "validateAccess");
+  const gapVer = res.contextGaps.find(g => g.symbol === "verifyToken");
+
+  assert.ok(gapVal, "auth.validateAccess must emit context gap");
+  assert.equal(gapVal.reason, "EXTERNAL_CALLEE_UNRESOLVED");
+
+  assert.ok(gapVer, "this.verifyToken must emit context gap when definition unresolvable");
+  assert.equal(gapVer.reason, "UNRESOLVED_SYMBOL");
+});
+
+test("007-DELTA-P1-04-NEGATIVE: Verifier reporting DEFECTS_FOUND without any SUPPORTED omission does not APPROVE (routes to human review)", () => {
+  const consensus = makeTrustedConsensus([], { tier: 2 });
+  const rec = issueVerificationRecordFromOutput({
+    ok: true,
+    overallStatus: "DEFECTS_FOUND",
+    evaluations: [],
+    verifierOmissions: [
+      {
+        findingId: "om-contested-low",
+        title: "Contested low advisory observation",
+        severity: "low",
+        evidenceSupport: "CONTESTED",
+        locatorAccurate: true,
+        file: "src/util.c",
+        line_start: 10,
+        line_end: 10,
+        counterexample: "contested edge case"
+      }
+    ]
+  });
+
+  const gateRes = evaluateIsolatedTestGate(consensus, {
+    tier: 2,
+    verificationRecord: rec
+  });
+
+  // Must NOT approve under DEFECTS_FOUND without SUPPORTED omissions
+  assert.notEqual(gateRes.decision, "approve");
+  assert.equal(gateRes.decision, "human_review_required");
+  assert.match(gateRes.reason, /Verifier Status Inconsistent: Verifier declared DEFECTS_FOUND without any SUPPORTED omission/i);
 });

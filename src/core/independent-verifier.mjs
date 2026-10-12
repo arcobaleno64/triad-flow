@@ -292,7 +292,15 @@ export function issueVerificationRecordFromOutput(params = {}) {
     }
     if (Object.isExtensible(rawOutput) && rawOutput.overallStatus === undefined) {
       if (Array.isArray(rawOutput.verifierOmissions) && rawOutput.verifierOmissions.length > 0) {
-        rawOutput.overallStatus = "DEFECTS_FOUND";
+        const hasSupported = rawOutput.verifierOmissions.some(o => String(o?.evidenceSupport || "").toUpperCase() === "SUPPORTED");
+        const hasUncertain = rawOutput.verifierOmissions.some(o => String(o?.evidenceSupport || "").toUpperCase() === "UNCERTAIN");
+        if (hasSupported) {
+          rawOutput.overallStatus = "DEFECTS_FOUND";
+        } else if (hasUncertain) {
+          rawOutput.overallStatus = "UNCERTAIN";
+        } else {
+          rawOutput.overallStatus = "CLEAN";
+        }
       } else if (Array.isArray(rawOutput.evaluations) && rawOutput.evaluations.length === 0) {
         rawOutput.overallStatus = "CLEAN";
       }
@@ -1313,7 +1321,15 @@ export function validateVerificationOutput(rawOutput, context = {}) {
 
   let overallStatus = rawOverallStatus ? (VALID_OVERALL_STATUSES.has(rawOverallStatus) ? rawOverallStatus : null) : null;
   if (!overallStatus && normalizedOmissions.length > 0) {
-    overallStatus = "DEFECTS_FOUND";
+    const hasSupported = normalizedOmissions.some(o => o.evidenceSupport === "SUPPORTED");
+    const hasUncertain = normalizedOmissions.some(o => o.evidenceSupport === "UNCERTAIN");
+    if (hasSupported) {
+      overallStatus = "DEFECTS_FOUND";
+    } else if (hasUncertain) {
+      overallStatus = "UNCERTAIN";
+    } else {
+      overallStatus = "CLEAN";
+    }
   }
 
   // 2. Automatic uncertainty propagation from omissions, context gaps, or truncated diff:

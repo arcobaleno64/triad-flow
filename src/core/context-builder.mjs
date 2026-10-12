@@ -526,7 +526,7 @@ export function extractCandidateCallSymbols(diffHunks) {
   const candidates = [];
   const seen = new Set();
 
-  const CALL_REGEX = /(?<![.])\b([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/g;
+  const CALL_REGEX = /\b([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/g;
   const KEYWORDS = new Set([
     "if", "else", "for", "while", "do", "switch", "case", "default", "break", "continue",
     "return", "throw", "try", "catch", "finally", "goto", "function", "async", "await",
@@ -583,15 +583,36 @@ export function extractCandidateCallSymbols(diffHunks) {
       if (KEYWORDS.has(sym)) continue;
       if (declaredFn && sym === declaredFn) continue;
 
+      const prefix = cleanLine.slice(0, match.index);
+      const qualMatch = prefix.match(/(?:([a-zA-Z_][a-zA-Z0-9_]*|this)\s*(?:\.|\->)\s*)$/);
+      const qualifier = qualMatch ? qualMatch[1] : null;
+      const isQualified = Boolean(qualMatch || /[.\->]\s*$/.test(prefix));
+
+      if (isQualified && !qualifier) {
+        continue;
+      }
+
       const isUtility = UTILITY_CALLEE_SYMBOLS.has(sym);
-      const symCat = isUtility ? null : classifySensitiveCategory(sym);
-      const isSensitive = !isUtility && Boolean(symCat || isGuardLine);
-      const symCategory = isSensitive ? (symCat || lineCategory || "input_validation") : null;
+      if (isUtility) continue;
+
+      const symCat = classifySensitiveCategory(sym);
+      const qualCat = qualifier ? classifySensitiveCategory(qualifier) : null;
+      const sensitiveCategory = symCat || qualCat;
+
+      // For qualified calls, only recognize if sensitive (P1-03)
+      if (isQualified && !sensitiveCategory) {
+        continue;
+      }
+
+      const isSensitive = Boolean(sensitiveCategory || isGuardLine);
+      const symCategory = isSensitive ? (sensitiveCategory || lineCategory || "input_validation") : null;
 
       if (!seen.has(sym)) {
         seen.add(sym);
         candidates.push({
           symbol: sym,
+          qualifier,
+          isQualified,
           isAdded,
           line: lineNum,
           lineText: lineText.trim(),
@@ -605,6 +626,12 @@ export function extractCandidateCallSymbols(diffHunks) {
             existing.isAdded = true;
             existing.line = lineNum;
             existing.lineText = lineText.trim();
+          }
+          if (qualifier && !existing.qualifier) {
+            existing.qualifier = qualifier;
+          }
+          if (isQualified && !existing.isQualified) {
+            existing.isQualified = isQualified;
           }
           if (isSensitive && !existing.isSensitive) {
             existing.isSensitive = true;
@@ -775,9 +802,13 @@ export function extractLocalCalleeContext(fileContent, diffHunks, targetFile, op
   }
 
   for (const candidate of candidateCalls) {
-    if (importedSymbols.has(candidate.symbol)) {
+    const isImported = importedSymbols.has(candidate.symbol) ||
+      Boolean(candidate.qualifier && candidate.qualifier !== "this" && importedSymbols.has(candidate.qualifier));
+
+    if (isImported) {
       const unresolvedEntry = {
         symbol: candidate.symbol,
+        ...(candidate.qualifier ? { qualifier: candidate.qualifier } : {}),
         reason: "EXTERNAL_CALLEE_UNRESOLVED",
         file: targetFile,
         line: candidate.line
@@ -797,6 +828,7 @@ export function extractLocalCalleeContext(fileContent, diffHunks, targetFile, op
       if (candidate.isSensitive && candidate.isAdded) {
         contextGaps.push({
           symbol: candidate.symbol,
+          ...(candidate.qualifier ? { qualifier: candidate.qualifier } : {}),
           reason: "EXTRACTION_QUOTA_EXCEEDED",
           category: candidate.category || "input_validation",
           file: targetFile,
@@ -814,6 +846,7 @@ export function extractLocalCalleeContext(fileContent, diffHunks, targetFile, op
     if (macroRegex.test(fileContent)) {
       const unresolvedEntry = {
         symbol,
+        ...(candidate.qualifier ? { qualifier: candidate.qualifier } : {}),
         reason: "MACRO_OR_DYNAMIC",
         file: targetFile,
         line
@@ -833,10 +866,11 @@ export function extractLocalCalleeContext(fileContent, diffHunks, targetFile, op
     const defMatches = findFunctionDefinitions(lines, symbol);
 
     if (defMatches.length === 0) {
-      const isDynamic = candidate.lineText && (candidate.lineText.includes(`->${symbol}`) || candidate.lineText.includes(`virtual`));
+      const isDynamic = Boolean(candidate.lineText && (candidate.lineText.includes(`->${symbol}`) || candidate.lineText.includes(`virtual`)));
       const reason = isDynamic ? "MACRO_OR_DYNAMIC" : "UNRESOLVED_SYMBOL";
       const unresolvedEntry = {
         symbol,
+        ...(candidate.qualifier ? { qualifier: candidate.qualifier } : {}),
         reason,
         file: targetFile,
         line
@@ -846,12 +880,16 @@ export function extractLocalCalleeContext(fileContent, diffHunks, targetFile, op
         contextGaps.push({
           ...unresolvedEntry,
           category: category || "input_validation",
-          impact: "Referenced callee definition not found in modified file on sensitive execution path"
+          impact: candidate.isQualified
+            ? `Referenced qualified callee '${candidate.qualifier ? candidate.qualifier + "." : ""}${symbol}' definition not found in modified file on sensitive execution path`
+            : "Referenced callee definition not found in modified file on sensitive execution path"
         });
       }
+      continue;
     } else if (defMatches.length > 1) {
       const unresolvedEntry = {
         symbol,
+        ...(candidate.qualifier ? { qualifier: candidate.qualifier } : {}),
         reason: "AMBIGUOUS_SYMBOL",
         file: targetFile,
         line
@@ -864,6 +902,7 @@ export function extractLocalCalleeContext(fileContent, diffHunks, targetFile, op
           impact: `Ambiguous overload (${defMatches.length} definitions found in same file) on sensitive execution path`
         });
       }
+      continue;
     } else {
       const match = defMatches[0];
       const snippet = extractBoundedFunctionSnippet(lines, match.startLine, match.endLine);

@@ -964,10 +964,17 @@ export async function runDogfoodReview(userOptions = {}) {
     verifierTimedOut = true;
   });
 
-  // Extract exact-head callee context package across modified files (Spec §3.3)
+  // Extract exact-head callee context package across modified files (Spec §3.3, P1-02)
   const targetRepo = changeSet?.repository?.root || (!changeSetProvided ? repoDir : null);
   let contextPackage = userOptions.contextPackage || null;
-  if (!contextPackage && changeSet?.files?.length > 0 && commitSha && targetRepo) {
+  let contextExtractionFailed = false;
+  let contextExtractionError = null;
+
+  if (changeSet?.repository === null) {
+    contextExtractionFailed = true;
+    contextExtractionError = "Missing trusted repository root for exact-head context construction.";
+    if (log) console.warn(`  ⚠️ Failed to extract callee contextPackage for verification: ${contextExtractionError}`);
+  } else if (!contextPackage && changeSet?.files?.length > 0 && targetRepo && commitSha) {
     try {
       contextPackage = buildContextPackage(
         changeSet,
@@ -979,8 +986,15 @@ export async function runDogfoodReview(userOptions = {}) {
           runId
         }
       );
+      if (!contextPackage || contextPackage.ok === false) {
+        contextExtractionFailed = true;
+        contextExtractionError = contextPackage?.error?.message || "buildContextPackage returned invalid or non-ok contextPackage";
+        if (log) console.warn("  ⚠️ Failed to extract callee contextPackage for verification:", contextExtractionError);
+      }
     } catch (err) {
-      if (log) console.warn("  ⚠️ Failed to extract callee contextPackage for verification:", err?.message || String(err));
+      contextExtractionFailed = true;
+      contextExtractionError = err?.message || String(err);
+      if (log) console.warn("  ⚠️ Failed to extract callee contextPackage for verification:", contextExtractionError);
     }
   }
 
@@ -1003,6 +1017,13 @@ export async function runDogfoodReview(userOptions = {}) {
         headSha: commitSha,
         runContext,
         contextPackage,
+        contextGaps: contextExtractionFailed ? [
+          {
+            code: "EXACT_HEAD_CONTEXT_FAILED",
+            reason: contextExtractionError,
+            targetFiles: changeSet?.files?.map(f => f.path) || []
+          }
+        ] : (userOptions.contextGaps || null),
         timeoutMs,
         signal: userOptions.signal || null,
         verificationMode: "producer_verification"
@@ -1032,6 +1053,13 @@ export async function runDogfoodReview(userOptions = {}) {
           headSha: commitSha,
           runContext,
           contextPackage,
+          contextGaps: contextExtractionFailed ? [
+            {
+              code: "EXACT_HEAD_CONTEXT_FAILED",
+              reason: contextExtractionError,
+              targetFiles: changeSet?.files?.map(f => f.path) || []
+            }
+          ] : (userOptions.contextGaps || null),
           timeoutMs,
           signal: userOptions.signal || null,
           verificationMode: "clean_challenge"
@@ -1048,7 +1076,11 @@ export async function runDogfoodReview(userOptions = {}) {
       verifierTimedOut = true;
       cleanChallengeStatus = "TIMEOUT";
     } else if (verificationRecord && verificationRecord.ok === true) {
-      cleanChallengeStatus = "SUCCESS";
+      if (verificationRecord.overallStatus === "UNCERTAIN") {
+        cleanChallengeStatus = "UNCERTAIN";
+      } else {
+        cleanChallengeStatus = "SUCCESS";
+      }
     } else {
       cleanChallengeStatus = "ERROR";
     }
@@ -1095,6 +1127,15 @@ export async function runDogfoodReview(userOptions = {}) {
   const dogfoodDoc = {
     schemaVersion: "1.1.0",
     runId,
+    gate: {
+      decision: gate.decision,
+      reason: gate.reason
+    },
+    summary: {
+      cleanChallengeStatus,
+      decision: gate.decision
+    },
+    isExecutionComplete,
     executionMode: isLive ? "live" : "mock",
     runStartedAt,
     timestamp: new Date().toISOString(),
