@@ -73,55 +73,56 @@ function buildCanonicalRunContext(changeSet, options, runId) {
     if (trimmedNormDiffDigest) computedDigests.add(trimmedNormDiffDigest);
   }
 
+  if (computedDigests.size === 0) {
+    return null;
+  }
+
   // 2. Digest Consistency Contract (P1-01):
   // Re-verify declared digests against computed digests from current ChangeSet.
   // If declared digest conflicts with computed digest, fail closed.
   const declaredContentDigest = changeSet.contentDigest ? normalizeDigest(changeSet.contentDigest) : "";
   const declaredChangeSetDigest = changeSet.changeSetDigest ? normalizeDigest(changeSet.changeSetDigest) : "";
 
-  if (declaredContentDigest && computedDigests.size > 0 && !computedDigests.has(declaredContentDigest)) {
+  if (declaredContentDigest && !computedDigests.has(declaredContentDigest)) {
     return null;
   }
-  if (declaredChangeSetDigest && computedDigests.size > 0 && !computedDigests.has(declaredChangeSetDigest)) {
+  if (declaredChangeSetDigest && !computedDigests.has(declaredChangeSetDigest)) {
     return null;
   }
 
-  // Authoritative verified digest candidates for current ChangeSet
-  const authoritativeCandidates = [];
+  // Verified digest candidates for current ChangeSet
+  const verifiedDigestCandidates = [];
   if (declaredContentDigest && computedDigests.has(declaredContentDigest)) {
-    authoritativeCandidates.push(declaredContentDigest);
+    verifiedDigestCandidates.push(declaredContentDigest);
   }
   if (declaredChangeSetDigest && computedDigests.has(declaredChangeSetDigest)) {
-    if (!authoritativeCandidates.includes(declaredChangeSetDigest)) {
-      authoritativeCandidates.push(declaredChangeSetDigest);
+    if (!verifiedDigestCandidates.includes(declaredChangeSetDigest)) {
+      verifiedDigestCandidates.push(declaredChangeSetDigest);
     }
   }
   for (const cd of computedDigests) {
-    if (!authoritativeCandidates.includes(cd)) {
-      authoritativeCandidates.push(cd);
+    if (!verifiedDigestCandidates.includes(cd)) {
+      verifiedDigestCandidates.push(cd);
     }
   }
 
-  // If no computed digests could be formed and no declared digest exists, fail closed
-  if (authoritativeCandidates.length === 0) {
-    if (declaredContentDigest) authoritativeCandidates.push(declaredContentDigest);
-    else if (declaredChangeSetDigest) authoritativeCandidates.push(declaredChangeSetDigest);
-    else return null;
+  if (verifiedDigestCandidates.length === 0) {
+    return null;
   }
 
   const vr = options.verificationRecord;
   const vrDigest = vr ? normalizeDigest(vr.changeSetDigest || vr.contentDigest || "") : "";
 
   // If vrDigest is present, it must strictly match an authoritative candidate of current ChangeSet
-  if (vrDigest && !authoritativeCandidates.includes(vrDigest)) {
+  if (vrDigest && !verifiedDigestCandidates.includes(vrDigest)) {
     return null;
   }
 
   let selectedDigest = "";
-  if (vrDigest && authoritativeCandidates.includes(vrDigest)) {
+  if (vrDigest && verifiedDigestCandidates.includes(vrDigest)) {
     selectedDigest = vrDigest;
-  } else if (authoritativeCandidates.length > 0) {
-    selectedDigest = authoritativeCandidates[0];
+  } else if (verifiedDigestCandidates.length > 0) {
+    selectedDigest = verifiedDigestCandidates[0];
   }
 
   // Canonical RunContext requires an authoritative contentDigest for the current ChangeSet
@@ -165,7 +166,7 @@ function buildCanonicalRunContext(changeSet, options, runId) {
   // If caller provided runContext with contentDigest, it must match one of the current changeSet authoritative candidates
   if (options.runContext?.contentDigest) {
     const rcDigest = normalizeDigest(options.runContext.contentDigest);
-    if (rcDigest && !authoritativeCandidates.includes(rcDigest)) {
+    if (rcDigest && !verifiedDigestCandidates.includes(rcDigest)) {
       return null;
     }
   }

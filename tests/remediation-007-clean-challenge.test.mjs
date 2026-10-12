@@ -2664,13 +2664,13 @@ test("007-DELTA-P1-02-NEGATIVE: Dogfood review routes to UNCERTAIN when exact-he
   const tmpOut = path.join(tmpDir, "dogfood-run.json");
 
   try {
-    // Missing repository.root on external changeSet with modified files
-    const report = await runDogfoodReview({
+    // Variant A: Explicit null repository
+    const reportNullRepo = await runDogfoodReview({
       mock: true,
       changeSet: {
         ok: true,
         schemaVersion: "1.0.0",
-        repository: null, // Missing trusted repo root
+        repository: null,
         totalFiles: 1,
         totalAdditions: 2,
         totalDeletions: 0,
@@ -2681,25 +2681,51 @@ test("007-DELTA-P1-02-NEGATIVE: Dogfood review routes to UNCERTAIN when exact-he
       out: tmpOut,
       log: false
     });
+    assert.equal(reportNullRepo.gate.decision, "human_review_required");
+    assert.equal(reportNullRepo.summary.cleanChallengeStatus, "UNCERTAIN");
+    assert.equal(reportNullRepo.isExecutionComplete, false);
 
-    assert.equal(report.gate.decision, "human_review_required");
-    assert.equal(report.summary.cleanChallengeStatus, "UNCERTAIN");
-    assert.equal(report.isExecutionComplete, false);
+    // Variant B: Explicit null root
+    const reportNoRepoRoot = await runDogfoodReview({
+      mock: true,
+      changeSet: {
+        ok: true,
+        schemaVersion: "1.0.0",
+        repository: { name: "test/repo", root: null }, // Explicit null root
+        totalFiles: 1,
+        totalAdditions: 2,
+        totalDeletions: 0,
+        files: [{ path: "src/auth.js", additions: 2, deletions: 0, riskTier: 2 }],
+        diffHunks: "+ const a = 1;"
+      },
+      head: "4".repeat(40),
+      out: tmpOut,
+      log: false
+    });
+    assert.equal(reportNoRepoRoot.gate.decision, "human_review_required");
+    assert.equal(reportNoRepoRoot.summary.cleanChallengeStatus, "UNCERTAIN");
+    assert.equal(reportNoRepoRoot.isExecutionComplete, false);
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 });
 
-test("007-DELTA-P1-03-NEGATIVE: Qualified sensitive calls (object.method, this.method) are detected and emit context gaps when unresolvable", () => {
+test("007-DELTA-P1-03-NEGATIVE: Qualified sensitive calls (object.method, this.method, chained) are detected and emit context gaps when unresolvable", () => {
   const diffHunks = [
-    "@@ -10,4 +10,6 @@",
+    "@@ -10,6 +10,10 @@",
     "+ auth.validateAccess(request);",
-    "+ this.verifyToken(token);"
+    "+ this.verifyToken(token);",
+    "+ auth.service.checkCredentials(creds);",
+    "+ const x = items.push(record);",
+    "+ const hasVal = set.has(key);"
   ].join("\n");
 
   const candidates = extractCandidateCallSymbols(diffHunks);
   const valCandidate = candidates.find(c => c.symbol === "validateAccess");
   const verCandidate = candidates.find(c => c.symbol === "verifyToken");
+  const checkCandidate = candidates.find(c => c.symbol === "checkCredentials");
+  const pushCandidate = candidates.find(c => c.symbol === "push");
+  const hasCandidate = candidates.find(c => c.symbol === "has");
 
   assert.ok(valCandidate, "validateAccess qualified call must be extracted");
   assert.equal(valCandidate.isSensitive, true);
@@ -2711,23 +2737,36 @@ test("007-DELTA-P1-03-NEGATIVE: Qualified sensitive calls (object.method, this.m
   assert.equal(verCandidate.qualifier, "this");
   assert.equal(verCandidate.isQualified, true);
 
+  assert.ok(checkCandidate, "checkCredentials chained qualified call must be extracted");
+  assert.equal(checkCandidate.isSensitive, true);
+  assert.equal(checkCandidate.isQualified, true);
+
+  // Standard container prototype methods must NOT be treated as sensitive callee candidates
+  assert.equal(pushCandidate, undefined, "push array prototype method must not be extracted as callee");
+  assert.equal(hasCandidate, undefined, "has set prototype method must not be extracted as callee");
+
   // Unresolvable in source text -> emits explicit context gaps
   const sourceCode = `
 import auth from "auth-service";
 export function handle(request) {
   auth.validateAccess(request);
   this.verifyToken(token);
+  auth.service.checkCredentials(creds);
 }
 `;
   const res = extractLocalCalleeContext(sourceCode, diffHunks, "src/handler.js");
   const gapVal = res.contextGaps.find(g => g.symbol === "validateAccess");
   const gapVer = res.contextGaps.find(g => g.symbol === "verifyToken");
+  const gapCheck = res.contextGaps.find(g => g.symbol === "checkCredentials");
 
   assert.ok(gapVal, "auth.validateAccess must emit context gap");
   assert.equal(gapVal.reason, "EXTERNAL_CALLEE_UNRESOLVED");
 
   assert.ok(gapVer, "this.verifyToken must emit context gap when definition unresolvable");
   assert.equal(gapVer.reason, "UNRESOLVED_SYMBOL");
+
+  assert.ok(gapCheck, "auth.service.checkCredentials must emit context gap pointing to external import");
+  assert.equal(gapCheck.reason, "EXTERNAL_CALLEE_UNRESOLVED");
 });
 
 test("007-DELTA-P1-04-NEGATIVE: Verifier reporting DEFECTS_FOUND without any SUPPORTED omission does not APPROVE (routes to human review)", () => {

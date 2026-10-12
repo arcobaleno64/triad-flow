@@ -684,12 +684,21 @@ function _evaluatePostVerificationGateCore(consensus, verificationRecord, option
   const isDefectsFound = verificationRecord.overallStatus === "DEFECTS_FOUND" || verificationRecord.status === "DEFECTS_FOUND";
   if (isDefectsFound) {
     const hasSupportedOmission = omissions.some(o => String(o?.evidenceSupport || "").toUpperCase() === "SUPPORTED");
-    if (omissions.length === 0) {
-      hasBlocker = true;
-      blockReasons.push("Clean Challenge failed: Verifier reported DEFECTS_FOUND without omissions.");
-    } else if (!hasSupportedOmission) {
-      hasHumanReview = true;
-      humanReviewReasons.push("Verifier Status Inconsistent: Verifier declared DEFECTS_FOUND without any SUPPORTED omission; requires human adjudication.");
+    const hasSupportedEvaluation = evaluations.some(e => String(e?.verdict || "").toUpperCase() === "SUPPORTED");
+
+    if (findings.length === 0) {
+      if (omissions.length === 0) {
+        hasBlocker = true;
+        blockReasons.push("Clean Challenge failed: Verifier reported DEFECTS_FOUND without omissions.");
+      } else if (!hasSupportedOmission) {
+        hasHumanReview = true;
+        humanReviewReasons.push("Verifier Status Inconsistent: Verifier declared DEFECTS_FOUND without any SUPPORTED omission; requires human adjudication.");
+      }
+    } else {
+      if (!hasSupportedEvaluation && !hasSupportedOmission) {
+        hasHumanReview = true;
+        humanReviewReasons.push("Verifier Status Inconsistent: Verifier declared DEFECTS_FOUND without any SUPPORTED evaluation or omission; requires human adjudication.");
+      }
     }
   }
 

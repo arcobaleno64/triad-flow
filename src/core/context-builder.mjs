@@ -485,6 +485,18 @@ export function stripCommentsAndStrings(line, inBlockCommentRef = { val: false }
   return result;
 }
 
+export const BUILTIN_OBJECT_METHODS = new Set([
+  "push", "pop", "shift", "unshift", "slice", "splice", "concat",
+  "map", "filter", "reduce", "reduceRight", "forEach", "every", "some",
+  "find", "findIndex", "findLast", "findLastIndex", "flat", "flatMap",
+  "includes", "indexOf", "lastIndexOf", "join", "sort", "reverse", "fill",
+  "has", "get", "set", "add", "delete", "clear", "keys", "values", "entries",
+  "toString", "valueOf", "toJSON", "trim", "trimStart", "trimEnd",
+  "split", "replace", "replaceAll", "startsWith", "endsWith", "substring",
+  "toLowerCase", "toUpperCase", "match", "matchAll", "search", "test", "exec",
+  "then", "catch", "finally", "bind", "call", "apply"
+]);
+
 export const UTILITY_CALLEE_SYMBOLS = new Set([
   "deepFreeze",
   "cloneDeep",
@@ -508,7 +520,9 @@ export const UTILITY_CALLEE_SYMBOLS = new Set([
   "dirname",
   "basename",
   "extname",
-  "verifyHeldOutBaseline"
+  "verifyHeldOutBaseline",
+  "push",
+  "includes"
 ]);
 
 /**
@@ -584,19 +598,32 @@ export function extractCandidateCallSymbols(diffHunks) {
       if (declaredFn && sym === declaredFn) continue;
 
       const prefix = cleanLine.slice(0, match.index);
-      const qualMatch = prefix.match(/(?:([a-zA-Z_][a-zA-Z0-9_]*|this)\s*(?:\.|\->)\s*)$/);
-      const qualifier = qualMatch ? qualMatch[1] : null;
-      const isQualified = Boolean(qualMatch || /[.\->]\s*$/.test(prefix));
+      const isQualified = /[.\->]\s*$/.test(prefix);
 
-      if (isQualified && !qualifier) {
+      if (isQualified && BUILTIN_OBJECT_METHODS.has(sym)) {
+        continue;
+      }
+      if (UTILITY_CALLEE_SYMBOLS.has(sym)) {
         continue;
       }
 
-      const isUtility = UTILITY_CALLEE_SYMBOLS.has(sym);
-      if (isUtility) continue;
+      const chainMatch = prefix.match(/(?:(?:[a-zA-Z_][a-zA-Z0-9_]*|this)\s*(?:\.|\->)\s*)+$/);
+      let qualifier = null;
+      let qualifiers = [];
+      if (chainMatch) {
+        qualifiers = chainMatch[0].match(/[a-zA-Z_][a-zA-Z0-9_]*|this/g) || [];
+        qualifier = qualifiers.length > 0 ? qualifiers[qualifiers.length - 1] : null;
+      }
 
       const symCat = classifySensitiveCategory(sym);
-      const qualCat = qualifier ? classifySensitiveCategory(qualifier) : null;
+      let qualCat = null;
+      for (const q of qualifiers) {
+        const cat = classifySensitiveCategory(q);
+        if (cat) {
+          qualCat = cat;
+          break;
+        }
+      }
       const sensitiveCategory = symCat || qualCat;
 
       // For qualified calls, only recognize if sensitive (P1-03)
@@ -612,6 +639,7 @@ export function extractCandidateCallSymbols(diffHunks) {
         candidates.push({
           symbol: sym,
           qualifier,
+          qualifiers,
           isQualified,
           isAdded,
           line: lineNum,
@@ -629,6 +657,9 @@ export function extractCandidateCallSymbols(diffHunks) {
           }
           if (qualifier && !existing.qualifier) {
             existing.qualifier = qualifier;
+          }
+          if (qualifiers.length > 0 && (!existing.qualifiers || existing.qualifiers.length === 0)) {
+            existing.qualifiers = qualifiers;
           }
           if (isQualified && !existing.isQualified) {
             existing.isQualified = isQualified;
@@ -803,6 +834,7 @@ export function extractLocalCalleeContext(fileContent, diffHunks, targetFile, op
 
   for (const candidate of candidateCalls) {
     const isImported = importedSymbols.has(candidate.symbol) ||
+      (Array.isArray(candidate.qualifiers) && candidate.qualifiers.some(q => q !== "this" && importedSymbols.has(q))) ||
       Boolean(candidate.qualifier && candidate.qualifier !== "this" && importedSymbols.has(candidate.qualifier));
 
     if (isImported) {

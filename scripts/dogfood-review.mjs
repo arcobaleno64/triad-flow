@@ -970,7 +970,7 @@ export async function runDogfoodReview(userOptions = {}) {
   let contextExtractionFailed = false;
   let contextExtractionError = null;
 
-  if (changeSet?.repository === null) {
+  if (changeSet?.repository === null || changeSet?.repository?.root === null) {
     contextExtractionFailed = true;
     contextExtractionError = "Missing trusted repository root for exact-head context construction.";
     if (log) console.warn(`  ⚠️ Failed to extract callee contextPackage for verification: ${contextExtractionError}`);
@@ -1076,17 +1076,13 @@ export async function runDogfoodReview(userOptions = {}) {
       verifierTimedOut = true;
       cleanChallengeStatus = "TIMEOUT";
     } else if (verificationRecord && verificationRecord.ok === true) {
-      if (verificationRecord.overallStatus === "UNCERTAIN") {
-        cleanChallengeStatus = "UNCERTAIN";
-      } else {
-        cleanChallengeStatus = "SUCCESS";
-      }
+      cleanChallengeStatus = "SUCCESS";
     } else {
       cleanChallengeStatus = "ERROR";
     }
 
     if (log) {
-      console.log(`  🛡️ Clean Challenge Status: ${cleanChallengeStatus} (${cleanChallengeDurationMs}ms)`);
+      console.log(`  🛡️ Clean Challenge Status: ${verificationRecord?.overallStatus || cleanChallengeStatus} (${cleanChallengeDurationMs}ms)`);
     }
   } else {
     cleanChallengeAttempted = false;
@@ -1122,7 +1118,7 @@ export async function runDogfoodReview(userOptions = {}) {
     consensus.quorumReached &&
     allProvidersSucceeded &&
     (!cleanChallengeAttempted || cleanChallengeStatus === "SUCCESS") &&
-    (!verificationAttempted || verificationRecord.ok === true);
+    (!verificationAttempted || (verificationRecord.ok === true && verificationRecord.overallStatus !== "UNCERTAIN"));
 
   const dogfoodDoc = {
     schemaVersion: "1.1.0",
@@ -1132,7 +1128,7 @@ export async function runDogfoodReview(userOptions = {}) {
       reason: gate.reason
     },
     summary: {
-      cleanChallengeStatus,
+      cleanChallengeStatus: verificationRecord?.overallStatus === "UNCERTAIN" ? "UNCERTAIN" : cleanChallengeStatus,
       decision: gate.decision
     },
     isExecutionComplete,
