@@ -1703,3 +1703,96 @@ test("007-DELTA-02B: runDogfoodReview with conflicting changeSet.headSha vs chan
     /Reviewed ChangeSet repository head SHA.*does not match changeSet\.headSha/i
   );
 });
+
+test("007-DELTA-02C: runDogfoodReview with abbreviated changeSet.head (10 hex chars) mismatch against requested head fails closed", async () => {
+  const requestedHead = "1111111111111111111111111111111111111111";
+  const conflictingShortHead = "2222222222";
+
+  await assert.rejects(
+    () => runDogfoodReview({
+      mock: true,
+      head: requestedHead,
+      changeSet: {
+        ok: true,
+        head: conflictingShortHead,
+        totalFiles: 1,
+        files: [{ path: "src/index.js", additions: 1, deletions: 0, riskTier: 2 }],
+        diffHunks: "+ const a = 1;"
+      },
+      log: false
+    }),
+    /Reviewed ChangeSet head SHA.*does not match requested --head/i
+  );
+});
+
+test("007-DELTA-02D: runDogfoodReview with conflicting changeSet.repository.commitSha fails closed", async () => {
+  const requestedHead = "1111111111111111111111111111111111111111";
+  const conflictingCommitSha = "2222222222222222222222222222222222222222";
+
+  await assert.rejects(
+    () => runDogfoodReview({
+      mock: true,
+      head: requestedHead,
+      changeSet: {
+        ok: true,
+        repository: {
+          commitSha: conflictingCommitSha
+        },
+        totalFiles: 1,
+        files: [{ path: "src/index.js", additions: 1, deletions: 0, riskTier: 2 }],
+        diffHunks: "+ const a = 1;"
+      },
+      log: false
+    }),
+    /Reviewed ChangeSet repository commit SHA.*does not match requested --head/i
+  );
+});
+
+test("007-DELTA-02E: runDogfoodReview with conflicting changeSet.repository.head fails closed", async () => {
+  const requestedHead = "1111111111111111111111111111111111111111";
+  const conflictingRepoHead = "2222222222222222222222222222222222222222";
+
+  await assert.rejects(
+    () => runDogfoodReview({
+      mock: true,
+      head: requestedHead,
+      changeSet: {
+        ok: true,
+        repository: {
+          head: conflictingRepoHead
+        },
+        totalFiles: 1,
+        files: [{ path: "src/index.js", additions: 1, deletions: 0, riskTier: 2 }],
+        diffHunks: "+ const a = 1;"
+      },
+      log: false
+    }),
+    /Reviewed ChangeSet repository head.*does not match requested --head/i
+  );
+});
+
+test("007-DELTA-02F: runDogfoodReview with matching abbreviated changeSet.head prefix succeeds in mock mode", async () => {
+  const requestedHead = "1111111111111111111111111111111111111111";
+  const matchingShortHead = "1111111111";
+
+  const tmpOut = path.resolve(`tmp-dogfood-delta02f-${Date.now()}.json`);
+  try {
+    const report = await runDogfoodReview({
+      mock: true,
+      head: requestedHead,
+      changeSet: {
+        ok: true,
+        head: matchingShortHead,
+        totalFiles: 1,
+        files: [{ path: "src/index.js", additions: 1, deletions: 0, riskTier: 2 }],
+        diffHunks: "+ const a = 1;"
+      },
+      out: tmpOut,
+      log: false
+    });
+    assert.ok(report);
+    assert.equal(report.repository.commitSha, requestedHead);
+  } finally {
+    if (fs.existsSync(tmpOut)) fs.unlinkSync(tmpOut);
+  }
+});

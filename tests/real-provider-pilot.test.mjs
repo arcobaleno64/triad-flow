@@ -63,13 +63,15 @@ test("Path 1 (Clean Pass): Real agy review on benign change approves cleanly", {
     const adapter = new CliReviewAdapter({ command: "agy", cwd: repo.dir });
     const orchResult = await orchestrateReview(repo.changeSet, { macro: adapter }, {
       timeoutMs: 90000,
-      plan: { mode: "single", reason: "clean-benign-math" }
+      plan: { mode: "single", reason: "clean-benign-math" },
+      preliminary: true
     });
     const durationMs = Date.now() - start;
     console.log(`[Pilot Metric] Path 1 (Clean Pass): duration=${durationMs}ms, usage=`, orchResult.result?.usage ?? "n/a");
 
-    assert.equal(orchResult.status, "reviewed-clean");
+    assert.equal(orchResult.status, "preliminary-clean");
     assert.equal(orchResult.gate.decision, "approve");
+    assert.equal(orchResult.gate.preliminary, true);
     assert.equal(orchResult.result.findings.length, 0);
     assert.equal(orchResult.result.coverage.omittedFiles.length, 0);
     assertRepoImmutability(repo.dir, repo.headSha);

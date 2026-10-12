@@ -826,7 +826,8 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
           strict: strictArg,
           timeoutMs: options.timeoutMs,
           signal: options.signal,
-          limits: options.limits
+          limits: options.limits,
+          ...(options.preliminary !== undefined ? { preliminary: options.preliminary } : {})
         });
         consensus = orchResult.consensus;
         gate = orchResult.gate;

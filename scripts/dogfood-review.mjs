@@ -573,6 +573,8 @@ export async function runDogfoodReview(userOptions = {}) {
   const base = userOptions.base || "main";
   const changeSetProvided = Boolean(userOptions.changeSet);
   const fallbackHead = userOptions.changeSet?.repository?.headSha ||
+    userOptions.changeSet?.repository?.commitSha ||
+    userOptions.changeSet?.repository?.head ||
     userOptions.changeSet?.headSha ||
     userOptions.changeSet?.head ||
     "HEAD";
@@ -623,26 +625,72 @@ export async function runDogfoodReview(userOptions = {}) {
     throw new Error(`Failed to capture ChangeSet: ${changeSet?.error?.message || "Unknown Git inspection failure"}`);
   }
 
-  const repoHeadSha = typeof changeSet?.repository?.headSha === "string" && changeSet.repository.headSha.trim()
-    ? changeSet.repository.headSha.trim().toLowerCase()
-    : null;
-  const directHeadSha = typeof changeSet?.headSha === "string" && changeSet.headSha.trim()
-    ? changeSet.headSha.trim().toLowerCase()
-    : null;
-  const csHead = typeof changeSet?.head === "string" && /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i.test(changeSet.head.trim())
-    ? changeSet.head.trim().toLowerCase()
-    : null;
+  const resolveHeadCandidate = (val) => {
+    if (typeof val !== "string" || !val.trim()) return null;
+    const raw = val.trim();
+    if (/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i.test(raw)) {
+      return raw.toLowerCase();
+    }
+    const gitSha = getCommitShaForRef(raw, repoDir);
+    if (gitSha) return gitSha.toLowerCase();
+    return raw.toLowerCase();
+  };
 
-  if (repoHeadSha && directHeadSha && repoHeadSha !== directHeadSha) {
+  const matchesTargetSha = (candidate, targetSha) => {
+    if (!candidate || !targetSha) return true;
+    if (candidate === targetSha) return true;
+    if (/^[0-9a-f]{7,63}$/i.test(candidate) && targetSha.startsWith(candidate)) {
+      return true;
+    }
+    return false;
+  };
+
+  const headsConsistent = (a, b) => {
+    if (!a || !b) return true;
+    if (a === b) return true;
+    if (/^[0-9a-f]{7,63}$/i.test(a) && b.startsWith(a)) return true;
+    if (/^[0-9a-f]{7,63}$/i.test(b) && a.startsWith(b)) return true;
+    return false;
+  };
+
+  const repoHeadSha = resolveHeadCandidate(changeSet?.repository?.headSha);
+  const repoCommitSha = resolveHeadCandidate(changeSet?.repository?.commitSha);
+  const repoHead = resolveHeadCandidate(changeSet?.repository?.head);
+  const directHeadSha = resolveHeadCandidate(changeSet?.headSha);
+  const csHead = resolveHeadCandidate(changeSet?.head);
+
+  if (repoHeadSha && directHeadSha && !headsConsistent(repoHeadSha, directHeadSha)) {
     throw new Error(`Reviewed ChangeSet repository head SHA '${repoHeadSha}' does not match changeSet.headSha '${directHeadSha}'`);
   }
-  if (repoHeadSha && repoHeadSha !== requestedHeadSha) {
+  if (repoCommitSha && directHeadSha && !headsConsistent(repoCommitSha, directHeadSha)) {
+    throw new Error(`Reviewed ChangeSet repository commit SHA '${repoCommitSha}' does not match changeSet.headSha '${directHeadSha}'`);
+  }
+  if (repoHeadSha && repoCommitSha && !headsConsistent(repoHeadSha, repoCommitSha)) {
+    throw new Error(`Reviewed ChangeSet repository head SHA '${repoHeadSha}' does not match repository commit SHA '${repoCommitSha}'`);
+  }
+  if (repoHead && directHeadSha && !headsConsistent(repoHead, directHeadSha)) {
+    throw new Error(`Reviewed ChangeSet repository head '${repoHead}' does not match changeSet.headSha '${directHeadSha}'`);
+  }
+  if (csHead && directHeadSha && !headsConsistent(csHead, directHeadSha)) {
+    throw new Error(`Reviewed ChangeSet head SHA '${csHead}' does not match changeSet.headSha '${directHeadSha}'`);
+  }
+  if (csHead && repoHeadSha && !headsConsistent(csHead, repoHeadSha)) {
+    throw new Error(`Reviewed ChangeSet head SHA '${csHead}' does not match repository head SHA '${repoHeadSha}'`);
+  }
+
+  if (repoHeadSha && !matchesTargetSha(repoHeadSha, requestedHeadSha)) {
     throw new Error(`Reviewed ChangeSet repository head SHA '${repoHeadSha}' does not match requested --head '${requestedHeadSha}'`);
   }
-  if (directHeadSha && directHeadSha !== requestedHeadSha) {
+  if (repoCommitSha && !matchesTargetSha(repoCommitSha, requestedHeadSha)) {
+    throw new Error(`Reviewed ChangeSet repository commit SHA '${repoCommitSha}' does not match requested --head '${requestedHeadSha}'`);
+  }
+  if (repoHead && !matchesTargetSha(repoHead, requestedHeadSha)) {
+    throw new Error(`Reviewed ChangeSet repository head '${repoHead}' does not match requested --head '${requestedHeadSha}'`);
+  }
+  if (directHeadSha && !matchesTargetSha(directHeadSha, requestedHeadSha)) {
     throw new Error(`Reviewed ChangeSet head SHA '${directHeadSha}' does not match requested --head '${requestedHeadSha}'`);
   }
-  if (csHead && csHead !== requestedHeadSha) {
+  if (csHead && !matchesTargetSha(csHead, requestedHeadSha)) {
     throw new Error(`Reviewed ChangeSet head SHA '${csHead}' does not match requested --head '${requestedHeadSha}'`);
   }
   const commitSha = requestedHeadSha;
