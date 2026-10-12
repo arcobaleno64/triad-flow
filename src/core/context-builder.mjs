@@ -485,6 +485,31 @@ export function stripCommentsAndStrings(line, inBlockCommentRef = { val: false }
   return result;
 }
 
+export const UTILITY_CALLEE_SYMBOLS = new Set([
+  "deepFreeze",
+  "cloneDeep",
+  "normalizeDigest",
+  "normalizeCommitSha",
+  "normalizeObjective",
+  "normalizeObjectiveContract",
+  "normalizeReceiptUsage",
+  "normalizeActualModel",
+  "digestChangeSet",
+  "computeDigest",
+  "canonicalJsonStringify",
+  "truncateUtf8Safe",
+  "formatContextPackageXml",
+  "formatChecklistsXml",
+  "escapeXmlAttribute",
+  "escapeXmlText",
+  "createHash",
+  "resolve",
+  "join",
+  "dirname",
+  "basename",
+  "extname"
+]);
+
 /**
  * Extracts candidate function call symbols from diff hunks.
  * Prioritizes added lines over context lines, computes target file line numbers,
@@ -543,8 +568,8 @@ export function extractCandidateCallSymbols(diffHunks) {
     currentTargetLine++;
 
     const cleanLine = stripCommentsAndStrings(lineText, inBlockCommentRef);
-    const lineCategory = classifySensitiveCategory(cleanLine);
-    const isSensitiveLine = Boolean(lineCategory);
+    const isGuardLine = /^\s*(?:if\s*\(.*?\)\s*(?:return|throw)\b|assert(?:\.|\s*\()|throw\s+new\b)/.test(cleanLine);
+    const lineCategory = isGuardLine ? "input_validation" : null;
 
     const fnDeclMatch = cleanLine.match(/^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?function(?:\s+([a-zA-Z_][a-zA-Z0-9_]*))?\s*\(/);
     const pyDeclMatch = cleanLine.match(/^\s*def\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/);
@@ -557,9 +582,10 @@ export function extractCandidateCallSymbols(diffHunks) {
       if (KEYWORDS.has(sym)) continue;
       if (declaredFn && sym === declaredFn) continue;
 
-      const symCat = classifySensitiveCategory(sym);
-      const isSensitive = Boolean(symCat || isSensitiveLine);
-      const symCategory = symCat || lineCategory;
+      const isUtility = UTILITY_CALLEE_SYMBOLS.has(sym);
+      const symCat = isUtility ? null : classifySensitiveCategory(sym);
+      const isSensitive = !isUtility && Boolean(symCat || isGuardLine);
+      const symCategory = isSensitive ? (symCat || lineCategory || "input_validation") : null;
 
       if (!seen.has(sym)) {
         seen.add(sym);
@@ -736,9 +762,33 @@ export function extractLocalCalleeContext(fileContent, diffHunks, targetFile, op
       }
     }
   }
+  const pyFromImportRegex = /(?:from\s+[a-zA-Z0-9_.]+\s+)?import\s+([a-zA-Z0-9_,\s*()]+)/g;
+  let matchPyFrom;
+  while ((matchPyFrom = pyFromImportRegex.exec(fileContent)) !== null) {
+    const symMatches = matchPyFrom[1].match(/\b([a-zA-Z_][a-zA-Z0-9_]*)\b/g) || [];
+    for (const s of symMatches) {
+      if (s !== "as" && s !== "import" && s !== "from") {
+        importedSymbols.add(s);
+      }
+    }
+  }
 
   for (const candidate of candidateCalls) {
     if (importedSymbols.has(candidate.symbol)) {
+      const unresolvedEntry = {
+        symbol: candidate.symbol,
+        reason: "EXTERNAL_CALLEE_UNRESOLVED",
+        file: targetFile,
+        line: candidate.line
+      };
+      unresolvedCallees.push(unresolvedEntry);
+      if (candidate.isSensitive) {
+        contextGaps.push({
+          ...unresolvedEntry,
+          category: candidate.category || "input_validation",
+          impact: `External imported callee definition unavailable on sensitive execution path`
+        });
+      }
       continue;
     }
 
@@ -984,19 +1034,25 @@ export function allocateContextBudget(rawLayers, config = DEFAULT_BUDGET_CONFIG)
   if (layer1Bytes > maxAstAllowed) {
     layer1 = {
       ...layer1,
-      enclosingFunctions: (layer1.enclosingFunctions || []).slice(0, 10).map(fn => ({
+      enclosingFunctions: (layer1.enclosingFunctions || []).slice(0, 5).map(fn => ({
         ...fn,
         bodySnippet: "/* ... body collapsed for budget ... */"
       })),
-      enclosingClasses: (layer1.enclosingClasses || []).slice(0, 2)
+      enclosingClasses: (layer1.enclosingClasses || []).slice(0, 2),
+      unresolvedCallees: (layer1.unresolvedCallees || []).slice(0, 15)
     };
     layer1Json = JSON.stringify(layer1);
     layer1Bytes = Buffer.byteLength(layer1Json, "utf8");
 
     if (layer1Bytes > maxAstAllowed) {
       let calleesList = [...(layer1.callees || [])];
+      calleesList.sort((a, b) => {
+        if (a.isSensitive && !b.isSensitive) return 1;
+        if (!a.isSensitive && b.isSensitive) return -1;
+        return 0;
+      });
       while (calleesList.length > 0 && Buffer.byteLength(JSON.stringify({ ...layer1, callees: calleesList }), "utf8") > maxAstAllowed) {
-        const popped = calleesList.pop();
+        const popped = calleesList.shift();
         if (popped) {
           evictedCallees.push(popped);
         }

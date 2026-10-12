@@ -10,7 +10,14 @@
 import crypto from "node:crypto";
 import { evaluateDiffScale } from "../core/graph-router.mjs";
 import { aggregateConsensus } from "../core/loop.mjs";
-import { evaluateGateDecision } from "../core/harness.mjs";
+import {
+  evaluateGateDecision,
+  RunContext,
+  normalizeDigest,
+  normalizeCommitSha,
+  normalizeObjective
+} from "../core/harness.mjs";
+import { digestChangeSet } from "../core/canonical-digest.mjs";
 import { convertProviderResultToSentryReport } from "./provider-contract.mjs";
 import { evaluateCoverageContract, COVERAGE_OMISSION_CODES } from "./staged-review.mjs";
 
@@ -39,6 +46,103 @@ function isCoverageComplete(changeSet, providerResult) {
   });
 
   return !hasIncompleteOmission;
+}
+
+function buildCanonicalRunContext(changeSet, options, runId) {
+  const csDigestCandidates = [];
+  if (changeSet.contentDigest) {
+    const d = normalizeDigest(changeSet.contentDigest);
+    if (d) csDigestCandidates.push(d);
+  }
+  if (changeSet.changeSetDigest) {
+    const d = normalizeDigest(changeSet.changeSetDigest);
+    if (d) csDigestCandidates.push(d);
+  }
+  try {
+    const computed = digestChangeSet(changeSet);
+    if (computed) {
+      const d = normalizeDigest(computed);
+      if (d) csDigestCandidates.push(d);
+    }
+  } catch {
+    // If digest computation fails, rely on existing candidates
+  }
+
+  const vr = options.verificationRecord;
+  const vrDigest = vr ? normalizeDigest(vr.changeSetDigest || vr.contentDigest || "") : "";
+
+  let selectedDigest = "";
+  if (vrDigest && csDigestCandidates.includes(vrDigest)) {
+    selectedDigest = vrDigest;
+  } else if (csDigestCandidates.length > 0) {
+    selectedDigest = csDigestCandidates[0];
+  }
+
+  const csHeadSha = normalizeCommitSha(
+    changeSet.headSha ||
+    changeSet.commitSha ||
+    changeSet.head ||
+    changeSet.repository?.commitSha ||
+    changeSet.repository?.headSha ||
+    ""
+  );
+
+  const headSha = csHeadSha || normalizeCommitSha(
+    options.headSha ||
+    options.head ||
+    options.runContext?.headSha ||
+    ""
+  );
+
+  // Cross-ChangeSet injection protection:
+  // If caller provided runContext with headSha, and current changeSet has headSha, they must match
+  if (csHeadSha && options.runContext?.headSha) {
+    const rcHeadSha = normalizeCommitSha(options.runContext.headSha);
+    if (rcHeadSha && rcHeadSha !== csHeadSha) {
+      return null;
+    }
+  }
+
+  // If caller provided runContext with contentDigest, it must match one of the current changeSet digest candidates
+  if (options.runContext?.contentDigest) {
+    const rcDigest = normalizeDigest(options.runContext.contentDigest);
+    if (rcDigest && !csDigestCandidates.includes(rcDigest)) {
+      return null;
+    }
+  }
+
+  const patchObjective = normalizeObjective(
+    options.patchObjective ||
+    options.objectiveContract?.objective ||
+    options.runContext?.patchObjective ||
+    changeSet.patchObjective ||
+    changeSet.objectiveContract?.objective ||
+    ""
+  );
+
+  const objectiveContract = options.objectiveContract ||
+    options.runContext?.objectiveContract ||
+    changeSet.objectiveContract ||
+    null;
+
+  const rawExcl = Array.isArray(options.exclusions)
+    ? options.exclusions
+    : (Array.isArray(options.patchExclusions)
+        ? options.patchExclusions
+        : (Array.isArray(options.runContext?.exclusions)
+            ? options.runContext.exclusions
+            : (Array.isArray(changeSet.excludedFiles)
+                ? changeSet.excludedFiles
+                : (Array.isArray(changeSet.exclusions) ? changeSet.exclusions : []))));
+
+  return new RunContext({
+    runId: options.runId || options.runContext?.runId || options.verificationRecord?.runId || null,
+    headSha,
+    contentDigest: selectedDigest,
+    patchObjective,
+    objectiveContract,
+    exclusions: rawExcl
+  });
 }
 
 export async function orchestrateReview(changeSet, adapters = {}, options = {}) {
@@ -166,12 +270,23 @@ export async function orchestrateReview(changeSet, adapters = {}, options = {}) 
 
     const consensus = aggregateConsensus(rawReports, { policy: "STRICT_HETEROGENEOUS" });
     const isPreliminaryOpt = options.preliminary === true;
-    let gate = evaluateGateDecision(consensus, {
-      strict,
-      ...(isPreliminaryOpt ? { preliminary: true } : {}),
-      ...(options.verificationRecord ? { verificationRecord: options.verificationRecord } : {}),
-      ...(options.runContext ? { runContext: options.runContext } : {})
-    });
+    let canonicalRunContext = options.runContext;
+    let runContextMismatched = false;
+    if (options.verificationRecord) {
+      canonicalRunContext = buildCanonicalRunContext(changeSet, options, runId);
+      if (!canonicalRunContext) {
+        runContextMismatched = true;
+      }
+    }
+
+    let gate = runContextMismatched
+      ? { decision: "block", reason: "Gate Fail-Closed: Verification record binding mismatch (FORGED_OR_STALE_RECORD)." }
+      : evaluateGateDecision(consensus, {
+          strict,
+          ...(isPreliminaryOpt ? { preliminary: true } : {}),
+          ...(options.verificationRecord ? { verificationRecord: options.verificationRecord } : {}),
+          ...(canonicalRunContext ? { runContext: canonicalRunContext } : {})
+        });
 
     const isApprove = gate.decision === "approve";
     const hasFindings = consensus.findings && consensus.findings.length > 0;
@@ -231,12 +346,23 @@ export async function orchestrateReview(changeSet, adapters = {}, options = {}) 
     designatedRole: singleRole
   });
   const isPreliminaryOpt = options.preliminary === true;
-  let gate = evaluateGateDecision(consensus, {
-    strict,
-    ...(isPreliminaryOpt ? { preliminary: true } : {}),
-    ...(options.verificationRecord ? { verificationRecord: options.verificationRecord } : {}),
-    ...(options.runContext ? { runContext: options.runContext } : {})
-  });
+  let canonicalRunContext = options.runContext;
+  let runContextMismatched = false;
+  if (options.verificationRecord) {
+    canonicalRunContext = buildCanonicalRunContext(changeSet, options, runId);
+    if (!canonicalRunContext) {
+      runContextMismatched = true;
+    }
+  }
+
+  let gate = runContextMismatched
+    ? { decision: "block", reason: "Gate Fail-Closed: Verification record binding mismatch (FORGED_OR_STALE_RECORD)." }
+    : evaluateGateDecision(consensus, {
+        strict,
+        ...(isPreliminaryOpt ? { preliminary: true } : {}),
+        ...(options.verificationRecord ? { verificationRecord: options.verificationRecord } : {}),
+        ...(canonicalRunContext ? { runContext: canonicalRunContext } : {})
+      });
 
   const isApprove = gate.decision === "approve";
   const hasFindings = consensus.findings && consensus.findings.length > 0;

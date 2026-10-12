@@ -160,6 +160,35 @@ export function selectChecklists(changeSet, options = {}) {
 }
 
 /**
+ * Safely escapes characters for XML attribute values.
+ * @param {any} value
+ * @returns {string}
+ */
+export function escapeXmlAttribute(value) {
+  if (value === null || value === undefined) return "";
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+/**
+ * Safely escapes characters for XML element text content.
+ * Prevents markup injection or breakout from XML-like structures.
+ * @param {any} value
+ * @returns {string}
+ */
+export function escapeXmlText(value) {
+  if (value === null || value === undefined) return "";
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+/**
  * Formats taxonomy checklists into an XML-delimited prompt block.
  * @param {Array<object>} checklists
  * @returns {string}
@@ -168,7 +197,7 @@ export function formatChecklistsXml(checklists) {
   if (!checklists || checklists.length === 0) return "";
   const lines = ["<security_checklists>"];
   for (const list of checklists) {
-    lines.push(`  <checklist id="${list.id}" title="${list.title}">`);
+    lines.push(`  <checklist id="${escapeXmlAttribute(list.id)}" title="${escapeXmlAttribute(list.title)}">`);
     for (const rule of list.rules) {
       lines.push(`    - ${rule}`);
     }
@@ -188,13 +217,14 @@ export function formatContextPackageXml(contextPackage) {
   const lines = [];
 
   const { layer1AstEnclosure, layer2ModuleScope, layer3CallGraph } = contextPackage.layers;
+  const targetFileAttr = escapeXmlAttribute(contextPackage.targetFile || "unknown");
 
   if (layer1AstEnclosure && (
     layer1AstEnclosure.enclosingFunctions?.length > 0 ||
     layer1AstEnclosure.enclosingClasses?.length > 0 ||
     layer1AstEnclosure.callees?.length > 0
   )) {
-    lines.push(`<enclosing_context targetFile="${contextPackage.targetFile || "unknown"}">`);
+    lines.push(`<enclosing_context targetFile="${targetFileAttr}">`);
     if (layer1AstEnclosure.enclosingClasses?.length > 0) {
       lines.push("  <enclosing_classes>");
       for (const cls of layer1AstEnclosure.enclosingClasses) {
@@ -214,12 +244,17 @@ export function formatContextPackageXml(contextPackage) {
     }
     if (layer1AstEnclosure.callees?.length > 0) {
       lines.push("  <callee_definitions>");
-      lines.push(`    <local_callees targetFile="${contextPackage.targetFile || "unknown"}">`);
+      lines.push(`    <local_callees targetFile="${targetFileAttr}">`);
       for (const c of layer1AstEnclosure.callees) {
-        const lineAttr = c.startLine && c.endLine ? ` startLine="${c.startLine}" endLine="${c.endLine}" lines="${c.lines}"` : ` lines="${c.lines}"`;
-        lines.push(`      <callee symbol="${c.symbol}"${lineAttr} bytes="${c.bytes}">`);
+        const lineAttr = c.startLine && c.endLine
+          ? ` startLine="${escapeXmlAttribute(c.startLine)}" endLine="${escapeXmlAttribute(c.endLine)}" lines="${escapeXmlAttribute(c.lines)}"`
+          : ` lines="${escapeXmlAttribute(c.lines)}"`;
+        const symAttr = escapeXmlAttribute(c.symbol);
+        const bytesAttr = escapeXmlAttribute(c.bytes);
+        lines.push(`      <callee symbol="${symAttr}"${lineAttr} bytes="${bytesAttr}">`);
         if (c.definition) {
-          lines.push(`        ${c.definition.trim().replace(/\n/g, "\n        ")}`);
+          const escapedDef = escapeXmlText(c.definition.trim()).replace(/\n/g, "\n        ");
+          lines.push(`        ${escapedDef}`);
         }
         lines.push("      </callee>");
       }
@@ -230,7 +265,7 @@ export function formatContextPackageXml(contextPackage) {
   }
 
   if (layer2ModuleScope && (layer2ModuleScope.imports?.length > 0 || layer2ModuleScope.exports?.length > 0)) {
-    lines.push(`<module_scope targetFile="${contextPackage.targetFile || "unknown"}">`);
+    lines.push(`<module_scope targetFile="${targetFileAttr}">`);
     if (layer2ModuleScope.imports?.length > 0) {
       lines.push(`  <imports>\n${layer2ModuleScope.imports.map(i => `    ${i}`).join("\n")}\n  </imports>`);
     }
