@@ -16,10 +16,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  evaluateGateDecision,
-  evaluatePostVerificationGate,
+  evaluateIsolatedTestGate as evaluateGateDecision,
+  evaluateIsolatedTestPostVerificationGate as evaluatePostVerificationGate,
+  evaluateGateDecision as evaluateFormalGateDecision,
+  evaluatePostVerificationGate as evaluateFormalPostVerificationGate,
   issueVerificationRecordFromOutput,
   isTrustedVerificationRecord,
+  isSegregatedSyntheticRecord,
   RunContext
 } from "../src/core/harness.mjs";
 import { aggregateConsensus } from "../src/core/loop.mjs";
@@ -585,6 +588,10 @@ test("CHALLENGE 4.6: Capability forgery: plain mock object or clone passed as ve
     evaluations: [],
     verifierOmissions: []
   };
+  const gate1Formal = evaluateFormalGateDecision(cleanConsensus, { tier: 2, verificationRecord: plainObj });
+  assert.equal(gate1Formal.decision, "block");
+  assert.match(gate1Formal.reason, /UNTRUSTED_VERIFICATION_RECORD/i);
+
   const gate1 = evaluateGateDecision(cleanConsensus, { tier: 2, verificationRecord: plainObj });
   assert.equal(gate1.decision, "block");
   assert.match(gate1.reason, /UNTRUSTED_VERIFICATION_RECORD/i);
@@ -596,6 +603,10 @@ test("CHALLENGE 4.6: Capability forgery: plain mock object or clone passed as ve
     verifierOmissions: []
   });
   const cloned = structuredClone(registered);
+  const gate2Formal = evaluateFormalGateDecision(cleanConsensus, { tier: 2, verificationRecord: cloned });
+  assert.equal(gate2Formal.decision, "block");
+  assert.match(gate2Formal.reason, /UNTRUSTED_VERIFICATION_RECORD/i);
+
   const gate2 = evaluateGateDecision(cleanConsensus, { tier: 2, verificationRecord: cloned });
   assert.equal(gate2.decision, "block");
   assert.match(gate2.reason, /UNTRUSTED_VERIFICATION_RECORD/i);

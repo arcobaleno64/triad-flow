@@ -834,6 +834,8 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
           runStatus = REVIEW_RUN_STATUS.EXECUTION_ERROR;
         } else if (orchResult.status === "incomplete") {
           runStatus = REVIEW_RUN_STATUS.INCOMPLETE;
+        } else if (orchResult.status === "preliminary-clean" || gate?.preliminary) {
+          runStatus = REVIEW_RUN_STATUS.PRELIMINARY_CLEAN;
         } else if (gate.decision === "approve") {
           runStatus = (consensus?.findings && consensus.findings.length > 0)
             ? REVIEW_RUN_STATUS.REVIEWED_WITH_FINDINGS
@@ -858,6 +860,8 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
         exitCode = EXIT_CODES.EXECUTION_ERROR;
       } else if (runStatus === REVIEW_RUN_STATUS.CONFIGURATION_ERROR) {
         exitCode = EXIT_CODES.CONFIGURATION_ERROR;
+      } else if (gate?.preliminary || runStatus === REVIEW_RUN_STATUS.PRELIMINARY_CLEAN) {
+        exitCode = EXIT_CODES.GATE_BLOCKED;
       } else {
         exitCode = gate.decision === "approve" ? EXIT_CODES.SUCCESS : EXIT_CODES.GATE_BLOCKED;
       }

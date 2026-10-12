@@ -9,6 +9,7 @@ import crypto from "node:crypto";
 import path from "node:path";
 import { normalizeCanonicalPath } from "./scoring.mjs";
 import { getExactHeadFileContent } from "./git-collector.mjs";
+import { splitDiffByFiles } from "./chunk-manager.mjs";
 
 export const SAFE_ARGV_THRESHOLD_BYTES = 8192;
 export const GLOBAL_AST_CONTEXT_CEILING_BYTES = 8000;
@@ -632,6 +633,7 @@ export function extractLocalCalleeContext(fileContent, diffHunks, targetFile, op
       const snippet = extractBoundedFunctionSnippet(lines, match.startLine, match.endLine);
       callees.push({
         symbol,
+        file: targetFile,
         definition: snippet.definition,
         lines: snippet.lines,
         bytes: snippet.bytes,
@@ -790,11 +792,15 @@ export function allocateContextBudget(rawLayers, config = DEFAULT_BUDGET_CONFIG)
   };
   let layer1Json = JSON.stringify(layer1);
   let layer1Bytes = Buffer.byteLength(layer1Json, "utf8");
+  const evictedCallees = [];
 
   if (layer1Bytes > maxAstAllowed) {
     let calleesList = [...(layer1.callees || [])];
     while (calleesList.length > 0 && Buffer.byteLength(JSON.stringify({ ...layer1, callees: calleesList }), "utf8") > maxAstAllowed) {
-      calleesList.pop();
+      const popped = calleesList.pop();
+      if (popped) {
+        evictedCallees.push(popped);
+      }
     }
 
     layer1 = {
@@ -811,6 +817,9 @@ export function allocateContextBudget(rawLayers, config = DEFAULT_BUDGET_CONFIG)
 
     if (layer1Bytes > maxAstAllowed) {
       evictedLayers.push("layer1AstEnclosure");
+      if (layer1.callees?.length > 0) {
+        evictedCallees.push(...layer1.callees);
+      }
       layer1 = {
         adapterName: "builtin-semantic",
         enclosingFunctions: [],
@@ -838,7 +847,8 @@ export function allocateContextBudget(rawLayers, config = DEFAULT_BUDGET_CONFIG)
       layer1Bytes,
       layer2Bytes,
       layer3Bytes,
-      evictedLayers
+      evictedLayers,
+      evictedCallees
     }
   };
 }
@@ -851,6 +861,197 @@ export function allocateContextBudget(rawLayers, config = DEFAULT_BUDGET_CONFIG)
  * @returns {object} ContextPackage
  */
 export function buildContextPackage(changeSet, targetFile, options = {}) {
+  const isMultiFile = !targetFile || Array.isArray(targetFile) || options.allFiles === true;
+
+  if (isMultiFile) {
+    const runId = options.runId || crypto.randomUUID();
+    const headSha = options.headSha || changeSet?.headSha || changeSet?.repository?.headSha || null;
+    const repoRoot = options.repositoryRoot || changeSet?.repository?.root || options.cwd || null;
+    const fullDiffHunks = changeSet?.diffHunks || "";
+
+    const rawFilesList = Array.isArray(targetFile)
+      ? targetFile
+      : (Array.isArray(changeSet?.files) ? changeSet.files : []);
+    const filePaths = rawFilesList
+      .map(f => (typeof f === "string" ? f : f?.path))
+      .filter(Boolean);
+    const knownPaths = filePaths.map(p => normalizeCanonicalPath(p));
+    const fileDiffMap = splitDiffByFiles(fullDiffHunks, knownPaths);
+
+    const aggregatedCallees = [];
+    const aggregatedUnresolvedCallees = [];
+    const aggregatedContextGaps = [];
+    const fileCoverageManifest = [];
+    let totalCalleeBytes = 0;
+    const enclosingFunctions = [];
+    const enclosingClasses = [];
+    let totalAdditions = 0;
+    let totalDeletions = 0;
+
+    for (const f of rawFilesList) {
+      const fileObj = typeof f === "object" ? f : { path: f };
+      const actualFilePath = fileObj.path || f;
+      const normPath = normalizeCanonicalPath(actualFilePath);
+      const additions = fileObj.additions || 0;
+      const deletions = fileObj.deletions || 0;
+      totalAdditions += additions;
+      totalDeletions += deletions;
+
+      const fileDiff = fileDiffMap.get(normPath) || (fileDiffMap.size === 0 && rawFilesList.length === 1 ? fullDiffHunks : "");
+      const effectiveDiff = fileDiff;
+      const changedSpans = extractChangedLineSpans(effectiveDiff);
+
+      let fileContent = options.fileContents?.[actualFilePath] ||
+        options.fileContents?.[normPath] ||
+        "";
+      let exactHeadUnavailable = false;
+
+      if (!fileContent && repoRoot && headSha) {
+        fileContent = getExactHeadFileContent(repoRoot, headSha, actualFilePath) ||
+          getExactHeadFileContent(repoRoot, headSha, normPath) ||
+          "";
+        if (!fileContent) {
+          exactHeadUnavailable = true;
+        }
+      }
+
+      const fileGaps = [];
+      if (exactHeadUnavailable) {
+        fileGaps.push({
+          symbol: normPath,
+          file: actualFilePath || normPath,
+          reason: "EXACT_HEAD_CONTENT_UNAVAILABLE",
+          category: "exact_head_source",
+          impact: `Exact-head file content at commit ${headSha} could not be retrieved; callee definitions and AST context unavailable.`
+        });
+      }
+
+      const astEnc = extractAstEnclosures(fileContent, changedSpans);
+      enclosingFunctions.push(...astEnc.enclosingFunctions);
+      enclosingClasses.push(...astEnc.enclosingClasses);
+
+      const { callees, unresolvedCallees, contextGaps } = extractLocalCalleeContext(
+        fileContent,
+        effectiveDiff,
+        actualFilePath,
+        options
+      );
+
+      fileGaps.push(...contextGaps);
+
+      const fileAcceptedCallees = [];
+      for (const callee of callees) {
+        const calleeBytes = Buffer.byteLength(callee.definition || callee.snippet || "", "utf8");
+        if (
+          aggregatedCallees.length < MAX_CALLEES_TOTAL &&
+          totalCalleeBytes + calleeBytes <= GLOBAL_AST_CONTEXT_CEILING_BYTES
+        ) {
+          aggregatedCallees.push(callee);
+          fileAcceptedCallees.push(callee);
+          totalCalleeBytes += calleeBytes;
+        } else {
+          fileGaps.push({
+            symbol: callee.symbol || callee.name || "unknown",
+            file: actualFilePath,
+            reason: "GLOBAL_AST_CONTEXT_CEILING_EXCEEDED",
+            category: "budget_ceiling",
+            impact: `Global 8 KB AST context ceiling reached (${totalCalleeBytes} bytes used); callee omitted.`
+          });
+        }
+      }
+
+      aggregatedUnresolvedCallees.push(...unresolvedCallees);
+      aggregatedContextGaps.push(...fileGaps);
+
+      fileCoverageManifest.push({
+        file: actualFilePath,
+        inspected: true,
+        exactHeadAvailable: !exactHeadUnavailable,
+        calleesExtracted: fileAcceptedCallees.map(c => c.symbol || c.name),
+        unresolvedCallees,
+        contextGaps: fileGaps
+      });
+    }
+
+    const rawLayer0 = {
+      rawHunks: fullDiffHunks,
+      byteLength: Buffer.byteLength(fullDiffHunks, "utf8"),
+      additions: totalAdditions,
+      deletions: totalDeletions
+    };
+
+    const rawLayer1 = {
+      adapterName: "builtin-semantic",
+      enclosingFunctions,
+      enclosingClasses,
+      callees: aggregatedCallees,
+      unresolvedCallees: aggregatedUnresolvedCallees
+    };
+
+    const rawLayer2 = { adapterName: "builtin-semantic", imports: [], exports: [] };
+    const rawLayer3 = { callGraphEdges: [] };
+
+    const budgeted = allocateContextBudget({
+      layer0Diff: rawLayer0,
+      layer1AstEnclosure: rawLayer1,
+      layer2ModuleScope: rawLayer2,
+      layer3CallGraph: rawLayer3
+    }, options.budgetConfig || DEFAULT_BUDGET_CONFIG);
+
+    if (budgeted.budgetAccounting?.evictedCallees?.length > 0) {
+      for (const evicted of budgeted.budgetAccounting.evictedCallees) {
+        const gapEntry = {
+          symbol: evicted.symbol || evicted.name || "unknown",
+          file: evicted.file || "unknown",
+          reason: "GLOBAL_AST_CONTEXT_CEILING_EXCEEDED",
+          category: "budget_ceiling",
+          impact: `Global 8 KB AST context ceiling reached; callee omitted during budget allocation.`
+        };
+        aggregatedContextGaps.push(gapEntry);
+      }
+      const retainedSymbols = new Set(
+        (budgeted.layers?.layer1AstEnclosure?.callees || []).map(c => c.symbol || c.name)
+      );
+      for (const manifest of fileCoverageManifest) {
+        manifest.calleesExtracted = (manifest.calleesExtracted || []).filter(s => retainedSymbols.has(s));
+        for (const evicted of budgeted.budgetAccounting.evictedCallees) {
+          if (evicted.file && (evicted.file === manifest.file || normalizeCanonicalPath(evicted.file) === normalizeCanonicalPath(manifest.file))) {
+            manifest.contextGaps.push({
+              symbol: evicted.symbol || evicted.name || "unknown",
+              file: manifest.file,
+              reason: "GLOBAL_AST_CONTEXT_CEILING_EXCEEDED",
+              category: "budget_ceiling",
+              impact: `Global 8 KB AST context ceiling reached; callee omitted during budget allocation.`
+            });
+          }
+        }
+      }
+    }
+
+    const contentDigest = crypto.createHash("sha256").update(fullDiffHunks).digest("hex");
+    const isWindows = process.platform === "win32";
+    const requiresStdin = isWindows && (budgeted.budgetAccounting.consumedBytes > SAFE_ARGV_THRESHOLD_BYTES);
+
+    return {
+      schemaVersion: "1.0.0",
+      runId,
+      targetFile: filePaths.length === 1 ? normalizeCanonicalPath(filePaths[0]) : "multi-file",
+      ...(headSha ? { headSha } : {}),
+      scopeMode: changeSet?.scopeMode || "working-tree",
+      contentDigest,
+      layers: budgeted.layers,
+      contextGaps: aggregatedContextGaps,
+      fileCoverageManifest,
+      budgetAccounting: budgeted.budgetAccounting,
+      transportPlan: {
+        isWindows,
+        requiresStdin,
+        safeArgvThresholdBytes: SAFE_ARGV_THRESHOLD_BYTES
+      }
+    };
+  }
+
+  // Single-file mode
   const normTarget = normalizeCanonicalPath(targetFile);
   const diffHunks = changeSet?.diffHunks || "";
   const runId = options.runId || crypto.randomUUID();
@@ -870,8 +1071,6 @@ export function buildContextPackage(changeSet, targetFile, options = {}) {
   // Extract changed line spans from diff
   const changedSpans = extractChangedLineSpans(diffHunks);
 
-  // Exact-Head file content retrieval:
-  // Strictly avoid reading from working tree filesystem!
   let fileContent = options.fileContents?.[actualFilePath] ||
     options.fileContents?.[normTarget] ||
     options.fileContents?.[targetFile] ||
@@ -889,7 +1088,6 @@ export function buildContextPackage(changeSet, targetFile, options = {}) {
     }
   }
 
-  // Extract layers
   const rawLayer0 = {
     rawHunks: diffHunks,
     byteLength: Buffer.byteLength(diffHunks, "utf8"),
@@ -921,7 +1119,6 @@ export function buildContextPackage(changeSet, targetFile, options = {}) {
   const rawLayer2 = extractModuleScope(fileContent);
   const rawLayer3 = extractCallGraphContext(fileContent, normTarget, options.fileContents || {});
 
-  // Apply budgeting
   const budgeted = allocateContextBudget({
     layer0Diff: rawLayer0,
     layer1AstEnclosure: rawLayer1,
@@ -929,9 +1126,23 @@ export function buildContextPackage(changeSet, targetFile, options = {}) {
     layer3CallGraph: rawLayer3
   }, options.budgetConfig || DEFAULT_BUDGET_CONFIG);
 
-  const contentDigest = crypto.createHash("sha256").update(diffHunks).digest("hex");
+  if (budgeted.budgetAccounting?.evictedCallees?.length > 0) {
+    for (const evicted of budgeted.budgetAccounting.evictedCallees) {
+      contextGaps.push({
+        symbol: evicted.symbol || evicted.name || "unknown",
+        file: actualFilePath || normTarget,
+        reason: "GLOBAL_AST_CONTEXT_CEILING_EXCEEDED",
+        category: "budget_ceiling",
+        impact: `Global 8 KB AST context ceiling reached; callee omitted during budget allocation.`
+      });
+    }
+  }
 
-  // Check Windows Safe Argv requirement
+  const retainedSymbols = new Set(
+    (budgeted.layers?.layer1AstEnclosure?.callees || []).map(c => c.symbol || c.name)
+  );
+
+  const contentDigest = crypto.createHash("sha256").update(diffHunks).digest("hex");
   const isWindows = process.platform === "win32";
   const requiresStdin = isWindows && (budgeted.budgetAccounting.consumedBytes > SAFE_ARGV_THRESHOLD_BYTES);
 
@@ -944,6 +1155,16 @@ export function buildContextPackage(changeSet, targetFile, options = {}) {
     contentDigest,
     layers: budgeted.layers,
     contextGaps,
+    fileCoverageManifest: [
+      {
+        file: actualFilePath,
+        inspected: true,
+        exactHeadAvailable: !exactHeadUnavailable,
+        calleesExtracted: callees.map(c => c.name || c.symbol).filter(s => retainedSymbols.has(s)),
+        unresolvedCallees,
+        contextGaps
+      }
+    ],
     budgetAccounting: budgeted.budgetAccounting,
     transportPlan: {
       isWindows,

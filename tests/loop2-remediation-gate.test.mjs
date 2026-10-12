@@ -1,8 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  evaluateGateDecision,
-  evaluatePostVerificationGate,
+  evaluateIsolatedTestGate as evaluateGateDecision,
+  evaluateIsolatedTestPostVerificationGate as evaluatePostVerificationGate,
+  evaluateGateDecision as evaluateFormalGateDecision,
   issueVerificationRecordFromOutput,
   RunContext
 } from "../src/core/harness.mjs";
@@ -712,9 +713,13 @@ test("007-C-03: In-process capability forgery probe (plain object with matching 
     evaluations: [],
     verifierOmissions: []
   };
-  const gate = evaluateGateDecision(cleanConsensus, { tier: 2, verificationRecord: plainObject });
-  assert.equal(gate.decision, "block");
-  assert.match(gate.reason, /UNTRUSTED_VERIFICATION_RECORD/i);
+  const gateFormal = evaluateFormalGateDecision(cleanConsensus, { tier: 2, verificationRecord: plainObject });
+  assert.equal(gateFormal.decision, "block");
+  assert.match(gateFormal.reason, /UNTRUSTED_VERIFICATION_RECORD/i);
+
+  const gateIso = evaluateGateDecision(cleanConsensus, { tier: 2, verificationRecord: plainObject });
+  assert.equal(gateIso.decision, "block");
+  assert.match(gateIso.reason, /UNTRUSTED_VERIFICATION_RECORD/i);
 });
 
 test("007-C-04: Verification record with mismatched changeSetDigest, patchObjective, or headSha -> FORGED_OR_STALE_RECORD", () => {

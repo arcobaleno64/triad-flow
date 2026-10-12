@@ -8,6 +8,7 @@ import crypto from "node:crypto";
 import { isTrustedConsensus, hasBlockingFindings, VALID_SEVERITY_SET } from "./consensus-state.mjs";
 import {
   isTrustedVerificationRecord,
+  isSegregatedSyntheticRecord,
   issueVerificationRecordFromOutput,
   RunContext,
   normalizeDigest,
@@ -17,6 +18,7 @@ import {
 
 export {
   isTrustedVerificationRecord,
+  isSegregatedSyntheticRecord,
   issueVerificationRecordFromOutput,
   RunContext,
   normalizeDigest,
@@ -276,7 +278,7 @@ export function validateSentryReport(report) {
  * and In-Process Trusted Verification Record Capability.
  * Rejects untrusted plain objects, clones, detached signatures, or forged RunContext bindings with Fail-Closed.
  */
-export function evaluateGateDecision(consensus, options = {}) {
+function _evaluateGateDecisionCore(consensus, options = {}, { allowSynthetic = false } = {}) {
   // 1. Mandatory capability verification
   if (!isTrustedConsensus(consensus)) {
     return {
@@ -308,13 +310,29 @@ export function evaluateGateDecision(consensus, options = {}) {
 
   // 3. Verification Record Capability & RunContext Integrity Check (evaluated BEFORE zero-finding check)
   if (options?.verificationRecord) {
-    if (!isTrustedVerificationRecord(options.verificationRecord)) {
-      return {
-        decision: "block",
-        reason: "Gate Fail-Closed: Untrusted verification record capability (UNTRUSTED_VERIFICATION_RECORD).",
-        criticals: [],
-        advisoryFindings: []
-      };
+    const vr = options.verificationRecord;
+    if (allowSynthetic) {
+      if (!isTrustedVerificationRecord(vr) && !isSegregatedSyntheticRecord(vr)) {
+        return {
+          decision: "block",
+          reason: "Gate Fail-Closed: Untrusted verification record capability (UNTRUSTED_VERIFICATION_RECORD).",
+          criticals: [],
+          advisoryFindings: []
+        };
+      }
+    } else {
+      if (!isTrustedVerificationRecord(vr) || isSegregatedSyntheticRecord(vr)) {
+        return {
+          decision: "block",
+          reason: "Gate Fail-Closed: Untrusted verification record capability (UNTRUSTED_VERIFICATION_RECORD).",
+          criticals: [],
+          advisoryFindings: []
+        };
+      }
+    }
+
+    if (vr.ok === false) {
+      return _evaluatePostVerificationGateCore(consensus, vr, options, { allowSynthetic });
     }
 
     if (options?.runContext) {
@@ -401,8 +419,20 @@ export function evaluateGateDecision(consensus, options = {}) {
       }
     }
 
+    const findings = Array.isArray(consensus?.findings) ? consensus.findings : [];
+    if (findings.length === 0) {
+      if (vr.verificationMode !== "clean_challenge") {
+        return {
+          decision: "block",
+          reason: `Verification mode mismatch: zero-finding consensus requires 'clean_challenge' mode (got: '${vr.verificationMode || "none"}').`,
+          criticals: [],
+          advisoryFindings: []
+        };
+      }
+    }
+
     // Reordered: execute post-verification gate authority
-    return evaluatePostVerificationGate(consensus, options.verificationRecord, options);
+    return _evaluatePostVerificationGateCore(consensus, options.verificationRecord, options, { allowSynthetic });
   }
 
   const findings = Array.isArray(consensus.findings) ? consensus.findings : [];
@@ -462,6 +492,14 @@ export function evaluateGateDecision(consensus, options = {}) {
   };
 }
 
+export function evaluateGateDecision(consensus, options = {}) {
+  return _evaluateGateDecisionCore(consensus, options, { allowSynthetic: false });
+}
+
+export function evaluateIsolatedTestGate(consensus, options = {}) {
+  return _evaluateGateDecisionCore(consensus, options, { allowSynthetic: true });
+}
+
 /**
  * Evaluates Post-Verification Gate decision incorporating Independent Verification authority
  * and Structured Verifier Omissions (Spec §3.1.1).
@@ -477,7 +515,7 @@ export function evaluateGateDecision(consensus, options = {}) {
  * - Structural failures (coverage, quorum, capability, verification error) strictly FAIL-CLOSED BLOCK
  * - Verifier omissions evaluated across Tier 1 and Tier 2 per 13-branch decision truth table (§3.1.1)
  */
-export function evaluatePostVerificationGate(consensus, verificationRecord, options = {}) {
+function _evaluatePostVerificationGateCore(consensus, verificationRecord, options = {}, { allowSynthetic = false } = {}) {
   // Row 13: Execution Failure / Timeout / Malformed
   if (!verificationRecord || verificationRecord.ok === false) {
     return {
@@ -488,7 +526,37 @@ export function evaluatePostVerificationGate(consensus, verificationRecord, opti
     };
   }
 
+  if (allowSynthetic) {
+    if (!isTrustedVerificationRecord(verificationRecord) && !isSegregatedSyntheticRecord(verificationRecord)) {
+      return {
+        decision: "block",
+        reason: "Gate Fail-Closed: Untrusted verification record capability (UNTRUSTED_VERIFICATION_RECORD).",
+        criticals: [],
+        advisoryFindings: []
+      };
+    }
+  } else {
+    if (!isTrustedVerificationRecord(verificationRecord) || isSegregatedSyntheticRecord(verificationRecord)) {
+      return {
+        decision: "block",
+        reason: "Gate Fail-Closed: Untrusted verification record capability (UNTRUSTED_VERIFICATION_RECORD).",
+        criticals: [],
+        advisoryFindings: []
+      };
+    }
+  }
+
   const findings = Array.isArray(consensus?.findings) ? consensus.findings : [];
+  if (findings.length === 0) {
+    if (verificationRecord.verificationMode !== "clean_challenge") {
+      return {
+        decision: "block",
+        reason: `Verification mode mismatch: zero-finding consensus requires 'clean_challenge' mode (got: '${verificationRecord.verificationMode || "none"}').`,
+        criticals: [],
+        advisoryFindings: []
+      };
+    }
+  }
   const evaluations = Array.isArray(verificationRecord.evaluations) ? verificationRecord.evaluations : [];
   const omissions = Array.isArray(verificationRecord.verifierOmissions) ? verificationRecord.verifierOmissions : [];
   const hasBoundPatchObjective =
@@ -740,6 +808,14 @@ export function evaluatePostVerificationGate(consensus, verificationRecord, opti
     criticals: [],
     advisoryFindings
   };
+}
+
+export function evaluatePostVerificationGate(consensus, verificationRecord, options = {}) {
+  return _evaluatePostVerificationGateCore(consensus, verificationRecord, options, { allowSynthetic: false });
+}
+
+export function evaluateIsolatedTestPostVerificationGate(consensus, verificationRecord, options = {}) {
+  return _evaluatePostVerificationGateCore(consensus, verificationRecord, options, { allowSynthetic: true });
 }
 
 function sanitizeText(str) {

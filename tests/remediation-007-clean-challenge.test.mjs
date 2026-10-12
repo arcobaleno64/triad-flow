@@ -38,14 +38,18 @@ import { execFileSync } from "node:child_process";
 import {
   evaluateGateDecision,
   evaluatePostVerificationGate,
+  evaluateIsolatedTestGate,
+  evaluateIsolatedTestPostVerificationGate,
   issueVerificationRecordFromOutput,
   isTrustedVerificationRecord,
+  isSegregatedSyntheticRecord,
   RunContext,
   normalizeDigest,
   normalizeObjective,
   normalizeCommitSha
 } from "../src/core/harness.mjs";
 import * as harnessModule from "../src/core/harness.mjs";
+import { orchestrateReview } from "../src/adapters/review-orchestrator.mjs";
 
 import { aggregateConsensus } from "../src/core/loop.mjs";
 
@@ -199,15 +203,23 @@ function setupTmpGitRepo(prefix = "triad-test-007-") {
 // 19 Normative Gate Out Acceptance Tests (§5 Acceptance Matrix)
 // ============================================================================
 
-test("007-B-01: 0 Findings, Clean Challenge confirms clean -> decision: 'approve'", () => {
+test("007-B-01: 0 Findings, Clean Challenge confirms clean -> decision: 'approve'", async () => {
   const cleanConsensusT2 = makeTrustedConsensus([], { tier: 2 });
-  const cleanRecord = issueVerificationRecordFromOutput({
-    ok: true,
-    fileCoverageComplete: true,
-    overallStatus: "CLEAN",
-    evaluations: [],
-    verifierOmissions: []
+  const mockAdapter = createMockVerifierAdapter("claude", {
+    executeVerification: async () => ({
+      ok: true,
+      fileCoverageComplete: true,
+      overallStatus: "CLEAN",
+      evaluations: [],
+      verifierOmissions: []
+    })
   });
+  const cleanRecord = await conductIndependentVerification(
+    { totalFiles: 1, files: ["src/index.js"], diffHunks: "" },
+    [],
+    mockAdapter,
+    { verificationMode: "clean_challenge" }
+  );
 
   const gateT2 = evaluateGateDecision(cleanConsensusT2, {
     tier: 2,
@@ -428,12 +440,12 @@ test("007-C-01: Clean Challenge reports confirmed FALSIFIES_PATCH_OBJECTIVE omis
   });
 
   // Test Tier 1
-  const gateT1 = evaluateGateDecision(cleanConsensus, { tier: 1, verificationRecord: rec });
+  const gateT1 = evaluateIsolatedTestGate(cleanConsensus, { tier: 1, verificationRecord: rec });
   assert.equal(gateT1.decision, "block");
   assert.match(gateT1.reason, /Confirmed Objective Violation|falsifies stated patch objective/i);
 
   // Test Tier 2
-  const gateT2 = evaluateGateDecision(cleanConsensus, { tier: 2, verificationRecord: rec });
+  const gateT2 = evaluateIsolatedTestGate(cleanConsensus, { tier: 2, verificationRecord: rec });
   assert.equal(gateT2.decision, "block");
   assert.match(gateT2.reason, /Confirmed Objective Violation|falsifies stated patch objective/i);
 });
@@ -461,7 +473,7 @@ test("007-C-02: Clean Challenge reports solitary unconfirmed Critical omission (
     verifierOmissions: [unconfirmedCritOmission]
   });
 
-  const gate1 = evaluateGateDecision(cleanConsensus, { tier: 2, verificationRecord: rec1 });
+  const gate1 = evaluateIsolatedTestGate(cleanConsensus, { tier: 2, verificationRecord: rec1 });
   assert.equal(gate1.decision, "human_review_required");
   assert.match(gate1.reason, /Insufficient Evidence|human adjudication/i);
 
@@ -493,12 +505,12 @@ test("007-C-02: Clean Challenge reports solitary unconfirmed Critical omission (
     verifierOmissions: validated.verifierOmissions
   });
 
-  const gate2 = evaluateGateDecision(cleanConsensus, { tier: 2, verificationRecord: rec2 });
+  const gate2 = evaluateIsolatedTestGate(cleanConsensus, { tier: 2, verificationRecord: rec2 });
   assert.equal(gate2.decision, "human_review_required");
   assert.match(gate2.reason, /Insufficient Evidence|human adjudication/i);
 });
 
-test("007-C-03: In-process capability forgery probe (plain object with matching fields rejected) -> Fail-Closed (BLOCK, UNTRUSTED_VERIFICATION_RECORD)", () => {
+test("007-C-03: In-process capability forgery probe (plain object with matching fields rejected) -> Fail-Closed (BLOCK, UNTRUSTED_VERIFICATION_RECORD)", async () => {
   const cleanConsensus = makeTrustedConsensus([], { tier: 2 });
 
   // Probe 1: Plain object with identical properties
@@ -518,13 +530,21 @@ test("007-C-03: In-process capability forgery probe (plain object with matching 
   assert.match(gatePlain.reason, /UNTRUSTED_VERIFICATION_RECORD/i);
 
   // Probe 2: Structured clone of genuine registered record
-  const genuineRecord = issueVerificationRecordFromOutput({
-    ok: true,
-    fileCoverageComplete: true,
-    overallStatus: "CLEAN",
-    evaluations: [],
-    verifierOmissions: []
+  const mockAdapter = createMockVerifierAdapter("claude", {
+    executeVerification: async () => ({
+      ok: true,
+      fileCoverageComplete: true,
+      overallStatus: "CLEAN",
+      evaluations: [],
+      verifierOmissions: []
+    })
   });
+  const genuineRecord = await conductIndependentVerification(
+    { totalFiles: 1, files: ["src/index.js"], diffHunks: "" },
+    [],
+    mockAdapter,
+    { verificationMode: "clean_challenge" }
+  );
   assert.equal(isTrustedVerificationRecord(genuineRecord), true);
 
   const detachedClone = structuredClone(genuineRecord);
@@ -557,7 +577,7 @@ test("007-C-04: Verification record with mismatched RunContext (contentDigest, p
     evaluations: [],
     verifierOmissions: []
   });
-  const gateDigest = evaluateGateDecision(cleanConsensus, {
+  const gateDigest = evaluateIsolatedTestGate(cleanConsensus, {
     tier: 2,
     verificationRecord: recStaleDigest,
     runContext: activeRunContext
@@ -575,7 +595,7 @@ test("007-C-04: Verification record with mismatched RunContext (contentDigest, p
     evaluations: [],
     verifierOmissions: []
   });
-  const gateObjective = evaluateGateDecision(cleanConsensus, {
+  const gateObjective = evaluateIsolatedTestGate(cleanConsensus, {
     tier: 2,
     verificationRecord: recStaleObjective,
     runContext: activeRunContext
@@ -593,7 +613,7 @@ test("007-C-04: Verification record with mismatched RunContext (contentDigest, p
     evaluations: [],
     verifierOmissions: []
   });
-  const gateSha = evaluateGateDecision(cleanConsensus, {
+  const gateSha = evaluateIsolatedTestGate(cleanConsensus, {
     tier: 2,
     verificationRecord: recStaleSha,
     runContext: activeRunContext
@@ -611,7 +631,7 @@ test("007-C-04: Verification record with mismatched RunContext (contentDigest, p
     evaluations: [],
     verifierOmissions: []
   });
-  const gateRunId = evaluateGateDecision(cleanConsensus, {
+  const gateRunId = evaluateIsolatedTestGate(cleanConsensus, {
     tier: 2,
     verificationRecord: recStaleRunId,
     runContext: activeRunContext
@@ -628,7 +648,7 @@ test("007-C-04: Verification record with mismatched RunContext (contentDigest, p
     evaluations: [],
     verifierOmissions: []
   });
-  const gateMissingRunId = evaluateGateDecision(cleanConsensus, {
+  const gateMissingRunId = evaluateIsolatedTestGate(cleanConsensus, {
     tier: 2,
     verificationRecord: recMissingRunId,
     runContext: activeRunContext
@@ -647,7 +667,7 @@ test("007-C-04: Verification record with mismatched RunContext (contentDigest, p
     evaluations: [],
     verifierOmissions: []
   });
-  const gateExcl = evaluateGateDecision(cleanConsensus, {
+  const gateExcl = evaluateIsolatedTestGate(cleanConsensus, {
     tier: 2,
     verificationRecord: recStaleExcl,
     runContext: activeRunContext
@@ -666,7 +686,7 @@ test("007-C-04: Verification record with mismatched RunContext (contentDigest, p
     evaluations: [],
     verifierOmissions: []
   });
-  const gateMatched = evaluateGateDecision(cleanConsensus, {
+  const gateMatched = evaluateIsolatedTestGate(cleanConsensus, {
     tier: 2,
     verificationRecord: recNormalizerMatch,
     runContext: activeRunContext
@@ -698,7 +718,7 @@ test("007-C-05: Non-blocking Low omission in Tier 2 (DOES_NOT_FALSIFY_PATCH_OBJE
     verifierOmissions: [lowOmission]
   });
 
-  const gate = evaluateGateDecision(cleanConsensus, {
+  const gate = evaluateIsolatedTestGate(cleanConsensus, {
     tier: 2,
     verificationRecord: rec
   });
@@ -730,7 +750,7 @@ test("007-C-06: CONTESTED omission in Tier 2 -> Advisory pass (decision: 'approv
     verifierOmissions: [contestedOmission]
   });
 
-  const gate = evaluateGateDecision(cleanConsensus, {
+  const gate = evaluateIsolatedTestGate(cleanConsensus, {
     tier: 2,
     verificationRecord: rec
   });
@@ -764,7 +784,7 @@ test("007-C-07: SUPPORTED Medium omission in Tier 1 -> decision: 'block'", () =>
     verifierOmissions: [medOmission]
   });
 
-  const gate = evaluateGateDecision(cleanConsensus, {
+  const gate = evaluateIsolatedTestGate(cleanConsensus, {
     tier: 1,
     verificationRecord: rec
   });
@@ -796,7 +816,7 @@ test("007-C-08: SUPPORTED Medium omission in Tier 2 (DOES_NOT_FALSIFY_PATCH_OBJE
     verifierOmissions: [medOmission]
   });
 
-  const gate = evaluateGateDecision(cleanConsensus, {
+  const gate = evaluateIsolatedTestGate(cleanConsensus, {
     tier: 2,
     verificationRecord: rec
   });
@@ -815,7 +835,7 @@ test("007-C-09: UNCERTAIN omission or verifier state -> decision: 'human_review_
     evaluations: [],
     verifierOmissions: []
   });
-  const gateStatus = evaluateGateDecision(cleanConsensus, {
+  const gateStatus = evaluateIsolatedTestGate(cleanConsensus, {
     tier: 2,
     verificationRecord: recUncertainStatus
   });
@@ -841,7 +861,7 @@ test("007-C-09: UNCERTAIN omission or verifier state -> decision: 'human_review_
       }
     ]
   });
-  const gateOmission = evaluateGateDecision(cleanConsensus, {
+  const gateOmission = evaluateIsolatedTestGate(cleanConsensus, {
     tier: 2,
     verificationRecord: recUncertainOmission
   });
@@ -1087,7 +1107,7 @@ test("007-R-01: CYCLE-0047 post-hoc diagnostic re-test flags omission / fails cl
     verifierOmissions: [cycle0047Omission]
   });
 
-  const gateResult = evaluateGateDecision(cycle0047Consensus, {
+  const gateResult = evaluateIsolatedTestGate(cycle0047Consensus, {
     tier: 1,
     verificationRecord: rec
   });
@@ -1107,7 +1127,7 @@ test("007-R-02: CYCLE-0042 / CYCLE-0044 known positive controls remain APPROVE (
     verifierOmissions: []
   });
 
-  const gateCycle0042 = evaluateGateDecision(consensusCycle0042, {
+  const gateCycle0042 = evaluateIsolatedTestGate(consensusCycle0042, {
     tier: 1,
     verificationRecord: recordCycle0042
   });
@@ -1124,7 +1144,7 @@ test("007-R-02: CYCLE-0042 / CYCLE-0044 known positive controls remain APPROVE (
     verifierOmissions: []
   });
 
-  const gateCycle0044 = evaluateGateDecision(consensusCycle0044, {
+  const gateCycle0044 = evaluateIsolatedTestGate(consensusCycle0044, {
     tier: 2,
     verificationRecord: recordCycle0044
   });
@@ -1336,4 +1356,279 @@ test("007-P1-04: hasConcreteCounterexample rejects bare assertions and validates
     { verificationMode: "clean_challenge" }
   );
   assert.equal(output.verifierOmissions[0].evidenceSupport, "INSUFFICIENT_EVIDENCE");
+});
+
+test("007-P1-01-DELTA: Synthetic test records fail closed against formal gate without authentic minting", () => {
+  const cleanConsensus = makeTrustedConsensus([], { tier: 2 });
+  const syntheticRecord = issueVerificationRecordFromOutput({
+    ok: true,
+    overallStatus: "CLEAN",
+    verificationMode: "clean_challenge",
+    evaluations: [],
+    verifierOmissions: []
+  });
+
+  assert.equal(isSegregatedSyntheticRecord(syntheticRecord), true);
+  assert.equal(isTrustedVerificationRecord(syntheticRecord), false);
+
+  // When formal gate evaluates synthetic record without conductIndependentVerification, it strictly fails closed by default
+  const formalGateResult = evaluateGateDecision(cleanConsensus, {
+    tier: 2,
+    verificationRecord: syntheticRecord
+  });
+  assert.equal(formalGateResult.decision, "block");
+  assert.match(formalGateResult.reason, /UNTRUSTED_VERIFICATION_RECORD/i);
+
+  // evaluatePostVerificationGate also strictly fails closed by default
+  const formalPostGateResult = evaluatePostVerificationGate(cleanConsensus, syntheticRecord, {
+    tier: 2
+  });
+  assert.equal(formalPostGateResult.decision, "block");
+  assert.match(formalPostGateResult.reason, /UNTRUSTED_VERIFICATION_RECORD/i);
+
+  // Synthetic backdoor attempts (e.g. synthetic: true flag) cannot bypass formal gate
+  const bypassAttemptResult = evaluateGateDecision(cleanConsensus, {
+    tier: 2,
+    synthetic: true,
+    verificationRecord: syntheticRecord
+  });
+  assert.equal(bypassAttemptResult.decision, "block");
+  assert.match(bypassAttemptResult.reason, /UNTRUSTED_VERIFICATION_RECORD/i);
+
+  // Isolated test mechanism safely evaluates synthetic records
+  const isolatedResult = evaluateIsolatedTestGate(cleanConsensus, {
+    tier: 2,
+    verificationRecord: syntheticRecord
+  });
+  assert.equal(isolatedResult.decision, "approve");
+});
+
+test("007-P1-02-DELTA: Review orchestrator with preliminary: true never returns reviewed-clean", async () => {
+  const changeSet = {
+    ok: true,
+    totalFiles: 1,
+    files: [{ path: "src/safe.js", additions: 2, deletions: 0, riskTier: 2 }],
+    diffHunks: "+ return 1;"
+  };
+
+  const cleanAdapter = {
+    providerName: "clean-sentry",
+    modelName: "model-x",
+    executeReview: async () => ({
+      ok: true,
+      findings: [],
+      coverage: { coveredFiles: ["src/safe.js"], omittedFiles: [] }
+    })
+  };
+
+  const result = await orchestrateReview(changeSet, { macro: cleanAdapter }, {
+    preliminary: true
+  });
+
+  // Must preserve preliminary state and return preliminary-clean, NEVER reviewed-clean
+  assert.notEqual(result.status, "reviewed-clean");
+  assert.equal(result.status, "preliminary-clean");
+  assert.equal(result.gate.decision, "approve");
+  assert.equal(result.gate.preliminary, true);
+});
+
+test("007-P1-03-DELTA: Zero-finding consensus with verificationMode: producer_verification fails closed", async () => {
+  const cleanConsensus = makeTrustedConsensus([], { tier: 2 });
+  const mockAdapter = createMockVerifierAdapter("claude", {
+    executeVerification: async () => ({
+      ok: true,
+      fileCoverageComplete: true,
+      overallStatus: "CLEAN",
+      evaluations: [],
+      verifierOmissions: []
+    })
+  });
+
+  const producerModeRecord = await conductIndependentVerification(
+    { totalFiles: 1, files: ["src/index.js"], diffHunks: "" },
+    [],
+    mockAdapter,
+    { verificationMode: "producer_verification" }
+  );
+
+  // evaluateGateDecision with producer_verification on 0-finding consensus must BLOCK
+  const gateDecision = evaluateGateDecision(cleanConsensus, {
+    tier: 2,
+    verificationRecord: producerModeRecord
+  });
+  assert.equal(gateDecision.decision, "block");
+  assert.match(gateDecision.reason, /Verification mode mismatch.*clean_challenge/i);
+
+  // evaluatePostVerificationGate with producer_verification on 0-finding consensus must BLOCK
+  const postGateDecision = evaluatePostVerificationGate(cleanConsensus, producerModeRecord, {
+    tier: 2
+  });
+  assert.equal(postGateDecision.decision, "block");
+  assert.match(postGateDecision.reason, /Verification mode mismatch.*clean_challenge/i);
+
+  // evaluateIsolatedTestGate on synthetic producer_verification record also blocks on mode mismatch
+  const syntheticProducerRecord = issueVerificationRecordFromOutput({
+    ok: true,
+    overallStatus: "CLEAN",
+    verificationMode: "producer_verification",
+    evaluations: [],
+    verifierOmissions: []
+  });
+  const isolatedDecision = evaluateIsolatedTestGate(cleanConsensus, {
+    tier: 2,
+    verificationRecord: syntheticProducerRecord
+  });
+  assert.equal(isolatedDecision.decision, "block");
+  assert.match(isolatedDecision.reason, /Verification mode mismatch.*clean_challenge/i);
+});
+
+test("007-007-D-MULTI: Multi-file callee context extraction aggregates across all changeSet.files with coverage manifest", () => {
+  const multiChangeSet = {
+    ok: true,
+    totalFiles: 3,
+    files: [
+      { path: "src/auth.c", additions: 5, deletions: 1, riskTier: 1 },
+      { path: "src/crypto.c", additions: 8, deletions: 2, riskTier: 1 },
+      { path: "src/utils.c", additions: 3, deletions: 0, riskTier: 2 }
+    ],
+    diffHunks: [
+      "diff --git a/src/auth.c b/src/auth.c",
+      "--- a/src/auth.c",
+      "+++ b/src/auth.c",
+      "@@ -1,3 +1,5 @@",
+      "+ authenticate_user(cred);",
+      "diff --git a/src/crypto.c b/src/crypto.c",
+      "--- a/src/crypto.c",
+      "+++ b/src/crypto.c",
+      "@@ -1,3 +1,5 @@",
+      "+ verify_hmac(key, data);",
+      "diff --git a/src/utils.c b/src/utils.c",
+      "--- a/src/utils.c",
+      "+++ b/src/utils.c",
+      "@@ -1,3 +1,5 @@",
+      "+ log_trace(msg);"
+    ].join("\n")
+  };
+
+  const fileContents = {
+    "src/auth.c": "void authenticate_user(Cred* cred) { check(cred); }",
+    "src/crypto.c": "int verify_hmac(Key* key, Data* data) { hmac_sha256(key, data); return 1; }",
+    "src/utils.c": "void log_trace(const char* msg) { puts(msg); }"
+  };
+
+  // buildContextPackage called with null targetFile iterates over all files in changeSet.files
+  const pkg = buildContextPackage(multiChangeSet, null, { fileContents });
+
+  assert.equal(pkg.targetFile, "multi-file");
+  assert.ok(Array.isArray(pkg.fileCoverageManifest), "fileCoverageManifest must be an array");
+  assert.equal(pkg.fileCoverageManifest.length, 3, "fileCoverageManifest must contain all 3 files");
+
+  const filesInManifest = pkg.fileCoverageManifest.map(m => m.file);
+  assert.ok(filesInManifest.includes("src/auth.c"));
+  assert.ok(filesInManifest.includes("src/crypto.c"));
+  assert.ok(filesInManifest.includes("src/utils.c"));
+
+  // Check extracted callees are aggregated
+  assert.ok(Array.isArray(pkg.layers.layer1AstEnclosure.callees));
+  assert.ok(pkg.layers.layer1AstEnclosure.callees.length > 0);
+  const serializedLayer1 = JSON.stringify(pkg.layers.layer1AstEnclosure);
+  assert.ok(Buffer.byteLength(serializedLayer1, "utf8") <= GLOBAL_AST_CONTEXT_CEILING_BYTES);
+});
+
+test("007-007-D-MULTI-UNMODIFIED: Multi-file changeset with unmodified file isolates diffs without cross-contamination", () => {
+  const multiChangeSet = {
+    ok: true,
+    totalFiles: 2,
+    files: [
+      { path: "src/modified.c", additions: 3, deletions: 0, riskTier: 1 },
+      { path: "src/unmodified.c", additions: 0, deletions: 0, riskTier: 2 }
+    ],
+    diffHunks: [
+      "diff --git a/src/modified.c b/src/modified.c",
+      "--- a/src/modified.c",
+      "+++ b/src/modified.c",
+      "@@ -1,3 +1,5 @@",
+      "+ authenticate_session(token);"
+    ].join("\n")
+  };
+
+  const fileContents = {
+    "src/modified.c": "void authenticate_session(Token* token) { check(token); }",
+    // unmodified.c contains a call to authenticate_session at line 2, but has no diff!
+    "src/unmodified.c": "void helper() {\n  authenticate_session(NULL);\n}"
+  };
+
+  const pkg = buildContextPackage(multiChangeSet, null, { fileContents });
+
+  assert.equal(pkg.targetFile, "multi-file");
+  assert.equal(pkg.fileCoverageManifest.length, 2);
+
+  const modManifest = pkg.fileCoverageManifest.find(m => m.file === "src/modified.c");
+  const unmodManifest = pkg.fileCoverageManifest.find(m => m.file === "src/unmodified.c");
+
+  assert.ok(modManifest);
+  assert.ok(unmodManifest);
+
+  // Modified file extracts its callee
+  assert.ok(modManifest.calleesExtracted.includes("authenticate_session"));
+
+  // Unmodified file MUST NOT extract any callees or borrow diff spans from modified.c!
+  assert.equal(unmodManifest.calleesExtracted.length, 0);
+  assert.equal(unmodManifest.unresolvedCallees.length, 0);
+  assert.equal(unmodManifest.contextGaps.length, 0);
+});
+
+test("007-007-D-MULTI-50-PLUS: Large multi-file changeset (>50 files) with nested submodules enforces 8 KB ceiling and manifest tracking", () => {
+  const fileCount = 55;
+  const files = [];
+  const diffHunkParts = [];
+  const fileContents = {};
+
+  for (let i = 0; i < fileCount; i++) {
+    const filePath = `submodules/core/pkg_${Math.floor(i / 10)}/worker_${i}.c`;
+    files.push({ path: filePath, additions: 2, deletions: 0, riskTier: 1 });
+    diffHunkParts.push(
+      `diff --git a/${filePath} b/${filePath}`,
+      `--- a/${filePath}`,
+      `+++ b/${filePath}`,
+      `@@ -1,3 +1,5 @@`,
+      `+ sanitize_input_${i}(arg);`
+    );
+    fileContents[filePath] = `void sanitize_input_${i}(char* arg) { validate(arg); }`;
+  }
+
+  const largeChangeSet = {
+    ok: true,
+    totalFiles: fileCount,
+    files,
+    diffHunks: diffHunkParts.join("\n")
+  };
+
+  const pkg = buildContextPackage(largeChangeSet, null, { fileContents });
+
+  assert.equal(pkg.targetFile, "multi-file");
+  assert.equal(pkg.fileCoverageManifest.length, fileCount);
+
+  // All 55 files must be recorded in coverage manifest
+  for (let i = 0; i < fileCount; i++) {
+    const expectedPath = `submodules/core/pkg_${Math.floor(i / 10)}/worker_${i}.c`;
+    const manifest = pkg.fileCoverageManifest.find(m => m.file === expectedPath);
+    assert.ok(manifest, `Manifest must include file ${expectedPath}`);
+    assert.equal(manifest.inspected, true);
+    assert.equal(manifest.exactHeadAvailable, true);
+  }
+
+  // Global 8 KB AST ceiling must be strictly respected
+  const serializedLayer1 = JSON.stringify(pkg.layers.layer1AstEnclosure);
+  assert.ok(
+    Buffer.byteLength(serializedLayer1, "utf8") <= GLOBAL_AST_CONTEXT_CEILING_BYTES,
+    `Layer 1 AST size (${Buffer.byteLength(serializedLayer1, "utf8")} bytes) must not exceed 8 KB`
+  );
+
+  // Aggregated callees must not exceed MAX_CALLEES_TOTAL (10)
+  assert.ok(pkg.layers.layer1AstEnclosure.callees.length <= MAX_CALLEES_TOTAL);
+
+  // Files processed after budget exhaustion must record GLOBAL_AST_CONTEXT_CEILING_EXCEEDED context gaps
+  const ceilingGaps = pkg.contextGaps.filter(g => g.reason === "GLOBAL_AST_CONTEXT_CEILING_EXCEEDED");
+  assert.ok(ceilingGaps.length > 0, "Must record GLOBAL_AST_CONTEXT_CEILING_EXCEEDED gaps for excess files");
 });

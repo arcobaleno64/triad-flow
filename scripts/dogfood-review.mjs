@@ -901,17 +901,17 @@ export async function runDogfoodReview(userOptions = {}) {
   });
 
   // Extract exact-head callee context package across modified files (Spec §3.3)
-  const primaryFile = changeSet?.files?.[0]?.path || null;
+  const targetRepo = changeSet?.repository?.root || (!changeSetProvided ? repoDir : null);
   let contextPackage = userOptions.contextPackage || null;
-  if (!contextPackage && primaryFile && commitSha) {
+  if (!contextPackage && changeSet?.files?.length > 0 && commitSha && targetRepo) {
     try {
       contextPackage = buildContextPackage(
         changeSet,
-        primaryFile,
+        null,
         {
           headSha: commitSha,
-          repositoryRoot: targetRepoDir,
-          cwd: targetRepoDir,
+          repositoryRoot: targetRepo,
+          cwd: targetRepo,
           runId
         }
       );

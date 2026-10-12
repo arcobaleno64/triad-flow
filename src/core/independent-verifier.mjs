@@ -245,18 +245,31 @@ export class RunContext {
 
 /**
  * Module-private authority registry for in-process capability tracking of verification records.
- * Only instances registered via conductIndependentVerification or issueVerificationRecordFromOutput
- * hold gate authority. Detached, cloned, or plain mock objects are rejected.
+ * Only instances registered via conductIndependentVerification hold formal gate authority.
+ * Synthetic test records and detached helper objects are explicitly segregated.
  */
 const trustedVerificationRegistry = new WeakSet();
+const segregatedSyntheticRegistry = new WeakSet();
 
 /**
- * Issues a validated, capability-registered verification record from verifier output or structured candidate.
- * Validates output structure under Default-Deny, normalizes fields, deep-freezes the record,
- * and mints authority in the module-private capability registry.
+ * Checks if candidate is an explicitly segregated synthetic test record.
+ * @param {any} candidate
+ * @returns {boolean}
+ */
+export function isSegregatedSyntheticRecord(candidate) {
+  if (!candidate || typeof candidate !== "object") {
+    return false;
+  }
+  return segregatedSyntheticRegistry.has(candidate);
+}
+
+/**
+ * Issues an explicitly segregated synthetic verification record from verifier output or structured candidate.
+ * Validates output structure under Default-Deny, normalizes fields, and deep-freezes the record.
+ * Synthetic test records MUST NOT gain authority in the formal/production gate evaluation path.
  *
  * @param {object} params - Either structured record candidate or { rawOutput, changeSet, producerFindings, runContext, options }
- * @returns {object} Deep-frozen, capability-bearing verification record
+ * @returns {object} Deep-frozen, segregated synthetic verification record
  */
 export function issueVerificationRecordFromOutput(params = {}) {
   if (!params || typeof params !== "object") {
@@ -268,11 +281,20 @@ export function issueVerificationRecordFromOutput(params = {}) {
   const isDirectCandidate = params.rawOutput === undefined;
   let rawOutput = params.rawOutput !== undefined ? params.rawOutput : params;
 
-  if (isDirectCandidate && rawOutput && typeof rawOutput === "object" && Object.isExtensible(rawOutput) && rawOutput.overallStatus === undefined) {
-    if (Array.isArray(rawOutput.verifierOmissions) && rawOutput.verifierOmissions.length > 0) {
-      rawOutput.overallStatus = "DEFECTS_FOUND";
-    } else if (Array.isArray(rawOutput.evaluations) && rawOutput.evaluations.length === 0) {
-      rawOutput.overallStatus = "CLEAN";
+  if (isDirectCandidate && rawOutput && typeof rawOutput === "object") {
+    if (rawOutput.evaluations === undefined && rawOutput.ok !== false && !rawOutput.error) {
+      if (Object.isExtensible(rawOutput)) {
+        rawOutput.evaluations = [];
+      } else {
+        rawOutput = { ...rawOutput, evaluations: [] };
+      }
+    }
+    if (Object.isExtensible(rawOutput) && rawOutput.overallStatus === undefined) {
+      if (Array.isArray(rawOutput.verifierOmissions) && rawOutput.verifierOmissions.length > 0) {
+        rawOutput.overallStatus = "DEFECTS_FOUND";
+      } else if (Array.isArray(rawOutput.evaluations) && rawOutput.evaluations.length === 0) {
+        rawOutput.overallStatus = "CLEAN";
+      }
     }
   }
 
@@ -320,13 +342,6 @@ export function issueVerificationRecordFromOutput(params = {}) {
         : (Array.isArray(normContract?.exclusions) ? normContract.exclusions : null));
   const exclusions = rawExclusions ? Object.freeze(rawExclusions.map(String).map(s => s.trim()).filter(Boolean)) : null;
 
-  const verificationMode = String(params.verificationMode || (params.evaluations?.length === 0 && (!params.producerFindings || params.producerFindings.length === 0) ? "clean_challenge" : "producer_verification"));
-
-  let overallStatus = params.overallStatus || validated.overallStatus ||
-    (validated.verifierOmissions?.some(o => o.evidenceSupport === "UNCERTAIN") ? "UNCERTAIN" :
-      (validated.verifierOmissions?.length > 0 ? "DEFECTS_FOUND" :
-        (validated.evaluations?.length === 0 ? "CLEAN" : null)));
-
   const producerFindings = Array.isArray(params.producerFindings)
     ? params.producerFindings
     : (Array.isArray(params.producer?.findings) ? params.producer.findings : []);
@@ -336,6 +351,16 @@ export function issueVerificationRecordFromOutput(params = {}) {
   const verifierOmissions = Array.isArray(params.verifierOmissions)
     ? params.verifierOmissions
     : (Array.isArray(validated.verifierOmissions) ? validated.verifierOmissions : []);
+
+  const verificationMode = String(
+    params.verificationMode ||
+    (evaluations.length === 0 && producerFindings.length === 0 ? "clean_challenge" : "producer_verification")
+  );
+
+  let overallStatus = params.overallStatus || validated.overallStatus ||
+    (verifierOmissions.some(o => o.evidenceSupport === "UNCERTAIN") ? "UNCERTAIN" :
+      (verifierOmissions.length > 0 ? "DEFECTS_FOUND" :
+        (evaluations.length === 0 ? "CLEAN" : null)));
 
   const disagreementLedger = Array.isArray(params.disagreementLedger) ? params.disagreementLedger : [];
 
@@ -387,7 +412,7 @@ export function issueVerificationRecordFromOutput(params = {}) {
   };
 
   const frozenRecord = deepFreeze(record);
-  trustedVerificationRegistry.add(frozenRecord);
+  segregatedSyntheticRegistry.add(frozenRecord);
   return frozenRecord;
 }
 
@@ -1258,10 +1283,10 @@ export function validateVerificationOutput(rawOutput, context = {}) {
     overallStatus = "DEFECTS_FOUND";
   }
 
-  // 2. Automatic uncertainty propagation from omissions or sensitive context gaps:
+  // 2. Automatic uncertainty propagation from omissions or unavailable exact-head context gaps:
   const hasUncertainOmission = normalizedOmissions.some(o => o.evidenceSupport === "UNCERTAIN");
-  const hasSensitiveContextGaps = Array.isArray(context?.contextGaps) && context.contextGaps.length > 0;
-  if (hasUncertainOmission || hasSensitiveContextGaps) {
+  const hasUnavailableHeadGap = Array.isArray(context?.contextGaps) && context.contextGaps.some(g => g.reason === "EXACT_HEAD_CONTENT_UNAVAILABLE");
+  if (hasUncertainOmission || hasUnavailableHeadGap) {
     if (!overallStatus || overallStatus === "CLEAN" || overallStatus === "SUCCESS") {
       overallStatus = "UNCERTAIN";
     }
@@ -1673,7 +1698,7 @@ export async function conductIndependentVerification(changeSet, producerFindings
   const normContract = normalizeObjectiveContract(options.objectiveContract || options.patchObjective);
   const patchObjective = normContract?.objective || "";
   const headSha = normalizeCommitSha(options.headSha || options.head || options.runContext?.headSha || changeSet.headSha || changeSet.head || "");
-  const verificationMode = String(options.verificationMode || "producer_verification");
+  const verificationMode = String(options.verificationMode || (preservedProducerFindings.length === 0 ? "clean_challenge" : "producer_verification"));
   const adapterInput = {
     changeSet,
     producerFindings: preservedProducerFindings,

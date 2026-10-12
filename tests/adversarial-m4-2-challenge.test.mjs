@@ -13,15 +13,18 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  evaluateGateDecision,
-  evaluatePostVerificationGate,
+  evaluateIsolatedTestGate as evaluateGateDecision,
+  evaluateIsolatedTestPostVerificationGate as evaluatePostVerificationGate,
+  evaluateGateDecision as evaluateFormalGateDecision,
   issueVerificationRecordFromOutput,
   isTrustedVerificationRecord,
+  isSegregatedSyntheticRecord,
   RunContext,
   normalizeDigest,
   normalizeObjective,
   normalizeCommitSha
 } from "../src/core/harness.mjs";
+import { conductIndependentVerification } from "../src/core/independent-verifier.mjs";
 
 import { aggregateConsensus } from "../src/core/loop.mjs";
 
@@ -512,27 +515,55 @@ test("Adversarial M4: RunContext Binding Security & Strict Integrity", () => {
 // 4. In-Process Capability Registry & Prototype Tampering Resistance
 // ============================================================================
 
-test("Adversarial M4: In-Process Capability Registry Tampering Resistance", () => {
+test("Adversarial M4: In-Process Capability Registry Tampering Resistance", async () => {
   const consensus = makeTrustedConsensus([], { tier: 2 });
 
   // Attack 1: Plain mock
   const plainMock = { ok: true, fileCoverageComplete: true, evaluations: [], verifierOmissions: [] };
   assert.equal(isTrustedVerificationRecord(plainMock), false);
+  assert.equal(isSegregatedSyntheticRecord(plainMock), false);
+  assert.equal(evaluateFormalGateDecision(consensus, { tier: 2, verificationRecord: plainMock }).decision, "block");
   assert.equal(evaluateGateDecision(consensus, { tier: 2, verificationRecord: plainMock }).decision, "block");
 
-  // Attack 2: Object.assign
-  const genuine = issueVerificationRecordFromOutput({ ok: true, evaluations: [], verifierOmissions: [] });
+  // Attack 2: Object.assign on synthetic record
+  const synthetic = issueVerificationRecordFromOutput({ ok: true, evaluations: [], verifierOmissions: [] });
+  assert.equal(isSegregatedSyntheticRecord(synthetic), true);
+  assert.equal(isTrustedVerificationRecord(synthetic), false);
+  assert.equal(evaluateFormalGateDecision(consensus, { tier: 2, verificationRecord: synthetic }).decision, "block");
+  assert.equal(evaluateGateDecision(consensus, { tier: 2, verificationRecord: synthetic }).decision, "approve");
+  const assignedSynthetic = Object.assign({}, synthetic);
+  assert.equal(isSegregatedSyntheticRecord(assignedSynthetic), false);
+  assert.equal(evaluateGateDecision(consensus, { tier: 2, verificationRecord: assignedSynthetic }).decision, "block");
+
+  // Attack 3: Genuine record minted via conductIndependentVerification
+  const mockAdapter = () => Promise.resolve({
+    rawResponse: JSON.stringify({
+      ok: true,
+      fileCoverageComplete: true,
+      overallStatus: "CLEAN",
+      evaluations: [],
+      verifierOmissions: []
+    })
+  });
+  const genuine = await conductIndependentVerification(
+    { totalFiles: 1, files: ["src/index.js"], diffHunks: "" },
+    [],
+    mockAdapter,
+    { verificationMode: "clean_challenge" }
+  );
   assert.equal(isTrustedVerificationRecord(genuine), true);
   const assigned = Object.assign({}, genuine);
   assert.equal(isTrustedVerificationRecord(assigned), false);
+  assert.equal(evaluateFormalGateDecision(consensus, { tier: 2, verificationRecord: assigned }).decision, "block");
   assert.equal(evaluateGateDecision(consensus, { tier: 2, verificationRecord: assigned }).decision, "block");
 
-  // Attack 3: Object.create prototype inheritance
+  // Attack 4: Object.create prototype inheritance
   const inherited = Object.create(genuine);
   assert.equal(isTrustedVerificationRecord(inherited), false);
+  assert.equal(evaluateFormalGateDecision(consensus, { tier: 2, verificationRecord: inherited }).decision, "block");
   assert.equal(evaluateGateDecision(consensus, { tier: 2, verificationRecord: inherited }).decision, "block");
 
-  // Attack 4: Non-object primitives passed as verificationRecord
+  // Attack 5: Non-object primitives passed as verificationRecord
   assert.equal(isTrustedVerificationRecord("string-token"), false);
   assert.equal(isTrustedVerificationRecord(12345), false);
   assert.equal(isTrustedVerificationRecord(null), false);
