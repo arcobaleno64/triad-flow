@@ -726,7 +726,9 @@ export async function runDogfoodReview(userOptions = {}) {
   }
 
   if (!verifierAdapter) {
-    if (isLive && !userOptions.reviewAdapters) {
+    if (userOptions.verifierAdapter === "mock") {
+      verifierAdapter = createMockVerifierAdapter("claude");
+    } else if (isLive) {
       verifierAdapter = new CliVerifierAdapter({
         command: "claude",
         providerName: "claude",

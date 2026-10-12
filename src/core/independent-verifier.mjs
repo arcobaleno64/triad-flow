@@ -65,6 +65,20 @@ export const OBJECTIVE_IMPACTS = Object.freeze({
 
 export const VALID_OBJECTIVE_IMPACTS = Object.freeze(new Set(Object.values(OBJECTIVE_IMPACTS)));
 
+export const VERIFICATION_OVERALL_STATUSES = Object.freeze({
+  CLEAN: "CLEAN",
+  UNCERTAIN: "UNCERTAIN",
+  DEFECTS_FOUND: "DEFECTS_FOUND",
+  SUCCESS: "SUCCESS"
+});
+
+export const VALID_OVERALL_STATUSES = Object.freeze(new Set(Object.values(VERIFICATION_OVERALL_STATUSES)));
+export const VALID_CLEAN_CHALLENGE_STATUSES = Object.freeze(new Set([
+  VERIFICATION_OVERALL_STATUSES.CLEAN,
+  VERIFICATION_OVERALL_STATUSES.UNCERTAIN,
+  VERIFICATION_OVERALL_STATUSES.DEFECTS_FOUND
+]));
+
 /**
  * Normalizes an objective contract or raw patchObjective into a structured, frozen contract.
  * @param {string|object|null} input
@@ -212,7 +226,11 @@ export function normalizeCommitSha(sha) {
  */
 export class RunContext {
   constructor(options = {}) {
-    this.runId = String(options.runId || "");
+    const rawRunId = String(options.runId || "");
+    if (rawRunId.includes("..") || rawRunId.includes("/") || rawRunId.includes("\\") || rawRunId.includes("\0")) {
+      throw new Error(`Invalid runId: contains path traversal or invalid characters: '${rawRunId}'`);
+    }
+    this.runId = rawRunId;
     this.headSha = normalizeCommitSha(options.headSha || options.head || "");
     this.contentDigest = normalizeDigest(options.contentDigest || options.changeSetDigest || "");
     this.patchObjective = normalizeObjective(options.patchObjective || options.objectiveContract?.objective || "");
@@ -239,6 +257,13 @@ export const trustedVerificationRegistry = new WeakSet();
  */
 export function registerTrustedVerificationRecord(record) {
   if (record && typeof record === "object") {
+    if (Object.isExtensible(record) && record.overallStatus === undefined) {
+      if (Array.isArray(record.verifierOmissions) && record.verifierOmissions.length > 0) {
+        record.overallStatus = "DEFECTS_FOUND";
+      } else {
+        record.overallStatus = "CLEAN";
+      }
+    }
     trustedVerificationRegistry.add(record);
   }
   return record;
@@ -592,11 +617,17 @@ export function buildVerificationPrompt(changeSet = {}, producerFindings = [], o
     `  ],`,
     `  "verifierOmissions": [`,
     `    {`,
+    `      "findingId": "omission-1",`,
     `      "title": "Title of omitted issue",`,
     `      "severity": "critical|high|medium|low|info",`,
+    `      "evidenceSupport": "SUPPORTED|CONTESTED|INSUFFICIENT_EVIDENCE|UNCERTAIN",`,
+    `      "objectiveImpact": "FALSIFIES_PATCH_OBJECTIVE|DOES_NOT_FALSIFY_PATCH_OBJECTIVE|NOT_ASSESSED",`,
     `      "file": "path/to/file",`,
     `      "line_start": 1,`,
     `      "line_end": 1,`,
+    `      "locatorAccurate": true,`,
+    `      "reasoning": "Concrete evidence-based explanation detailing exact failure path",`,
+    `      "counterexample": "Concrete input or invocation that triggers the bug (required for SUPPORTED)",`,
     `      "recommendation": "Fix instruction",`,
     `      "cwe": "CWE-OPTIONAL",`,
     `      "type": "TYPE-OPTIONAL"`,
@@ -1049,20 +1080,72 @@ export function validateVerificationOutput(rawOutput, context = {}) {
     };
   }
 
-  // Extract overallStatus
+  // Extract and strictly validate overallStatus under Default-Deny
   const rawOverallStatus = typeof parsed.overallStatus === "string"
     ? parsed.overallStatus.trim().toUpperCase()
     : (typeof parsed.status === "string" ? parsed.status.trim().toUpperCase() : null);
 
-  let overallStatus = null;
-  if (rawOverallStatus === "UNCERTAIN" || rawOverallStatus === "CLEAN" || rawOverallStatus === "DEFECTS_FOUND" || rawOverallStatus === "SUCCESS") {
-    overallStatus = rawOverallStatus;
+  const isCleanChallenge = context?.verificationMode === "clean_challenge" ||
+    (Array.isArray(context?.producerFindings) && context.producerFindings.length === 0);
+
+  // 1. In Clean Challenge mode, explicit overallStatus is strictly required when 0 omissions are reported (Fail-Closed)
+  if (isCleanChallenge) {
+    if (!rawOverallStatus) {
+      if (normalizedOmissions.length === 0) {
+        return Object.freeze({
+          ok: false,
+          valid: false,
+          executionStatus: EXECUTION_STATUS.MALFORMED_OUTPUT,
+          evaluations: Object.freeze(normalizedEvaluations),
+          verifierOmissions: Object.freeze(normalizedOmissions),
+          usage: usage ? Object.freeze(usage) : null,
+          error: `Clean Challenge verifier output missing or invalid required 'overallStatus' (got: '${parsed.overallStatus ?? parsed.status ?? "undefined"}'). Must be explicitly CLEAN, UNCERTAIN, or DEFECTS_FOUND.`
+        });
+      }
+    } else if (!VALID_CLEAN_CHALLENGE_STATUSES.has(rawOverallStatus)) {
+      return Object.freeze({
+        ok: false,
+        valid: false,
+        executionStatus: EXECUTION_STATUS.MALFORMED_OUTPUT,
+        evaluations: Object.freeze(normalizedEvaluations),
+        verifierOmissions: Object.freeze(normalizedOmissions),
+        usage: usage ? Object.freeze(usage) : null,
+        error: `Clean Challenge verifier output missing or invalid required 'overallStatus' (got: '${parsed.overallStatus ?? parsed.status}'). Must be explicitly CLEAN, UNCERTAIN, or DEFECTS_FOUND.`
+      });
+    }
+  } else if (rawOverallStatus !== null && !VALID_OVERALL_STATUSES.has(rawOverallStatus)) {
+    // In standard verification mode, an invalid non-empty status string is malformed output
+    return Object.freeze({
+      ok: false,
+      valid: false,
+      executionStatus: EXECUTION_STATUS.MALFORMED_OUTPUT,
+      evaluations: Object.freeze(normalizedEvaluations),
+      verifierOmissions: Object.freeze(normalizedOmissions),
+      usage: usage ? Object.freeze(usage) : null,
+      error: `Invalid verifier overallStatus '${parsed.overallStatus ?? parsed.status}'. Must be one of: CLEAN, UNCERTAIN, DEFECTS_FOUND.`
+    });
   }
 
-  // Automatic uncertainty propagation from omissions:
+  let overallStatus = rawOverallStatus ? (VALID_OVERALL_STATUSES.has(rawOverallStatus) ? rawOverallStatus : null) : null;
+  if (!overallStatus && normalizedOmissions.length > 0) {
+    overallStatus = "DEFECTS_FOUND";
+  }
+
+  // 2. Automatic uncertainty propagation from omissions or sensitive context gaps:
   const hasUncertainOmission = normalizedOmissions.some(o => o.evidenceSupport === "UNCERTAIN");
-  if (hasUncertainOmission && !overallStatus) {
-    overallStatus = "UNCERTAIN";
+  const hasSensitiveContextGaps = Array.isArray(context?.contextGaps) && context.contextGaps.length > 0;
+  if (hasUncertainOmission || hasSensitiveContextGaps) {
+    if (!overallStatus || overallStatus === "CLEAN" || overallStatus === "SUCCESS") {
+      overallStatus = "UNCERTAIN";
+    }
+  }
+
+  // 3. Supported omissions cannot permit CLEAN status
+  const hasSupportedOmission = normalizedOmissions.some(o => o.evidenceSupport === "SUPPORTED");
+  if (hasSupportedOmission) {
+    if (!overallStatus || overallStatus === "CLEAN" || overallStatus === "SUCCESS") {
+      overallStatus = "DEFECTS_FOUND";
+    }
   }
 
   return Object.freeze({
@@ -1516,7 +1599,10 @@ export async function conductIndependentVerification(changeSet, producerFindings
     providerName: verifierAdapter?.providerName || options.verifierName,
     modelName: verifierAdapter?.modelName || options.verifierModel,
     patchObjective,
-    objectiveContract: normContract
+    objectiveContract: normContract,
+    verificationMode,
+    headSha,
+    contextGaps: options.contextGaps || options.contextPackage?.contextGaps || []
   });
 
   if (!validated.ok && options.throwOnError && !verifierError) {
@@ -1911,8 +1997,9 @@ export function createMockVerifierAdapter(providerName = "claude", options = {})
       });
       return {
         ok: true,
+        overallStatus: options.overallStatus || (evaluations.length === 0 ? "CLEAN" : "DEFECTS_FOUND"),
         evaluations,
-        verifierOmissions: []
+        verifierOmissions: options.verifierOmissions || []
       };
     }
   };

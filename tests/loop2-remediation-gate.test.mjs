@@ -603,6 +603,7 @@ test("007-B-01: Clean Challenge completes successfully with 0 omissions -> decis
   const cleanConsensus = makeTrustedConsensus([], { tier: 2 });
   const rec = registerTrustedVerificationRecord({
     ok: true,
+    overallStatus: "CLEAN",
     evaluations: [],
     verifierOmissions: []
   });

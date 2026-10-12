@@ -22,7 +22,7 @@ import {
 } from "../scripts/dogfood-review.mjs";
 import { CliReviewAdapter } from "../src/adapters/cli-transport.mjs";
 import { EXECUTION_STATUS } from "../src/adapters/provider-contract.mjs";
-import { CliVerifierAdapter } from "../src/core/independent-verifier.mjs";
+import { CliVerifierAdapter, createMockVerifierAdapter } from "../src/core/independent-verifier.mjs";
 
 test("Dogfood Contract 1: parseArgs correctly parses flags", () => {
   const def = parseArgs([]);
@@ -950,6 +950,7 @@ test("RB2-E: Zero consensus findings triggers Clean Challenge verification and p
         diffHunks: "+ const a = 1;"
       },
       reviewAdapters: cleanReviewAdapters,
+      verifierAdapter: createMockVerifierAdapter("claude", { overallStatus: "CLEAN" }),
       out: tmpOut,
       log: false
     });
@@ -1080,6 +1081,7 @@ test("Observation producer authority: runStartedAt precedes every reviewer invoc
         claude: makeAdapter("claude", "anthropic", "claude-5.5-sonnet"),
         codex: makeAdapter("codex", "openai", "gpt-6.1-sol")
       },
+      verifierAdapter: createMockVerifierAdapter("claude"),
       out: tmpOut,
       log: false
     });
@@ -1145,6 +1147,7 @@ test("Observation producer authority: genuine staged fallback is preserved expli
         claude: clean("claude", "anthropic", "claude-5.5-sonnet"),
         codex: clean("codex", "openai", "gpt-6.1-sol")
       },
+      verifierAdapter: createMockVerifierAdapter("claude"),
       out: tmpOut,
       log: false
     });
@@ -1217,6 +1220,7 @@ test("Observation producer authority: report commit matches the actually reviewe
         claude: clean("claude", "anthropic", "claude-5.5-sonnet"),
         codex: clean("codex", "openai", "gpt-6.1-sol")
       },
+      verifierAdapter: createMockVerifierAdapter("claude"),
       out: tmpOut,
       log: false
     });
@@ -1300,6 +1304,7 @@ test("Observation producer authority: staged chunk timeout contributes to review
         claude: clean("claude", "anthropic", "claude-5.5-sonnet"),
         codex: clean("codex", "openai", "gpt-6.1-sol")
       },
+      verifierAdapter: createMockVerifierAdapter("claude"),
       out: tmpOut,
       log: false
     });

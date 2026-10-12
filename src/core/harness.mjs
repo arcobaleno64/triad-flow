@@ -471,6 +471,17 @@ export function evaluatePostVerificationGate(consensus, verificationRecord, opti
     humanReviewReasons.push("Context Insufficient / Uncertain: Verifier declared UNCERTAIN due to missing callee context boundaries.");
   }
 
+  // Clean Challenge overallStatus authority check (Spec §3.1)
+  if (findings.length === 0 && omissions.length === 0) {
+    if (verificationRecord.overallStatus === "DEFECTS_FOUND") {
+      hasBlocker = true;
+      blockReasons.push("Clean Challenge failed: Verifier reported DEFECTS_FOUND.");
+    } else if (verificationRecord.overallStatus !== "CLEAN" && verificationRecord.overallStatus !== "UNCERTAIN") {
+      hasBlocker = true;
+      blockReasons.push(`Clean Challenge requires explicit CLEAN overallStatus (got: '${verificationRecord.overallStatus || "none"}').`);
+    }
+  }
+
   // Phase A: Evaluate Producer Findings
   for (let i = 0; i < findings.length; i++) {
     const f = findings[i];

@@ -557,7 +557,17 @@ export function extractLocalCalleeContext(fileContent, diffHunks, targetFile, op
 
   for (const candidate of candidateCalls) {
     if (fileCalleesCount >= MAX_CALLEES_PER_FILE || runningTotal + callees.length >= MAX_CALLEES_TOTAL) {
-      break;
+      if (candidate.isSensitive) {
+        contextGaps.push({
+          symbol: candidate.symbol,
+          reason: "EXTRACTION_QUOTA_EXCEEDED",
+          category: candidate.category || "input_validation",
+          file: targetFile,
+          line: candidate.line,
+          impact: `Extraction quota exceeded; sensitive callee '${candidate.symbol}' on critical execution path not extracted.`
+        });
+      }
+      continue;
     }
 
     const { symbol, line, isAdded, isSensitive, category } = candidate;
@@ -868,11 +878,15 @@ export function buildContextPackage(changeSet, targetFile, options = {}) {
     "";
   const headSha = options.headSha || changeSet?.headSha || changeSet?.repository?.headSha || null;
   const repoRoot = options.repositoryRoot || changeSet?.repository?.root || null;
+  let exactHeadUnavailable = false;
 
   if (!fileContent && repoRoot && headSha) {
     fileContent = getExactHeadFileContent(repoRoot, headSha, actualFilePath) ||
       getExactHeadFileContent(repoRoot, headSha, normTarget) ||
       "";
+    if (!fileContent) {
+      exactHeadUnavailable = true;
+    }
   }
 
   // Extract layers
@@ -890,6 +904,16 @@ export function buildContextPackage(changeSet, targetFile, options = {}) {
     actualFilePath,
     options
   );
+
+  if (exactHeadUnavailable) {
+    contextGaps.push({
+      symbol: normTarget,
+      file: actualFilePath || normTarget,
+      reason: "EXACT_HEAD_CONTENT_UNAVAILABLE",
+      category: "exact_head_source",
+      impact: `Exact-head file content at commit ${headSha} could not be retrieved; callee definitions and AST context unavailable.`
+    });
+  }
 
   rawLayer1.callees = callees;
   rawLayer1.unresolvedCallees = unresolvedCallees;

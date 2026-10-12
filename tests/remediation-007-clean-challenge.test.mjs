@@ -202,6 +202,7 @@ test("007-B-01: 0 Findings, Clean Challenge confirms clean -> decision: 'approve
   const cleanRecord = registerTrustedVerificationRecord({
     ok: true,
     fileCoverageComplete: true,
+    overallStatus: "CLEAN",
     evaluations: [],
     verifierOmissions: []
   });
@@ -286,6 +287,24 @@ test("007-B-03: 0 Findings, Clean Challenge malformed output -> Fail-Closed (BLO
   // 2. Validator fails closed on missing evaluations or bad schema
   const res2 = validateVerificationOutput({ evaluations: "not-an-array" }, {}, {});
   assert.equal(res2.ok, false);
+
+  // 2b. Clean challenge output missing overallStatus fails closed (P1 contract)
+  const resMissingStatus = validateVerificationOutput({ evaluations: [] }, { verificationMode: "clean_challenge" });
+  assert.equal(resMissingStatus.ok, false);
+  assert.equal(resMissingStatus.valid, false);
+  assert.match(resMissingStatus.error, /missing or invalid required 'overallStatus'/i);
+
+  // 2c. Clean challenge output with invalid overallStatus fails closed (P1 contract)
+  const resBadStatus = validateVerificationOutput({ evaluations: [], overallStatus: "ALL_GOOD" }, { verificationMode: "clean_challenge" });
+  assert.equal(resBadStatus.ok, false);
+  assert.equal(resBadStatus.valid, false);
+  assert.match(resBadStatus.error, /missing or invalid required 'overallStatus'/i);
+
+  // 2d. Clean challenge output with valid overallStatus: "CLEAN" succeeds
+  const resClean = validateVerificationOutput({ evaluations: [], overallStatus: "CLEAN" }, { verificationMode: "clean_challenge" });
+  assert.equal(resClean.ok, true);
+  assert.equal(resClean.valid, true);
+  assert.equal(resClean.overallStatus, "CLEAN");
 
   // 3. Post-verification gate fails closed on malformed verification record
   const cleanConsensus = makeTrustedConsensus([], { tier: 2 });
@@ -494,6 +513,7 @@ test("007-C-03: In-process capability forgery probe (plain object with matching 
   const genuineRecord = registerTrustedVerificationRecord({
     ok: true,
     fileCoverageComplete: true,
+    overallStatus: "CLEAN",
     evaluations: [],
     verifierOmissions: []
   });
@@ -573,6 +593,7 @@ test("007-C-04: Verification record with mismatched RunContext (contentDigest, p
   // Positive Bound: Normalizers correctly reconcile sha256: prefix, uppercase hex, and whitespace
   const recNormalizerMatch = registerTrustedVerificationRecord({
     ok: true,
+    overallStatus: "CLEAN",
     changeSetDigest: "sha256:0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF",
     headSha: "93A63E30A039239212D54DB501CE2B0655F3BD49",
     patchObjective: "  Preserve \n\t absent key rows  ",
@@ -1015,6 +1036,7 @@ test("007-R-02: CYCLE-0042 / CYCLE-0044 known positive controls remain APPROVE (
   const recordCycle0042 = registerTrustedVerificationRecord({
     ok: true,
     fileCoverageComplete: true,
+    overallStatus: "CLEAN",
     evaluations: [],
     verifierOmissions: []
   });
@@ -1031,6 +1053,7 @@ test("007-R-02: CYCLE-0042 / CYCLE-0044 known positive controls remain APPROVE (
   const recordCycle0044 = registerTrustedVerificationRecord({
     ok: true,
     fileCoverageComplete: true,
+    overallStatus: "CLEAN",
     evaluations: [],
     verifierOmissions: []
   });
@@ -1099,4 +1122,105 @@ test("007-R-03: Full test suite across Node test runner -> 679+ baseline tests p
     totalDeclaredTests >= 679,
     `Suite baseline integrity verified: expected >= 679 declared tests across ${testFiles.length} suites, found ${totalDeclaredTests}`
   );
+});
+
+test("007-P1-01: Clean Challenge missing/unrecognized overallStatus fails closed with MALFORMED_OUTPUT", () => {
+  // Test A: Missing overallStatus
+  const resMissing = validateVerificationOutput({ evaluations: [] }, { verificationMode: "clean_challenge" });
+  assert.equal(resMissing.ok, false);
+  assert.equal(resMissing.valid, false);
+  assert.match(resMissing.error, /missing or invalid required 'overallStatus'/i);
+
+  // Test B: Null or empty overallStatus
+  const resNull = validateVerificationOutput({ evaluations: [], overallStatus: null }, { verificationMode: "clean_challenge" });
+  assert.equal(resNull.ok, false);
+  assert.equal(resNull.valid, false);
+
+  // Test C: Unrecognized overallStatus string
+  const resUnrecognized = validateVerificationOutput({ evaluations: [], overallStatus: "ALL_GOOD_NO_WORRIES" }, { verificationMode: "clean_challenge" });
+  assert.equal(resUnrecognized.ok, false);
+  assert.equal(resUnrecognized.valid, false);
+
+  // Test D: SUCCESS is not valid for Clean Challenge authority (must be CLEAN, UNCERTAIN, or DEFECTS_FOUND)
+  const resSuccess = validateVerificationOutput({ evaluations: [], overallStatus: "SUCCESS" }, { verificationMode: "clean_challenge" });
+  assert.equal(resSuccess.ok, false);
+  assert.equal(resSuccess.valid, false);
+
+  // Test E: Explicit CLEAN grants valid clean status
+  const resClean = validateVerificationOutput({ evaluations: [], overallStatus: "CLEAN" }, { verificationMode: "clean_challenge" });
+  assert.equal(resClean.ok, true);
+  assert.equal(resClean.valid, true);
+  assert.equal(resClean.overallStatus, "CLEAN");
+});
+
+test("007-P1-02: Clean Challenge prompt schema explicitly requests all authority-bearing omission fields", () => {
+  const prompt = buildVerificationPrompt(
+    { totalFiles: 1, files: [{ path: "src/calc.js", additions: 1, deletions: 0 }], diffHunks: "+ return 42;" },
+    [],
+    { verificationMode: "clean_challenge", patchObjective: "Fix calculation overflow" }
+  );
+
+  // Authority-bearing fields required by validator and gate
+  assert.match(prompt, /"evidenceSupport":\s*"SUPPORTED\|CONTESTED\|INSUFFICIENT_EVIDENCE\|UNCERTAIN"/);
+  assert.match(prompt, /"objectiveImpact":\s*"FALSIFIES_PATCH_OBJECTIVE\|DOES_NOT_FALSIFY_PATCH_OBJECTIVE\|NOT_ASSESSED"/);
+  assert.match(prompt, /"counterexample":\s*"Concrete input or invocation that triggers the bug/);
+  assert.match(prompt, /"locatorAccurate":\s*true/);
+  assert.match(prompt, /"reasoning":/);
+});
+
+test("007-P1-03: Sensitive callee quota overflow and unavailable exact-head content propagate context gaps", () => {
+  // Test A: Quota overflow preserves sensitive callees as contextGaps
+  const targetFile = "src/security.cpp";
+  // Simulate diff calling 15 candidate functions (quota is MAX_CALLEES_PER_FILE = 5)
+  const fakeDiff = Array.from({ length: 15 }, (_, i) => `+ sanitize_input_${i}(buf);`).join("\n");
+  const fakeFileContent = [
+    ...Array.from({ length: 15 }, (_, i) => `void sanitize_input_${i}(char* buf) { check(buf); }`)
+  ].join("\n");
+
+  const res = extractLocalCalleeContext(fakeFileContent, fakeDiff, targetFile, {});
+  assert.equal(res.callees.length, MAX_CALLEES_PER_FILE);
+  assert.ok(res.contextGaps.length > 0, "Sensitive callees beyond quota must be preserved in contextGaps");
+  assert.ok(res.contextGaps.every(gap => gap.reason === "EXTRACTION_QUOTA_EXCEEDED"));
+
+  // Test B: Unavailable exact-head content records context gap
+  const contextPackage = buildContextPackage(
+    {
+      ok: true,
+      totalFiles: 1,
+      headSha: "ffffffffffffffffffffffffffffffffffffffff",
+      repository: { root: "/non/existent/repo/root" },
+      files: [{ path: "src/missing.c", additions: 1, deletions: 0, riskTier: 1 }],
+      diffHunks: "+ foo();"
+    },
+    "src/missing.c",
+    { repositoryRoot: "/non/existent/repo/root", headSha: "ffffffffffffffffffffffffffffffffffffffff" }
+  );
+  assert.ok(contextPackage.contextGaps.some(g => g.reason === "EXACT_HEAD_CONTENT_UNAVAILABLE"));
+
+  // Test C: Context gaps propagate uncertainty to verifier output even if rawOverallStatus is CLEAN
+  const validatedWithGaps = validateVerificationOutput(
+    { evaluations: [], overallStatus: "CLEAN" },
+    { verificationMode: "clean_challenge", contextGaps: contextPackage.contextGaps }
+  );
+  assert.equal(validatedWithGaps.ok, true);
+  assert.equal(validatedWithGaps.overallStatus, "UNCERTAIN", "Context gaps must propagate uncertainty to overallStatus UNCERTAIN");
+});
+
+test("007-P2-01: RunContext and getCheckpointPath strictly reject path traversal sequences", () => {
+  // RunContext path traversal rejection
+  assert.throws(() => {
+    new RunContext({ runId: "../escape-directory" });
+  }, /Invalid runId.*path traversal/i);
+
+  assert.throws(() => {
+    new RunContext({ runId: "valid/../../root" });
+  }, /Invalid runId.*path traversal/i);
+
+  assert.throws(() => {
+    new RunContext({ runId: "null\0byte" });
+  }, /Invalid runId.*path traversal/i);
+
+  // Normal safe runId accepted
+  const safeRc = new RunContext({ runId: "safe-run-123_456" });
+  assert.equal(safeRc.runId, "safe-run-123_456");
 });
