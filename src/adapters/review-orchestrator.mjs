@@ -71,11 +71,21 @@ function buildCanonicalRunContext(changeSet, options, runId) {
   const vr = options.verificationRecord;
   const vrDigest = vr ? normalizeDigest(vr.changeSetDigest || vr.contentDigest || "") : "";
 
+  // If vrDigest is present but does not match any current changeSet candidate, fail closed
+  if (vrDigest && !csDigestCandidates.includes(vrDigest)) {
+    return null;
+  }
+
   let selectedDigest = "";
   if (vrDigest && csDigestCandidates.includes(vrDigest)) {
     selectedDigest = vrDigest;
   } else if (csDigestCandidates.length > 0) {
     selectedDigest = csDigestCandidates[0];
+  }
+
+  // Canonical RunContext requires an authoritative contentDigest for the current ChangeSet
+  if (!selectedDigest) {
+    return null;
   }
 
   const csHeadSha = normalizeCommitSha(
@@ -99,6 +109,14 @@ function buildCanonicalRunContext(changeSet, options, runId) {
   if (csHeadSha && options.runContext?.headSha) {
     const rcHeadSha = normalizeCommitSha(options.runContext.headSha);
     if (rcHeadSha && rcHeadSha !== csHeadSha) {
+      return null;
+    }
+  }
+
+  // If verificationRecord has headSha, and current changeSet has headSha, they must match
+  if (csHeadSha && vr?.headSha) {
+    const vrHeadSha = normalizeCommitSha(vr.headSha);
+    if (vrHeadSha && vrHeadSha !== csHeadSha) {
       return null;
     }
   }

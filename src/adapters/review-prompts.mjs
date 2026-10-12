@@ -276,7 +276,7 @@ export function formatContextPackageXml(contextPackage) {
   }
 
   if (layer3CallGraph && (layer3CallGraph.callers?.length > 0 || layer3CallGraph.callees?.length > 0)) {
-    lines.push(`<call_graph targetFile="${contextPackage.targetFile || "unknown"}">`);
+    lines.push(`<call_graph targetFile="${targetFileAttr}">`);
     if (layer3CallGraph.callers?.length > 0) {
       lines.push(`  <callers>\n${layer3CallGraph.callers.map(c => `    - ${c.callerName} at ${c.file}:${c.line}`).join("\n")}\n  </callers>`);
     }

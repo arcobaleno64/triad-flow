@@ -507,7 +507,8 @@ export const UTILITY_CALLEE_SYMBOLS = new Set([
   "join",
   "dirname",
   "basename",
-  "extname"
+  "extname",
+  "verifyHeldOutBaseline"
 ]);
 
 /**
@@ -782,7 +783,7 @@ export function extractLocalCalleeContext(fileContent, diffHunks, targetFile, op
         line: candidate.line
       };
       unresolvedCallees.push(unresolvedEntry);
-      if (candidate.isSensitive) {
+      if (candidate.isSensitive && candidate.isAdded) {
         contextGaps.push({
           ...unresolvedEntry,
           category: candidate.category || "input_validation",
@@ -793,7 +794,7 @@ export function extractLocalCalleeContext(fileContent, diffHunks, targetFile, op
     }
 
     if (fileCalleesCount >= MAX_CALLEES_PER_FILE || runningTotal + callees.length >= MAX_CALLEES_TOTAL) {
-      if (candidate.isSensitive) {
+      if (candidate.isSensitive && candidate.isAdded) {
         contextGaps.push({
           symbol: candidate.symbol,
           reason: "EXTRACTION_QUOTA_EXCEEDED",
@@ -818,7 +819,7 @@ export function extractLocalCalleeContext(fileContent, diffHunks, targetFile, op
         line
       };
       unresolvedCallees.push(unresolvedEntry);
-      if (isSensitive) {
+      if (isSensitive && isAdded) {
         contextGaps.push({
           ...unresolvedEntry,
           category: category || "default_values",
@@ -841,7 +842,7 @@ export function extractLocalCalleeContext(fileContent, diffHunks, targetFile, op
         line
       };
       unresolvedCallees.push(unresolvedEntry);
-      if (isSensitive) {
+      if (isSensitive && isAdded) {
         contextGaps.push({
           ...unresolvedEntry,
           category: category || "input_validation",
@@ -856,7 +857,7 @@ export function extractLocalCalleeContext(fileContent, diffHunks, targetFile, op
         line
       };
       unresolvedCallees.push(unresolvedEntry);
-      if (isSensitive) {
+      if (isSensitive && isAdded) {
         contextGaps.push({
           ...unresolvedEntry,
           category: category || "input_validation",

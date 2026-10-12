@@ -96,7 +96,8 @@ import {
 
 import {
   evaluateCorpusCase,
-  evaluateCorpusSuite
+  evaluateCorpusSuite,
+  formatBenchmarkSummary
 } from "../src/core/real-benchmark-runner.mjs";
 
 import {
@@ -2410,4 +2411,180 @@ test("007-AUDIT-THREAD-43: Decouple preliminary benchmark scores from final gate
   assert.ok(m.promotionEligibility, "Metrics must include promotionEligibility");
   assert.equal(m.promotionEligibility.eligible, false);
   assert.match(m.promotionEligibility.reason, /Preliminary benchmark scores strictly decoupled from final gate scores/i);
+});
+
+test("007-AUDIT-THREAD-37-NEGATIVE: Orchestrator blocks mismatched headSha, exclusions, patchObjective, or missing digest", async () => {
+  const baseChangeSet = {
+    ok: true,
+    totalFiles: 1,
+    contentDigest: "sha256:" + "1".repeat(64),
+    headSha: "1111111111111111111111111111111111111111",
+    patchObjective: "Authorize valid admin requests only",
+    exclusions: ["legacy/auth.js"],
+    files: [{ path: "src/fileA.js", additions: 1, deletions: 0, riskTier: 2 }]
+  };
+
+  const cleanAdapter = {
+    providerName: "clean-sentry",
+    modelName: "model-x",
+    executeReview: async () => ({
+      ok: true,
+      findings: [],
+      coverage: { coveredFiles: ["src/fileA.js"], omittedFiles: [] }
+    })
+  };
+
+  const mockVerifier = createMockVerifierAdapter("claude", {
+    executeVerification: async () => ({
+      ok: true,
+      overallStatus: "CLEAN",
+      evaluations: [],
+      verifierOmissions: []
+    })
+  });
+
+  const validRecord = await conductIndependentVerification(
+    baseChangeSet,
+    [],
+    mockVerifier,
+    {
+      verificationMode: "clean_challenge",
+      patchObjective: baseChangeSet.patchObjective,
+      exclusions: baseChangeSet.exclusions,
+      headSha: baseChangeSet.headSha
+    }
+  );
+
+  // Negative Vector A: Authentic record minted with mismatched headSha
+  const recordMismatchedHead = await conductIndependentVerification(
+    baseChangeSet,
+    [],
+    mockVerifier,
+    {
+      verificationMode: "clean_challenge",
+      patchObjective: baseChangeSet.patchObjective,
+      exclusions: baseChangeSet.exclusions,
+      headSha: "2222222222222222222222222222222222222222"
+    }
+  );
+  const resTamperedHead = await orchestrateReview(baseChangeSet, { macro: cleanAdapter }, {
+    verificationRecord: recordMismatchedHead
+  });
+  assert.equal(resTamperedHead.status, "incomplete");
+  assert.equal(resTamperedHead.gate.decision, "block");
+  assert.match(resTamperedHead.gate.reason, /FORGED_OR_STALE_RECORD/i);
+
+  // Negative Vector B: Authentic record minted with mismatched exclusions
+  const recordMismatchedExcl = await conductIndependentVerification(
+    baseChangeSet,
+    [],
+    mockVerifier,
+    {
+      verificationMode: "clean_challenge",
+      patchObjective: baseChangeSet.patchObjective,
+      exclusions: ["different/file.js"],
+      headSha: baseChangeSet.headSha
+    }
+  );
+  const resTamperedExcl = await orchestrateReview(baseChangeSet, { macro: cleanAdapter }, {
+    verificationRecord: recordMismatchedExcl
+  });
+  assert.equal(resTamperedExcl.status, "incomplete");
+  assert.equal(resTamperedExcl.gate.decision, "block");
+  assert.match(resTamperedExcl.gate.reason, /FORGED_OR_STALE_RECORD/i);
+
+  // Negative Vector C: Authentic record minted with mismatched patchObjective
+  const recordMismatchedObj = await conductIndependentVerification(
+    baseChangeSet,
+    [],
+    mockVerifier,
+    {
+      verificationMode: "clean_challenge",
+      patchObjective: "Completely different objective",
+      exclusions: baseChangeSet.exclusions,
+      headSha: baseChangeSet.headSha
+    }
+  );
+  const resTamperedObj = await orchestrateReview(baseChangeSet, { macro: cleanAdapter }, {
+    verificationRecord: recordMismatchedObj
+  });
+  assert.equal(resTamperedObj.status, "incomplete");
+  assert.equal(resTamperedObj.gate.decision, "block");
+  assert.match(resTamperedObj.gate.reason, /FORGED_OR_STALE_RECORD/i);
+
+  // Negative Vector D: ChangeSet with empty files and missing digest fails closed
+  const noDigestChangeSet = {
+    ok: true,
+    files: [{ path: "src/empty.js", additions: 1, deletions: 0 }],
+    contentDigest: null,
+    changeSetDigest: null
+  };
+  const resNoDigest = await orchestrateReview(noDigestChangeSet, { macro: cleanAdapter }, {
+    verificationRecord: validRecord
+  });
+  assert.equal(resNoDigest.status, "incomplete");
+  assert.equal(resNoDigest.gate.decision, "block");
+});
+
+test("007-AUDIT-THREAD-38-NEGATIVE: Context lines calling sensitive imports do NOT create context gaps", () => {
+  const fileContent = `
+import { checkAdminAccess } from "auth-service";
+function existingHandler() {
+  checkAdminAccess();
+  return 42;
+}
+`;
+  // Diff only changes return line; checkAdminAccess is on an unchanged context line
+  const diffWithContextLine = `
+@@ -2,4 +2,4 @@
+ import { checkAdminAccess } from "auth-service";
+ function existingHandler() {
+   checkAdminAccess();
+-  return 42;
++  return 43;
+ }
+`;
+  const res = extractLocalCalleeContext(fileContent, diffWithContextLine, "src/handler.js");
+  const gap = res.contextGaps.find(g => g.symbol === "checkAdminAccess");
+  assert.equal(gap, undefined, "Unchanged context line must NOT be promoted to contextGaps");
+});
+
+test("007-AUDIT-THREAD-42-NEGATIVE: call_graph and checklist attributes with quote and breakout sequences are escaped", () => {
+  const pkgWithMaliciousCallGraph = {
+    targetFile: `test.js"><script>alert(1)</script>`,
+    layers: {
+      layer3CallGraph: {
+        callers: [
+          { callerName: "caller1", file: "foo.js", line: 10 }
+        ],
+        callees: []
+      }
+    }
+  };
+  const xml = formatContextPackageXml(pkgWithMaliciousCallGraph);
+  assert.equal(xml.includes(`targetFile="test.js"><script>`), false);
+  assert.ok(xml.includes(`targetFile="test.js&quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;"`));
+});
+
+test("007-AUDIT-THREAD-43-NEGATIVE: formatBenchmarkSummary renders provisional notice and disqualification", () => {
+  const mockRunResult = {
+    mode: "single",
+    totalCases: 2,
+    timestamp: "2026-10-12T00:00:00Z",
+    metrics: {
+      totalCases: 2,
+      recall: 1.0,
+      precision: 1.0,
+      falseBlockRate: 0.0,
+      tokens: { totalTokens: 500, avgTokensPerCase: 250 },
+      latency: { p50Ms: 10, p95Ms: 20, avgMs: 15 },
+      preliminaryScores: { passedCasesCount: 2, passRate: 1.0, isPreliminary: true },
+      finalGateScores: { passedCasesCount: 0, passRate: 0.0, promotionEligible: false },
+      promotionEligibility: { eligible: false, reason: "Decoupled" }
+    },
+    caseResults: []
+  };
+  const summaryText = formatBenchmarkSummary(mockRunResult);
+  assert.ok(summaryText.includes("[PROVISIONAL ONLY]"), "Summary must indicate provisional only");
+  assert.ok(summaryText.includes("DISQUALIFIED"), "Summary must indicate promotion disqualification");
 });
