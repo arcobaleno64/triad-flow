@@ -18,7 +18,7 @@ import assert from "node:assert/strict";
 import {
   evaluateGateDecision,
   evaluatePostVerificationGate,
-  registerTrustedVerificationRecord,
+  issueVerificationRecordFromOutput,
   isTrustedVerificationRecord,
   RunContext
 } from "../src/core/harness.mjs";
@@ -264,7 +264,7 @@ test("CHALLENGE 1.5: Bare assertion omission downgraded to INSUFFICIENT_EVIDENCE
   const validated = validateVerificationOutput(rawOutput, {}, { patchObjective: "DB cleanup" });
   assert.equal(validated.verifierOmissions[0].evidenceSupport, "INSUFFICIENT_EVIDENCE");
 
-  const rec = registerTrustedVerificationRecord({
+  const rec = issueVerificationRecordFromOutput({
     ok: true,
     patchObjective: "DB cleanup",
     evaluations: [],
@@ -294,7 +294,7 @@ test("CHALLENGE 2.1: Low severity omission with FALSIFIES_PATCH_OBJECTIVE strict
     reasoning: "parse_token(empty) -> drops valid tokens violating stated preservation objective."
   };
 
-  const rec = registerTrustedVerificationRecord({
+  const rec = issueVerificationRecordFromOutput({
     ok: true,
     patchObjective: "Preserve all valid tokens during parsing",
     evaluations: [],
@@ -328,7 +328,7 @@ test("CHALLENGE 2.2: Info severity omission with FALSIFIES_PATCH_OBJECTIVE stric
     reasoning: "Calling format() -> emits wrong header violating preservation objective."
   };
 
-  const rec = registerTrustedVerificationRecord({
+  const rec = issueVerificationRecordFromOutput({
     ok: true,
     patchObjective: "Preserve header output",
     evaluations: [],
@@ -359,7 +359,7 @@ test("CHALLENGE 2.3: FALSIFIES_PATCH_OBJECTIVE without bound patchObjective cann
   };
 
   // Record has NO patchObjective bound
-  const rec = registerTrustedVerificationRecord({
+  const rec = issueVerificationRecordFromOutput({
     ok: true,
     evaluations: [],
     verifierOmissions: [omission]
@@ -396,7 +396,7 @@ test("CHALLENGE 2.4: Omission with bare assertion and FALSIFIES_PATCH_OBJECTIVE 
   // Must be downgraded to INSUFFICIENT_EVIDENCE
   assert.equal(validated.verifierOmissions[0].evidenceSupport, "INSUFFICIENT_EVIDENCE");
 
-  const rec = registerTrustedVerificationRecord({
+  const rec = issueVerificationRecordFromOutput({
     ok: true,
     patchObjective: "Strict contract",
     evaluations: [],
@@ -428,7 +428,7 @@ test("CHALLENGE 3.1: Supported Medium omission with DOES_NOT_FALSIFY: Tier 1 BLO
     counterexample: "worker.drain() -> unhandled timeout exception"
   };
 
-  const rec = registerTrustedVerificationRecord({
+  const rec = issueVerificationRecordFromOutput({
     ok: true,
     patchObjective: "Fix worker queue",
     evaluations: [],
@@ -462,7 +462,7 @@ test("CHALLENGE 3.2: Supported Low omission with DOES_NOT_FALSIFY: Tier 1 HUMAN_
     counterexample: "fmt(' ') -> returns double space"
   };
 
-  const rec = registerTrustedVerificationRecord({
+  const rec = issueVerificationRecordFromOutput({
     ok: true,
     patchObjective: "Formatting cleanup",
     evaluations: [],
@@ -496,7 +496,7 @@ test("CHALLENGE 3.3: CONTESTED High omission: Tier 1 HUMAN_REVIEW_REQUIRED vs Ti
     reasoning: "Mutex lock at line 90 already prevents race condition."
   };
 
-  const rec = registerTrustedVerificationRecord({
+  const rec = issueVerificationRecordFromOutput({
     ok: true,
     evaluations: [],
     verifierOmissions: [contestedHighOmission]
@@ -562,12 +562,18 @@ test("CHALLENGE 4.4: evaluateGateDecision strictly blocks zero-finding consensus
   assert.match(gate.reason, /Clean Challenge missing/i);
 });
 
-test("CHALLENGE 4.5: Pre-gate zero-finding evaluation preserves approve when verification has not yet run", () => {
+test("CHALLENGE 4.5: Pre-gate zero-finding evaluation preserves preliminary approve, but final gate fails closed", () => {
   const cleanConsensus = makeTrustedConsensus([], { tier: 2 });
 
-  // No verificationRecord, no cleanChallenge/requireVerification/verificationMode flags
-  const gate = evaluateGateDecision(cleanConsensus, { tier: 2 });
-  assert.equal(gate.decision, "approve");
+  // 1. Preliminary evaluation preserves approve with preliminary: true
+  const preGate = evaluateGateDecision(cleanConsensus, { tier: 2, preliminary: true });
+  assert.equal(preGate.decision, "approve");
+  assert.equal(preGate.preliminary, true);
+
+  // 2. Final gate evaluation without verification record strictly fails closed
+  const finalGate = evaluateGateDecision(cleanConsensus, { tier: 2 });
+  assert.equal(finalGate.decision, "block");
+  assert.match(finalGate.reason, /Clean Challenge missing/i);
 });
 
 test("CHALLENGE 4.6: Capability forgery: plain mock object or clone passed as verificationRecord is rejected", () => {
@@ -584,7 +590,7 @@ test("CHALLENGE 4.6: Capability forgery: plain mock object or clone passed as ve
   assert.match(gate1.reason, /UNTRUSTED_VERIFICATION_RECORD/i);
 
   // 2. Structured clone of registered record
-  const registered = registerTrustedVerificationRecord({
+  const registered = issueVerificationRecordFromOutput({
     ok: true,
     evaluations: [],
     verifierOmissions: []
@@ -673,7 +679,7 @@ test("CHALLENGE 5.2: validateVerificationOutput fails closed on unparseable, mal
 
 test("CHALLENGE 5.3: Record with overallStatus: UNCERTAIN triggers human_review_required even with 0 omissions", () => {
   const cleanConsensus = makeTrustedConsensus([], { tier: 2 });
-  const rec = registerTrustedVerificationRecord({
+  const rec = issueVerificationRecordFromOutput({
     ok: true,
     overallStatus: "UNCERTAIN",
     evaluations: [],
@@ -687,7 +693,7 @@ test("CHALLENGE 5.3: Record with overallStatus: UNCERTAIN triggers human_review_
 
 test("CHALLENGE 5.4: Omission with evidenceSupport: UNCERTAIN triggers human_review_required", () => {
   const cleanConsensus = makeTrustedConsensus([], { tier: 2 });
-  const rec = registerTrustedVerificationRecord({
+  const rec = issueVerificationRecordFromOutput({
     ok: true,
     evaluations: [],
     verifierOmissions: [
@@ -757,7 +763,7 @@ test("CHALLENGE 6.2: evaluateGateDecision rejects forged or stale records when R
   });
 
   // Stale Digest
-  const recBadDigest = registerTrustedVerificationRecord({
+  const recBadDigest = issueVerificationRecordFromOutput({
     ok: true,
     changeSetDigest: "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
     headSha: "93a63e30a039239212d54db501ce2b0655f3bd49",
@@ -769,7 +775,7 @@ test("CHALLENGE 6.2: evaluateGateDecision rejects forged or stale records when R
   assert.match(gateDigest.reason, /FORGED_OR_STALE_RECORD/i);
 
   // Stale Objective
-  const recBadObj = registerTrustedVerificationRecord({
+  const recBadObj = issueVerificationRecordFromOutput({
     ok: true,
     changeSetDigest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     headSha: "93a63e30a039239212d54db501ce2b0655f3bd49",
@@ -781,7 +787,7 @@ test("CHALLENGE 6.2: evaluateGateDecision rejects forged or stale records when R
   assert.match(gateObj.reason, /FORGED_OR_STALE_RECORD/i);
 
   // Stale Head SHA
-  const recBadSha = registerTrustedVerificationRecord({
+  const recBadSha = issueVerificationRecordFromOutput({
     ok: true,
     changeSetDigest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     headSha: "1111111111111111111111111111111111111111",
@@ -799,7 +805,7 @@ test("CHALLENGE 6.2: evaluateGateDecision rejects forged or stale records when R
 
 test("CHALLENGE 7.1: Precedence: Blocker takes precedence over Human Review and Advisory in mixed omissions", () => {
   const cleanConsensus = makeTrustedConsensus([], { tier: 2 });
-  const rec = registerTrustedVerificationRecord({
+  const rec = issueVerificationRecordFromOutput({
     ok: true,
     patchObjective: "Fix all bugs",
     evaluations: [],
@@ -852,7 +858,7 @@ test("CHALLENGE 7.1: Precedence: Blocker takes precedence over Human Review and 
 
 test("CHALLENGE 7.2: Unrecognized omission evidence state triggers fail-safe human review", () => {
   const cleanConsensus = makeTrustedConsensus([], { tier: 2 });
-  const rec = registerTrustedVerificationRecord({
+  const rec = issueVerificationRecordFromOutput({
     ok: true,
     evaluations: [],
     verifierOmissions: [

@@ -51,7 +51,7 @@ import {
   RunContext,
   buildVerificationPrompt,
   conductIndependentVerification,
-  registerTrustedVerificationRecord,
+  issueVerificationRecordFromOutput,
   isTrustedVerificationRecord,
   normalizeDigest,
   normalizeObjective,

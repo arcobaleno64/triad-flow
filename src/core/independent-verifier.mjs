@@ -245,28 +245,150 @@ export class RunContext {
 
 /**
  * Module-private authority registry for in-process capability tracking of verification records.
- * Only instances registered via conductIndependentVerification or registerTrustedVerificationRecord
+ * Only instances registered via conductIndependentVerification or issueVerificationRecordFromOutput
  * hold gate authority. Detached, cloned, or plain mock objects are rejected.
  */
-export const trustedVerificationRegistry = new WeakSet();
+const trustedVerificationRegistry = new WeakSet();
 
 /**
- * Registers an active verificationRecord into the trusted capability registry.
- * @param {object} record
- * @returns {object} The registered record
+ * Issues a validated, capability-registered verification record from verifier output or structured candidate.
+ * Validates output structure under Default-Deny, normalizes fields, deep-freezes the record,
+ * and mints authority in the module-private capability registry.
+ *
+ * @param {object} params - Either structured record candidate or { rawOutput, changeSet, producerFindings, runContext, options }
+ * @returns {object} Deep-frozen, capability-bearing verification record
  */
-export function registerTrustedVerificationRecord(record) {
-  if (record && typeof record === "object") {
-    if (Object.isExtensible(record) && record.overallStatus === undefined) {
-      if (Array.isArray(record.verifierOmissions) && record.verifierOmissions.length > 0) {
-        record.overallStatus = "DEFECTS_FOUND";
-      } else {
-        record.overallStatus = "CLEAN";
-      }
-    }
-    trustedVerificationRegistry.add(record);
+export function issueVerificationRecordFromOutput(params = {}) {
+  if (!params || typeof params !== "object") {
+    throw new TypeError("issueVerificationRecordFromOutput requires a non-null object argument.");
   }
-  return record;
+
+  // Support envelope form { rawOutput, ... } and candidate record form { ok, evaluations, ... }
+  const rawEvaluations = params.evaluations || params.rawOutput?.evaluations;
+  const isDirectCandidate = params.rawOutput === undefined;
+  let rawOutput = params.rawOutput !== undefined ? params.rawOutput : params;
+
+  if (isDirectCandidate && rawOutput && typeof rawOutput === "object" && Object.isExtensible(rawOutput) && rawOutput.overallStatus === undefined) {
+    if (Array.isArray(rawOutput.verifierOmissions) && rawOutput.verifierOmissions.length > 0) {
+      rawOutput.overallStatus = "DEFECTS_FOUND";
+    } else if (Array.isArray(rawOutput.evaluations) && rawOutput.evaluations.length === 0) {
+      rawOutput.overallStatus = "CLEAN";
+    }
+  }
+
+  const inferredMode = params.verificationMode ||
+    (Array.isArray(rawEvaluations) && rawEvaluations.length > 0
+      ? "producer_verification"
+      : ((!params.producerFindings || params.producerFindings.length === 0) ? "clean_challenge" : "producer_verification"));
+
+  const context = {
+    changeSet: params.changeSet,
+    producerFindings: params.producerFindings || params.preservedProducerFindings || (Array.isArray(rawEvaluations) && rawEvaluations.length > 0 ? rawEvaluations : []),
+    patchObjective: params.patchObjective || params.runContext?.patchObjective,
+    objectiveContract: params.objectiveContract || params.runContext?.objectiveContract,
+    verificationMode: inferredMode,
+    headSha: params.headSha || params.runContext?.headSha,
+    contextGaps: params.contextGaps || params.runContext?.contextGaps,
+    strictObjectiveBinding: isDirectCandidate ? false : true,
+    strictEvidenceValidation: isDirectCandidate ? false : true,
+    ...params.options
+  };
+
+  const validated = validateVerificationOutput(rawOutput, context);
+
+  // If output failed schema validation and is not an execution failure with error, fail closed
+  if (!validated.valid && validated.ok !== false && !rawOutput.error) {
+    throw new Error(validated.error || "Invalid verifier output: failed schema validation.");
+  }
+
+  const verifiedAt = params.verifiedAt || new Date().toISOString();
+  let changeSetDigest = params.changeSetDigest || (params.changeSet ? digestChangeSet(params.changeSet) : (params.contentDigest ? `sha256:${normalizeDigest(params.contentDigest)}` : null));
+  if (typeof changeSetDigest === "string" && !changeSetDigest.startsWith("sha256:")) {
+    const norm = normalizeDigest(changeSetDigest);
+    if (norm) changeSetDigest = `sha256:${norm}`;
+  }
+
+  const headSha = normalizeCommitSha(params.headSha || params.runContext?.headSha || "");
+  const runId = params.runId || params.runContext?.runId || null;
+  const normContract = normalizeObjectiveContract(params.objectiveContract || params.patchObjective || params.runContext?.patchObjective);
+  const patchObjective = normContract?.objective || (typeof params.patchObjective === "string" ? params.patchObjective : (params.runContext?.patchObjective || ""));
+
+  const rawExclusions = Array.isArray(params.exclusions)
+    ? params.exclusions
+    : (Array.isArray(params.runContext?.exclusions)
+        ? params.runContext.exclusions
+        : (Array.isArray(normContract?.exclusions) ? normContract.exclusions : null));
+  const exclusions = rawExclusions ? Object.freeze(rawExclusions.map(String).map(s => s.trim()).filter(Boolean)) : null;
+
+  const verificationMode = String(params.verificationMode || (params.evaluations?.length === 0 && (!params.producerFindings || params.producerFindings.length === 0) ? "clean_challenge" : "producer_verification"));
+
+  let overallStatus = params.overallStatus || validated.overallStatus ||
+    (validated.verifierOmissions?.some(o => o.evidenceSupport === "UNCERTAIN") ? "UNCERTAIN" :
+      (validated.verifierOmissions?.length > 0 ? "DEFECTS_FOUND" :
+        (validated.evaluations?.length === 0 ? "CLEAN" : null)));
+
+  const producerFindings = Array.isArray(params.producerFindings)
+    ? params.producerFindings
+    : (Array.isArray(params.producer?.findings) ? params.producer.findings : []);
+  const evaluations = Array.isArray(params.evaluations)
+    ? params.evaluations
+    : (Array.isArray(validated.evaluations) ? validated.evaluations : []);
+  const verifierOmissions = Array.isArray(params.verifierOmissions)
+    ? params.verifierOmissions
+    : (Array.isArray(validated.verifierOmissions) ? validated.verifierOmissions : []);
+
+  const disagreementLedger = Array.isArray(params.disagreementLedger) ? params.disagreementLedger : [];
+
+  let summary = params.summary;
+  if (!summary || typeof summary !== "object") {
+    summary = {
+      totalEvaluated: evaluations.length,
+      supportedCount: evaluations.filter(e => e.verdict === VERIFICATION_VERDICTS.SUPPORTED || e.verdict === "SUPPORTED").length,
+      partiallySupportedCount: evaluations.filter(e => e.classification === DISAGREEMENT_CLASSIFICATIONS.PARTIALLY_SUPPORTED).length,
+      contestedCount: evaluations.filter(e => e.verdict === VERIFICATION_VERDICTS.CONTESTED || e.verdict === "CONTESTED").length,
+      insufficientEvidenceCount: evaluations.filter(e => e.verdict === VERIFICATION_VERDICTS.INSUFFICIENT_EVIDENCE || e.verdict === "INSUFFICIENT_EVIDENCE").length,
+      omissionsCount: verifierOmissions.length
+    };
+  }
+
+  let actualModelInput = params.actualModel || params.verifier?.actualModel;
+  if (typeof actualModelInput === "string" && actualModelInput.trim()) {
+    actualModelInput = { value: actualModelInput.trim(), source: SOURCE_TRUST_TIERS.CONFIGURED || "configured" };
+  }
+
+  const record = {
+    schemaVersion: VERIFICATION_SCHEMA_VERSION,
+    verifiedAt,
+    ...(changeSetDigest ? { changeSetDigest } : {}),
+    ...(headSha ? { headSha } : {}),
+    ...(runId ? { runId } : {}),
+    ...(exclusions ? { exclusions } : {}),
+    verificationMode,
+    ...(patchObjective ? { patchObjective } : {}),
+    ...(normContract ? { objectiveContract: normContract } : {}),
+    ...(overallStatus ? { overallStatus } : {}),
+    producer: deepFreeze({
+      providerName: params.producerName || params.producer?.providerName || "agy",
+      findingsCount: producerFindings.length,
+      findings: deepFreeze(cloneDeep(producerFindings))
+    }),
+    verifier: deepFreeze({
+      providerName: params.verifierName || params.verifier?.providerName || "claude",
+      modelName: params.verifierModel || params.verifier?.modelName || "claude-default",
+      actualModel: deepFreeze(normalizeActualModel(actualModelInput)),
+      usage: deepFreeze(normalizeReceiptUsage(params.usage || validated.usage || null))
+    }),
+    evaluations: deepFreeze(evaluations),
+    verifierOmissions: deepFreeze(verifierOmissions),
+    disagreementLedger: deepFreeze(disagreementLedger),
+    summary: deepFreeze(summary),
+    ok: validated.ok,
+    ...(validated.error ? { error: validated.error } : (params.error ? { error: params.error } : {}))
+  };
+
+  const frozenRecord = deepFreeze(record);
+  trustedVerificationRegistry.add(frozenRecord);
+  return frozenRecord;
 }
 
 /**
@@ -338,38 +460,36 @@ export function hasConcreteCounterexample(candidateOrReasoning) {
     return false;
   }
 
-  if (counterexample.length >= 10) {
-    return true;
-  }
-
-  if (reasoning.length < 25) {
+  const combined = `${counterexample} ${reasoning}`.trim();
+  if (combined.length < 15) {
     return false;
   }
 
-  // Generic assertion / hand-waving phrases without mechanics
-  const isBareAssertion = /^(?:potential\s+(?:issue|bug|problem|flaw)|missing\s+(?:check|validation|handling)|needs\s+investigation|edge\s+case\s+unhandled)\.?$/i.test(reasoning);
+  // Generic assertion / hand-waving phrases without concrete mechanics
+  const isBareAssertion = /^(?:potential\s+(?:issue|bug|problem|flaw)|missing\s+(?:check|validation|handling)|needs\s+investigation|edge\s+case\s+unhandled|it\s+might\s+break|could\s+cause\s+issues|some\s+problem\s+here)\.?$/i.test(combined);
   if (isBareAssertion) return false;
 
   // 1. Concrete function call / expression / reproduction code:
-  const hasCallOrExpression = /\b[a-zA-Z_]\w*\s*\([^)]*\)/.test(reasoning) ||
-                              /\[\s*['"`]?\w+['"`]?\s*\]/.test(reasoning) ||
-                              /`[^`]{3,}`/.test(reasoning);
+  const hasCallOrExpression = /\b[a-zA-Z_]\w*\s*\([^)]*\)/.test(combined) ||
+                              /\[\s*['"`]?\w+['"`]?\s*\]/.test(combined) ||
+                              /`[^`]{2,}`/.test(combined) ||
+                              /->|\.[\w$]+/.test(combined);
 
   // 2. Explicit input values / payloads:
-  const hasInputPayload = /['"][^'"]+['"]/.test(reasoning) ||
-                          /\b(?:null|undefined|char\(\d+\)|0x[0-9a-fA-F]+|-?\d+|empty\s+string)\b/i.test(reasoning);
+  const hasInputPayload = /['"][^'"]+['"]/.test(combined) ||
+                          /\b(?:null|undefined|NaN|char\(\d+\)|0x[0-9a-fA-F]+|-?\d+|empty\s+(?:string|array|list|map)|nil|None|true|false)\b/i.test(combined);
 
   // 3. Observable failure path / mechanism:
-  const hasFailurePath = /(?:->|=>|calls|invokes|falls\s+back\s+to|evaluates\s+to|returns\s+(?:false|null|true|-?\d+)|skips|bypasses|drops|rejects|fails\s+to\s+handle|leads\s+to|causes|reproduce|reproduction|failure\s+path|counterexample|for\s+example|query\s+like|input\s+like|when\s+passed|when\s+calling|steps\s+to\s+trigger)/i.test(reasoning);
+  const hasFailurePath = /(?:->|=>|calls|invokes|falls\s+back\s+to|evaluates\s+to|returns\s+(?:false|null|true|-?\d+|error|nil|None)|skips|bypasses|drops|rejects|fails\s+to\s+handle|leads\s+to|causes|reproduce|reproduction|failure\s+path|counterexample|for\s+example|query\s+like|input\s+like|when\s+passed|when\s+calling|steps\s+to\s+trigger)/i.test(combined);
 
   // 4. Observable failure symptom / outcome:
-  const hasFailureSymptom = /(?:drop(?:s|ping)?|crash(?:es)?|throw(?:s)?|false[- ]negative|regression|leak(?:s)?|corrupt(?:s|ion)?|miss(?:es|ed)?|unhandled|panic|abort|denial\s+of\s+service)/i.test(reasoning);
+  const hasFailureSymptom = /(?:drop(?:s|ping)?|crash(?:es|ing)?|throw(?:s|ing)?|false[- ]negative|regression|leak(?:s|ing)?|corrupt(?:s|ion)?|miss(?:es|ed|ing)?|unhandled|panic(?:s)?|abort(?:s)?|denial\s+of\s+service|infinite\s+loop|memory\s+exhaustion|out[- ]of[- ]bounds|buffer\s+overflow|typeerror|segmentation\s+fault)/i.test(combined);
 
   if ((hasCallOrExpression || hasInputPayload) && (hasFailurePath || hasFailureSymptom)) {
     return true;
   }
 
-  if (/^(?:repro|counterexample|test\s+case|input|example):\s*.+/im.test(reasoning) && (hasFailurePath || hasFailureSymptom)) {
+  if (/^(?:repro|counterexample|test\s+case|input|example):\s*.+/im.test(combined) && (hasFailurePath || hasFailureSymptom)) {
     return true;
   }
 
@@ -728,11 +848,13 @@ export function validateVerificationOutput(rawOutput, context = {}) {
     }
 
     // Capability forgery defense
-    delete item.__trustedCapabilityNonce;
-    delete item.authority;
-    delete item.isTrusted;
-    delete item.quorumReached;
-    delete item.consensusProof;
+    if (!Object.isFrozen(item)) {
+      delete item.__trustedCapabilityNonce;
+      delete item.authority;
+      delete item.isTrusted;
+      delete item.quorumReached;
+      delete item.consensusProof;
+    }
 
     const findingId = item.findingId !== undefined && item.findingId !== null
       ? String(item.findingId).trim()
@@ -819,7 +941,7 @@ export function validateVerificationOutput(rawOutput, context = {}) {
     const hasPatchObjective =
       typeof context.patchObjective === "string" &&
       context.patchObjective.trim().length > 0;
-    if (!hasPatchObjective && objectiveImpact !== OBJECTIVE_IMPACTS.NOT_ASSESSED) {
+    if (context.strictObjectiveBinding !== false && !hasPatchObjective && objectiveImpact !== OBJECTIVE_IMPACTS.NOT_ASSESSED) {
       return Object.freeze({
         ok: false,
         valid: false,
@@ -893,10 +1015,12 @@ export function validateVerificationOutput(rawOutput, context = {}) {
       }
 
       // Capability forgery defense
-      delete candidate.__trustedCapabilityNonce;
-      delete candidate.authority;
-      delete candidate.isTrusted;
-      delete candidate.confirmationSource;
+      if (!Object.isFrozen(candidate)) {
+        delete candidate.__trustedCapabilityNonce;
+        delete candidate.authority;
+        delete candidate.isTrusted;
+        delete candidate.confirmationSource;
+      }
 
       const rawTitle = typeof candidate.title === "string"
         ? candidate.title.trim()
@@ -990,7 +1114,7 @@ export function validateVerificationOutput(rawOutput, context = {}) {
         ? String(candidate.evidenceSupport).toUpperCase().trim()
         : (candidate.verdict ? String(candidate.verdict).toUpperCase().trim() : "SUPPORTED");
 
-      if (!OMISSION_EVIDENCE_SUPPORTS.has(rawSupport)) {
+      if (context.strictEvidenceValidation !== false && !OMISSION_EVIDENCE_SUPPORTS.has(rawSupport)) {
         return Object.freeze({
           ok: false,
           valid: false,
@@ -1032,7 +1156,7 @@ export function validateVerificationOutput(rawOutput, context = {}) {
         });
       }
       const hasPatchObjective = Boolean(context?.patchObjective || context?.objectiveContract?.objective);
-      if (!hasPatchObjective && rawObjectiveImpact !== OBJECTIVE_IMPACTS.NOT_ASSESSED) {
+      if (context.strictObjectiveBinding !== false && !hasPatchObjective && rawObjectiveImpact !== OBJECTIVE_IMPACTS.NOT_ASSESSED) {
         return Object.freeze({
           ok: false,
           valid: false,
@@ -1086,7 +1210,10 @@ export function validateVerificationOutput(rawOutput, context = {}) {
     : (typeof parsed.status === "string" ? parsed.status.trim().toUpperCase() : null);
 
   const isCleanChallenge = context?.verificationMode === "clean_challenge" ||
-    (Array.isArray(context?.producerFindings) && context.producerFindings.length === 0);
+    (context?.verificationMode !== "producer_verification" &&
+     Array.isArray(context?.producerFindings) &&
+     context.producerFindings.length === 0 &&
+     (!parsed.evaluations || parsed.evaluations.length === 0));
 
   // 1. In Clean Challenge mode, explicit overallStatus is strictly required when 0 omissions are reported (Fail-Closed)
   if (isCleanChallenge) {
@@ -1726,6 +1853,13 @@ export async function conductIndependentVerification(changeSet, producerFindings
     (validated.verifierOmissions?.some(o => o.evidenceSupport === "UNCERTAIN") ? "UNCERTAIN" : null);
 
   const verifiedAt = options.verifiedAt || new Date().toISOString();
+  const runId = options.runId || options.runContext?.runId || options.producerRunId || null;
+  const rawExclusions = Array.isArray(options.exclusions)
+    ? options.exclusions
+    : (Array.isArray(options.runContext?.exclusions)
+        ? options.runContext.exclusions
+        : (Array.isArray(normContract?.exclusions) ? normContract.exclusions : null));
+  const exclusions = rawExclusions ? Object.freeze(rawExclusions.map(String).map(s => s.trim()).filter(Boolean)) : null;
 
   // 11. Canonical verification record
   const record = {
@@ -1733,6 +1867,8 @@ export async function conductIndependentVerification(changeSet, producerFindings
     verifiedAt,
     changeSetDigest,
     ...(headSha ? { headSha } : {}),
+    ...(runId ? { runId } : {}),
+    ...(exclusions ? { exclusions } : {}),
     verificationMode,
     ...(normContract
       ? {
@@ -1756,7 +1892,7 @@ export async function conductIndependentVerification(changeSet, producerFindings
   };
 
   const frozenRecord = deepFreeze(record);
-  registerTrustedVerificationRecord(frozenRecord);
+  trustedVerificationRegistry.add(frozenRecord);
   return frozenRecord;
 }
 

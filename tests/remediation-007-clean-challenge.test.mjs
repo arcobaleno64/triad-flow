@@ -38,13 +38,14 @@ import { execFileSync } from "node:child_process";
 import {
   evaluateGateDecision,
   evaluatePostVerificationGate,
-  registerTrustedVerificationRecord,
+  issueVerificationRecordFromOutput,
   isTrustedVerificationRecord,
   RunContext,
   normalizeDigest,
   normalizeObjective,
   normalizeCommitSha
 } from "../src/core/harness.mjs";
+import * as harnessModule from "../src/core/harness.mjs";
 
 import { aggregateConsensus } from "../src/core/loop.mjs";
 
@@ -57,6 +58,7 @@ import {
   OBJECTIVE_IMPACTS,
   VERIFICATION_VERDICTS
 } from "../src/core/independent-verifier.mjs";
+import * as verifierModule from "../src/core/independent-verifier.mjs";
 
 import {
   buildContextPackage,
@@ -199,7 +201,7 @@ function setupTmpGitRepo(prefix = "triad-test-007-") {
 
 test("007-B-01: 0 Findings, Clean Challenge confirms clean -> decision: 'approve'", () => {
   const cleanConsensusT2 = makeTrustedConsensus([], { tier: 2 });
-  const cleanRecord = registerTrustedVerificationRecord({
+  const cleanRecord = issueVerificationRecordFromOutput({
     ok: true,
     fileCoverageComplete: true,
     overallStatus: "CLEAN",
@@ -389,9 +391,15 @@ test("007-B-04: 0 Findings, Clean Challenge missing / null record -> Fail-Closed
   assert.equal(gateMode.decision, "block");
   assert.match(gateMode.reason, /Clean Challenge missing: zero-finding consensus requires independent verification record/i);
 
-  // E: Pre-gate evaluation without verification flags preserves approve prior to verifier invocation
-  const preGate = evaluateGateDecision(cleanConsensus, { tier: 2 });
+  // E: Pre-gate preliminary evaluation preserves approve prior to verifier invocation
+  const preGate = evaluateGateDecision(cleanConsensus, { tier: 2, preliminary: true });
   assert.equal(preGate.decision, "approve");
+  assert.equal(preGate.preliminary, true);
+
+  // F: Final gate evaluation without verification record strictly fails closed
+  const finalGateWithoutRecord = evaluateGateDecision(cleanConsensus, { tier: 2 });
+  assert.equal(finalGateWithoutRecord.decision, "block");
+  assert.match(finalGateWithoutRecord.reason, /Clean Challenge missing/i);
 });
 
 test("007-C-01: Clean Challenge reports confirmed FALSIFIES_PATCH_OBJECTIVE omission -> decision: 'block'", () => {
@@ -412,7 +420,7 @@ test("007-C-01: Clean Challenge reports confirmed FALSIFIES_PATCH_OBJECTIVE omis
     reasoning: "Observable counterexample: traverseMapElementValueNode rejects default-valued needle, dropping absent-key row and falsifying preservation objective."
   };
 
-  const rec = registerTrustedVerificationRecord({
+  const rec = issueVerificationRecordFromOutput({
     ok: true,
     patchObjective,
     evaluations: [],
@@ -447,7 +455,7 @@ test("007-C-02: Clean Challenge reports solitary unconfirmed Critical omission (
     reasoning: "Theoretical vulnerability without verifiable failure path or concrete counterexample."
   };
 
-  const rec1 = registerTrustedVerificationRecord({
+  const rec1 = issueVerificationRecordFromOutput({
     ok: true,
     evaluations: [],
     verifierOmissions: [unconfirmedCritOmission]
@@ -478,7 +486,7 @@ test("007-C-02: Clean Challenge reports solitary unconfirmed Critical omission (
   const validated = validateVerificationOutput(rawModelOutput, {}, { patchObjective: "Parser maintenance" });
   assert.equal(validated.verifierOmissions[0].evidenceSupport, "INSUFFICIENT_EVIDENCE");
 
-  const rec2 = registerTrustedVerificationRecord({
+  const rec2 = issueVerificationRecordFromOutput({
     ok: true,
     patchObjective: "Parser maintenance",
     evaluations: [],
@@ -510,7 +518,7 @@ test("007-C-03: In-process capability forgery probe (plain object with matching 
   assert.match(gatePlain.reason, /UNTRUSTED_VERIFICATION_RECORD/i);
 
   // Probe 2: Structured clone of genuine registered record
-  const genuineRecord = registerTrustedVerificationRecord({
+  const genuineRecord = issueVerificationRecordFromOutput({
     ok: true,
     fileCoverageComplete: true,
     overallStatus: "CLEAN",
@@ -540,11 +548,12 @@ test("007-C-04: Verification record with mismatched RunContext (contentDigest, p
   });
 
   // Stale Axis 1: contentDigest mismatch
-  const recStaleDigest = registerTrustedVerificationRecord({
+  const recStaleDigest = issueVerificationRecordFromOutput({
     ok: true,
     changeSetDigest: "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
     headSha: "93a63e30a039239212d54db501ce2b0655f3bd49",
     patchObjective: "Preserve absent key rows",
+    runId: "run-007-c04",
     evaluations: [],
     verifierOmissions: []
   });
@@ -557,11 +566,12 @@ test("007-C-04: Verification record with mismatched RunContext (contentDigest, p
   assert.match(gateDigest.reason, /FORGED_OR_STALE_RECORD/i);
 
   // Stale Axis 2: patchObjective mismatch
-  const recStaleObjective = registerTrustedVerificationRecord({
+  const recStaleObjective = issueVerificationRecordFromOutput({
     ok: true,
     changeSetDigest: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
     headSha: "93a63e30a039239212d54db501ce2b0655f3bd49",
     patchObjective: "Different arbitrary objective prose",
+    runId: "run-007-c04",
     evaluations: [],
     verifierOmissions: []
   });
@@ -574,11 +584,12 @@ test("007-C-04: Verification record with mismatched RunContext (contentDigest, p
   assert.match(gateObjective.reason, /FORGED_OR_STALE_RECORD/i);
 
   // Stale Axis 3: headSha mismatch
-  const recStaleSha = registerTrustedVerificationRecord({
+  const recStaleSha = issueVerificationRecordFromOutput({
     ok: true,
     changeSetDigest: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
     headSha: "1111111111111111111111111111111111111111",
     patchObjective: "Preserve absent key rows",
+    runId: "run-007-c04",
     evaluations: [],
     verifierOmissions: []
   });
@@ -590,13 +601,68 @@ test("007-C-04: Verification record with mismatched RunContext (contentDigest, p
   assert.equal(gateSha.decision, "block");
   assert.match(gateSha.reason, /FORGED_OR_STALE_RECORD/i);
 
-  // Positive Bound: Normalizers correctly reconcile sha256: prefix, uppercase hex, and whitespace
-  const recNormalizerMatch = registerTrustedVerificationRecord({
+  // Stale Axis 4: runId mismatch
+  const recStaleRunId = issueVerificationRecordFromOutput({
+    ok: true,
+    changeSetDigest: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    headSha: "93a63e30a039239212d54db501ce2b0655f3bd49",
+    patchObjective: "Preserve absent key rows",
+    runId: "wrong-run-id-stale",
+    evaluations: [],
+    verifierOmissions: []
+  });
+  const gateRunId = evaluateGateDecision(cleanConsensus, {
+    tier: 2,
+    verificationRecord: recStaleRunId,
+    runContext: activeRunContext
+  });
+  assert.equal(gateRunId.decision, "block");
+  assert.match(gateRunId.reason, /FORGED_OR_STALE_RECORD/i);
+
+  // Stale Axis 5: missing runId on verification record when active RunContext requires it
+  const recMissingRunId = issueVerificationRecordFromOutput({
+    ok: true,
+    changeSetDigest: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    headSha: "93a63e30a039239212d54db501ce2b0655f3bd49",
+    patchObjective: "Preserve absent key rows",
+    evaluations: [],
+    verifierOmissions: []
+  });
+  const gateMissingRunId = evaluateGateDecision(cleanConsensus, {
+    tier: 2,
+    verificationRecord: recMissingRunId,
+    runContext: activeRunContext
+  });
+  assert.equal(gateMissingRunId.decision, "block");
+  assert.match(gateMissingRunId.reason, /FORGED_OR_STALE_RECORD/i);
+
+  // Stale Axis 6: exclusions mismatch
+  const recStaleExcl = issueVerificationRecordFromOutput({
+    ok: true,
+    changeSetDigest: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    headSha: "93a63e30a039239212d54db501ce2b0655f3bd49",
+    patchObjective: "Preserve absent key rows",
+    runId: "run-007-c04",
+    exclusions: ["unauthorized-extra-exclusion"],
+    evaluations: [],
+    verifierOmissions: []
+  });
+  const gateExcl = evaluateGateDecision(cleanConsensus, {
+    tier: 2,
+    verificationRecord: recStaleExcl,
+    runContext: activeRunContext
+  });
+  assert.equal(gateExcl.decision, "block");
+  assert.match(gateExcl.reason, /FORGED_OR_STALE_RECORD/i);
+
+  // Positive Bound: Normalizers correctly reconcile sha256: prefix, uppercase hex, whitespace, and matching runId
+  const recNormalizerMatch = issueVerificationRecordFromOutput({
     ok: true,
     overallStatus: "CLEAN",
     changeSetDigest: "sha256:0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF",
     headSha: "93A63E30A039239212D54DB501CE2B0655F3BD49",
     patchObjective: "  Preserve \n\t absent key rows  ",
+    runId: "run-007-c04",
     evaluations: [],
     verifierOmissions: []
   });
@@ -625,7 +691,7 @@ test("007-C-05: Non-blocking Low omission in Tier 2 (DOES_NOT_FALSIFY_PATCH_OBJE
     reasoning: "Observable counterexample: calling helper() assigns local variable tmp which is returned immediately."
   };
 
-  const rec = registerTrustedVerificationRecord({
+  const rec = issueVerificationRecordFromOutput({
     ok: true,
     patchObjective: "Refactor core loop",
     evaluations: [],
@@ -658,7 +724,7 @@ test("007-C-06: CONTESTED omission in Tier 2 -> Advisory pass (decision: 'approv
     reasoning: "Upstream mutex lock at line 65 guarantees exclusive access; path is unreachable."
   };
 
-  const rec = registerTrustedVerificationRecord({
+  const rec = issueVerificationRecordFromOutput({
     ok: true,
     evaluations: [],
     verifierOmissions: [contestedOmission]
@@ -691,7 +757,7 @@ test("007-C-07: SUPPORTED Medium omission in Tier 1 -> decision: 'block'", () =>
     reasoning: "Observable counterexample: calling validateInput(NaN) throws TypeError instead of error code."
   };
 
-  const rec = registerTrustedVerificationRecord({
+  const rec = issueVerificationRecordFromOutput({
     ok: true,
     patchObjective: "Refactor API router",
     evaluations: [],
@@ -723,7 +789,7 @@ test("007-C-08: SUPPORTED Medium omission in Tier 2 (DOES_NOT_FALSIFY_PATCH_OBJE
     reasoning: "Observable counterexample: formatBuffer(null) throws unhandled exception on null parameter."
   };
 
-  const rec = registerTrustedVerificationRecord({
+  const rec = issueVerificationRecordFromOutput({
     ok: true,
     patchObjective: "Refactor internal helper",
     evaluations: [],
@@ -743,7 +809,7 @@ test("007-C-09: UNCERTAIN omission or verifier state -> decision: 'human_review_
   const cleanConsensus = makeTrustedConsensus([], { tier: 2 });
 
   // Case A: Record with overallStatus: "UNCERTAIN"
-  const recUncertainStatus = registerTrustedVerificationRecord({
+  const recUncertainStatus = issueVerificationRecordFromOutput({
     ok: true,
     overallStatus: "UNCERTAIN",
     evaluations: [],
@@ -757,7 +823,7 @@ test("007-C-09: UNCERTAIN omission or verifier state -> decision: 'human_review_
   assert.match(gateStatus.reason, /UNCERTAIN/i);
 
   // Case B: Record with omission evidenceSupport: "UNCERTAIN"
-  const recUncertainOmission = registerTrustedVerificationRecord({
+  const recUncertainOmission = issueVerificationRecordFromOutput({
     ok: true,
     evaluations: [],
     verifierOmissions: [
@@ -1014,7 +1080,7 @@ test("007-R-01: CYCLE-0047 post-hoc diagnostic re-test flags omission / fails cl
     reasoning: "traverseMapElementValueNode at line 2209 checks isMapValueDefault(const_value, header) and returns false, causing keeps_absent_key_rows to evaluate to false and dropping absent-key rows. This directly falsifies the patch objective."
   };
 
-  const rec = registerTrustedVerificationRecord({
+  const rec = issueVerificationRecordFromOutput({
     ok: true,
     patchObjective,
     evaluations: [],
@@ -1033,7 +1099,7 @@ test("007-R-01: CYCLE-0047 post-hoc diagnostic re-test flags omission / fails cl
 test("007-R-02: CYCLE-0042 / CYCLE-0044 known positive controls remain APPROVE (no false hold)", () => {
   // Positive Control 1: CYCLE-0042 (curl/curl PR #23196, Tier 1, Oracle APPROVED)
   const consensusCycle0042 = makeTrustedConsensus([], { tier: 1 });
-  const recordCycle0042 = registerTrustedVerificationRecord({
+  const recordCycle0042 = issueVerificationRecordFromOutput({
     ok: true,
     fileCoverageComplete: true,
     overallStatus: "CLEAN",
@@ -1050,7 +1116,7 @@ test("007-R-02: CYCLE-0042 / CYCLE-0044 known positive controls remain APPROVE (
 
   // Positive Control 2: CYCLE-0044 (nodejs/node PR #66565, Tier 2, Oracle APPROVED)
   const consensusCycle0044 = makeTrustedConsensus([], { tier: 2 });
-  const recordCycle0044 = registerTrustedVerificationRecord({
+  const recordCycle0044 = issueVerificationRecordFromOutput({
     ok: true,
     fileCoverageComplete: true,
     overallStatus: "CLEAN",
@@ -1075,7 +1141,7 @@ test("007-R-03: Full test suite across Node test runner -> 679+ baseline tests p
   // 2. Verify core module export integrity
   assert.equal(typeof evaluateGateDecision, "function");
   assert.equal(typeof evaluatePostVerificationGate, "function");
-  assert.equal(typeof registerTrustedVerificationRecord, "function");
+  assert.equal(typeof issueVerificationRecordFromOutput, "function");
   assert.equal(typeof isTrustedVerificationRecord, "function");
   assert.equal(typeof RunContext, "function");
   assert.equal(typeof conductIndependentVerification, "function");
@@ -1083,6 +1149,12 @@ test("007-R-03: Full test suite across Node test runner -> 679+ baseline tests p
   assert.equal(typeof getExactHeadFileContent, "function");
   assert.equal(typeof buildEvidenceReviewPrompt, "function");
   assert.equal(typeof runDogfoodReview, "function");
+
+  // Verify capability registry privatization (Blocker 1)
+  assert.equal(verifierModule.registerTrustedVerificationRecord, undefined);
+  assert.equal(verifierModule.trustedVerificationRegistry, undefined);
+  assert.equal(harnessModule.registerTrustedVerificationRecord, undefined);
+  assert.equal(harnessModule.trustedVerificationRegistry, undefined);
 
   // 3. Verify baseline test count threshold (Spec §4 Invariant 2: 679+ baseline tests pass)
   // Baseline before REMEDIATION-007 was 679 tests (676 pass, 3 skip).
@@ -1223,4 +1295,45 @@ test("007-P2-01: RunContext and getCheckpointPath strictly reject path traversal
   // Normal safe runId accepted
   const safeRc = new RunContext({ runId: "safe-run-123_456" });
   assert.equal(safeRc.runId, "safe-run-123_456");
+});
+
+test("007-P1-04: hasConcreteCounterexample rejects bare assertions and validates failure mechanics", () => {
+  // 1. Bare assertions without concrete mechanics or payload (must be rejected)
+  assert.equal(hasConcreteCounterexample("potential edge case flaw in loop"), false);
+  assert.equal(hasConcreteCounterexample("some problem in parser implementation"), false);
+  assert.equal(hasConcreteCounterexample("needs investigation regarding concurrency"), false);
+  assert.equal(hasConcreteCounterexample("could cause issues with long inputs"), false);
+  assert.equal(hasConcreteCounterexample("missing check on input size"), false);
+  assert.equal(hasConcreteCounterexample("edge case unhandled in boundary"), false);
+
+  // 2. Valid concrete counterexamples with call/expression and failure path/symptom
+  assert.equal(hasConcreteCounterexample("calling parseInput('') returns null and causes crash"), true);
+  assert.equal(hasConcreteCounterexample({
+    counterexample: "fetchUser(null)",
+    reasoning: "Passing null throws TypeError and crashes process"
+  }), true);
+  assert.equal(hasConcreteCounterexample({
+    counterexample: "arr[0x1000]",
+    reasoning: "out-of-bounds index leads to buffer overflow"
+  }), true);
+
+  // 3. validateVerificationOutput downgrades bare omission to INSUFFICIENT_EVIDENCE
+  const unverifiedOmission = {
+    findingId: "omission-bare-test",
+    title: "Alleged parser issue",
+    severity: "high",
+    evidenceSupport: "SUPPORTED",
+    locatorAccurate: true,
+    file: "src/parser.c",
+    line_start: 10,
+    line_end: 12,
+    counterexample: "potential edge case flaw",
+    reasoning: "could cause issues with long inputs"
+  };
+
+  const output = validateVerificationOutput(
+    { evaluations: [], verifierOmissions: [unverifiedOmission] },
+    { verificationMode: "clean_challenge" }
+  );
+  assert.equal(output.verifierOmissions[0].evidenceSupport, "INSUFFICIENT_EVIDENCE");
 });

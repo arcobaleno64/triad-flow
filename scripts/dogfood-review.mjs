@@ -21,6 +21,7 @@ import { fileURLToPath } from "node:url";
 
 import { buildChangeSet } from "../src/core/git-collector.mjs";
 import { decodeGitCStyleString } from "../src/core/git-numstat.mjs";
+import { buildContextPackage } from "../src/core/context-builder.mjs";
 import {
   CliReviewAdapter,
   resolveProviderProfile
@@ -899,6 +900,26 @@ export async function runDogfoodReview(userOptions = {}) {
     verifierTimedOut = true;
   });
 
+  // Extract exact-head callee context package across modified files (Spec §3.3)
+  const primaryFile = changeSet?.files?.[0]?.path || null;
+  let contextPackage = userOptions.contextPackage || null;
+  if (!contextPackage && primaryFile && commitSha) {
+    try {
+      contextPackage = buildContextPackage(
+        changeSet,
+        primaryFile,
+        {
+          headSha: commitSha,
+          repositoryRoot: targetRepoDir,
+          cwd: targetRepoDir,
+          runId
+        }
+      );
+    } catch (err) {
+      if (log) console.warn("  ⚠️ Failed to extract callee contextPackage for verification:", err?.message || String(err));
+    }
+  }
+
   if (findings.length > 0 && !isStructuralFailure) {
     cleanChallengeAttempted = false;
     cleanChallengeDurationMs = 0;
@@ -917,6 +938,7 @@ export async function runDogfoodReview(userOptions = {}) {
         objectiveContract,
         headSha: commitSha,
         runContext,
+        contextPackage,
         timeoutMs,
         signal: userOptions.signal || null,
         verificationMode: "producer_verification"
@@ -945,6 +967,7 @@ export async function runDogfoodReview(userOptions = {}) {
           objectiveContract,
           headSha: commitSha,
           runContext,
+          contextPackage,
           timeoutMs,
           signal: userOptions.signal || null,
           verificationMode: "clean_challenge"

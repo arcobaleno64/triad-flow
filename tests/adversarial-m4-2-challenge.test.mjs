@@ -15,7 +15,7 @@ import assert from "node:assert/strict";
 import {
   evaluateGateDecision,
   evaluatePostVerificationGate,
-  registerTrustedVerificationRecord,
+  issueVerificationRecordFromOutput,
   isTrustedVerificationRecord,
   RunContext,
   normalizeDigest,
@@ -88,12 +88,21 @@ test("Adversarial M4: 13-Branch Matrix - Exhaustive Truth Table Stress", () => {
 
   // Helper to create registered record
   function makeRec(omissions = [], extra = {}) {
-    return registerTrustedVerificationRecord({
+    const normOmissions = omissions.map(o => ({
+      file: "src/map.cpp",
+      locatorAccurate: true,
+      line_start: 1,
+      line_end: 1,
+      counterexample: "fn(null) throws unhandled exception",
+      reasoning: "fn(null) throws unhandled exception",
+      ...o
+    }));
+    return issueVerificationRecordFromOutput({
       ok: true,
       patchObjective,
       fileCoverageComplete: true,
       evaluations: [],
-      verifierOmissions: omissions,
+      verifierOmissions: normOmissions,
       ...extra
     });
   }
@@ -279,7 +288,7 @@ test("Adversarial M4: Multi-Omission Precedence Hierarchy", () => {
   const consensusT2 = makeTrustedConsensus([], { tier: 2 });
 
   // Scenario 1: Advisory (Low/Tier2) + Blocker (Critical Supported) -> BLOCK wins
-  const rec1 = registerTrustedVerificationRecord({
+  const rec1 = issueVerificationRecordFromOutput({
     ok: true,
     patchObjective: "Sample obj",
     evaluations: [],
@@ -288,17 +297,27 @@ test("Adversarial M4: Multi-Omission Precedence Hierarchy", () => {
         findingId: "om-advisory",
         title: "Minor style",
         severity: "low",
+        file: "src/style.c",
+        locatorAccurate: true,
+        line_start: 1,
+        line_end: 1,
         evidenceSupport: "SUPPORTED",
         objectiveImpact: "DOES_NOT_FALSIFY_PATCH_OBJECTIVE",
-        reasoning: "Unneeded assignment"
+        counterexample: "x = y followed by x = z drops first value",
+        reasoning: "x = y followed by x = z drops first value"
       },
       {
         findingId: "om-blocker",
         title: "Critical memory leak",
         severity: "critical",
+        file: "src/mem.c",
+        locatorAccurate: true,
+        line_start: 10,
+        line_end: 12,
         evidenceSupport: "SUPPORTED",
         objectiveImpact: "DOES_NOT_FALSIFY_PATCH_OBJECTIVE",
-        reasoning: "Observable counterexample: malloc without free"
+        counterexample: "malloc(100) never freed leads to leak",
+        reasoning: "Observable counterexample: malloc without free causes leak"
       }
     ]
   });
@@ -308,7 +327,7 @@ test("Adversarial M4: Multi-Omission Precedence Hierarchy", () => {
   assert.equal(res1.advisoryFindings.length, 1);
 
   // Scenario 2: Advisory (Low/Tier2) + Human Review (Medium/Tier2) -> HUMAN_REVIEW_REQUIRED wins
-  const rec2 = registerTrustedVerificationRecord({
+  const rec2 = issueVerificationRecordFromOutput({
     ok: true,
     patchObjective: "Sample obj",
     evaluations: [],
@@ -317,17 +336,27 @@ test("Adversarial M4: Multi-Omission Precedence Hierarchy", () => {
         findingId: "om-advisory",
         title: "Minor style",
         severity: "low",
+        file: "src/style.c",
+        locatorAccurate: true,
+        line_start: 1,
+        line_end: 1,
         evidenceSupport: "SUPPORTED",
         objectiveImpact: "DOES_NOT_FALSIFY_PATCH_OBJECTIVE",
-        reasoning: "Unneeded assignment"
+        counterexample: "x = y followed by x = z drops first value",
+        reasoning: "x = y followed by x = z drops first value"
       },
       {
         findingId: "om-medium",
         title: "Medium unhandled input",
         severity: "medium",
+        file: "src/input.c",
+        locatorAccurate: true,
+        line_start: 20,
+        line_end: 22,
         evidenceSupport: "SUPPORTED",
         objectiveImpact: "DOES_NOT_FALSIFY_PATCH_OBJECTIVE",
-        reasoning: "Observable counterexample: NaN input"
+        counterexample: "parse(NaN) throws error",
+        reasoning: "Observable counterexample: parse(NaN) throws error"
       }
     ]
   });
@@ -337,7 +366,7 @@ test("Adversarial M4: Multi-Omission Precedence Hierarchy", () => {
   assert.equal(res2.advisoryFindings.length, 1);
 
   // Scenario 3: Human Review (Medium/Tier2) + Blocker (Objective Falsified Low) -> BLOCK wins
-  const rec3 = registerTrustedVerificationRecord({
+  const rec3 = issueVerificationRecordFromOutput({
     ok: true,
     patchObjective: "Sample obj",
     evaluations: [],
@@ -346,17 +375,27 @@ test("Adversarial M4: Multi-Omission Precedence Hierarchy", () => {
         findingId: "om-medium",
         title: "Medium unhandled input",
         severity: "medium",
+        file: "src/input.c",
+        locatorAccurate: true,
+        line_start: 20,
+        line_end: 22,
         evidenceSupport: "SUPPORTED",
         objectiveImpact: "DOES_NOT_FALSIFY_PATCH_OBJECTIVE",
-        reasoning: "Observable counterexample"
+        counterexample: "parse(NaN) throws error",
+        reasoning: "Observable counterexample: parse(NaN) throws error"
       },
       {
         findingId: "om-obj-falsify",
         title: "Objective violated in corner case",
         severity: "low",
+        file: "src/corner.c",
+        locatorAccurate: true,
+        line_start: 30,
+        line_end: 35,
         evidenceSupport: "SUPPORTED",
         objectiveImpact: "FALSIFIES_PATCH_OBJECTIVE",
-        reasoning: "Directly falsifies patch objective"
+        counterexample: "test(null) returns false dropping record",
+        reasoning: "Directly falsifies patch objective: test(null) returns false dropping record"
       }
     ]
   });
@@ -379,11 +418,12 @@ test("Adversarial M4: RunContext Binding Security & Strict Integrity", () => {
   });
 
   // Normalization Stress: uppercase hex + sha256 prefix + multiline whitespace
-  const normalizedRec = registerTrustedVerificationRecord({
+  const normalizedRec = issueVerificationRecordFromOutput({
     ok: true,
     headSha: "93A63E30A039239212D54DB501CE2B0655F3BD49",
     changeSetDigest: "sha256:ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789",
     patchObjective: "\t Strict   security \n patch for \r\n input parser   ",
+    runId: "run-adv-m4",
     evaluations: [],
     verifierOmissions: []
   });
@@ -396,11 +436,12 @@ test("Adversarial M4: RunContext Binding Security & Strict Integrity", () => {
   assert.equal(gatePass.decision, "approve");
 
   // Adversarial Tampering: 1 character difference in contentDigest
-  const tamperedDigestRec = registerTrustedVerificationRecord({
+  const tamperedDigestRec = issueVerificationRecordFromOutput({
     ok: true,
     headSha: activeRc.headSha,
     changeSetDigest: "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456788", // ends in 88 instead of 89
     patchObjective: activeRc.patchObjective,
+    runId: "run-adv-m4",
     evaluations: [],
     verifierOmissions: []
   });
@@ -413,11 +454,12 @@ test("Adversarial M4: RunContext Binding Security & Strict Integrity", () => {
   assert.match(gateTamperedDigest.reason, /FORGED_OR_STALE_RECORD/i);
 
   // Adversarial Tampering: subtle prose change in patchObjective
-  const tamperedObjectiveRec = registerTrustedVerificationRecord({
+  const tamperedObjectiveRec = issueVerificationRecordFromOutput({
     ok: true,
     headSha: activeRc.headSha,
     changeSetDigest: activeRc.contentDigest,
     patchObjective: "Strict security patch for output parser", // input -> output
+    runId: "run-adv-m4",
     evaluations: [],
     verifierOmissions: []
   });
@@ -430,11 +472,12 @@ test("Adversarial M4: RunContext Binding Security & Strict Integrity", () => {
   assert.match(gateTamperedObj.reason, /FORGED_OR_STALE_RECORD/i);
 
   // Adversarial Tampering: 1 character difference in headSha
-  const tamperedShaRec = registerTrustedVerificationRecord({
+  const tamperedShaRec = issueVerificationRecordFromOutput({
     ok: true,
     headSha: "93a63e30a039239212d54db501ce2b0655f3bd48", // 48 instead of 49
     changeSetDigest: activeRc.contentDigest,
     patchObjective: activeRc.patchObjective,
+    runId: "run-adv-m4",
     evaluations: [],
     verifierOmissions: []
   });
@@ -445,6 +488,24 @@ test("Adversarial M4: RunContext Binding Security & Strict Integrity", () => {
   });
   assert.equal(gateTamperedSha.decision, "block");
   assert.match(gateTamperedSha.reason, /FORGED_OR_STALE_RECORD/i);
+
+  // Adversarial Tampering: runId mismatch
+  const tamperedRunIdRec = issueVerificationRecordFromOutput({
+    ok: true,
+    headSha: activeRc.headSha,
+    changeSetDigest: activeRc.contentDigest,
+    patchObjective: activeRc.patchObjective,
+    runId: "tampered-run-adv-m4",
+    evaluations: [],
+    verifierOmissions: []
+  });
+  const gateTamperedRunId = evaluateGateDecision(consensus, {
+    tier: 2,
+    verificationRecord: tamperedRunIdRec,
+    runContext: activeRc
+  });
+  assert.equal(gateTamperedRunId.decision, "block");
+  assert.match(gateTamperedRunId.reason, /FORGED_OR_STALE_RECORD/i);
 });
 
 // ============================================================================
@@ -460,7 +521,7 @@ test("Adversarial M4: In-Process Capability Registry Tampering Resistance", () =
   assert.equal(evaluateGateDecision(consensus, { tier: 2, verificationRecord: plainMock }).decision, "block");
 
   // Attack 2: Object.assign
-  const genuine = registerTrustedVerificationRecord({ ok: true, evaluations: [], verifierOmissions: [] });
+  const genuine = issueVerificationRecordFromOutput({ ok: true, evaluations: [], verifierOmissions: [] });
   assert.equal(isTrustedVerificationRecord(genuine), true);
   const assigned = Object.assign({}, genuine);
   assert.equal(isTrustedVerificationRecord(assigned), false);
@@ -501,7 +562,7 @@ test("Adversarial M4: Post-Hoc Historical Simulation - CYCLE-0047, CYCLE-0042, C
   assert.match(gate47Untrusted.reason, /UNTRUSTED_VERIFICATION_RECORD/i);
 
   // Control C: Verifier catches objective falsification -> BLOCK
-  const rec47Defect = registerTrustedVerificationRecord({
+  const rec47Defect = issueVerificationRecordFromOutput({
     ok: true,
     patchObjective: patchObjective47,
     evaluations: [],
@@ -509,8 +570,13 @@ test("Adversarial M4: Post-Hoc Historical Simulation - CYCLE-0047, CYCLE-0042, C
       findingId: "omission-47",
       title: "FixedString default needle rejected",
       severity: "critical",
+      file: "src/Storages/MergeTree/MergeTreeIndexConditionText.cpp",
+      locatorAccurate: true,
+      line_start: 1487,
+      line_end: 1487,
       evidenceSupport: "SUPPORTED",
       objectiveImpact: "FALSIFIES_PATCH_OBJECTIVE",
+      counterexample: "traverseMapElementValueNode(null) returns false dropping absent-key rows",
       reasoning: "Observable counterexample: traverseMapElementValueNode returns false on default needle, dropping absent-key rows."
     }]
   });
@@ -520,7 +586,7 @@ test("Adversarial M4: Post-Hoc Historical Simulation - CYCLE-0047, CYCLE-0042, C
 
   // --- CYCLE-0042 (Positive Control - curl/curl PR #23196, Tier 1) ---
   const consensus42 = makeTrustedConsensus([], { tier: 1 });
-  const rec42Clean = registerTrustedVerificationRecord({
+  const rec42Clean = issueVerificationRecordFromOutput({
     ok: true,
     fileCoverageComplete: true,
     evaluations: [],
@@ -532,7 +598,7 @@ test("Adversarial M4: Post-Hoc Historical Simulation - CYCLE-0047, CYCLE-0042, C
 
   // --- CYCLE-0044 (Positive Control - nodejs/node PR #66565, Tier 2) ---
   const consensus44 = makeTrustedConsensus([], { tier: 2 });
-  const rec44Clean = registerTrustedVerificationRecord({
+  const rec44Clean = issueVerificationRecordFromOutput({
     ok: true,
     fileCoverageComplete: true,
     evaluations: [],
