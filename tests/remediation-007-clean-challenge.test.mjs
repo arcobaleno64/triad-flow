@@ -2135,3 +2135,34 @@ test("007-AUDIT-THREAD-23: omission lacking evidenceSupport/verdict does not def
   assert.equal(validatedMalformed.executionStatus, "malformed_output");
   assert.match(validatedMalformed.error, /Invalid evidenceSupport 'CONFIRMED_BY_MODEL'/i);
 });
+
+test("007-AUDIT-THREAD-40: Nonempty consensus rejects clean_challenge verification record and fails closed with mode mismatch", () => {
+  const nonemptyConsensus = makeTrustedConsensus([
+    {
+      id: "finding-low-01",
+      title: "Minor stylistic inconsistency",
+      severity: "low",
+      file: "src/util.js",
+      line_start: 10
+    }
+  ], { tier: 2 });
+
+  const cleanChallengeRecord = issueVerificationRecordFromOutput({
+    ok: true,
+    verificationMode: "clean_challenge",
+    overallStatus: "CLEAN",
+    evaluations: [],
+    verifierOmissions: []
+  });
+
+  const gateDecision = evaluateIsolatedTestGate(nonemptyConsensus, {
+    tier: 2,
+    verificationRecord: cleanChallengeRecord
+  });
+
+  assert.equal(gateDecision.decision, "block");
+  assert.match(
+    gateDecision.reason,
+    /Verification mode mismatch: nonempty consensus requires 'producer_verification' mode/i
+  );
+});

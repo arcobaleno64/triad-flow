@@ -429,6 +429,15 @@ function _evaluateGateDecisionCore(consensus, options = {}, { allowSynthetic = f
           advisoryFindings: []
         };
       }
+    } else {
+      if (vr.verificationMode === "clean_challenge") {
+        return {
+          decision: "block",
+          reason: `Verification mode mismatch: nonempty consensus requires 'producer_verification' mode (got: 'clean_challenge').`,
+          criticals: [],
+          advisoryFindings: []
+        };
+      }
     }
 
     // Reordered: execute post-verification gate authority
@@ -636,6 +645,15 @@ function _evaluatePostVerificationGateCore(consensus, verificationRecord, option
       return {
         decision: "block",
         reason: `Verification mode mismatch: zero-finding consensus requires 'clean_challenge' mode (got: '${verificationRecord.verificationMode || "none"}').`,
+        criticals: [],
+        advisoryFindings: []
+      };
+    }
+  } else {
+    if (verificationRecord.verificationMode === "clean_challenge") {
+      return {
+        decision: "block",
+        reason: `Verification mode mismatch: nonempty consensus requires 'producer_verification' mode (got: 'clean_challenge').`,
         criticals: [],
         advisoryFindings: []
       };
