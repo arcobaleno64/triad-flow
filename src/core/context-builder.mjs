@@ -10,6 +10,7 @@ import path from "node:path";
 import { normalizeCanonicalPath } from "./scoring.mjs";
 import { getExactHeadFileContent } from "./git-collector.mjs";
 import { splitDiffByFiles } from "./chunk-manager.mjs";
+import { truncateUtf8Safe } from "./independent-verifier.mjs";
 
 export const SAFE_ARGV_THRESHOLD_BYTES = 8192;
 export const GLOBAL_AST_CONTEXT_CEILING_BYTES = 8000;
@@ -17,6 +18,7 @@ export const MAX_CALLEES_PER_FILE = 5;
 export const MAX_CALLEES_TOTAL = 10;
 export const MAX_SNIPPET_LINES = 60;
 export const MAX_SNIPPET_BYTES = 2000;
+export const NON_CODE_FILE_REGEX = /\.(?:json|md|markdown|ya?ml|toml|lock|txt|csv|png|jpe?g|svg|ico)$/i;
 
 export const DEFAULT_BUDGET_CONFIG = Object.freeze({
   maxInputBytes: 524288,     // 512 KB Total Budget
@@ -261,7 +263,7 @@ export function findFunctionDefinitions(lines, symbol) {
 
   const DEF_REGEX = new RegExp(
     `(?:` +
-    `^(?:\\s*(?:[a-zA-Z0-9_<>:&*]+\\s+)+)?(?:[a-zA-Z0-9_]+::)?${escapedSym}\\s*\\(|` +
+    `^(?:\\s*(?:[a-zA-Z0-9_<>*&]|::)+\\s+)+(?:[a-zA-Z0-9_]+::)?${escapedSym}\\s*\\(|` +
     `^\\s*(?:export\\s+)?(?:default\\s+)?(?:async\\s+)?function(?:\\s+${escapedSym})?\\s*\\(|` +
     `^\\s*(?:static\\s+)?(?:async\\s+)?${escapedSym}\\s*\\(|` +
     `^\\s*(?:export\\s+)?(?:const|let|var)?\\s*${escapedSym}\\s*=\\s*(?:async\\s*)?(?:\\([^)]*\\)|[a-zA-Z0-9_$]+)?\\s*(?:=>|function)|` +
@@ -271,12 +273,14 @@ export function findFunctionDefinitions(lines, symbol) {
 
   const CONTROL_START = /^\s*(?:if|while|for|switch|catch|with|return|throw|delete|typeof|sizeof|case|else\s+if)\b/;
   const CALL_EXPR_DISQUALIFIERS = /(?:==|!=|&&|\|\||return\s+|throw\s+|new\s+)/;
+  const PROP_START = /^\s*(?:[a-zA-Z0-9_$]+|"[^"]*"|'[^']*')\s*:\s*/;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
 
     if (!line.includes(symbol)) continue;
     if (CONTROL_START.test(line)) continue;
+    if (PROP_START.test(line)) continue;
     if (!DEF_REGEX.test(line)) continue;
 
     if (line.includes("=") && !line.includes("=>") && !line.includes("function") && !line.includes("{")) {
@@ -290,20 +294,62 @@ export function findFunctionDefinitions(lines, symbol) {
     let hasBrace = false;
     let braceLineIdx = -1;
     let isDeclarationOnly = false;
+    let parenClosed = false;
+    let parenDepth = 0;
+    const STATEMENT_KEYWORD = /^\s*(?:if|while|for|switch|catch|with|return|throw|delete|typeof|sizeof|case|else|const|let|var|yield|await)\b/;
+
+    const symIdx = line.indexOf(symbol);
+    const openParenIdx = symIdx !== -1 ? line.indexOf("(", symIdx) : -1;
+    const scanCharIdx = openParenIdx !== -1 ? openParenIdx : 0;
 
     for (let j = i; j < Math.min(i + 15, lines.length); j++) {
       const scanLine = lines[j];
-      const braceIdx = scanLine.indexOf("{");
-      const semiIdx = scanLine.indexOf(";");
+      const trimmed = scanLine.trim();
 
-      if (semiIdx !== -1 && (braceIdx === -1 || semiIdx < braceIdx)) {
-        isDeclarationOnly = true;
-        break;
+      if (!parenClosed) {
+        const startK = j === i ? scanCharIdx : 0;
+        for (let k = startK; k < scanLine.length; k++) {
+          const ch = scanLine[k];
+          if (ch === "(") parenDepth++;
+          else if (ch === ")") {
+            parenDepth--;
+            if (parenDepth <= 0) {
+              parenClosed = true;
+              const bodyBraceIdx = scanLine.indexOf("{", k);
+              if (bodyBraceIdx !== -1) {
+                hasBrace = true;
+                braceLineIdx = j;
+              }
+              break;
+            }
+          }
+        }
+        if (hasBrace) break;
+      } else {
+        if (j > i) {
+          const isCppQualifier = /^\s*const(?:\s+(?:noexcept|override|final|volatile|=|->))?\s*(?:\{|$|\/\/|\/\*)/.test(trimmed);
+          if (STATEMENT_KEYWORD.test(trimmed) && !isCppQualifier) {
+            isDeclarationOnly = true;
+            break;
+          }
+          const braceIdx = scanLine.indexOf("{");
+          if (trimmed.length > 0 && braceIdx === -1 && !/^(?::|->|const\b|noexcept\b|override\b|\/\*|\/\/)/.test(trimmed)) {
+            isDeclarationOnly = true;
+            break;
+          }
+        }
+        const braceIdx = scanLine.indexOf("{");
+        if (braceIdx !== -1) {
+          hasBrace = true;
+          braceLineIdx = j;
+          break;
+        }
       }
 
-      if (braceIdx !== -1) {
-        hasBrace = true;
-        braceLineIdx = j;
+      const semiIdx = scanLine.indexOf(";");
+      const braceIdx = scanLine.indexOf("{");
+      if (semiIdx !== -1 && (braceIdx === -1 || semiIdx < braceIdx)) {
+        isDeclarationOnly = true;
         break;
       }
     }
@@ -337,20 +383,106 @@ export function findFunctionDefinitions(lines, symbol) {
 export function classifySensitiveCategory(text) {
   if (!text || typeof text !== "string") return null;
 
-  const SENSITIVE_PATTERNS = [
-    { category: "default_values", regex: /(?:^|_|\b)(?:default|fallback|isMapValueDefault|missing|absent|zero|optional)\w*/i },
-    { category: "input_validation", regex: /(?:^|_|\b)(?:valid|check|assert|verify|sanitize|parse|bounds?|range|empty|null|param|limit)\w*/i },
-    { category: "error_handling", regex: /(?:^|_|\b)(?:error|err|fail|throw|catch|reject|abort|except|status|try|drop)\w*/i },
-    { category: "security", regex: /(?:^|_|\b)(?:auth|permit|allow|deny|token|secret|privilege|guard|secure)\w*/i }
+  const normalized = text.replace(/([a-z0-9])([A-Z])/g, "$1_$2");
+
+  const DEFAULT_REGEX = /(?:^|_|\b)(?:default|fallback|isMapValueDefault|missing|absent|zero|optional)\w*/gi;
+  if (DEFAULT_REGEX.test(normalized)) {
+    return "default_values";
+  }
+
+  const REMAINING_PATTERNS = [
+    { category: "input_validation", regex: /(?:^|_|\b)(?:valid|check|assert|verify|sanitize|parse|bounds?|range|empty|null|param|limit)\w*/gi },
+    { category: "error_handling", regex: /(?:^|_|\b)(?:handle|error|err|fail|throw|catch|reject|abort|except|status|try|drop)\w*/gi },
+    { category: "security", regex: /(?:^|_|\b)(?:auth|permit|permiss|allow|deny|token|secret|privilege|guard|secure)\w*/gi }
   ];
 
-  for (const { category, regex } of SENSITIVE_PATTERNS) {
-    if (regex.test(text)) {
-      return category;
+  let earliestPos = Infinity;
+  let bestCategory = null;
+
+  for (const { category, regex } of REMAINING_PATTERNS) {
+    regex.lastIndex = 0;
+    const match = regex.exec(normalized);
+    if (match && match.index < earliestPos) {
+      earliestPos = match.index;
+      bestCategory = category;
     }
   }
 
-  return null;
+  return bestCategory;
+}
+
+/**
+ * Strips comments and string literals from a line of source code, tracking multi-line comment state.
+ * @param {string} line
+ * @param {{ val: boolean }} inBlockCommentRef
+ * @returns {string}
+ */
+export function stripCommentsAndStrings(line, inBlockCommentRef = { val: false }) {
+  let inString = false;
+  let quote = null;
+  let result = "";
+  let i = 0;
+
+  if (inBlockCommentRef.val) {
+    const endIdx = line.indexOf("*/");
+    if (endIdx !== -1) {
+      inBlockCommentRef.val = false;
+      i = endIdx + 2;
+    } else {
+      return "";
+    }
+  }
+
+  if (/^\s*\*/.test(line)) {
+    if (line.includes("*/")) {
+      inBlockCommentRef.val = false;
+      const endIdx = line.indexOf("*/");
+      i = endIdx + 2;
+    } else {
+      return "";
+    }
+  }
+
+  for (; i < line.length; i++) {
+    const ch = line[i];
+    const nextCh = i + 1 < line.length ? line[i + 1] : "";
+    if (inString) {
+      if (ch === "\\" && i + 1 < line.length) {
+        i++;
+        continue;
+      }
+      if (ch === quote) {
+        inString = false;
+        quote = null;
+      }
+      continue;
+    }
+    if (ch === "/" && nextCh === "/") break;
+    if (ch === "/" && nextCh === "*") {
+      const closeIdx = line.indexOf("*/", i + 2);
+      if (closeIdx !== -1) {
+        i = closeIdx + 1;
+        continue;
+      } else {
+        inBlockCommentRef.val = true;
+        break;
+      }
+    }
+    if (ch === '"' || ch === "'" || ch === "`") {
+      inString = true;
+      quote = ch;
+      continue;
+    }
+    if (ch === "/" && (i === 0 || /[\s=,(:!&|]/.test(line[i - 1]))) {
+      const endRegex = line.indexOf("/", i + 1);
+      if (endRegex !== -1 && !line.slice(i, endRegex).includes(";")) {
+        i = endRegex;
+        continue;
+      }
+    }
+    result += ch;
+  }
+  return result;
 }
 
 /**
@@ -368,7 +500,7 @@ export function extractCandidateCallSymbols(diffHunks) {
   const candidates = [];
   const seen = new Set();
 
-  const CALL_REGEX = /\b([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/g;
+  const CALL_REGEX = /(?<![.])\b([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/g;
   const KEYWORDS = new Set([
     "if", "else", "for", "while", "do", "switch", "case", "default", "break", "continue",
     "return", "throw", "try", "catch", "finally", "goto", "function", "async", "await",
@@ -377,11 +509,16 @@ export function extractCandidateCallSymbols(diffHunks) {
     "static_cast", "dynamic_cast", "const_cast", "reinterpret_cast", "defined", "template",
     "typename", "explicit", "noexcept", "virtual", "override", "final", "inline", "static",
     "const", "constexpr", "auto", "assert", "static_assert", "int", "char", "bool", "float",
-    "double", "long", "short", "unsigned", "signed", "struct", "enum", "union"
+    "double", "long", "short", "unsigned", "signed", "struct", "enum", "union",
+    "String", "Boolean", "Number", "Date", "Object", "Array", "Set", "Map", "WeakSet", "WeakMap",
+    "Promise", "Symbol", "Buffer", "RegExp", "Error", "TypeError", "RangeError", "SyntaxError",
+    "parseInt", "parseFloat", "isNaN", "isFinite", "setTimeout", "clearTimeout", "setInterval",
+    "clearInterval", "console", "describe", "it", "test", "expect"
   ]);
 
   let currentTargetLine = 1;
   const HUNK_HEADER_REGEX = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/;
+  const inBlockCommentRef = { val: false };
 
   for (let i = 0; i < lines.length; i++) {
     const rawLine = lines[i];
@@ -405,14 +542,20 @@ export function extractCandidateCallSymbols(diffHunks) {
     const lineNum = currentTargetLine;
     currentTargetLine++;
 
-    const lineCategory = classifySensitiveCategory(lineText);
+    const cleanLine = stripCommentsAndStrings(lineText, inBlockCommentRef);
+    const lineCategory = classifySensitiveCategory(cleanLine);
     const isSensitiveLine = Boolean(lineCategory);
+
+    const fnDeclMatch = cleanLine.match(/^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?function(?:\s+([a-zA-Z_][a-zA-Z0-9_]*))?\s*\(/);
+    const pyDeclMatch = cleanLine.match(/^\s*def\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/);
+    const declaredFn = fnDeclMatch ? fnDeclMatch[1] : (pyDeclMatch ? pyDeclMatch[1] : null);
 
     let match;
     CALL_REGEX.lastIndex = 0;
-    while ((match = CALL_REGEX.exec(lineText)) !== null) {
+    while ((match = CALL_REGEX.exec(cleanLine)) !== null) {
       const sym = match[1];
       if (KEYWORDS.has(sym)) continue;
+      if (declaredFn && sym === declaredFn) continue;
 
       const symCat = classifySensitiveCategory(sym);
       const isSensitive = Boolean(symCat || isSensitiveLine);
@@ -430,11 +573,13 @@ export function extractCandidateCallSymbols(diffHunks) {
         });
       } else if (isAdded) {
         const existing = candidates.find(c => c.symbol === sym);
-        if (existing && !existing.isAdded) {
-          existing.isAdded = true;
-          existing.line = lineNum;
-          existing.lineText = lineText.trim();
-          if (isSensitive) {
+        if (existing) {
+          if (!existing.isAdded) {
+            existing.isAdded = true;
+            existing.line = lineNum;
+            existing.lineText = lineText.trim();
+          }
+          if (isSensitive && !existing.isSensitive) {
             existing.isSensitive = true;
             existing.category = symCategory;
           }
@@ -444,6 +589,8 @@ export function extractCandidateCallSymbols(diffHunks) {
   }
 
   candidates.sort((a, b) => {
+    if (a.isSensitive && !b.isSensitive) return -1;
+    if (!a.isSensitive && b.isSensitive) return 1;
     if (a.isAdded && !b.isAdded) return -1;
     if (!a.isAdded && b.isAdded) return 1;
     return a.line - b.line;
@@ -519,6 +666,13 @@ export function extractBoundedFunctionSnippet(lines, startLine, endLine) {
     finalLines = headerLines;
     truncated = finalLines.join("\n");
     bytes = Buffer.byteLength(truncated, "utf8");
+
+    if (bytes > MAX_SNIPPET_BYTES) {
+      const rawBuf = Buffer.from(truncated, "utf8");
+      truncated = truncateUtf8Safe(rawBuf, MAX_SNIPPET_BYTES);
+      bytes = Buffer.byteLength(truncated, "utf8");
+      finalLines = truncated.split("\n");
+    }
   }
 
   return {
@@ -547,6 +701,10 @@ export function extractLocalCalleeContext(fileContent, diffHunks, targetFile, op
     return { callees, unresolvedCallees, contextGaps };
   }
 
+  if (!targetFile || NON_CODE_FILE_REGEX.test(targetFile) || targetFile.startsWith("tests/") || targetFile.startsWith("test/")) {
+    return { callees, unresolvedCallees, contextGaps };
+  }
+
   const candidateCalls = extractCandidateCallSymbols(diffHunks);
   if (candidateCalls.length === 0) {
     return { callees, unresolvedCallees, contextGaps };
@@ -556,7 +714,34 @@ export function extractLocalCalleeContext(fileContent, diffHunks, targetFile, op
   const runningTotal = options.extractedCalleesCount || 0;
   let fileCalleesCount = 0;
 
+  // Extract imported symbols from module imports
+  const importedSymbols = new Set();
+  const importRegex = /import\s+(?:\{[\s\S]*?\}|[a-zA-Z0-9_$,\s*]+)\s+from\s+['"][^'"]+['"]/g;
+  let matchImport;
+  while ((matchImport = importRegex.exec(fileContent)) !== null) {
+    const symMatches = matchImport[0].match(/\b([a-zA-Z_][a-zA-Z0-9_]*)\b/g) || [];
+    for (const s of symMatches) {
+      if (s !== "import" && s !== "from" && s !== "as" && s !== "default") {
+        importedSymbols.add(s);
+      }
+    }
+  }
+  const requireRegex = /(?:const|let|var)\s+(?:\{[\s\S]*?\}|[a-zA-Z0-9_$]+)\s*=\s*require\s*\(/g;
+  let matchRequire;
+  while ((matchRequire = requireRegex.exec(fileContent)) !== null) {
+    const symMatches = matchRequire[0].match(/\b([a-zA-Z_][a-zA-Z0-9_]*)\b/g) || [];
+    for (const s of symMatches) {
+      if (s !== "const" && s !== "let" && s !== "var" && s !== "require") {
+        importedSymbols.add(s);
+      }
+    }
+  }
+
   for (const candidate of candidateCalls) {
+    if (importedSymbols.has(candidate.symbol)) {
+      continue;
+    }
+
     if (fileCalleesCount >= MAX_CALLEES_PER_FILE || runningTotal + callees.length >= MAX_CALLEES_TOTAL) {
       if (candidate.isSensitive) {
         contextGaps.push({
@@ -639,7 +824,9 @@ export function extractLocalCalleeContext(fileContent, diffHunks, targetFile, op
         bytes: snippet.bytes,
         startLine: match.startLine,
         endLine: match.endLine,
-        extractionMode: snippet.extractionMode
+        extractionMode: snippet.extractionMode,
+        isSensitive,
+        category
       });
       fileCalleesCount++;
     }
@@ -795,25 +982,29 @@ export function allocateContextBudget(rawLayers, config = DEFAULT_BUDGET_CONFIG)
   const evictedCallees = [];
 
   if (layer1Bytes > maxAstAllowed) {
-    let calleesList = [...(layer1.callees || [])];
-    while (calleesList.length > 0 && Buffer.byteLength(JSON.stringify({ ...layer1, callees: calleesList }), "utf8") > maxAstAllowed) {
-      const popped = calleesList.pop();
-      if (popped) {
-        evictedCallees.push(popped);
-      }
-    }
-
     layer1 = {
       ...layer1,
-      enclosingFunctions: (layer1.enclosingFunctions || []).map(fn => ({
+      enclosingFunctions: (layer1.enclosingFunctions || []).slice(0, 10).map(fn => ({
         ...fn,
         bodySnippet: "/* ... body collapsed for budget ... */"
       })),
-      enclosingClasses: (layer1.enclosingClasses || []).slice(0, 2),
-      callees: calleesList
+      enclosingClasses: (layer1.enclosingClasses || []).slice(0, 2)
     };
     layer1Json = JSON.stringify(layer1);
     layer1Bytes = Buffer.byteLength(layer1Json, "utf8");
+
+    if (layer1Bytes > maxAstAllowed) {
+      let calleesList = [...(layer1.callees || [])];
+      while (calleesList.length > 0 && Buffer.byteLength(JSON.stringify({ ...layer1, callees: calleesList }), "utf8") > maxAstAllowed) {
+        const popped = calleesList.pop();
+        if (popped) {
+          evictedCallees.push(popped);
+        }
+      }
+      layer1.callees = calleesList;
+      layer1Json = JSON.stringify(layer1);
+      layer1Bytes = Buffer.byteLength(layer1Json, "utf8");
+    }
 
     if (layer1Bytes > maxAstAllowed) {
       evictedLayers.push("layer1AstEnclosure");
@@ -825,9 +1016,14 @@ export function allocateContextBudget(rawLayers, config = DEFAULT_BUDGET_CONFIG)
         enclosingFunctions: [],
         enclosingClasses: [],
         callees: [],
-        unresolvedCallees: layer1.unresolvedCallees || []
+        unresolvedCallees: [...(layer1.unresolvedCallees || [])]
       };
       layer1Bytes = Buffer.byteLength(JSON.stringify(layer1), "utf8");
+
+      while (layer1Bytes > maxAstAllowed && layer1.unresolvedCallees.length > 0) {
+        layer1.unresolvedCallees.pop();
+        layer1Bytes = Buffer.byteLength(JSON.stringify(layer1), "utf8");
+      }
     }
   }
 
@@ -887,6 +1083,7 @@ export function buildContextPackage(changeSet, targetFile, options = {}) {
     const enclosingClasses = [];
     let totalAdditions = 0;
     let totalDeletions = 0;
+    const perFileData = [];
 
     for (const f of rawFilesList) {
       const fileObj = typeof f === "object" ? f : { path: f };
@@ -901,18 +1098,25 @@ export function buildContextPackage(changeSet, targetFile, options = {}) {
       const effectiveDiff = fileDiff;
       const changedSpans = extractChangedLineSpans(effectiveDiff);
 
-      let fileContent = options.fileContents?.[actualFilePath] ||
-        options.fileContents?.[normPath] ||
-        "";
+      const isNonCodeOrTest = NON_CODE_FILE_REGEX.test(actualFilePath) ||
+        actualFilePath.startsWith("tests/") ||
+        actualFilePath.startsWith("test/");
+
+      let fileContent = options.fileContents?.[actualFilePath] ??
+        options.fileContents?.[normPath] ??
+        null;
       let exactHeadUnavailable = false;
 
-      if (!fileContent && repoRoot && headSha) {
-        fileContent = getExactHeadFileContent(repoRoot, headSha, actualFilePath) ||
-          getExactHeadFileContent(repoRoot, headSha, normPath) ||
-          "";
-        if (!fileContent) {
+      if (!isNonCodeOrTest && fileContent === null && repoRoot && headSha) {
+        fileContent = getExactHeadFileContent(repoRoot, headSha, actualFilePath) ??
+          getExactHeadFileContent(repoRoot, headSha, normPath) ??
+          null;
+        if (fileContent === null) {
           exactHeadUnavailable = true;
         }
+      }
+      if (fileContent === null) {
+        fileContent = "";
       }
 
       const fileGaps = [];
@@ -926,7 +1130,9 @@ export function buildContextPackage(changeSet, targetFile, options = {}) {
         });
       }
 
-      const astEnc = extractAstEnclosures(fileContent, changedSpans);
+      const astEnc = isNonCodeOrTest
+        ? { enclosingFunctions: [], enclosingClasses: [] }
+        : extractAstEnclosures(fileContent, changedSpans);
       enclosingFunctions.push(...astEnc.enclosingFunctions);
       enclosingClasses.push(...astEnc.enclosingClasses);
 
@@ -938,37 +1144,68 @@ export function buildContextPackage(changeSet, targetFile, options = {}) {
       );
 
       fileGaps.push(...contextGaps);
-
-      const fileAcceptedCallees = [];
-      for (const callee of callees) {
-        const calleeBytes = Buffer.byteLength(callee.definition || callee.snippet || "", "utf8");
-        if (
-          aggregatedCallees.length < MAX_CALLEES_TOTAL &&
-          totalCalleeBytes + calleeBytes <= GLOBAL_AST_CONTEXT_CEILING_BYTES
-        ) {
-          aggregatedCallees.push(callee);
-          fileAcceptedCallees.push(callee);
-          totalCalleeBytes += calleeBytes;
-        } else {
-          fileGaps.push({
-            symbol: callee.symbol || callee.name || "unknown",
-            file: actualFilePath,
-            reason: "GLOBAL_AST_CONTEXT_CEILING_EXCEEDED",
-            category: "budget_ceiling",
-            impact: `Global 8 KB AST context ceiling reached (${totalCalleeBytes} bytes used); callee omitted.`
-          });
-        }
-      }
-
       aggregatedUnresolvedCallees.push(...unresolvedCallees);
-      aggregatedContextGaps.push(...fileGaps);
+
+      perFileData.push({
+        actualFilePath,
+        normPath,
+        isNonCodeOrTest,
+        exactHeadUnavailable,
+        callees,
+        unresolvedCallees,
+        fileGaps
+      });
+    }
+
+    // Two-pass global AST callee aggregation: prioritize sensitive callees
+    const allCandidateCallees = [];
+    for (const item of perFileData) {
+      allCandidateCallees.push(...item.callees);
+    }
+
+    allCandidateCallees.sort((a, b) => {
+      if (a.isSensitive && !b.isSensitive) return -1;
+      if (!a.isSensitive && b.isSensitive) return 1;
+      return 0;
+    });
+
+    const acceptedCalleesSet = new Set();
+    const ceilingGapsByFile = new Map();
+
+    for (const callee of allCandidateCallees) {
+      const calleeBytes = Buffer.byteLength(callee.definition || callee.snippet || "", "utf8");
+      if (
+        aggregatedCallees.length < MAX_CALLEES_TOTAL &&
+        totalCalleeBytes + calleeBytes <= GLOBAL_AST_CONTEXT_CEILING_BYTES
+      ) {
+        aggregatedCallees.push(callee);
+        acceptedCalleesSet.add(callee);
+        totalCalleeBytes += calleeBytes;
+      } else if (callee.isSensitive) {
+        const gap = {
+          symbol: callee.symbol || callee.name || "unknown",
+          file: callee.file,
+          reason: "GLOBAL_AST_CONTEXT_CEILING_EXCEEDED",
+          category: callee.category || "budget_ceiling",
+          impact: `Global 8 KB AST context ceiling reached (${totalCalleeBytes} bytes used); sensitive callee omitted.`
+        };
+        aggregatedContextGaps.push(gap);
+        if (!ceilingGapsByFile.has(callee.file)) ceilingGapsByFile.set(callee.file, []);
+        ceilingGapsByFile.get(callee.file).push(gap);
+      }
+    }
+
+    for (const item of perFileData) {
+      const fileAccepted = item.callees.filter(c => acceptedCalleesSet.has(c));
+      const fileGaps = [...item.fileGaps, ...(ceilingGapsByFile.get(item.actualFilePath) || [])];
+      aggregatedContextGaps.push(...item.fileGaps);
 
       fileCoverageManifest.push({
-        file: actualFilePath,
+        file: item.actualFilePath,
         inspected: true,
-        exactHeadAvailable: !exactHeadUnavailable,
-        calleesExtracted: fileAcceptedCallees.map(c => c.symbol || c.name),
-        unresolvedCallees,
+        exactHeadAvailable: item.isNonCodeOrTest ? true : !item.exactHeadUnavailable,
+        calleesExtracted: fileAccepted.map(c => c.symbol || c.name),
+        unresolvedCallees: item.unresolvedCallees,
         contextGaps: fileGaps
       });
     }
@@ -1000,14 +1237,16 @@ export function buildContextPackage(changeSet, targetFile, options = {}) {
 
     if (budgeted.budgetAccounting?.evictedCallees?.length > 0) {
       for (const evicted of budgeted.budgetAccounting.evictedCallees) {
-        const gapEntry = {
-          symbol: evicted.symbol || evicted.name || "unknown",
-          file: evicted.file || "unknown",
-          reason: "GLOBAL_AST_CONTEXT_CEILING_EXCEEDED",
-          category: "budget_ceiling",
-          impact: `Global 8 KB AST context ceiling reached; callee omitted during budget allocation.`
-        };
-        aggregatedContextGaps.push(gapEntry);
+        if (evicted.isSensitive) {
+          const gapEntry = {
+            symbol: evicted.symbol || evicted.name || "unknown",
+            file: evicted.file || "unknown",
+            reason: "GLOBAL_AST_CONTEXT_CEILING_EXCEEDED",
+            category: evicted.category || "budget_ceiling",
+            impact: `Global 8 KB AST context ceiling reached; sensitive callee omitted during budget allocation.`
+          };
+          aggregatedContextGaps.push(gapEntry);
+        }
       }
       const retainedSymbols = new Set(
         (budgeted.layers?.layer1AstEnclosure?.callees || []).map(c => c.symbol || c.name)
@@ -1015,13 +1254,13 @@ export function buildContextPackage(changeSet, targetFile, options = {}) {
       for (const manifest of fileCoverageManifest) {
         manifest.calleesExtracted = (manifest.calleesExtracted || []).filter(s => retainedSymbols.has(s));
         for (const evicted of budgeted.budgetAccounting.evictedCallees) {
-          if (evicted.file && (evicted.file === manifest.file || normalizeCanonicalPath(evicted.file) === normalizeCanonicalPath(manifest.file))) {
+          if (evicted.isSensitive && evicted.file && (evicted.file === manifest.file || normalizeCanonicalPath(evicted.file) === normalizeCanonicalPath(manifest.file))) {
             manifest.contextGaps.push({
               symbol: evicted.symbol || evicted.name || "unknown",
               file: manifest.file,
               reason: "GLOBAL_AST_CONTEXT_CEILING_EXCEEDED",
-              category: "budget_ceiling",
-              impact: `Global 8 KB AST context ceiling reached; callee omitted during budget allocation.`
+              category: evicted.category || "budget_ceiling",
+              impact: `Global 8 KB AST context ceiling reached; sensitive callee omitted during budget allocation.`
             });
           }
         }
@@ -1071,21 +1310,28 @@ export function buildContextPackage(changeSet, targetFile, options = {}) {
   // Extract changed line spans from diff
   const changedSpans = extractChangedLineSpans(diffHunks);
 
-  let fileContent = options.fileContents?.[actualFilePath] ||
-    options.fileContents?.[normTarget] ||
-    options.fileContents?.[targetFile] ||
-    "";
+  const isNonCodeOrTest = NON_CODE_FILE_REGEX.test(actualFilePath) ||
+    actualFilePath.startsWith("tests/") ||
+    actualFilePath.startsWith("test/");
+
+  let fileContent = options.fileContents?.[actualFilePath] ??
+    options.fileContents?.[normTarget] ??
+    options.fileContents?.[targetFile] ??
+    null;
   const headSha = options.headSha || changeSet?.headSha || changeSet?.repository?.headSha || null;
   const repoRoot = options.repositoryRoot || changeSet?.repository?.root || null;
   let exactHeadUnavailable = false;
 
-  if (!fileContent && repoRoot && headSha) {
-    fileContent = getExactHeadFileContent(repoRoot, headSha, actualFilePath) ||
-      getExactHeadFileContent(repoRoot, headSha, normTarget) ||
-      "";
-    if (!fileContent) {
+  if (!isNonCodeOrTest && fileContent === null && repoRoot && headSha) {
+    fileContent = getExactHeadFileContent(repoRoot, headSha, actualFilePath) ??
+      getExactHeadFileContent(repoRoot, headSha, normTarget) ??
+      null;
+    if (fileContent === null) {
       exactHeadUnavailable = true;
     }
+  }
+  if (fileContent === null) {
+    fileContent = "";
   }
 
   const rawLayer0 = {
@@ -1095,7 +1341,9 @@ export function buildContextPackage(changeSet, targetFile, options = {}) {
     deletions
   };
 
-  const rawLayer1 = extractAstEnclosures(fileContent, changedSpans);
+  const rawLayer1 = isNonCodeOrTest
+    ? { adapterName: "builtin-semantic", enclosingFunctions: [], enclosingClasses: [], callees: [], unresolvedCallees: [] }
+    : extractAstEnclosures(fileContent, changedSpans);
   const { callees, unresolvedCallees, contextGaps } = extractLocalCalleeContext(
     fileContent,
     diffHunks,
@@ -1128,13 +1376,15 @@ export function buildContextPackage(changeSet, targetFile, options = {}) {
 
   if (budgeted.budgetAccounting?.evictedCallees?.length > 0) {
     for (const evicted of budgeted.budgetAccounting.evictedCallees) {
-      contextGaps.push({
-        symbol: evicted.symbol || evicted.name || "unknown",
-        file: actualFilePath || normTarget,
-        reason: "GLOBAL_AST_CONTEXT_CEILING_EXCEEDED",
-        category: "budget_ceiling",
-        impact: `Global 8 KB AST context ceiling reached; callee omitted during budget allocation.`
-      });
+      if (evicted.isSensitive) {
+        contextGaps.push({
+          symbol: evicted.symbol || evicted.name || "unknown",
+          file: actualFilePath || normTarget,
+          reason: "GLOBAL_AST_CONTEXT_CEILING_EXCEEDED",
+          category: evicted.category || "budget_ceiling",
+          impact: `Global 8 KB AST context ceiling reached; sensitive callee omitted during budget allocation.`
+        });
+      }
     }
   }
 
@@ -1159,7 +1409,7 @@ export function buildContextPackage(changeSet, targetFile, options = {}) {
       {
         file: actualFilePath,
         inspected: true,
-        exactHeadAvailable: !exactHeadUnavailable,
+        exactHeadAvailable: isNonCodeOrTest ? true : !exactHeadUnavailable,
         calleesExtracted: callees.map(c => c.name || c.symbol).filter(s => retainedSymbols.has(s)),
         unresolvedCallees,
         contextGaps

@@ -143,7 +143,9 @@ export function splitDiffByFiles(diffText, knownPaths = []) {
 
   const flush = () => {
     if (currentFile && currentLines.length > 0) {
-      fileDiffs.set(currentFile, currentLines.join("\n"));
+      const existing = fileDiffs.get(currentFile);
+      const chunkStr = currentLines.join("\n");
+      fileDiffs.set(currentFile, existing ? `${existing}\n${chunkStr}` : chunkStr);
     }
     currentFile = null;
     currentOldFile = null;

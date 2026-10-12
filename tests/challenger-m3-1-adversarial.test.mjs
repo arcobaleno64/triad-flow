@@ -648,11 +648,11 @@ test("GATE-01: Context gap forcing Verifier UNCERTAIN status routes strictly to 
 test("CHALLENGE-01: Empirical probe documenting camelCase non-initial sensitivity classification blindspot", () => {
   // Functions with common prefixes like get, is, has, handle before the sensitive term
   const testWords = [
-    { text: "getDefaultFallback", expected: null }, // missed by regex!
-    { text: "isErrorStatus", expected: null },      // missed by regex!
-    { text: "handleError", expected: null },        // missed by regex!
-    { text: "hasPermission", expected: null },      // missed by regex!
-    { text: "isMapValueDefault", expected: "default_values" } // passes only because explicitly hardcoded in regex
+    { text: "getDefaultFallback", expected: "default_values" },
+    { text: "isErrorStatus", expected: "error_handling" },
+    { text: "handleError", expected: "error_handling" },
+    { text: "hasPermission", expected: "security" },
+    { text: "isMapValueDefault", expected: "default_values" }
   ];
 
   for (const item of testWords) {

@@ -25,6 +25,7 @@ import {
   SOURCE_TRUST_TIERS
 } from "./audit-receipt.mjs";
 import { normalizeFinding } from "./harness.mjs";
+import { normalizeCanonicalPath } from "./scoring.mjs";
 import {
   EXECUTION_STATUS,
   DEFAULT_LIMITS,
@@ -658,8 +659,14 @@ export function buildVerificationPrompt(changeSet = {}, producerFindings = [], o
   const contentDigest = changeSet?.contentDigest || "none";
   const objectiveContract = normalizeObjectiveContract(options.objectiveContract || options.patchObjective);
   const patchObjective = objectiveContract?.objective || "";
-  const exclusionsList = objectiveContract?.exclusions?.length > 0
-    ? objectiveContract.exclusions.map(ex => `  - ${ex}`).join("\n")
+  const rawEffectiveExclusions = Array.isArray(options.exclusions)
+    ? options.exclusions
+    : (Array.isArray(options.runContext?.exclusions)
+        ? options.runContext.exclusions
+        : (Array.isArray(objectiveContract?.exclusions) ? objectiveContract.exclusions : []));
+  const effectiveExclusions = rawEffectiveExclusions.map(String).map(s => s.trim()).filter(Boolean);
+  const exclusionsList = effectiveExclusions.length > 0
+    ? effectiveExclusions.map(ex => `  - ${ex}`).join("\n")
     : "  (None. Candidate patch must fulfill the stated objective in all cases without exclusions)";
 
   const isCleanChallenge = options.verificationMode === "clean_challenge";
@@ -843,23 +850,31 @@ export function validateVerificationOutput(rawOutput, context = {}) {
     });
   }
 
-  // Enforce required evaluations array (Fail-Closed)
+  const isCleanChallenge = context?.verificationMode === "clean_challenge" ||
+    (context?.verificationMode !== "producer_verification" &&
+     Array.isArray(context?.producerFindings) &&
+     context.producerFindings.length === 0);
+
+  // Enforce required evaluations array in standard mode (Fail-Closed)
   if (!Array.isArray(parsed.evaluations)) {
-    return Object.freeze({
-      ok: false,
-      valid: false,
-      executionStatus: EXECUTION_STATUS.MALFORMED_OUTPUT,
-      evaluations: Object.freeze([]),
-      verifierOmissions: Object.freeze([]),
-      usage: null,
-      error: "Verifier output requires an 'evaluations' array."
-    });
+    if (!isCleanChallenge) {
+      return Object.freeze({
+        ok: false,
+        valid: false,
+        executionStatus: EXECUTION_STATUS.MALFORMED_OUTPUT,
+        evaluations: Object.freeze([]),
+        verifierOmissions: Object.freeze([]),
+        usage: null,
+        error: "Verifier output requires an 'evaluations' array."
+      });
+    }
   }
 
   // Validate each evaluation under Default-Deny
   const normalizedEvaluations = [];
-  for (let i = 0; i < parsed.evaluations.length; i++) {
-    const item = parsed.evaluations[i];
+  const rawEvaluations = Array.isArray(parsed.evaluations) ? parsed.evaluations : [];
+  for (let i = 0; i < rawEvaluations.length; i++) {
+    const item = rawEvaluations[i];
     if (!item || typeof item !== "object" || Array.isArray(item)) {
       return Object.freeze({
         ok: false,
@@ -1122,6 +1137,9 @@ export function validateVerificationOutput(rawOutput, context = {}) {
         } else {
           lineStart = n;
         }
+      } else {
+        locatorAccurate = false;
+        lineStart = 1;
       }
 
       let lineEnd = lineStart;
@@ -1132,6 +1150,14 @@ export function validateVerificationOutput(rawOutput, context = {}) {
           lineEnd = lineStart;
         } else {
           lineEnd = n;
+        }
+      }
+
+      if (Array.isArray(context?.changeSet?.files) && context.changeSet.files.length > 0) {
+        const knownFilePaths = context.changeSet.files.map(f => normalizeCanonicalPath(typeof f === "string" ? f : f?.path)).filter(Boolean);
+        const isFileInDiff = knownFilePaths.length === 0 || knownFilePaths.includes(normalizeCanonicalPath(file));
+        if (!isFileInDiff) {
+          locatorAccurate = false;
         }
       }
 
@@ -1234,11 +1260,18 @@ export function validateVerificationOutput(rawOutput, context = {}) {
     ? parsed.overallStatus.trim().toUpperCase()
     : (typeof parsed.status === "string" ? parsed.status.trim().toUpperCase() : null);
 
-  const isCleanChallenge = context?.verificationMode === "clean_challenge" ||
-    (context?.verificationMode !== "producer_verification" &&
-     Array.isArray(context?.producerFindings) &&
-     context.producerFindings.length === 0 &&
-     (!parsed.evaluations || parsed.evaluations.length === 0));
+  // Reject evaluations in Clean Challenge mode (evaluating 0 producer findings)
+  if (isCleanChallenge && normalizedEvaluations.length > 0) {
+    return Object.freeze({
+      ok: false,
+      valid: false,
+      executionStatus: EXECUTION_STATUS.MALFORMED_OUTPUT,
+      evaluations: Object.freeze(normalizedEvaluations),
+      verifierOmissions: Object.freeze(normalizedOmissions),
+      usage: usage ? Object.freeze(usage) : null,
+      error: `Clean Challenge verifier output contains unexpected 'evaluations' array (${normalizedEvaluations.length} evaluation(s)). Clean Challenge reviews 0 producer findings and must not provide producer evaluations.`
+    });
+  }
 
   // 1. In Clean Challenge mode, explicit overallStatus is strictly required when 0 omissions are reported (Fail-Closed)
   if (isCleanChallenge) {
@@ -1283,10 +1316,10 @@ export function validateVerificationOutput(rawOutput, context = {}) {
     overallStatus = "DEFECTS_FOUND";
   }
 
-  // 2. Automatic uncertainty propagation from omissions or unavailable exact-head context gaps:
+  // 2. Automatic uncertainty propagation from omissions, context gaps, or truncated diff:
   const hasUncertainOmission = normalizedOmissions.some(o => o.evidenceSupport === "UNCERTAIN");
-  const hasUnavailableHeadGap = Array.isArray(context?.contextGaps) && context.contextGaps.some(g => g.reason === "EXACT_HEAD_CONTENT_UNAVAILABLE");
-  if (hasUncertainOmission || hasUnavailableHeadGap) {
+  const hasContextGaps = (Array.isArray(context?.contextGaps) && context.contextGaps.length > 0) || Boolean(context?.diffTruncated);
+  if (hasUncertainOmission || hasContextGaps) {
     if (!overallStatus || overallStatus === "CLEAN" || overallStatus === "SUCCESS") {
       overallStatus = "UNCERTAIN";
     }
@@ -1690,15 +1723,34 @@ export async function conductIndependentVerification(changeSet, producerFindings
     changeSetDigest = `sha256:${changeSetDigest}`;
   }
 
-  // 3. Build verification prompt
-  const prompt = buildVerificationPrompt(changeSet, preservedProducerFindings, options);
+  // 3. Diff truncation detection & Prompt building
+  const limits = options.limits || DEFAULT_LIMITS;
+  const maxBytes = Number(limits.maxInputBytes || DEFAULT_LIMITS.maxInputBytes);
+  const hunkBuf = Buffer.isBuffer(changeSet?.diffHunks)
+    ? changeSet.diffHunks
+    : Buffer.from(String(changeSet?.diffHunks || ""), "utf8");
+  const isDiffTruncated = hunkBuf.length > maxBytes || Boolean(changeSet?.diffTruncated) || Boolean(options?.diffTruncated);
 
-  // 4. Invoke verifier adapter
-  const timeoutMs = options.timeoutMs || 60000;
   const normContract = normalizeObjectiveContract(options.objectiveContract || options.patchObjective);
   const patchObjective = normContract?.objective || "";
   const headSha = normalizeCommitSha(options.headSha || options.head || options.runContext?.headSha || changeSet.headSha || changeSet.head || "");
   const verificationMode = String(options.verificationMode || (preservedProducerFindings.length === 0 ? "clean_challenge" : "producer_verification"));
+
+  const rawExclusions = Array.isArray(options.exclusions)
+    ? options.exclusions
+    : (Array.isArray(options.runContext?.exclusions)
+        ? options.runContext.exclusions
+        : (Array.isArray(normContract?.exclusions) ? normContract.exclusions : null));
+  const exclusions = rawExclusions ? Object.freeze(rawExclusions.map(String).map(s => s.trim()).filter(Boolean)) : null;
+
+  const prompt = buildVerificationPrompt(changeSet, preservedProducerFindings, {
+    ...options,
+    exclusions: exclusions || undefined,
+    objectiveContract: normContract
+  });
+
+  // 4. Invoke verifier adapter
+  const timeoutMs = options.timeoutMs || 60000;
   const adapterInput = {
     changeSet,
     producerFindings: preservedProducerFindings,
@@ -1754,7 +1806,8 @@ export async function conductIndependentVerification(changeSet, producerFindings
     objectiveContract: normContract,
     verificationMode,
     headSha,
-    contextGaps: options.contextGaps || options.contextPackage?.contextGaps || []
+    contextGaps: options.contextGaps || options.contextPackage?.contextGaps || [],
+    diffTruncated: isDiffTruncated
   });
 
   if (!validated.ok && options.throwOnError && !verifierError) {
@@ -1873,18 +1926,20 @@ export async function conductIndependentVerification(changeSet, producerFindings
     usage: deepFreeze(normalizeReceiptUsage(validated.usage || verifierAdapter?.usage || null))
   });
 
-  const overallStatus = options.overallStatus ||
-    validated.overallStatus ||
-    (validated.verifierOmissions?.some(o => o.evidenceSupport === "UNCERTAIN") ? "UNCERTAIN" : null);
+  let overallStatus = validated.overallStatus || null;
+  if (!overallStatus && options.overallStatus && VALID_OVERALL_STATUSES.has(options.overallStatus)) {
+    overallStatus = options.overallStatus;
+  }
+  if (!overallStatus && validated.verifierOmissions?.some(o => o.evidenceSupport === "UNCERTAIN")) {
+    overallStatus = "UNCERTAIN";
+  }
+  // Defensive check: options.overallStatus must NEVER downgrade UNCERTAIN or DEFECTS_FOUND to CLEAN
+  if (validated.overallStatus === "UNCERTAIN" || validated.overallStatus === "DEFECTS_FOUND") {
+    overallStatus = validated.overallStatus;
+  }
 
   const verifiedAt = options.verifiedAt || new Date().toISOString();
   const runId = options.runId || options.runContext?.runId || options.producerRunId || null;
-  const rawExclusions = Array.isArray(options.exclusions)
-    ? options.exclusions
-    : (Array.isArray(options.runContext?.exclusions)
-        ? options.runContext.exclusions
-        : (Array.isArray(normContract?.exclusions) ? normContract.exclusions : null));
-  const exclusions = rawExclusions ? Object.freeze(rawExclusions.map(String).map(s => s.trim()).filter(Boolean)) : null;
 
   // 11. Canonical verification record
   const record = {
@@ -1895,6 +1950,7 @@ export async function conductIndependentVerification(changeSet, producerFindings
     ...(runId ? { runId } : {}),
     ...(exclusions ? { exclusions } : {}),
     verificationMode,
+    ...(isDiffTruncated ? { diffTruncated: true } : {}),
     ...(normContract
       ? {
           patchObjective: normContract.objective,
@@ -2137,6 +2193,9 @@ export function createMockVerifierAdapter(providerName = "claude", options = {})
     executeVerification: async (adapterInput) => {
       if (typeof options.executeVerification === "function") {
         return options.executeVerification(adapterInput);
+      }
+      if (options.rawOutput !== undefined) {
+        return options.rawOutput;
       }
       const { producerFindings } = adapterInput;
       const evaluations = (producerFindings || []).map((f, i) => {

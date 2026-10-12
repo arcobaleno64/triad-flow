@@ -68,6 +68,9 @@ import {
   buildContextPackage,
   extractBoundedFunctionSnippet,
   extractLocalCalleeContext,
+  findFunctionDefinitions,
+  classifySensitiveCategory,
+  extractCandidateCallSymbols,
   GLOBAL_AST_CONTEXT_CEILING_BYTES,
   MAX_CALLEES_PER_FILE,
   MAX_CALLEES_TOTAL,
@@ -75,6 +78,7 @@ import {
   MAX_SNIPPET_BYTES,
   DEFAULT_BUDGET_CONFIG
 } from "../src/core/context-builder.mjs";
+import { splitDiffByFiles } from "../src/core/chunk-manager.mjs";
 
 import {
   getExactHeadFileContent,
@@ -1795,4 +1799,252 @@ test("007-DELTA-02F: runDogfoodReview with matching abbreviated changeSet.head p
   } finally {
     if (fs.existsSync(tmpOut)) fs.unlinkSync(tmpOut);
   }
+});
+
+// ============================================================================
+// Bounded Merge-Readiness Remediation Tests (P1-01, P1-02, P1-03, Threads 35, 5, 28, 31, 32, 11)
+// ============================================================================
+
+test("007-AUDIT-P1-01: Context gaps (UNRESOLVED_SYMBOL, QUOTA, CEILING) downgrade verifier CLEAN to UNCERTAIN", () => {
+  const gaps = [
+    { symbol: "validateUserToken", reason: "UNRESOLVED_SYMBOL", category: "input_validation", file: "src/auth.js", line: 10 },
+    { symbol: "checkPermissions", reason: "EXTRACTION_QUOTA_EXCEEDED", category: "security", file: "src/auth.js", line: 20 },
+    { symbol: "sanitizeInput", reason: "GLOBAL_AST_CONTEXT_CEILING_EXCEEDED", category: "input_validation", file: "src/auth.js", line: 30 }
+  ];
+
+  for (const gap of gaps) {
+    const validated = validateVerificationOutput(
+      JSON.stringify({
+        overallStatus: "CLEAN",
+        verifierOmissions: []
+      }),
+      {
+        verificationMode: "clean_challenge",
+        producerFindings: [],
+        contextGaps: [gap]
+      }
+    );
+    assert.equal(validated.ok, true);
+    assert.equal(validated.overallStatus, "UNCERTAIN", `Context gap reason ${gap.reason} must downgrade CLEAN to UNCERTAIN`);
+  }
+});
+
+test("007-AUDIT-P1-02: conductIndependentVerification options.overallStatus cannot override validated UNCERTAIN or DEFECTS_FOUND", async () => {
+  const dummyChangeSet = {
+    contentDigest: "sha256:" + "a".repeat(64),
+    headSha: "a".repeat(40),
+    diffHunks: "@@ -1 +1 @@\n- foo\n+ bar\n",
+    files: [{ path: "src/foo.js", additions: 1, deletions: 1 }]
+  };
+
+  const uncertainAdapter = createMockVerifierAdapter("claude", {
+    rawOutput: JSON.stringify({
+      overallStatus: "UNCERTAIN",
+      verifierOmissions: []
+    })
+  });
+
+  const recordUncertain = await conductIndependentVerification(
+    dummyChangeSet,
+    [],
+    uncertainAdapter,
+    {
+      verificationMode: "clean_challenge",
+      overallStatus: "CLEAN"
+    }
+  );
+
+  assert.equal(recordUncertain.overallStatus, "UNCERTAIN", "Caller overallStatus: CLEAN must not override validated UNCERTAIN");
+
+  const defectsAdapter = createMockVerifierAdapter("claude", {
+    rawOutput: JSON.stringify({
+      overallStatus: "DEFECTS_FOUND",
+      verifierOmissions: [
+        {
+          title: "Missed null check",
+          severity: "high",
+          file: "src/foo.js",
+          line_start: 1,
+          line_end: 1,
+          evidenceSupport: "SUPPORTED",
+          counterexample: "foo(null) crashes with TypeError at src/foo.js:1"
+        }
+      ]
+    })
+  });
+
+  const recordDefects = await conductIndependentVerification(
+    dummyChangeSet,
+    [],
+    defectsAdapter,
+    {
+      verificationMode: "clean_challenge",
+      overallStatus: "CLEAN"
+    }
+  );
+
+  assert.equal(recordDefects.overallStatus, "DEFECTS_FOUND", "Caller overallStatus: CLEAN must not override validated DEFECTS_FOUND");
+});
+
+test("007-AUDIT-P1-03: Diff truncation forces UNCERTAIN, records diffTruncated, and fails closed in gate against clean", async () => {
+  const hugeDiff = "@@ -1 +1 @@\n+ " + "x".repeat(600 * 1024);
+  const truncatedChangeSet = {
+    contentDigest: "sha256:" + "b".repeat(64),
+    headSha: "b".repeat(40),
+    diffHunks: hugeDiff,
+    files: [{ path: "src/big.js", additions: 1, deletions: 0 }]
+  };
+
+  const cleanAdapter = createMockVerifierAdapter("claude", {
+    rawOutput: JSON.stringify({
+      overallStatus: "CLEAN",
+      verifierOmissions: []
+    })
+  });
+
+  const record = await conductIndependentVerification(
+    truncatedChangeSet,
+    [],
+    cleanAdapter,
+    {
+      verificationMode: "clean_challenge",
+      limits: { maxInputBytes: 512 * 1024 }
+    }
+  );
+
+  assert.equal(record.diffTruncated, true, "Verification record must mark diffTruncated: true");
+  assert.equal(record.overallStatus, "UNCERTAIN", "Truncated diff must downgrade CLEAN to UNCERTAIN");
+
+  const consensus = makeTrustedConsensus([]);
+  const gateRes = evaluateGateDecision(consensus, {
+    verificationRecord: record
+  });
+
+  assert.equal(gateRes.decision, "human_review_required", "Clean challenge with truncated diff must require human review / not approve clean");
+});
+
+test("007-AUDIT-THREAD-35: Clean Challenge verifier output containing evaluations array fails closed with MALFORMED_OUTPUT", () => {
+  const malformedCleanOutput = JSON.stringify({
+    overallStatus: "CLEAN",
+    evaluations: [
+      {
+        findingId: "finding-1",
+        verdict: "SUPPORTED",
+        locatorAccurate: true,
+        typeAccurate: true,
+        severityAccurate: true
+      }
+    ],
+    verifierOmissions: []
+  });
+
+  const validated = validateVerificationOutput(malformedCleanOutput, {
+    verificationMode: "clean_challenge",
+    producerFindings: []
+  });
+
+  assert.equal(validated.ok, false);
+  assert.equal(validated.executionStatus, "malformed_output");
+  assert.match(validated.error, /Clean Challenge verifier output contains unexpected 'evaluations' array/i);
+});
+
+test("007-AUDIT-THREAD-05: Verifier reporting DEFECTS_FOUND without omissions fails closed in gate", async () => {
+  const consensus = makeTrustedConsensus([]);
+  const dummyChangeSet = {
+    contentDigest: "sha256:" + "c".repeat(64),
+    headSha: "c".repeat(40),
+    diffHunks: "+ foo",
+    files: [{ path: "src/test.js", additions: 1, deletions: 0 }]
+  };
+
+  const vr = await conductIndependentVerification(
+    dummyChangeSet,
+    [],
+    createMockVerifierAdapter("claude", {
+      rawOutput: JSON.stringify({
+        overallStatus: "DEFECTS_FOUND",
+        verifierOmissions: []
+      })
+    }),
+    {
+      verificationMode: "clean_challenge"
+    }
+  );
+
+  const gateRes = evaluateGateDecision(consensus, {
+    verificationRecord: vr
+  });
+  assert.equal(gateRes.decision, "block");
+  assert.match(gateRes.reason, /Clean Challenge failed: Verifier reported DEFECTS_FOUND without omissions/i);
+});
+
+test("007-AUDIT-THREAD-28: findFunctionDefinitions rejects semicolon-free call sites followed by braced statements", () => {
+  const codeLines = [
+    "// Semicolon-free JavaScript file",
+    "validateAccess(user)",
+    "if (user.isAdmin) {",
+    "  doAdminStuff();",
+    "}",
+    "function realFunction(x) {",
+    "  return x + 1;",
+    "}"
+  ];
+
+  const callDefs = findFunctionDefinitions(codeLines, "validateAccess");
+  assert.equal(callDefs.length, 0, "validateAccess call site before if statement must not be treated as definition");
+
+  const realDefs = findFunctionDefinitions(codeLines, "realFunction");
+  assert.equal(realDefs.length, 1, "realFunction definition must be located");
+  assert.equal(realDefs[0].startLine, 6);
+});
+
+test("007-AUDIT-THREAD-31: splitDiffByFiles concatenates repeated diff blocks for the same file", () => {
+  const stagedDiff = [
+    "diff --git a/src/app.js b/src/app.js",
+    "--- a/src/app.js",
+    "+++ b/src/app.js",
+    "@@ -1,3 +1,4 @@",
+    "+ // Staged change"
+  ].join("\n");
+
+  const unstagedDiff = [
+    "diff --git a/src/app.js b/src/app.js",
+    "--- a/src/app.js",
+    "+++ b/src/app.js",
+    "@@ -10,3 +11,4 @@",
+    "+ // Unstaged change"
+  ].join("\n");
+
+  const combinedDiff = `${stagedDiff}\n${unstagedDiff}`;
+  const fileDiffMap = splitDiffByFiles(combinedDiff, ["src/app.js"]);
+
+  assert.equal(fileDiffMap.has("src/app.js"), true);
+  const diffContent = fileDiffMap.get("src/app.js");
+  assert.ok(diffContent.includes("// Staged change"), "Must contain staged change hunk");
+  assert.ok(diffContent.includes("// Unstaged change"), "Must contain unstaged change hunk");
+});
+
+test("007-AUDIT-THREAD-32: extractCandidateCallSymbols upgrades sensitivity on repeated added call site", () => {
+  const diff = [
+    "@@ -10,5 +10,8 @@",
+    "+ const safe = sanitizeInput(raw);",
+    "+ doOtherThing();",
+    "+ const dangerous = sanitizeInput(untrustedInput); // sensitive parameter name"
+  ].join("\n");
+
+  const candidates = extractCandidateCallSymbols(diff);
+  const sanitizeCandidate = candidates.find(c => c.symbol === "sanitizeInput");
+  assert.ok(sanitizeCandidate, "Candidate symbol sanitizeInput must be present");
+  assert.equal(sanitizeCandidate.isSensitive, true, "Symbol must be upgraded to sensitive when appearing on sensitive line");
+  assert.equal(sanitizeCandidate.category, "input_validation");
+});
+
+test("007-AUDIT-THREAD-11: classifySensitiveCategory handles camelCase boundary transitions", () => {
+  assert.equal(classifySensitiveCategory("hasDefaultValue"), "default_values");
+  assert.equal(classifySensitiveCategory("getUserDefault"), "default_values");
+  assert.equal(classifySensitiveCategory("validateUserToken"), "input_validation");
+  assert.equal(classifySensitiveCategory("sanitizeInput"), "input_validation");
+  assert.equal(classifySensitiveCategory("checkUserPermission"), "input_validation");
+  assert.equal(classifySensitiveCategory("handleAuthFailure"), "error_handling");
+  assert.equal(classifySensitiveCategory("verifyAdminGuard"), "input_validation");
 });

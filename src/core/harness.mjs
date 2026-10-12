@@ -546,6 +546,90 @@ function _evaluatePostVerificationGateCore(consensus, verificationRecord, option
     }
   }
 
+  if (options?.runContext) {
+    const rc = options.runContext instanceof RunContext
+      ? options.runContext
+      : new RunContext(options.runContext);
+    const vr = verificationRecord;
+
+    // 1. Content Digest Binding (Mandatory if rc has contentDigest)
+    if (rc.contentDigest) {
+      const vrDigest = vr.changeSetDigest || vr.contentDigest;
+      if (!vrDigest || normalizeDigest(vrDigest) !== normalizeDigest(rc.contentDigest)) {
+        return {
+          decision: "block",
+          reason: "Gate Fail-Closed: Verification record binding mismatch (FORGED_OR_STALE_RECORD).",
+          criticals: [],
+          advisoryFindings: []
+        };
+      }
+    }
+
+    // 2. Patch Objective Binding (Mandatory if rc has patchObjective)
+    if (rc.patchObjective) {
+      if (!vr.patchObjective || normalizeObjective(vr.patchObjective) !== normalizeObjective(rc.patchObjective)) {
+        return {
+          decision: "block",
+          reason: "Gate Fail-Closed: Verification record binding mismatch (FORGED_OR_STALE_RECORD).",
+          criticals: [],
+          advisoryFindings: []
+        };
+      }
+    }
+
+    // 3. Head SHA Binding (Mandatory if rc has headSha)
+    if (rc.headSha) {
+      if (!vr.headSha || normalizeCommitSha(vr.headSha) !== normalizeCommitSha(rc.headSha)) {
+        return {
+          decision: "block",
+          reason: "Gate Fail-Closed: Verification record binding mismatch (FORGED_OR_STALE_RECORD).",
+          criticals: [],
+          advisoryFindings: []
+        };
+      }
+    }
+
+    // 4. Run ID Binding (Mandatory if rc has runId)
+    if (rc.runId) {
+      const vrRunId = vr.runId || vr.producer?.runId;
+      if (!vrRunId || String(vrRunId).trim() !== String(rc.runId).trim()) {
+        return {
+          decision: "block",
+          reason: "Gate Fail-Closed: Verification record binding mismatch (FORGED_OR_STALE_RECORD).",
+          criticals: [],
+          advisoryFindings: []
+        };
+      }
+    }
+
+    // 5. Exclusions Binding (Mandatory bidirectional check: rc and vr must strictly match)
+    const rcExcl = Array.isArray(rc.exclusions) ? rc.exclusions : [];
+    const vrExcl = Array.isArray(vr.exclusions)
+      ? vr.exclusions
+      : (Array.isArray(vr.objectiveContract?.exclusions) ? vr.objectiveContract.exclusions : []);
+
+    if (rcExcl.length > 0 || (Array.isArray(vrExcl) && vrExcl.length > 0)) {
+      if (!Array.isArray(vrExcl)) {
+        return {
+          decision: "block",
+          reason: "Gate Fail-Closed: Verification record binding mismatch (FORGED_OR_STALE_RECORD).",
+          criticals: [],
+          advisoryFindings: []
+        };
+      }
+      const normRcExcl = rcExcl.map(s => String(s).trim().toLowerCase()).sort();
+      const normVrExcl = vrExcl.map(s => String(s).trim().toLowerCase()).sort();
+      if (normRcExcl.length !== normVrExcl.length || !normRcExcl.every((v, i) => v === normVrExcl[i])) {
+        return {
+          decision: "block",
+          reason: "Gate Fail-Closed: Verification record binding mismatch (FORGED_OR_STALE_RECORD).",
+          criticals: [],
+          advisoryFindings: []
+        };
+      }
+    }
+  }
+
   const findings = Array.isArray(consensus?.findings) ? consensus.findings : [];
   if (findings.length === 0) {
     if (verificationRecord.verificationMode !== "clean_challenge") {
@@ -578,12 +662,21 @@ function _evaluatePostVerificationGateCore(consensus, verificationRecord, option
     humanReviewReasons.push("Context Insufficient / Uncertain: Verifier declared UNCERTAIN due to missing callee context boundaries.");
   }
 
+  // Record level: Verifier Defects Found without omissions (Thread 5)
+  if (omissions.length === 0 && (verificationRecord.overallStatus === "DEFECTS_FOUND" || verificationRecord.status === "DEFECTS_FOUND")) {
+    hasBlocker = true;
+    blockReasons.push("Clean Challenge failed: Verifier reported DEFECTS_FOUND without omissions.");
+  }
+
+  // Diff Truncation Fail-Closed (P1-03)
+  if (verificationRecord.diffTruncated === true) {
+    hasHumanReview = true;
+    humanReviewReasons.push("Diff Truncated / Incomplete: Verifier diff exceeded input limit; tail not inspected.");
+  }
+
   // Clean Challenge overallStatus authority check (Spec §3.1)
-  if (findings.length === 0 && omissions.length === 0) {
-    if (verificationRecord.overallStatus === "DEFECTS_FOUND") {
-      hasBlocker = true;
-      blockReasons.push("Clean Challenge failed: Verifier reported DEFECTS_FOUND.");
-    } else if (verificationRecord.overallStatus !== "CLEAN" && verificationRecord.overallStatus !== "UNCERTAIN") {
+  if (findings.length === 0) {
+    if (verificationRecord.overallStatus !== "CLEAN" && verificationRecord.overallStatus !== "UNCERTAIN" && verificationRecord.overallStatus !== "DEFECTS_FOUND") {
       hasBlocker = true;
       blockReasons.push(`Clean Challenge requires explicit CLEAN overallStatus (got: '${verificationRecord.overallStatus || "none"}').`);
     }

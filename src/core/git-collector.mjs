@@ -47,7 +47,8 @@ export function getExactHeadFileContent(repoRoot, headSha, filePath) {
   const normSha = String(headSha).trim();
   if (!/^[0-9a-fA-F]{40,64}$/.test(normSha)) return null;
 
-  const cacheKey = `${normSha}:${normPath}`;
+  const normRepo = path.resolve(repoRoot).replace(/\\/g, "/");
+  const cacheKey = `${normRepo}:${normSha}:${normPath}`;
   if (exactHeadContentCache.has(cacheKey)) {
     return exactHeadContentCache.get(cacheKey);
   }
