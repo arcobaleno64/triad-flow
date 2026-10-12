@@ -1163,7 +1163,7 @@ export function validateVerificationOutput(rawOutput, context = {}) {
 
       let rawSupport = candidate.evidenceSupport !== undefined && candidate.evidenceSupport !== null
         ? String(candidate.evidenceSupport).toUpperCase().trim()
-        : (candidate.verdict ? String(candidate.verdict).toUpperCase().trim() : "SUPPORTED");
+        : (candidate.verdict ? String(candidate.verdict).toUpperCase().trim() : "INSUFFICIENT_EVIDENCE");
 
       if (context.strictEvidenceValidation !== false && !OMISSION_EVIDENCE_SUPPORTS.has(rawSupport)) {
         return Object.freeze({
@@ -1181,7 +1181,7 @@ export function validateVerificationOutput(rawOutput, context = {}) {
         ? candidate.reasoning.trim()
         : (typeof candidate.recommendation === "string" ? candidate.recommendation.trim() : (typeof candidate.body === "string" ? candidate.body.trim() : ""));
 
-      let evidenceSupport = rawSupport;
+      let evidenceSupport = OMISSION_EVIDENCE_SUPPORTS.has(rawSupport) ? rawSupport : "INSUFFICIENT_EVIDENCE";
       // Invariant: SUPPORTED strictly requires verifiable counterexample and valid locator
       if (evidenceSupport === "SUPPORTED") {
         const hasCounter = hasConcreteCounterexample(candidate);

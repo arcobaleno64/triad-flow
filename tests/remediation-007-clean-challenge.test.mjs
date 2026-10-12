@@ -2048,3 +2048,90 @@ test("007-AUDIT-THREAD-11: classifySensitiveCategory handles camelCase boundary 
   assert.equal(classifySensitiveCategory("handleAuthFailure"), "error_handling");
   assert.equal(classifySensitiveCategory("verifyAdminGuard"), "input_validation");
 });
+
+test("007-AUDIT-THREAD-23: omission lacking evidenceSupport/verdict does not default to SUPPORTED and downgrades to INSUFFICIENT_EVIDENCE", () => {
+  // Case A: Omission has valid locator and concrete counterexample, but lacks evidenceSupport and verdict.
+  // Under REMEDIATION-007 Default-Deny, missing evidence support must NEVER default to SUPPORTED.
+  const omissionWithoutEvidenceSupport = {
+    findingId: "omission-unspecified-support-01",
+    title: "Buffer overflow in packet processor",
+    severity: "critical",
+    file: "src/net/parser.c",
+    line_start: 42,
+    line_end: 42,
+    locatorAccurate: true,
+    reasoning: "parse_packet(NULL) invokes dereference leading to crash with SIGSEGV at src/net/parser.c:42",
+    counterexample: "Calling parse_packet(NULL) causes immediate segmentation fault at line 42"
+  };
+
+  const rawOutput = {
+    overallStatus: "CLEAN",
+    evaluations: [],
+    verifierOmissions: [omissionWithoutEvidenceSupport]
+  };
+
+  const validated = validateVerificationOutput(rawOutput, {
+    verificationMode: "clean_challenge",
+    changeSet: {
+      files: [{ path: "src/net/parser.c" }]
+    }
+  });
+
+  assert.equal(validated.ok, true);
+  assert.equal(validated.verifierOmissions.length, 1);
+  const normalized = validated.verifierOmissions[0];
+  assert.equal(
+    normalized.evidenceSupport,
+    "INSUFFICIENT_EVIDENCE",
+    "Omission lacking evidenceSupport and verdict must downgrade to INSUFFICIENT_EVIDENCE, not default to SUPPORTED"
+  );
+
+  // When evaluated against gate, unconfirmed critical omission (INSUFFICIENT_EVIDENCE) must not block as Confirmed Critical
+  const cleanConsensus = makeTrustedConsensus([], { tier: 2 });
+  const syntheticRecord = issueVerificationRecordFromOutput({
+    ok: true,
+    verificationMode: "clean_challenge",
+    evaluations: [],
+    verifierOmissions: validated.verifierOmissions
+  });
+
+  const gateDecision = evaluateIsolatedTestGate(cleanConsensus, {
+    tier: 2,
+    verificationRecord: syntheticRecord
+  });
+  assert.notEqual(
+    gateDecision.decision,
+    "approve",
+    "Unconfirmed omission still requires human review adjudication"
+  );
+  assert.equal(
+    gateDecision.decision,
+    "human_review_required",
+    "Must trigger human_review_required rather than false-hold block"
+  );
+  assert.equal(
+    gateDecision.criticals.length,
+    0,
+    "Must not populate confirmed criticals array when evidenceSupport is INSUFFICIENT_EVIDENCE"
+  );
+
+  // Case B: Explicitly invalid evidenceSupport string fails closed with MALFORMED_OUTPUT under strictEvidenceValidation
+  const rawMalformedOutput = {
+    overallStatus: "CLEAN",
+    evaluations: [],
+    verifierOmissions: [
+      {
+        ...omissionWithoutEvidenceSupport,
+        evidenceSupport: "CONFIRMED_BY_MODEL" // Invalid enum value
+      }
+    ]
+  };
+
+  const validatedMalformed = validateVerificationOutput(rawMalformedOutput, {
+    verificationMode: "clean_challenge",
+    strictEvidenceValidation: true
+  });
+  assert.equal(validatedMalformed.ok, false);
+  assert.equal(validatedMalformed.executionStatus, "malformed_output");
+  assert.match(validatedMalformed.error, /Invalid evidenceSupport 'CONFIRMED_BY_MODEL'/i);
+});
