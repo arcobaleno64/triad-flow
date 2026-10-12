@@ -89,9 +89,10 @@ test("V2: 帶 macro 與 micro 不同指令於小改動時走單哨兵路徑且�
     }
   );
 
-  assert.equal(exitCode, EXIT_CODES.SUCCESS);
+  assert.equal(exitCode, EXIT_CODES.GATE_BLOCKED);
   assert.match(stderr.buffer, /Scale Routing: Mode = SINGLE/i);
-  assert.match(stderr.buffer, /Gate Decision: APPROVE/i);
+  assert.match(stderr.buffer, /Gate Decision: BLOCK/i);
+  assert.match(stderr.buffer, /Clean Challenge missing/i);
 
   // Exactly one sentry called in single mode
   assert.equal(execCalls.length, 1);
@@ -129,7 +130,7 @@ test("V2: 帶 macro 與 micro 不同指令於小改動時走單哨兵路徑且�
     }
   );
 
-  assert.equal(exitCode2, EXIT_CODES.SUCCESS);
+  assert.equal(exitCode2, EXIT_CODES.GATE_BLOCKED);
   assert.equal(execCalls2.length, 1);
 });
 
@@ -168,9 +169,10 @@ test("V3: 帶 macro 與 micro 不同指令於高風險改動時兩支 CLI 併發
     }
   );
 
-  assert.equal(exitCode, EXIT_CODES.SUCCESS);
+  assert.equal(exitCode, EXIT_CODES.GATE_BLOCKED);
   assert.match(stderr.buffer, /Scale Routing: Mode = HIERARCHICAL/i);
-  assert.match(stderr.buffer, /Gate Decision: APPROVE/i);
+  assert.match(stderr.buffer, /Gate Decision: BLOCK/i);
+  assert.match(stderr.buffer, /Clean Challenge missing/i);
 
   // Both sentries must have executed
   assert.equal(execCalls.length, 2);
@@ -179,7 +181,8 @@ test("V3: 帶 macro 與 micro 不同指令於高風險改動時兩支 CLI 併發
 
   // Report JSON verification
   const report = JSON.parse(stdout.buffer);
-  assert.equal(report.status, "reviewed-clean");
+  assert.equal(report.status, "incomplete");
+  assert.equal(report.gate.decision, "block");
   assert.equal(report.policy.id, "STRICT_HETEROGENEOUS");
   assert.equal(report.providers.length, 2);
 

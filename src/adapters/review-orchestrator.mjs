@@ -121,7 +121,10 @@ export async function orchestrateReview(changeSet, adapters = {}, options = {}) 
       };
 
       const consensus = aggregateConsensus(rawReports, { policy: "STRICT_HETEROGENEOUS" });
-      const gate = evaluateGateDecision(consensus, { strict, preliminary: true });
+      const gate = evaluateGateDecision(consensus, {
+        strict,
+        ...(options.preliminary === true ? { preliminary: true } : {})
+      });
 
       return {
         runId,
@@ -165,13 +168,10 @@ export async function orchestrateReview(changeSet, adapters = {}, options = {}) 
     const isPreliminaryOpt = options.preliminary === true;
     let gate = evaluateGateDecision(consensus, {
       strict,
-      preliminary: true,
+      ...(isPreliminaryOpt ? { preliminary: true } : {}),
       ...(options.verificationRecord ? { verificationRecord: options.verificationRecord } : {}),
       ...(options.runContext ? { runContext: options.runContext } : {})
     });
-    if (!isPreliminaryOpt) {
-      delete gate.preliminary;
-    }
 
     const isApprove = gate.decision === "approve";
     const hasFindings = consensus.findings && consensus.findings.length > 0;
@@ -233,13 +233,10 @@ export async function orchestrateReview(changeSet, adapters = {}, options = {}) 
   const isPreliminaryOpt = options.preliminary === true;
   let gate = evaluateGateDecision(consensus, {
     strict,
-    preliminary: true,
+    ...(isPreliminaryOpt ? { preliminary: true } : {}),
     ...(options.verificationRecord ? { verificationRecord: options.verificationRecord } : {}),
     ...(options.runContext ? { runContext: options.runContext } : {})
   });
-  if (!isPreliminaryOpt) {
-    delete gate.preliminary;
-  }
 
   const isApprove = gate.decision === "approve";
   const hasFindings = consensus.findings && consensus.findings.length > 0;

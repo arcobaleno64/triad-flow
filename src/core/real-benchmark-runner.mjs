@@ -89,7 +89,8 @@ export async function evaluateCorpusCase(caseDef, adapters = {}, options = {}) {
     const orchResult = await orchestrateReview(workspace.changeSet, adapters, {
       plan,
       strict,
-      timeoutMs
+      timeoutMs,
+      preliminary: true
     });
     const latencyMs = Date.now() - startTime;
 

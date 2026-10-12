@@ -623,11 +623,27 @@ export async function runDogfoodReview(userOptions = {}) {
     throw new Error(`Failed to capture ChangeSet: ${changeSet?.error?.message || "Unknown Git inspection failure"}`);
   }
 
-  const changeSetHeadSha = typeof changeSet?.repository?.headSha === "string"
+  const repoHeadSha = typeof changeSet?.repository?.headSha === "string" && changeSet.repository.headSha.trim()
     ? changeSet.repository.headSha.trim().toLowerCase()
-    : requestedHeadSha;
-  if (changeSetHeadSha !== requestedHeadSha) {
-    throw new Error(`Reviewed ChangeSet head SHA '${changeSetHeadSha}' does not match requested --head '${requestedHeadSha}'`);
+    : null;
+  const directHeadSha = typeof changeSet?.headSha === "string" && changeSet.headSha.trim()
+    ? changeSet.headSha.trim().toLowerCase()
+    : null;
+  const csHead = typeof changeSet?.head === "string" && /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i.test(changeSet.head.trim())
+    ? changeSet.head.trim().toLowerCase()
+    : null;
+
+  if (repoHeadSha && directHeadSha && repoHeadSha !== directHeadSha) {
+    throw new Error(`Reviewed ChangeSet repository head SHA '${repoHeadSha}' does not match changeSet.headSha '${directHeadSha}'`);
+  }
+  if (repoHeadSha && repoHeadSha !== requestedHeadSha) {
+    throw new Error(`Reviewed ChangeSet repository head SHA '${repoHeadSha}' does not match requested --head '${requestedHeadSha}'`);
+  }
+  if (directHeadSha && directHeadSha !== requestedHeadSha) {
+    throw new Error(`Reviewed ChangeSet head SHA '${directHeadSha}' does not match requested --head '${requestedHeadSha}'`);
+  }
+  if (csHead && csHead !== requestedHeadSha) {
+    throw new Error(`Reviewed ChangeSet head SHA '${csHead}' does not match requested --head '${requestedHeadSha}'`);
   }
   const commitSha = requestedHeadSha;
   const requestedRepository = userOptions.repository === undefined

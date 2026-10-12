@@ -1632,3 +1632,74 @@ test("007-007-D-MULTI-50-PLUS: Large multi-file changeset (>50 files) with neste
   const ceilingGaps = pkg.contextGaps.filter(g => g.reason === "GLOBAL_AST_CONTEXT_CEILING_EXCEEDED");
   assert.ok(ceilingGaps.length > 0, "Must record GLOBAL_AST_CONTEXT_CEILING_EXCEEDED gaps for excess files");
 });
+
+test("007-DELTA-01: orchestrateReview without preliminary option on zero findings blocks with Clean Challenge missing", async () => {
+  const changeSet = {
+    ok: true,
+    totalFiles: 1,
+    files: [{ path: "src/safe.js", additions: 2, deletions: 0, riskTier: 2 }],
+    diffHunks: "+ return 1;"
+  };
+
+  const cleanAdapter = {
+    providerName: "clean-sentry",
+    modelName: "model-x",
+    executeReview: async () => ({
+      ok: true,
+      findings: [],
+      coverage: { coveredFiles: ["src/safe.js"], omittedFiles: [] }
+    })
+  };
+
+  // Calling orchestrateReview without preliminary: true and without verificationRecord
+  const result = await orchestrateReview(changeSet, { macro: cleanAdapter });
+
+  assert.equal(result.status, "incomplete");
+  assert.equal(result.gate.decision, "block");
+  assert.match(result.gate.reason, /Clean Challenge missing/i);
+  assert.equal(result.gate.preliminary, undefined);
+});
+
+test("007-DELTA-02A: runDogfoodReview with changeSet.headSha mismatch against requested head fails closed", async () => {
+  const requestedHead = "1111111111111111111111111111111111111111";
+  const conflictingHeadSha = "2222222222222222222222222222222222222222";
+
+  await assert.rejects(
+    () => runDogfoodReview({
+      mock: true,
+      head: requestedHead,
+      changeSet: {
+        ok: true,
+        headSha: conflictingHeadSha,
+        totalFiles: 1,
+        files: [{ path: "src/index.js", additions: 1, deletions: 0, riskTier: 2 }],
+        diffHunks: "+ const a = 1;"
+      },
+      log: false
+    }),
+    /Reviewed ChangeSet head SHA.*does not match requested --head/i
+  );
+});
+
+test("007-DELTA-02B: runDogfoodReview with conflicting changeSet.headSha vs changeSet.repository.headSha fails closed", async () => {
+  const repoHeadSha = "3333333333333333333333333333333333333333";
+  const directHeadSha = "4444444444444444444444444444444444444444";
+
+  await assert.rejects(
+    () => runDogfoodReview({
+      mock: true,
+      changeSet: {
+        ok: true,
+        headSha: directHeadSha,
+        repository: {
+          headSha: repoHeadSha
+        },
+        totalFiles: 1,
+        files: [{ path: "src/index.js", additions: 1, deletions: 0, riskTier: 2 }],
+        diffHunks: "+ const a = 1;"
+      },
+      log: false
+    }),
+    /Reviewed ChangeSet repository head SHA.*does not match changeSet\.headSha/i
+  );
+});

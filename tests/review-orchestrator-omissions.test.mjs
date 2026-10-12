@@ -46,10 +46,11 @@ test("Orchestrator authorized omissions: Tier-2/3 file omitted with valid code a
   };
 
   const result = await orchestrateReview(changeSet, { macro: mockAdapter }, {
-    plan: { mode: "single", role: "macro" }
+    plan: { mode: "single", role: "macro" },
+    preliminary: true
   });
 
-  assert.equal(result.status, "reviewed-clean");
+  assert.equal(result.status, "preliminary-clean");
   assert.equal(result.gate.decision, "approve");
 });
 
@@ -103,7 +104,8 @@ test("Orchestrator authorized omissions: Dual sentry mode passes when both sentr
   };
 
   const result = await orchestrateReview(changeSet, { macro: macroAdapter, micro: microAdapter }, {
-    plan: { mode: "hierarchical", roles: ["macro", "micro"] }
+    plan: { mode: "hierarchical", roles: ["macro", "micro"] },
+    preliminary: true
   });
 
   assert.equal(macroInvoked, true);
@@ -111,7 +113,7 @@ test("Orchestrator authorized omissions: Dual sentry mode passes when both sentr
   assert.ok(result.results);
   assert.ok(result.results.macro);
   assert.ok(result.results.micro);
-  assert.equal(result.status, "reviewed-clean");
+  assert.equal(result.status, "preliminary-clean");
   assert.equal(result.gate.decision, "approve");
 });
 
@@ -278,10 +280,11 @@ test("Orchestrator authorized omissions: Hostile throwing getter in omission lis
 
   // Must not throw out of orchestrateReview
   const result = await orchestrateReview(changeSet, { macro: mockAdapter }, {
-    plan: { mode: "single", role: "macro" }
+    plan: { mode: "single", role: "macro" },
+    preliminary: true
   });
 
   assert.ok(result);
-  assert.equal(result.status, "reviewed-clean");
+  assert.equal(result.status, "preliminary-clean");
   assert.equal(result.gate.decision, "approve");
 });
