@@ -549,9 +549,33 @@ export function stripCommentsAndStrings(line, inBlockCommentRef = { val: false }
       continue;
     }
     if (ch === "/" && (i === 0 || /[\s=,(:!&|]/.test(line[i - 1]))) {
-      const endRegex = line.indexOf("/", i + 1);
-      if (endRegex !== -1 && !line.slice(i, endRegex).includes(";")) {
-        i = endRegex;
+      let j = i + 1;
+      let inCharClass = false;
+      let foundEnd = false;
+      while (j < line.length) {
+        if (line[j] === "\\") {
+          j += 2;
+          continue;
+        }
+        if (line[j] === "[" && !inCharClass) {
+          inCharClass = true;
+          j++;
+          continue;
+        }
+        if (line[j] === "]" && inCharClass) {
+          inCharClass = false;
+          j++;
+          continue;
+        }
+        if (line[j] === "/" && !inCharClass) {
+          foundEnd = true;
+          break;
+        }
+        if (line[j] === ";") break;
+        j++;
+      }
+      if (foundEnd) {
+        i = j;
         continue;
       }
     }

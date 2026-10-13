@@ -12,6 +12,7 @@ import {
   allocateContextBudget,
   buildContextPackage,
   extractCandidateCallSymbols,
+  stripCommentsAndStrings,
   findFunctionDefinitions,
   extractBoundedFunctionSnippet,
   extractLocalCalleeContext,
@@ -481,4 +482,13 @@ test("CYCLE-0047 real repository extraction when local clickhouse path is presen
   assert.ok(targetCallee.definition.includes("isMapValueDefault(const_value.safeGet<String>(), header)"));
   assert.equal(targetCallee.lines, 11);
   assert.ok(targetCallee.bytes <= 700);
+});
+
+test("stripCommentsAndStrings: correctly strips regex literals with escaped slashes and char classes", () => {
+  const line = '  if (/^(?:none|n\\/?a|na|no reasoning(?: provided)?)\\.?$/i.test(trimmed)) return false;';
+  const stripped = stripCommentsAndStrings(line);
+  assert.equal(stripped, "  if (i.test(trimmed)) return false;");
+
+  const candidates = extractCandidateCallSymbols(`@@ -1,5 +1,5 @@\n+${line}`);
+  assert.equal(candidates.some(c => c.symbol === "reasoning"), false);
 });
