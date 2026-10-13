@@ -70,7 +70,7 @@ function makeChangeSet(overrides = {}) {
   return {
     ok: true,
     schemaVersion: "1.0.0",
-    repository: { name: "test/repo", headSha: TEST_HEAD_SHA },
+    repository: { name: "test/repo", headSha: TEST_HEAD_SHA, root: "/repo" },
     headSha: TEST_HEAD_SHA,
     head: TEST_HEAD_SHA,
     contentDigest: EXPECTED_DIGEST,
@@ -79,6 +79,15 @@ function makeChangeSet(overrides = {}) {
     totalDeletions: 1,
     files: [{ path: "src/index.js", additions: 2, deletions: 1, riskTier: 2 }],
     diffHunks: TEST_DIFF,
+    contextPackage: {
+      schemaVersion: "1.0.0",
+      headSha: TEST_HEAD_SHA,
+      repositoryRoot: "/repo",
+      contentDigest: EXPECTED_DIGEST,
+      fileCoverageManifest: [{ file: "src/index.js", inspected: true, exactHeadAvailable: true, calleesExtracted: [] }],
+      layers: { layer1AstEnclosure: { callees: [] } },
+      budgetAccounting: { consumedBytes: 100 }
+    },
     ...overrides
   };
 }

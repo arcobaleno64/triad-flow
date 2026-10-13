@@ -2035,8 +2035,99 @@ export async function conductIndependentVerification(changeSet, producerFindings
     }
   }
 
-  // 2. ChangeSet digest
-  let changeSetDigest = options.changeSetDigest || digestChangeSet(changeSet);
+  // 2. ChangeSet digest verification (P1-A Cross-ChangeSet Binding Protection)
+  const validChangeSetDigests = new Set();
+  let computedChangeSetDigest = "";
+  try {
+    computedChangeSetDigest = digestChangeSet(changeSet);
+    if (computedChangeSetDigest) {
+      const norm = normalizeDigest(computedChangeSetDigest);
+      if (norm) validChangeSetDigests.add(norm);
+    }
+  } catch {
+    // If digest computation fails, computedChangeSetDigest remains empty
+  }
+
+  if (typeof changeSet?.diffHunks === "string") {
+    const rawHunks = changeSet.diffHunks;
+    const d1 = normalizeDigest(computeDigest(rawHunks));
+    if (d1) validChangeSetDigests.add(d1);
+    const normHunks = normalizeLineEndings(rawHunks);
+    const d2 = normalizeDigest(computeDigest(normHunks));
+    if (d2) validChangeSetDigests.add(d2);
+    const trimmedHunks = rawHunks.trim();
+    const d3 = normalizeDigest(computeDigest(trimmedHunks));
+    if (d3) validChangeSetDigests.add(d3);
+    const trimmedNormHunks = normHunks.trim();
+    const d4 = normalizeDigest(computeDigest(trimmedNormHunks));
+    if (d4) validChangeSetDigests.add(d4);
+  } else if (Buffer.isBuffer(changeSet?.diffHunks)) {
+    const dBuf = normalizeDigest(computeDigest(changeSet.diffHunks));
+    if (dBuf) validChangeSetDigests.add(dBuf);
+  }
+
+  if (changeSet?.contentDigest) {
+    const cd = normalizeDigest(changeSet.contentDigest);
+    if (cd) validChangeSetDigests.add(cd);
+  }
+  if (changeSet?.changeSetDigest) {
+    const csd = normalizeDigest(changeSet.changeSetDigest);
+    if (csd) validChangeSetDigests.add(csd);
+  }
+
+  let changeSetDigest = computedChangeSetDigest;
+  if (options.changeSetDigest !== undefined && options.changeSetDigest !== null) {
+    const declaredNorm = normalizeDigest(options.changeSetDigest);
+    if (!declaredNorm || !validChangeSetDigests.has(declaredNorm)) {
+      if (options.throwOnError) {
+        throw new Error(
+          `Declared changeSetDigest '${options.changeSetDigest}' conflicts with recomputed changeSet digest (CROSS_CHANGESET_DIGEST_MISMATCH).`
+        );
+      }
+      return deepFreeze({
+        schemaVersion: VERIFICATION_SCHEMA_VERSION,
+        verifiedAt: options.verifiedAt || new Date().toISOString(),
+        changeSetDigest: (typeof options.changeSetDigest === "string" && options.changeSetDigest.startsWith("sha256:"))
+          ? options.changeSetDigest
+          : `sha256:${declaredNorm || options.changeSetDigest}`,
+        verificationMode: String(options.verificationMode || (preservedProducerFindings.length === 0 ? "clean_challenge" : "producer_verification")),
+        overallStatus: "UNCERTAIN",
+        ok: false,
+        valid: false,
+        error: `Declared changeSetDigest '${options.changeSetDigest}' conflicts with recomputed changeSet digest (CROSS_CHANGESET_DIGEST_MISMATCH).`,
+        producer: deepFreeze({
+          providerName: options.producerName || options.producer?.providerName || "agy",
+          findingsCount: preservedProducerFindings.length,
+          findings: preservedProducerFindings
+        }),
+        verifier: deepFreeze({
+          providerName: verifierAdapter?.providerName || options.verifierName || "claude",
+          modelName: verifierAdapter?.modelName || options.verifierModel || "claude-default",
+          actualModel: deepFreeze(normalizeActualModel(options.actualModel || verifierAdapter?.actualModel)),
+          usage: null
+        }),
+        evaluations: Object.freeze([]),
+        verifierOmissions: Object.freeze([]),
+        disagreementLedger: Object.freeze([]),
+        summary: deepFreeze({
+          totalEvaluated: 0,
+          supportedCount: 0,
+          partiallySupportedCount: 0,
+          contestedCount: 0,
+          insufficientEvidenceCount: 0,
+          omissionsCount: 0
+        })
+      });
+    }
+    changeSetDigest = (typeof options.changeSetDigest === "string" && options.changeSetDigest.startsWith("sha256:"))
+      ? options.changeSetDigest
+      : `sha256:${declaredNorm}`;
+  } else if (!changeSetDigest) {
+    if (validChangeSetDigests.size > 0) {
+      changeSetDigest = `sha256:${[...validChangeSetDigests][0]}`;
+    }
+  }
+
   if (typeof changeSetDigest === "string" && !changeSetDigest.startsWith("sha256:")) {
     changeSetDigest = `sha256:${changeSetDigest}`;
   }

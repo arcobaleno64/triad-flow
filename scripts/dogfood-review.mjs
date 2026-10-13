@@ -972,24 +972,24 @@ export async function runDogfoodReview(userOptions = {}) {
   const targetRepo = (typeof repoRootCandidate === "string" && repoRootCandidate.trim().length > 0)
     ? repoRootCandidate.trim()
     : null;
-  let contextPackage = userOptions.contextPackage || null;
+  let contextPackage = userOptions.contextPackage || changeSet?.contextPackage || null;
   let contextExtractionFailed = false;
   let contextExtractionError = null;
 
   const isRepoMissingOrNull = changeSet?.repository == null;
   const isRepoInvalidType = !isRepoMissingOrNull && typeof changeSet.repository !== "object" && typeof changeSet.repository !== "string";
   const isRepoObjectInvalid = changeSet?.repository !== null && typeof changeSet?.repository === "object" && (
-    Object.keys(changeSet.repository).length === 0 ||
-    ("root" in changeSet.repository && (typeof changeSet.repository.root !== "string" || changeSet.repository.root.trim().length === 0))
+    typeof changeSet.repository.root !== "string" ||
+    changeSet.repository.root.trim().length === 0
   );
 
   if (isRepoMissingOrNull || isRepoInvalidType || isRepoObjectInvalid) {
     contextExtractionFailed = true;
     contextExtractionError = "Missing trusted repository root for exact-head context construction.";
     if (log) console.warn(`  ⚠️ Failed to extract callee contextPackage for verification: ${contextExtractionError}`);
-  } else if (userOptions.contextPackage) {
+  } else if (contextPackage) {
     // Validate externally provided contextPackage identity binding (PR-39 Item 1)
-    const pkg = userOptions.contextPackage;
+    const pkg = contextPackage;
     let pkgInvalid = false;
     let pkgInvalidReason = "";
 

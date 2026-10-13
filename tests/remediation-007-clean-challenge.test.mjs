@@ -4588,6 +4588,32 @@ test("PR39-ROUND2-ITEM3-NEGATIVE: ChangeSet missing repository property or valid
     assert.equal(reportWhitespaceRepo.gate.decision, "human_review_required");
     assert.equal(reportWhitespaceRepo.summary.cleanChallengeStatus, "UNCERTAIN");
     assert.equal(reportWhitespaceRepo.isExecutionComplete, false);
+
+    // Case 5: changeSet.repository exists as object but completely lacks root property (repository: { name: "test/repo" })
+    const changeSetNoRootPropertyRepo = {
+      ok: true,
+      schemaVersion: "1.0.0",
+      repository: { name: "test/repo" },
+      headSha,
+      contentDigest: computedHash,
+      totalFiles: 1,
+      files: [{ path: "src/auth.js", additions: 1, deletions: 0, riskTier: 2 }],
+      diffHunks: diffContent
+    };
+
+    const reportNoRootProperty = await runDogfoodReview({
+      mock: true,
+      changeSet: changeSetNoRootPropertyRepo,
+      head: headSha,
+      verifierAdapter: cleanVerifier,
+      out: tmpOut,
+      log: false
+    });
+
+    assert.notEqual(reportNoRootProperty.gate.decision, "approve");
+    assert.equal(reportNoRootProperty.gate.decision, "human_review_required");
+    assert.equal(reportNoRootProperty.summary.cleanChallengeStatus, "UNCERTAIN");
+    assert.equal(reportNoRootProperty.isExecutionComplete, false);
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
@@ -4747,4 +4773,144 @@ test("PR39-ROUND2-ITEM4-NEGATIVE: Verifier omission with evidenceSupport: CONTES
   });
   assert.equal(validatedPassive.ok, true);
   assert.equal(validatedPassive.verifierOmissions[0].evidenceSupport, "INSUFFICIENT_EVIDENCE");
+});
+
+test("PR39-ROUND3-ITEM1-NEGATIVE: Cross-ChangeSet digest mismatch fails closed in conductIndependentVerification and gate evaluation (P1-A)", async () => {
+  const diffContentA = "+ const patchA = 'security-auth-check-A';\n";
+  const diffContentB = "+ const patchB = 'tampered-feature-patch-B';\n";
+
+  const changeSetA = {
+    ok: true,
+    totalFiles: 1,
+    files: [{ path: "src/auth.js", additions: 1, deletions: 0, riskTier: 2 }],
+    diffHunks: diffContentA,
+    headSha: "a".repeat(40)
+  };
+
+  const changeSetB = {
+    ok: true,
+    totalFiles: 1,
+    files: [{ path: "src/payments.js", additions: 1, deletions: 0, riskTier: 2 }],
+    diffHunks: diffContentB,
+    headSha: "b".repeat(40)
+  };
+
+  const digestA = digestChangeSet(changeSetA);
+  const digestB = digestChangeSet(changeSetB);
+  assert.notEqual(digestA, digestB);
+
+  const cleanVerifier = createMockVerifierAdapter("claude", {
+    executeVerification: async () => ({
+      ok: true,
+      fileCoverageComplete: true,
+      overallStatus: "CLEAN",
+      evaluations: [],
+      verifierOmissions: []
+    })
+  });
+
+  const consensus = makeTrustedConsensus([], { tier: 2 });
+
+  // 1. Calling conductIndependentVerification for ChangeSet A with ChangeSet B's digest fails closed
+  const recordMismatched = await conductIndependentVerification(
+    changeSetA,
+    [],
+    cleanVerifier,
+    {
+      verificationMode: "clean_challenge",
+      changeSetDigest: digestB,
+      headSha: changeSetA.headSha
+    }
+  );
+
+  assert.equal(recordMismatched.ok, false);
+  assert.equal(recordMismatched.overallStatus, "UNCERTAIN");
+  assert.match(recordMismatched.error, /CROSS_CHANGESET_DIGEST_MISMATCH/i);
+  // Crucial: Must NOT be registered into trustedVerificationRegistry
+  assert.equal(isTrustedVerificationRecord(recordMismatched), false);
+
+  // 2. Gate evaluation with this record fails closed to BLOCK
+  const gateMismatched = evaluateGateDecision(consensus, {
+    tier: 2,
+    verificationRecord: recordMismatched,
+    runContext: { contentDigest: digestB }
+  });
+  assert.equal(gateMismatched.decision, "block");
+
+  // 3. When throwOnError is set, conductIndependentVerification throws immediately
+  await assert.rejects(
+    async () => {
+      await conductIndependentVerification(changeSetA, [], cleanVerifier, {
+        verificationMode: "clean_challenge",
+        changeSetDigest: digestB,
+        throwOnError: true
+      });
+    },
+    /CROSS_CHANGESET_DIGEST_MISMATCH/i
+  );
+
+  // 4. Positive control: Matching ChangeSet A digest succeeds and mints trusted record
+  const recordMatching = await conductIndependentVerification(
+    changeSetA,
+    [],
+    cleanVerifier,
+    {
+      verificationMode: "clean_challenge",
+      changeSetDigest: digestA,
+      headSha: changeSetA.headSha
+    }
+  );
+
+  assert.equal(recordMatching.ok, true);
+  assert.equal(recordMatching.overallStatus, "CLEAN");
+  assert.equal(isTrustedVerificationRecord(recordMatching), true);
+
+  const gateMatching = evaluateGateDecision(consensus, {
+    tier: 2,
+    verificationRecord: recordMatching,
+    runContext: { contentDigest: digestA, headSha: changeSetA.headSha }
+  });
+  assert.equal(gateMatching.decision, "approve");
+});
+
+test("PR39-ROUND3-ITEM2-NEGATIVE: Injected changeSet with repository object missing root fails closed to UNCERTAIN in runDogfoodReview (P1-B)", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-round3-item2-"));
+  const tmpOut = path.join(tmpDir, "dogfood-run.json");
+  const headSha = "93a63e30a039239212d54db501ce2b0655f3bd49";
+  const diffContent = "+ const securePatch = true;\n";
+  const cleanVerifier = createMockVerifierAdapter("claude");
+
+  try {
+    // Injected changeSet has repository: { name: "test/repo" } without root
+    const changeSetMissingRoot = {
+      ok: true,
+      schemaVersion: "1.0.0",
+      repository: { name: "test/repo" },
+      headSha,
+      totalFiles: 1,
+      files: [{ path: "src/auth.js", additions: 1, deletions: 0, riskTier: 2 }],
+      diffHunks: diffContent
+    };
+
+    const report = await runDogfoodReview({
+      mock: true,
+      changeSet: changeSetMissingRoot,
+      head: headSha,
+      verifierAdapter: cleanVerifier,
+      out: tmpOut,
+      log: false
+    });
+
+    assert.notEqual(report.gate.decision, "approve");
+    assert.equal(report.gate.decision, "human_review_required");
+    assert.equal(report.summary.cleanChallengeStatus, "UNCERTAIN");
+    assert.equal(report.isExecutionComplete, false);
+
+    // Verify on-disk report records the EXACT_HEAD_CONTEXT_FAILED context gap
+    const onDisk = JSON.parse(fs.readFileSync(tmpOut, "utf8"));
+    assert.equal(onDisk.summary.cleanChallengeStatus, "UNCERTAIN");
+    assert.ok(fs.existsSync(tmpOut));
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
 });
