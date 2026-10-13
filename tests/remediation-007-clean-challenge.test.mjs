@@ -46,7 +46,8 @@ import {
   RunContext,
   normalizeDigest,
   normalizeObjective,
-  normalizeCommitSha
+  normalizeCommitSha,
+  getFindingSignature
 } from "../src/core/harness.mjs";
 import * as harnessModule from "../src/core/harness.mjs";
 import { orchestrateReview } from "../src/adapters/review-orchestrator.mjs";
@@ -61,6 +62,8 @@ import {
   createMockVerifierAdapter,
   buildVerificationPrompt,
   isSubstantiveContestedReasoning,
+  isNonVacuousContestedReasoning,
+  mergeContextGaps,
   OBJECTIVE_IMPACTS,
   VERIFICATION_VERDICTS
 } from "../src/core/independent-verifier.mjs";
@@ -122,6 +125,7 @@ function makeTrustedConsensus(findings = [], { tier = 2, quorumReached = true } 
 
   for (const f of findings) {
     const rawF = {
+      ...f,
       id: f.id || f.findingId,
       title: f.title,
       severity: f.severity,
@@ -3739,4 +3743,400 @@ test("PR39-GATE-OUT-07-NEGATIVE: Ungrounded CONTESTED verdict without substantiv
   assert.equal(isSubstantiveContestedReasoning("locator and severity contested by independent verifier"), false);
   assert.equal(isSubstantiveContestedReasoning("No reasoning provided"), false);
   assert.equal(isSubstantiveContestedReasoning("The input is safely sanitized by escapeHtml() on line 42."), true);
+});
+
+test("PR39-DELTA-P1-01-NEGATIVE: runDogfoodReview rejects contextPackage when declared changeSet digests conflict with recomputed diff digest (CONTEXT_COVERAGE_INTEGRITY)", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-p1-01-"));
+  const tmpOut = path.join(tmpDir, "dogfood-run.json");
+  const headSha = "93a63e30a039239212d54db501ce2b0655f3bd49";
+  const diffVersionB = "+ const livePatch = 2;\n+ const verified = true;";
+  const computedHashB = crypto.createHash("sha256").update(diffVersionB).digest("hex");
+  const staleHashA = "0".repeat(64); // Version A hash
+
+  const cleanVerifier = createMockVerifierAdapter("claude");
+
+  try {
+    // Case 1: changeSet.contentDigest is stale Version A, while diffHunks is Version B.
+    // External contextPackage also passes stale Version A.
+    // Declared contentDigest conflicts with recomputed diff digest -> fail-closed (UNCERTAIN / human_review_required).
+    const changeSetStaleContentDigest = {
+      ok: true,
+      schemaVersion: "1.0.0",
+      repository: { name: "test/repo", root: "/repo" },
+      headSha,
+      contentDigest: staleHashA,
+      totalFiles: 1,
+      files: [{ path: "src/auth.js", additions: 2, deletions: 0, riskTier: 2 }],
+      diffHunks: diffVersionB
+    };
+
+    const packageStaleA = {
+      schemaVersion: "1.0.0",
+      headSha,
+      repositoryRoot: "/repo",
+      contentDigest: staleHashA,
+      fileCoverageManifest: [{ file: "src/auth.js", inspected: true, calleesExtracted: [] }],
+      layers: { layer1AstEnclosure: { callees: [] } },
+      budgetAccounting: { consumedBytes: 100 }
+    };
+
+    const reportConflictingContent = await runDogfoodReview({
+      mock: true,
+      changeSet: changeSetStaleContentDigest,
+      head: headSha,
+      contextPackage: packageStaleA,
+      verifierAdapter: cleanVerifier,
+      out: tmpOut,
+      log: false
+    });
+
+    assert.notEqual(reportConflictingContent.gate.decision, "approve");
+    assert.equal(reportConflictingContent.gate.decision, "human_review_required");
+    assert.equal(reportConflictingContent.summary.cleanChallengeStatus, "UNCERTAIN");
+    assert.equal(reportConflictingContent.isExecutionComplete, false);
+
+    // Case 2: changeSet.changeSetDigest is stale, conflicting with recomputed diff digest
+    const changeSetStaleChangeSetDigest = {
+      ok: true,
+      schemaVersion: "1.0.0",
+      repository: { name: "test/repo", root: "/repo" },
+      headSha,
+      changeSetDigest: staleHashA,
+      totalFiles: 1,
+      files: [{ path: "src/auth.js", additions: 2, deletions: 0, riskTier: 2 }],
+      diffHunks: diffVersionB
+    };
+
+    const reportConflictingChangeSet = await runDogfoodReview({
+      mock: true,
+      changeSet: changeSetStaleChangeSetDigest,
+      head: headSha,
+      contextPackage: packageStaleA,
+      verifierAdapter: cleanVerifier,
+      out: tmpOut,
+      log: false
+    });
+
+    assert.notEqual(reportConflictingChangeSet.gate.decision, "approve");
+    assert.equal(reportConflictingChangeSet.gate.decision, "human_review_required");
+    assert.equal(reportConflictingChangeSet.summary.cleanChallengeStatus, "UNCERTAIN");
+
+    // Case 3: Positive control - matching declared digest and contextPackage digest succeeds with APPROVE
+    const changeSetValid = {
+      ok: true,
+      schemaVersion: "1.0.0",
+      repository: { name: "test/repo", root: "/repo" },
+      headSha,
+      contentDigest: computedHashB,
+      totalFiles: 1,
+      files: [{ path: "src/auth.js", additions: 2, deletions: 0, riskTier: 2 }],
+      diffHunks: diffVersionB
+    };
+
+    const packageValidB = {
+      schemaVersion: "1.0.0",
+      headSha,
+      repositoryRoot: "/repo",
+      contentDigest: computedHashB,
+      fileCoverageManifest: [{ file: "src/auth.js", inspected: true, calleesExtracted: [] }],
+      layers: { layer1AstEnclosure: { callees: [] } },
+      budgetAccounting: { consumedBytes: 100 }
+    };
+
+    const reportValid = await runDogfoodReview({
+      mock: true,
+      changeSet: changeSetValid,
+      head: headSha,
+      contextPackage: packageValidB,
+      verifierAdapter: cleanVerifier,
+      out: tmpOut,
+      log: false
+    });
+
+    assert.equal(reportValid.gate.decision, "approve");
+    assert.equal(reportValid.summary.cleanChallengeStatus, "SUCCESS");
+    assert.equal(reportValid.isExecutionComplete, true);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("PR39-DELTA-P1-02-NEGATIVE: Substantive contested grounding rejects generic dismissals ('nope.', 'bogus', 'wrong') and bare assertions (UNGROUNDED_CONTESTED_VERDICT)", async () => {
+  // 1. Direct unit tests for isSubstantiveContestedReasoning
+  // Must reject generic dismissals and vacuous placeholders
+  assert.equal(isSubstantiveContestedReasoning("none"), false);
+  assert.equal(isSubstantiveContestedReasoning("n/a"), false);
+  assert.equal(isSubstantiveContestedReasoning("Contested by independent verifier"), false);
+  assert.equal(isSubstantiveContestedReasoning("nope."), false);
+  assert.equal(isSubstantiveContestedReasoning("bogus"), false);
+  assert.equal(isSubstantiveContestedReasoning("wrong"), false);
+  assert.equal(isSubstantiveContestedReasoning("not a bug"), false);
+  assert.equal(isSubstantiveContestedReasoning("false positive"), false);
+  assert.equal(isSubstantiveContestedReasoning("false alarm"), false);
+  assert.equal(isSubstantiveContestedReasoning("this is wrong"), false);
+  assert.equal(isSubstantiveContestedReasoning("Verifier disagrees with both models."), false);
+  assert.equal(isSubstantiveContestedReasoning("Contested finding 1"), false);
+  assert.equal(isSubstantiveContestedReasoning("bare assertion without mechanics"), false);
+  assert.equal(isSubstantiveContestedReasoning("Actually safe, verified sanitized"), false);
+
+  // Must accept substantive counter-evidence
+  assert.equal(isSubstantiveContestedReasoning("The input is safely sanitized by escapeHtml() on line 42."), true);
+  assert.equal(isSubstantiveContestedReasoning("The parameter is verified by check() on line 1; no injection possible."), true);
+  assert.equal(isSubstantiveContestedReasoning("Prepared statements are used."), true);
+  assert.equal(isSubstantiveContestedReasoning("Bounds check exists earlier."), true);
+  assert.equal(isSubstantiveContestedReasoning("Log contains no PII, benign debugging only."), true);
+  assert.equal(isSubstantiveContestedReasoning("Actually safe, verified sanitized by sanitizeInput()."), true);
+
+  // 2. Integration with evaluateIsolatedTestGate:
+  // A solitary medium finding with reasoning "wrong" cannot achieve APPROVE.
+  // In non-strict mode it downgrades to INSUFFICIENT_EVIDENCE -> human_review_required.
+  const solitaryMediumFinding = [
+    { id: "SEC-MED-01", title: "Potential bug", severity: "medium", file: "src/auth.js", line_start: 10, corroborations: 1 }
+  ];
+  const consensus = makeTrustedConsensus(solitaryMediumFinding, { tier: 2 });
+
+  const recordWithWrongReasoning = issueVerificationRecordFromOutput({
+    ok: true,
+    verificationMode: "producer_verification",
+    evaluations: [
+      {
+        findingId: "SEC-MED-01",
+        verdict: "CONTESTED",
+        classification: "CONTRADICTED",
+        locatorAccurate: true,
+        typeAccurate: true,
+        severityAccurate: true,
+        reasoning: "wrong"
+      }
+    ],
+    verifierOmissions: []
+  });
+
+  // Strict mode: blocks with UNGROUNDED_CONTESTED_VERDICT
+  const strictGate = evaluateIsolatedTestGate(consensus, {
+    tier: 2,
+    strict: true,
+    verificationRecord: recordWithWrongReasoning
+  });
+  assert.equal(strictGate.decision, "block");
+  assert.match(strictGate.reason, /UNGROUNDED_CONTESTED_VERDICT/i);
+
+  // Non-strict mode: downgrades to INSUFFICIENT_EVIDENCE -> human_review_required (NOT approve!)
+  const nonStrictGate = evaluateIsolatedTestGate(consensus, {
+    tier: 2,
+    strict: false,
+    verificationRecord: recordWithWrongReasoning
+  });
+  assert.equal(nonStrictGate.decision, "human_review_required");
+  assert.notEqual(nonStrictGate.decision, "approve");
+
+  // Positive control: Genuine substantive counter-evidence moves solitary medium finding to advisory -> APPROVE
+  const recordWithSubstantiveReasoning = issueVerificationRecordFromOutput({
+    ok: true,
+    verificationMode: "producer_verification",
+    evaluations: [
+      {
+        findingId: "SEC-MED-01",
+        verdict: "CONTESTED",
+        classification: "CONTRADICTED",
+        locatorAccurate: true,
+        typeAccurate: true,
+        severityAccurate: true,
+        reasoning: "The parameter is verified by check() on line 1; no injection possible."
+      }
+    ],
+    verifierOmissions: []
+  });
+
+  const groundedGate = evaluateIsolatedTestGate(consensus, {
+    tier: 2,
+    verificationRecord: recordWithSubstantiveReasoning
+  });
+  assert.equal(groundedGate.decision, "approve");
+  assert.equal(groundedGate.advisoryFindings.length, 1);
+});
+
+test("PR39-DELTA-P1-03-NEGATIVE: Empty options.contextGaps = [] does not mask authoritative contextPackage.contextGaps (CONTEXT_GAPS_MERGING)", async () => {
+  // 1. Unit tests for mergeContextGaps helper
+  const authoritativeGap = {
+    symbol: "authorizeAdminSession",
+    file: "src/auth.js",
+    code: "SENSITIVE_CALLEE_UNRESOLVED",
+    category: "auth"
+  };
+
+  // Empty array must NOT clear authoritative package gaps
+  const mergedWithEmpty = mergeContextGaps([], [authoritativeGap]);
+  assert.equal(mergedWithEmpty.length, 1);
+  assert.equal(mergedWithEmpty[0].symbol, "authorizeAdminSession");
+
+  // Deduplication check
+  const duplicateGaps = mergeContextGaps([authoritativeGap], [authoritativeGap]);
+  assert.equal(duplicateGaps.length, 1);
+
+  // 2. Integration with conductIndependentVerification:
+  // Caller explicitly passes options.contextGaps = [].
+  // Verifier returns CLEAN with 0 omissions.
+  // The authoritative contextPackage.contextGaps MUST NOT be masked, and forces overallStatus: "UNCERTAIN".
+  const changeSet = {
+    ok: true,
+    totalFiles: 1,
+    files: [{ path: "src/auth.js", additions: 1, deletions: 0 }],
+    diffHunks: "+ checkAdmin();"
+  };
+
+  const cleanVerifier = createMockVerifierAdapter("claude", {
+    executeVerification: async () => ({
+      overallStatus: "CLEAN",
+      evaluations: [],
+      verifierOmissions: []
+    })
+  });
+
+  const record = await conductIndependentVerification(
+    changeSet,
+    [],
+    cleanVerifier,
+    {
+      verificationMode: "clean_challenge",
+      contextGaps: [], // Caller attempts to mask context gaps with explicit empty array
+      contextPackage: {
+        schemaVersion: "1.0.0",
+        contextGaps: [authoritativeGap]
+      }
+    }
+  );
+
+  assert.equal(record.overallStatus, "UNCERTAIN", "Explicit empty contextGaps must not mask package gaps and bypass UNCERTAIN");
+  assert.notEqual(record.overallStatus, "CLEAN");
+});
+
+test("PR39-DELTA-P1-04-NEGATIVE: getFindingSignature includes line_end, type, recommendation and blocks finding tampering (FINDING_SET_BINDING_MISMATCH)", () => {
+  const baseFinding = {
+    id: "SEC-001",
+    title: "SQL Injection",
+    file: "src/db.js",
+    line_start: 10,
+    line_end: 20,
+    severity: "high",
+    cwe: "CWE-89",
+    type: "sql_injection",
+    recommendation: "Use parameterized queries."
+  };
+
+  // 1. Unit checks: semantic changes produce different signatures
+  const sigBase = getFindingSignature(baseFinding);
+
+  const sigDifferentLineEnd = getFindingSignature({ ...baseFinding, line_end: 35 });
+  assert.notEqual(sigBase, sigDifferentLineEnd, "Different line_end must produce different finding signature");
+
+  const sigDifferentType = getFindingSignature({ ...baseFinding, type: "command_injection" });
+  assert.notEqual(sigBase, sigDifferentType, "Different type must produce different finding signature");
+
+  const sigDifferentRec = getFindingSignature({ ...baseFinding, recommendation: "Escape input." });
+  assert.notEqual(sigBase, sigDifferentRec, "Different recommendation must produce different finding signature");
+
+  // 2. Gate Integration: Changing type or line_end between consensus findings and bound producer findings
+  // must fail closed with FINDING_SET_BINDING_MISMATCH.
+  const consensus = makeTrustedConsensus([baseFinding], { tier: 2 });
+
+  // Tampered type in bound producer findings
+  const recordTamperedType = issueVerificationRecordFromOutput({
+    ok: true,
+    verificationMode: "producer_verification",
+    producerFindings: [{ ...baseFinding, type: "command_injection" }],
+    evaluations: [
+      {
+        findingId: "SEC-001",
+        verdict: "SUPPORTED",
+        locatorAccurate: true,
+        typeAccurate: true,
+        severityAccurate: true,
+        reasoning: "Confirmed defect."
+      }
+    ],
+    verifierOmissions: []
+  });
+
+  const gateTamperedType = evaluateIsolatedTestGate(consensus, {
+    tier: 2,
+    verificationRecord: recordTamperedType
+  });
+  assert.equal(gateTamperedType.decision, "block");
+  assert.match(gateTamperedType.reason, /FINDING_SET_BINDING_MISMATCH/i);
+
+  // Tampered line_end in bound producer findings
+  const recordTamperedLineEnd = issueVerificationRecordFromOutput({
+    ok: true,
+    verificationMode: "producer_verification",
+    producerFindings: [{ ...baseFinding, line_end: 45 }],
+    evaluations: [
+      {
+        findingId: "SEC-001",
+        verdict: "SUPPORTED",
+        locatorAccurate: true,
+        typeAccurate: true,
+        severityAccurate: true,
+        reasoning: "Confirmed defect."
+      }
+    ],
+    verifierOmissions: []
+  });
+
+  const gateTamperedLineEnd = evaluateIsolatedTestGate(consensus, {
+    tier: 2,
+    verificationRecord: recordTamperedLineEnd
+  });
+  assert.equal(gateTamperedLineEnd.decision, "block");
+  assert.match(gateTamperedLineEnd.reason, /FINDING_SET_BINDING_MISMATCH/i);
+
+  // Tampered recommendation in bound producer findings
+  const recordTamperedRec = issueVerificationRecordFromOutput({
+    ok: true,
+    verificationMode: "producer_verification",
+    producerFindings: [{ ...baseFinding, recommendation: "Completely different recommendation." }],
+    evaluations: [
+      {
+        findingId: "SEC-001",
+        verdict: "SUPPORTED",
+        locatorAccurate: true,
+        typeAccurate: true,
+        severityAccurate: true,
+        reasoning: "Confirmed defect."
+      }
+    ],
+    verifierOmissions: []
+  });
+
+  const gateTamperedRec = evaluateIsolatedTestGate(consensus, {
+    tier: 2,
+    verificationRecord: recordTamperedRec
+  });
+  assert.equal(gateTamperedRec.decision, "block");
+  assert.match(gateTamperedRec.reason, /FINDING_SET_BINDING_MISMATCH/i);
+
+  // Positive control: Unchanged finding matches signature and succeeds (finding is evaluated normally)
+  const recordUntampered = issueVerificationRecordFromOutput({
+    ok: true,
+    verificationMode: "producer_verification",
+    producerFindings: [baseFinding],
+    evaluations: [
+      {
+        findingId: "SEC-001",
+        verdict: "SUPPORTED",
+        locatorAccurate: true,
+        typeAccurate: true,
+        severityAccurate: true,
+        reasoning: "Confirmed defect."
+      }
+    ],
+    verifierOmissions: []
+  });
+
+  const gateUntampered = evaluateIsolatedTestGate(consensus, {
+    tier: 2,
+    verificationRecord: recordUntampered
+  });
+  assert.equal(gateUntampered.decision, "block");
+  assert.match(gateUntampered.reason, /Found critical\/high severity finding/i);
 });

@@ -14,7 +14,9 @@ import {
   normalizeDigest,
   normalizeObjective,
   normalizeCommitSha,
-  isSubstantiveContestedReasoning
+  isSubstantiveContestedReasoning,
+  isNonVacuousContestedReasoning,
+  mergeContextGaps
 } from "./independent-verifier.mjs";
 
 export {
@@ -25,7 +27,9 @@ export {
   normalizeDigest,
   normalizeObjective,
   normalizeCommitSha,
-  isSubstantiveContestedReasoning
+  isSubstantiveContestedReasoning,
+  isNonVacuousContestedReasoning,
+  mergeContextGaps
 } from "./independent-verifier.mjs";
 
 export const SECRET_PATTERNS = [
@@ -540,16 +544,19 @@ function getFindingId(f, i) {
   return `finding-${i + 1}`;
 }
 
-function getFindingSignature(f) {
+export function getFindingSignature(f) {
   if (!f || typeof f !== "object") return "";
   const id = f.id !== undefined && f.id !== null ? String(f.id).trim() : (f.findingId !== undefined && f.findingId !== null ? String(f.findingId).trim() : "");
   const ruleId = String(f.ruleId || "").trim();
   const title = String(f.title || f.name || f.message || "").trim();
   const file = String(f.file || f.path || "").trim();
-  const line = String(f.line ?? f.startLine ?? f.line_start ?? "").trim();
+  const lineStart = String(f.line_start ?? f.line ?? f.startLine ?? "1").trim();
+  const lineEnd = String(f.line_end ?? f.endLine ?? lineStart).trim();
   const severity = String(f.severity || "").trim().toLowerCase();
   const cwe = String(f.cwe || "").trim();
-  return `${id}|${ruleId}|${title}|${file}|${line}|${severity}|${cwe}`;
+  const type = String(f.type || "").trim().toLowerCase();
+  const recommendation = String(f.recommendation || f.body || "").trim();
+  return `${id}|${ruleId}|${title}|${file}|${lineStart}|${lineEnd}|${severity}|${cwe}|${type}|${recommendation}`;
 }
 
 function _evaluatePostVerificationGateCore(consensus, verificationRecord, options = {}, { allowSynthetic = false } = {}) {
@@ -907,6 +914,12 @@ function _evaluatePostVerificationGateCore(consensus, verificationRecord, option
             criticals: [],
             advisoryFindings: []
           };
+        }
+        const corroborationsCount = Number(f.corroborations || f.sources?.length || 1);
+        if (corroborationsCount >= 2) {
+          hasHumanReview = true;
+          humanReviewReasons.push(`Corroborated finding contested by verifier requires human adjudication: "${f.title}"`);
+          continue;
         }
         verdict = "INSUFFICIENT_EVIDENCE";
         classification = "UNVERIFIABLE";

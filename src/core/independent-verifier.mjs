@@ -531,21 +531,109 @@ export function hasConcreteCounterexample(candidateOrReasoning) {
 }
 
 /**
+ * Evaluates whether a contested evaluation string is non-vacuous (PR-39 Item 3 / P1-02).
+ * Rejects empty strings, whitespace, generic placeholders, and generic dismissal keywords.
+ *
+ * @param {string|null|undefined} text
+ * @returns {boolean}
+ */
+export function isNonVacuousContestedReasoning(text) {
+  if (!text || typeof text !== "string") return false;
+  const trimmed = text.trim();
+  if (trimmed.length < 5) return false;
+  if (/^(?:contested|disputed|rejected)(?:\s+by\s+(?:independent\s+)?(?:verifier|reviewer)(?:\s+stage)?)?\.?$/i.test(trimmed)) return false;
+  if (/^(?:none|n\/?a|na|null|undefined|tbd|unknown|no|nope|nope\.|bogus|wrong|false|disagree|disputed|no reasoning(?: provided)?)\.?$/i.test(trimmed)) return false;
+  if (/^(?:(?:locator|type|severity)(?:\s+and\s+(?:locator|type|severity))*\s+)?contested by independent verifier\.?$/i.test(trimmed)) return false;
+  return true;
+}
+
+/**
  * Evaluates whether a contested evaluation provides substantive counter-evidence,
- * reasoning, counterexample, or dissent explaining why the finding is contested (PR-39 Item 3).
- * Vacuous placeholders ("Contested by independent verifier", "contested", "none", etc.) return false.
+ * reasoning, counterexample, or dissent explaining why the finding is contested (PR-39 Item 3 / P1-02).
+ * Vacuous placeholders ("Contested by independent verifier", "contested", "none", etc.),
+ * generic dismissals ("nope.", "bogus", "wrong"), and bare assertions return false.
+ * Substantive counter-evidence requires concrete verifiable reasoning/counterexample mechanics
+ * (e.g. referencing specific code paths, failure mechanisms, why the vulnerability does not hold).
  *
  * @param {string|null|undefined} text
  * @returns {boolean}
  */
 export function isSubstantiveContestedReasoning(text) {
-  if (!text || typeof text !== "string") return false;
+  if (!isNonVacuousContestedReasoning(text)) return false;
   const trimmed = text.trim();
-  if (trimmed.length < 5) return false;
-  if (/^(?:contested|disputed|rejected)(?:\s+by\s+(?:independent\s+)?(?:verifier|reviewer)(?:\s+stage)?)?\.?$/i.test(trimmed)) return false;
-  if (/^(?:none|n\/?a|na|null|undefined|tbd|unknown|no|false|disagree|disputed|no reasoning(?: provided)?)\.?$/i.test(trimmed)) return false;
-  if (/^(?:(?:locator|type|severity)(?:\s+and\s+(?:locator|type|severity))*\s+)?contested by independent verifier\.?$/i.test(trimmed)) return false;
-  return true;
+
+  // Reject generic dismissals and bare assertions without concrete verifiable mechanics
+  if (/^(?:this\s+is\s+(?:wrong|bogus|invalid|false|incorrect|safe)|not\s+(?:a\s+)?(?:bug|vulnerability|issue|flaw|defect)|verifier\s+disagrees(?: with .*?)?|contested\s+finding\s*\d*|finding\s+is\s+(?:wrong|bogus|invalid))\b/i.test(trimmed)) {
+    return false;
+  }
+  if (/^(?:nope|bogus|wrong|incorrect|invalid|not\s+a\s+bug|false\s+(?:alarm|positive))\.?$/i.test(trimmed)) {
+    return false;
+  }
+
+  // Check if candidate supplies a verifiable concrete counterexample / failure path
+  if (hasConcreteCounterexample(trimmed)) {
+    return true;
+  }
+
+  // Length requirement for substantive counter-evidence
+  if (trimmed.length < 15) {
+    return false;
+  }
+
+  // 1. Concrete code element, construct, location, or parameter reference:
+  const hasCodeElement =
+    /\b[a-zA-Z_]\w*\s*\([^)]*\)/.test(trimmed) || // Function or method call e.g. check(), escapeHtml()
+    /`[^`]{2,}`/.test(trimmed) ||                 // Code snippet in backticks
+    /['"][^'"]{2,}['"]/.test(trimmed) ||          // Identifier or string literal in quotes
+    /(?:\.|\->)[a-zA-Z_$]\w*/.test(trimmed) ||     // Member access e.g. obj.prop
+    /\[\s*['"`]?\w+['"`]?\s*\]/.test(trimmed) ||  // Index access e.g. [0] or ['key']
+    /\b(?:line|lines|L)\s*\d+/i.test(trimmed) ||  // Specific line reference e.g. line 42, L10
+    /\b(?:prepared\s+statement|parameterized|bounds\s+check|input\s+validation|null[- ]check|type[- ]check)\w*\b/i.test(trimmed) ||
+    /\b(?:changelog|spec(?:ification)?|doc(?:umentation)?|scope|contract|objective)\b/i.test(trimmed) ||
+    /\b(?:PII|secret|token|credential|parameter|payload|buffer|overflow|injection|memory|integer|string|regex|header|query)\b/i.test(trimmed);
+
+  // 2. Concrete rationale or defensive mechanism explaining why the vulnerability does not hold:
+  const hasDefenseMechanism =
+    /\b(?:prepared\s+statement\w*|parameteriz\w*)\b/i.test(trimmed) ||
+    /\b(?:sanitiz\w*|escap\w*|validat\w*|encod\w*|check\w*|guard\w*|authoriz\w*|authenticat\w*|bound\w*|clamp\w*|filter\w*)\b/i.test(trimmed) ||
+    /\b(?:exclu\w*|except(?:ion|ed)?|permit(?:ted)?|allow(?:ed)?)\b/i.test(trimmed) ||
+    /\b(?:unreach\w*|dead\s+code|never\s+(?:call|invok|execut|reach)\w*|private|internal|not\s+(?:exposed|callable|reachable|reproducible))\b/i.test(trimmed) ||
+    /\b(?:safe\w*|harmless|invariant|handled|prevent\w*|mitigat\w*|protect\w*|neutraliz\w*|benign)\b/i.test(trimmed) ||
+    /\b(?:no\s+(?:injection|overflow|leak|vulnerability|defect|exploit|bug|risk|pii|secrets?)|cannot\s+(?:overflow|trigger|exploit|occur|reach|bypass|execute|happen|crash)|impossible\s+to)\b/i.test(trimmed) ||
+    /\b(?:counterexample|repro\w*|failure\s+path|steps\s+to\s+trigger|test\s+case|when\s+calling|when\s+passed)\b/i.test(trimmed);
+
+  return hasCodeElement && hasDefenseMechanism;
+}
+
+/**
+ * Merges multiple contextGaps arrays, deduplicating entries by symbol, file, and code (PR-39 Item 3 / P1-03).
+ * Ensures that an empty caller array (options.contextGaps = []) cannot clear authoritative contextPackage gaps.
+ *
+ * @param {...Array<object>} gapLists
+ * @returns {Array<object>}
+ */
+export function mergeContextGaps(...gapLists) {
+  const merged = [];
+  const seenKeys = new Set();
+
+  for (const list of gapLists) {
+    if (!Array.isArray(list)) continue;
+    for (const gap of list) {
+      if (!gap || typeof gap !== "object") continue;
+      const symbol = String(gap.symbol || gap.name || "").trim().toLowerCase();
+      const file = String(gap.file || gap.path || (Array.isArray(gap.targetFiles) ? gap.targetFiles.join(",") : "") || "").trim().toLowerCase();
+      const code = String(gap.code || gap.reason || gap.category || "").trim().toLowerCase();
+      const key = `${symbol}::${file}::${code}`;
+      const dedupeKey = (symbol || file || code) ? key : JSON.stringify(gap);
+
+      if (!seenKeys.has(dedupeKey)) {
+        seenKeys.add(dedupeKey);
+        merged.push(gap);
+      }
+    }
+  }
+
+  return merged;
 }
 
 
@@ -713,7 +801,7 @@ export function buildVerificationPrompt(changeSet = {}, producerFindings = [], o
 
   const contextPackage = options.contextPackage || changeSet?.contextPackage || null;
   const contextBlock = formatContextPackageXml(contextPackage);
-  const contextGaps = contextPackage?.contextGaps || options?.contextGaps || [];
+  const contextGaps = mergeContextGaps(options?.contextGaps, contextPackage?.contextGaps);
   const contextGapsBlock = formatContextGaps(contextGaps);
 
   const promptSections = [
@@ -1067,11 +1155,11 @@ export function validateVerificationOutput(rawOutput, context = {}) {
     }
 
     if (rawVerdict === VERIFICATION_VERDICTS.CONTESTED) {
-      const hasSubstantiveGrounding = isSubstantiveContestedReasoning(dissent) ||
-        isSubstantiveContestedReasoning(reasoning) ||
-        isSubstantiveContestedReasoning(item.counterexample);
+      const hasNonVacuous = isNonVacuousContestedReasoning(dissent) ||
+        isNonVacuousContestedReasoning(reasoning) ||
+        isNonVacuousContestedReasoning(item.counterexample);
 
-      if (!hasSubstantiveGrounding) {
+      if (!hasNonVacuous) {
         if (context.strictValidation || context.strict) {
           return Object.freeze({
             ok: false,
@@ -1106,7 +1194,7 @@ export function validateVerificationOutput(rawOutput, context = {}) {
       typeAccurate,
       severityAccurate,
       objectiveImpact,
-      reasoning: isSubstantiveContestedReasoning(reasoning) ? reasoning : (dissent || ""),
+      reasoning: isNonVacuousContestedReasoning(reasoning) ? reasoning : (dissent || ""),
       dissent
     }));
   }
@@ -1944,7 +2032,7 @@ export async function conductIndependentVerification(changeSet, producerFindings
     objectiveContract: normContract,
     verificationMode,
     headSha,
-    contextGaps: options.contextGaps || options.contextPackage?.contextGaps || [],
+    contextGaps: mergeContextGaps(options.contextGaps, options.contextPackage?.contextGaps),
     diffTruncated: isDiffTruncated
   });
 
@@ -2230,9 +2318,9 @@ export function validateVerificationRecord(record) {
           errors.push(`Evaluation at index ${i} has invalid objectiveImpact '${ev.objectiveImpact}'.`);
         }
         if (ev.verdict === VERIFICATION_VERDICTS.CONTESTED || ev.classification === DISAGREEMENT_CLASSIFICATIONS.CONTRADICTED) {
-          const hasGrounding = isSubstantiveContestedReasoning(ev.reasoning) ||
-            isSubstantiveContestedReasoning(ev.dissent) ||
-            isSubstantiveContestedReasoning(ev.counterexample);
+          const hasGrounding = isNonVacuousContestedReasoning(ev.reasoning) ||
+            isNonVacuousContestedReasoning(ev.dissent) ||
+            isNonVacuousContestedReasoning(ev.counterexample);
           if (!hasGrounding) {
             errors.push(`Evaluation at index ${i} for finding '${ev.findingId}' has ungrounded CONTESTED verdict without substantive counter-evidence (UNGROUNDED_CONTESTED_VERDICT).`);
           }

@@ -40,7 +40,8 @@ import {
   CliVerifierAdapter,
   createMockVerifierAdapter,
   VERIFICATION_SCHEMA_VERSION,
-  RunContext
+  RunContext,
+  mergeContextGaps
 } from "../src/core/independent-verifier.mjs";
 import { TOOL_VERSION } from "../src/core/review-run-report.mjs";
 
@@ -1016,36 +1017,47 @@ export async function runDogfoodReview(userOptions = {}) {
         }
       }
 
-      // Validate diff contentDigest
+      // Validate diff contentDigest (PR-39 Item 1 / P1-01)
       if (!pkgInvalid) {
-        const validDigests = new Set();
-        if (changeSet?.contentDigest) {
-          const d = normalizeDigest(changeSet.contentDigest);
-          if (d) validDigests.add(d);
-        }
-        if (changeSet?.changeSetDigest) {
-          const d = normalizeDigest(changeSet.changeSetDigest);
-          if (d) validDigests.add(d);
-        }
+        const computedDiffDigests = new Set();
         if (typeof changeSet?.diffHunks === "string") {
           const d1 = normalizeDigest(crypto.createHash("sha256").update(changeSet.diffHunks, "utf8").digest("hex"));
-          if (d1) validDigests.add(d1);
+          if (d1) computedDiffDigests.add(d1);
           const normalizedHunks = changeSet.diffHunks.replace(/\r\n/g, "\n");
           const d2 = normalizeDigest(crypto.createHash("sha256").update(normalizedHunks, "utf8").digest("hex"));
-          if (d2) validDigests.add(d2);
+          if (d2) computedDiffDigests.add(d2);
           const d3 = normalizeDigest(crypto.createHash("sha256").update(changeSet.diffHunks.trim(), "utf8").digest("hex"));
-          if (d3) validDigests.add(d3);
+          if (d3) computedDiffDigests.add(d3);
           const d4 = normalizeDigest(crypto.createHash("sha256").update(normalizedHunks.trim(), "utf8").digest("hex"));
-          if (d4) validDigests.add(d4);
+          if (d4) computedDiffDigests.add(d4);
+        }
+
+        if (computedDiffDigests.size === 0) {
+          pkgInvalid = true;
+          pkgInvalidReason = "Cannot verify ContextPackage: changeSet missing required diffHunks for recomputed digest validation.";
+        } else {
+          // Validate declared digests against recomputed diff digest BEFORE accepting external contextPackage
+          const declaredContentDigest = changeSet?.contentDigest ? normalizeDigest(changeSet.contentDigest) : "";
+          const declaredChangeSetDigest = changeSet?.changeSetDigest ? normalizeDigest(changeSet.changeSetDigest) : "";
+
+          if (declaredContentDigest && !computedDiffDigests.has(declaredContentDigest)) {
+            pkgInvalid = true;
+            pkgInvalidReason = `Declared changeSet.contentDigest ('${declaredContentDigest}') conflicts with recomputed diff digest.`;
+          } else if (declaredChangeSetDigest && !computedDiffDigests.has(declaredChangeSetDigest)) {
+            pkgInvalid = true;
+            pkgInvalidReason = `Declared changeSet.changeSetDigest ('${declaredChangeSetDigest}') conflicts with recomputed diff digest.`;
+          }
         }
 
         const pkgDigest = pkg.contentDigest ? normalizeDigest(pkg.contentDigest) : "";
-        if (!pkgDigest) {
-          pkgInvalid = true;
-          pkgInvalidReason = "ContextPackage missing required diff contentDigest.";
-        } else if (validDigests.size > 0 && !validDigests.has(pkgDigest)) {
-          pkgInvalid = true;
-          pkgInvalidReason = `ContextPackage diff contentDigest mismatch ('${pkgDigest}').`;
+        if (!pkgInvalid) {
+          if (!pkgDigest) {
+            pkgInvalid = true;
+            pkgInvalidReason = "ContextPackage missing required diff contentDigest.";
+          } else if (!computedDiffDigests.has(pkgDigest)) {
+            pkgInvalid = true;
+            pkgInvalidReason = `ContextPackage diff contentDigest mismatch ('${pkgDigest}').`;
+          }
         }
       }
 
@@ -1130,13 +1142,17 @@ export async function runDogfoodReview(userOptions = {}) {
         headSha: commitSha,
         runContext,
         contextPackage,
-        contextGaps: contextExtractionFailed ? [
-          {
-            code: "EXACT_HEAD_CONTEXT_FAILED",
-            reason: contextExtractionError,
-            targetFiles: changeSet?.files?.map(f => f.path) || []
-          }
-        ] : (userOptions.contextGaps || contextPackage?.contextGaps || null),
+        contextGaps: mergeContextGaps(
+          contextExtractionFailed ? [
+            {
+              code: "EXACT_HEAD_CONTEXT_FAILED",
+              reason: contextExtractionError,
+              targetFiles: changeSet?.files?.map(f => f.path) || []
+            }
+          ] : null,
+          userOptions.contextGaps,
+          contextPackage?.contextGaps
+        ),
         timeoutMs,
         signal: userOptions.signal || null,
         verificationMode: "producer_verification"
@@ -1166,13 +1182,17 @@ export async function runDogfoodReview(userOptions = {}) {
           headSha: commitSha,
           runContext,
           contextPackage,
-          contextGaps: contextExtractionFailed ? [
-            {
-              code: "EXACT_HEAD_CONTEXT_FAILED",
-              reason: contextExtractionError,
-              targetFiles: changeSet?.files?.map(f => f.path) || []
-            }
-          ] : (userOptions.contextGaps || contextPackage?.contextGaps || null),
+          contextGaps: mergeContextGaps(
+            contextExtractionFailed ? [
+              {
+                code: "EXACT_HEAD_CONTEXT_FAILED",
+                reason: contextExtractionError,
+                targetFiles: changeSet?.files?.map(f => f.path) || []
+              }
+            ] : null,
+            userOptions.contextGaps,
+            contextPackage?.contextGaps
+          ),
           timeoutMs,
           signal: userOptions.signal || null,
           verificationMode: "clean_challenge"
