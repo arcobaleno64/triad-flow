@@ -622,7 +622,7 @@ export function buildSynthesizedOssChangeSet(caseDef) {
 
   const contentDigest = crypto
     .createHash("sha256")
-    .update(JSON.stringify({ id: caseDef.id, targetFiles, patchDiff }), "utf8")
+    .update(patchDiff, "utf8")
     .digest("hex");
 
   return {

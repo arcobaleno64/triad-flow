@@ -609,11 +609,11 @@ test("RB1-E: Injected model does not falsely appear as canonical names because o
 const mockChangeSetWithFindings = {
   ok: true,
   schemaVersion: "1.0.0",
-  repository: "test",
+  repository: { name: "test", root: process.cwd() },
   totalFiles: 1,
   totalAdditions: 10,
   totalDeletions: 2,
-  files: [{ path: "src/index.js", additions: 10, deletions: 2, riskTier: 2 }],
+  files: [{ path: "package.json", additions: 10, deletions: 2, riskTier: 2 }],
   diffHunks: "+ const a = 1;"
 };
 
@@ -629,14 +629,14 @@ const makeFindingReviewAdapters = () => {
           {
             title: "Command Injection in ExecHandler",
             severity: "critical",
-            file: "src/index.js",
+            file: "package.json",
             line_start: 1,
             line_end: 1,
             recommendation: "Sanitize arguments",
             evidenceSnippet: "const a = 1;"
           }
         ],
-        coverage: { coveredFiles: ["src/index.js"], omittedFiles: [] }
+        coverage: { coveredFiles: ["package.json"], omittedFiles: [] }
       })
     })
   });
@@ -906,7 +906,7 @@ test("RB2-E: Zero consensus findings triggers Clean Challenge verification and p
       execFn: async () => ({
         stdout: JSON.stringify({
           findings: [],
-          coverage: { coveredFiles: ["src/index.js"], omittedFiles: [] }
+          coverage: { coveredFiles: ["package.json"], omittedFiles: [] }
         })
       })
     }),
@@ -918,7 +918,7 @@ test("RB2-E: Zero consensus findings triggers Clean Challenge verification and p
       execFn: async () => ({
         stdout: JSON.stringify({
           findings: [],
-          coverage: { coveredFiles: ["src/index.js"], omittedFiles: [] }
+          coverage: { coveredFiles: ["package.json"], omittedFiles: [] }
         })
       })
     }),
@@ -930,7 +930,7 @@ test("RB2-E: Zero consensus findings triggers Clean Challenge verification and p
       execFn: async () => ({
         stdout: JSON.stringify({
           findings: [],
-          coverage: { coveredFiles: ["src/index.js"], omittedFiles: [] }
+          coverage: { coveredFiles: ["package.json"], omittedFiles: [] }
         })
       })
     })
@@ -942,11 +942,11 @@ test("RB2-E: Zero consensus findings triggers Clean Challenge verification and p
       changeSet: {
         ok: true,
         schemaVersion: "1.0.0",
-        repository: "test",
+        repository: { name: "test", root: process.cwd() },
         totalFiles: 1,
         totalAdditions: 2,
         totalDeletions: 1,
-        files: [{ path: "src/index.js", additions: 2, deletions: 1, riskTier: 2 }],
+        files: [{ path: "package.json", additions: 2, deletions: 1, riskTier: 2 }],
         diffHunks: "+ const a = 1;"
       },
       reviewAdapters: cleanReviewAdapters,

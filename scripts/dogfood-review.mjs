@@ -976,14 +976,14 @@ export async function runDogfoodReview(userOptions = {}) {
   let contextExtractionFailed = false;
   let contextExtractionError = null;
 
-  const isRepoMissingOrNull = changeSet?.repository == null;
-  const isRepoInvalidType = !isRepoMissingOrNull && typeof changeSet.repository !== "object" && typeof changeSet.repository !== "string";
-  const isRepoObjectInvalid = changeSet?.repository !== null && typeof changeSet?.repository === "object" && (
-    typeof changeSet.repository.root !== "string" ||
-    changeSet.repository.root.trim().length === 0
-  );
+  const isRepoValidObject =
+    changeSet?.repository !== null &&
+    typeof changeSet?.repository === "object" &&
+    !Array.isArray(changeSet?.repository) &&
+    typeof changeSet.repository.root === "string" &&
+    changeSet.repository.root.trim().length > 0;
 
-  if (isRepoMissingOrNull || isRepoInvalidType || isRepoObjectInvalid) {
+  if (!isRepoValidObject) {
     contextExtractionFailed = true;
     contextExtractionError = "Missing trusted repository root for exact-head context construction.";
     if (log) console.warn(`  ⚠️ Failed to extract callee contextPackage for verification: ${contextExtractionError}`);

@@ -2066,15 +2066,6 @@ export async function conductIndependentVerification(changeSet, producerFindings
     if (dBuf) validChangeSetDigests.add(dBuf);
   }
 
-  if (changeSet?.contentDigest) {
-    const cd = normalizeDigest(changeSet.contentDigest);
-    if (cd) validChangeSetDigests.add(cd);
-  }
-  if (changeSet?.changeSetDigest) {
-    const csd = normalizeDigest(changeSet.changeSetDigest);
-    if (csd) validChangeSetDigests.add(csd);
-  }
-
   let changeSetDigest = computedChangeSetDigest;
   if (options.changeSetDigest !== undefined && options.changeSetDigest !== null) {
     const declaredNorm = normalizeDigest(options.changeSetDigest);

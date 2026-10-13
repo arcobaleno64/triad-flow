@@ -4914,3 +4914,97 @@ test("PR39-ROUND3-ITEM2-NEGATIVE: Injected changeSet with repository object miss
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 });
+
+test("PR39-ROUND4-P1-A-NEGATIVE: changeSet declaring an arbitrary tampered digest matching options.changeSetDigest fails closed and is rejected by gate (P1-A)", async () => {
+  const diffContent = "+ const patch = 'secure-auth-check';\n";
+  const tamperedDigest = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+  const changeSetTampered = {
+    ok: true,
+    schemaVersion: "1.0.0",
+    totalFiles: 1,
+    files: [{ path: "src/auth.js", additions: 1, deletions: 0, riskTier: 2 }],
+    diffHunks: diffContent,
+    contentDigest: tamperedDigest,
+    headSha: "a".repeat(40)
+  };
+
+  const cleanVerifier = createMockVerifierAdapter("claude", {
+    executeVerification: async () => ({
+      ok: true,
+      fileCoverageComplete: true,
+      overallStatus: "CLEAN",
+      evaluations: [],
+      verifierOmissions: []
+    })
+  });
+
+  const consensus = makeTrustedConsensus([], { tier: 2 });
+
+  // 1. conductIndependentVerification with tampered options.changeSetDigest matching declared contentDigest fails closed
+  const record = await conductIndependentVerification(
+    changeSetTampered,
+    [],
+    cleanVerifier,
+    {
+      verificationMode: "clean_challenge",
+      changeSetDigest: tamperedDigest,
+      headSha: changeSetTampered.headSha
+    }
+  );
+
+  assert.equal(record.ok, false);
+  assert.equal(record.overallStatus, "UNCERTAIN");
+  assert.match(record.error, /CROSS_CHANGESET_DIGEST_MISMATCH/i);
+  assert.equal(isTrustedVerificationRecord(record), false);
+
+  // 2. Gate evaluation rejects with decision 'block'
+  const gateDecision = evaluateGateDecision(consensus, {
+    tier: 2,
+    verificationRecord: record,
+    runContext: { contentDigest: tamperedDigest }
+  });
+  assert.equal(gateDecision.decision, "block");
+});
+
+test("PR39-ROUND4-P1-B-NEGATIVE: Injected changeSet with string-typed repository fails closed to UNCERTAIN and human_review_required (P1-B)", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-round4-item2-"));
+  const tmpOut = path.join(tmpDir, "dogfood-run.json");
+  const headSha = "93a63e30a039239212d54db501ce2b0655f3bd49";
+  const diffContent = "+ const securePatch = true;\n";
+  const cleanVerifier = createMockVerifierAdapter("claude");
+
+  try {
+    // Injected changeSet has string-typed repository (e.g. repository: "test/repo")
+    const changeSetStringRepo = {
+      ok: true,
+      schemaVersion: "1.0.0",
+      repository: "test/repo",
+      headSha,
+      totalFiles: 1,
+      files: [{ path: "src/auth.js", additions: 1, deletions: 0, riskTier: 2 }],
+      diffHunks: diffContent
+    };
+
+    const report = await runDogfoodReview({
+      mock: true,
+      changeSet: changeSetStringRepo,
+      head: headSha,
+      verifierAdapter: cleanVerifier,
+      out: tmpOut,
+      log: false
+    });
+
+    assert.notEqual(report.gate.decision, "approve");
+    assert.equal(report.gate.decision, "human_review_required");
+    assert.equal(report.summary.cleanChallengeStatus, "UNCERTAIN");
+    assert.equal(report.isExecutionComplete, false);
+
+    // Verify on-disk report records the EXACT_HEAD_CONTEXT_FAILED context gap
+    const onDisk = JSON.parse(fs.readFileSync(tmpOut, "utf8"));
+    assert.equal(onDisk.summary.cleanChallengeStatus, "UNCERTAIN");
+    assert.ok(fs.existsSync(tmpOut));
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
