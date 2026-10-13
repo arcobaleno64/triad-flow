@@ -44,6 +44,7 @@ import {
   mergeContextGaps
 } from "../src/core/independent-verifier.mjs";
 import { TOOL_VERSION } from "../src/core/review-run-report.mjs";
+import { digestChangeSet } from "../src/core/canonical-digest.mjs";
 
 export function getCommitShaForRef(ref = "HEAD", cwd = process.cwd()) {
   try {
@@ -1037,13 +1038,18 @@ export async function runDogfoodReview(userOptions = {}) {
           pkgInvalidReason = "Cannot verify ContextPackage: changeSet missing required diffHunks for recomputed digest validation.";
         } else {
           // Validate declared digests against recomputed diff digest BEFORE accepting external contextPackage
+          let canonicalCsDigest = "";
+          try {
+            canonicalCsDigest = normalizeDigest(digestChangeSet(changeSet));
+          } catch {}
+
           const declaredContentDigest = changeSet?.contentDigest ? normalizeDigest(changeSet.contentDigest) : "";
           const declaredChangeSetDigest = changeSet?.changeSetDigest ? normalizeDigest(changeSet.changeSetDigest) : "";
 
           if (declaredContentDigest && !computedDiffDigests.has(declaredContentDigest)) {
             pkgInvalid = true;
             pkgInvalidReason = `Declared changeSet.contentDigest ('${declaredContentDigest}') conflicts with recomputed diff digest.`;
-          } else if (declaredChangeSetDigest && !computedDiffDigests.has(declaredChangeSetDigest)) {
+          } else if (declaredChangeSetDigest && !computedDiffDigests.has(declaredChangeSetDigest) && (!canonicalCsDigest || declaredChangeSetDigest !== canonicalCsDigest)) {
             pkgInvalid = true;
             pkgInvalidReason = `Declared changeSet.changeSetDigest ('${declaredChangeSetDigest}') conflicts with recomputed diff digest.`;
           }

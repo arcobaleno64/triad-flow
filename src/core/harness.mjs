@@ -548,14 +548,14 @@ export function getFindingSignature(f) {
   if (!f || typeof f !== "object") return "";
   const id = f.id !== undefined && f.id !== null ? String(f.id).trim() : (f.findingId !== undefined && f.findingId !== null ? String(f.findingId).trim() : "");
   const ruleId = String(f.ruleId || "").trim();
-  const title = String(f.title || f.name || f.message || "").trim();
-  const file = String(f.file || f.path || "").trim();
+  const title = String(f.title || f.name || f.message || "").replace(/\r\n/g, "\n").trim();
+  const file = String(f.file || f.path || "").replace(/\\/g, "/").trim();
   const lineStart = String(f.line_start ?? f.line ?? f.startLine ?? "1").trim();
   const lineEnd = String(f.line_end ?? f.endLine ?? lineStart).trim();
   const severity = String(f.severity || "").trim().toLowerCase();
   const cwe = String(f.cwe || "").trim();
   const type = String(f.type || "").trim().toLowerCase();
-  const recommendation = String(f.recommendation || f.body || "").trim();
+  const recommendation = String(f.recommendation || f.body || "").replace(/\r\n/g, "\n").trim();
   return `${id}|${ruleId}|${title}|${file}|${lineStart}|${lineEnd}|${severity}|${cwe}|${type}|${recommendation}`;
 }
 

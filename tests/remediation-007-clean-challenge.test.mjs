@@ -52,6 +52,7 @@ import {
 import * as harnessModule from "../src/core/harness.mjs";
 import { orchestrateReview } from "../src/adapters/review-orchestrator.mjs";
 import { runDogfoodReview } from "../scripts/dogfood-review.mjs";
+import { digestChangeSet } from "../src/core/canonical-digest.mjs";
 
 import { aggregateConsensus } from "../src/core/loop.mjs";
 
@@ -3856,6 +3857,26 @@ test("PR39-DELTA-P1-01-NEGATIVE: runDogfoodReview rejects contextPackage when de
     assert.equal(reportValid.gate.decision, "approve");
     assert.equal(reportValid.summary.cleanChallengeStatus, "SUCCESS");
     assert.equal(reportValid.isExecutionComplete, true);
+
+    // Case 4: Positive control - changeSet with canonical changeSetDigest from digestChangeSet succeeds with APPROVE
+    const changeSetCanonical = {
+      ...changeSetValid,
+      changeSetDigest: digestChangeSet(changeSetValid)
+    };
+
+    const reportCanonical = await runDogfoodReview({
+      mock: true,
+      changeSet: changeSetCanonical,
+      head: headSha,
+      contextPackage: packageValidB,
+      verifierAdapter: cleanVerifier,
+      out: tmpOut,
+      log: false
+    });
+
+    assert.equal(reportCanonical.gate.decision, "approve");
+    assert.equal(reportCanonical.summary.cleanChallengeStatus, "SUCCESS");
+    assert.equal(reportCanonical.isExecutionComplete, true);
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
@@ -3878,6 +3899,15 @@ test("PR39-DELTA-P1-02-NEGATIVE: Substantive contested grounding rejects generic
   assert.equal(isSubstantiveContestedReasoning("Contested finding 1"), false);
   assert.equal(isSubstantiveContestedReasoning("bare assertion without mechanics"), false);
   assert.equal(isSubstantiveContestedReasoning("Actually safe, verified sanitized"), false);
+  assert.equal(isSubstantiveContestedReasoning("The parameter is safe."), false);
+  assert.equal(isSubstantiveContestedReasoning("The query is safe."), false);
+  assert.equal(isSubstantiveContestedReasoning("The buffer is safe."), false);
+  assert.equal(isSubstantiveContestedReasoning("The string is safe."), false);
+  assert.equal(isSubstantiveContestedReasoning("The token is safe."), false);
+  assert.equal(isSubstantiveContestedReasoning("Parameter is harmless."), false);
+  assert.equal(isSubstantiveContestedReasoning("Parameter is safe and handled."), false);
+  assert.equal(isSubstantiveContestedReasoning("Input is validated."), false);
+  assert.equal(isSubstantiveContestedReasoning("Finding is invalid."), false);
 
   // Must accept substantive counter-evidence
   assert.equal(isSubstantiveContestedReasoning("The input is safely sanitized by escapeHtml() on line 42."), true);
@@ -3929,6 +3959,40 @@ test("PR39-DELTA-P1-02-NEGATIVE: Substantive contested grounding rejects generic
   });
   assert.equal(nonStrictGate.decision, "human_review_required");
   assert.notEqual(nonStrictGate.decision, "approve");
+
+  // A solitary medium finding with bare assertion "The parameter is safe." also cannot achieve APPROVE.
+  const recordWithBareAssertion = issueVerificationRecordFromOutput({
+    ok: true,
+    verificationMode: "producer_verification",
+    evaluations: [
+      {
+        findingId: "SEC-MED-01",
+        verdict: "CONTESTED",
+        classification: "CONTRADICTED",
+        locatorAccurate: true,
+        typeAccurate: true,
+        severityAccurate: true,
+        reasoning: "The parameter is safe."
+      }
+    ],
+    verifierOmissions: []
+  });
+
+  const strictGateBare = evaluateIsolatedTestGate(consensus, {
+    tier: 2,
+    strict: true,
+    verificationRecord: recordWithBareAssertion
+  });
+  assert.equal(strictGateBare.decision, "block");
+  assert.match(strictGateBare.reason, /UNGROUNDED_CONTESTED_VERDICT/i);
+
+  const nonStrictGateBare = evaluateIsolatedTestGate(consensus, {
+    tier: 2,
+    strict: false,
+    verificationRecord: recordWithBareAssertion
+  });
+  assert.equal(nonStrictGateBare.decision, "human_review_required");
+  assert.notEqual(nonStrictGateBare.decision, "approve");
 
   // Positive control: Genuine substantive counter-evidence moves solitary medium finding to advisory -> APPROVE
   const recordWithSubstantiveReasoning = issueVerificationRecordFromOutput({
@@ -4009,6 +4073,20 @@ test("PR39-DELTA-P1-03-NEGATIVE: Empty options.contextGaps = [] does not mask au
 
   assert.equal(record.overallStatus, "UNCERTAIN", "Explicit empty contextGaps must not mask package gaps and bypass UNCERTAIN");
   assert.notEqual(record.overallStatus, "CLEAN");
+
+  // 3. Integration with issueVerificationRecordFromOutput:
+  // Explicit contextGaps = [] and overallStatus = "CLEAN" must not mask package gaps or bypass UNCERTAIN.
+  const recordFromOutput = issueVerificationRecordFromOutput(
+    { ok: true, overallStatus: "CLEAN", evaluations: [], verifierOmissions: [] },
+    {
+      contextGaps: [],
+      contextPackage: {
+        schemaVersion: "1.0.0",
+        contextGaps: [authoritativeGap]
+      }
+    }
+  );
+  assert.equal(recordFromOutput.overallStatus, "UNCERTAIN", "issueVerificationRecordFromOutput must enforce package gaps and UNCERTAIN");
 });
 
 test("PR39-DELTA-P1-04-NEGATIVE: getFindingSignature includes line_end, type, recommendation and blocks finding tampering (FINDING_SET_BINDING_MISMATCH)", () => {
@@ -4035,6 +4113,13 @@ test("PR39-DELTA-P1-04-NEGATIVE: getFindingSignature includes line_end, type, re
 
   const sigDifferentRec = getFindingSignature({ ...baseFinding, recommendation: "Escape input." });
   assert.notEqual(sigBase, sigDifferentRec, "Different recommendation must produce different finding signature");
+
+  // Cross-platform checks: Windows backslashes and CRLF line endings normalize identically
+  const sigWindowsSlash = getFindingSignature({ ...baseFinding, file: "src\\db.js" });
+  assert.equal(sigBase, sigWindowsSlash, "Windows backslashes in file must normalize to match forward slashes");
+
+  const sigWindowsCrlf = getFindingSignature({ ...baseFinding, recommendation: "Use parameterized queries.\r\n" });
+  assert.equal(sigBase, sigWindowsCrlf, "Windows CRLF line endings in recommendation must normalize to match LF");
 
   // 2. Gate Integration: Changing type or line_end between consensus findings and bound producer findings
   // must fail closed with FINDING_SET_BINDING_MISMATCH.

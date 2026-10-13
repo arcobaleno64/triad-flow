@@ -272,10 +272,15 @@ export function isSegregatedSyntheticRecord(candidate) {
  * @param {object} params - Either structured record candidate or { rawOutput, changeSet, producerFindings, runContext, options }
  * @returns {object} Deep-frozen, segregated synthetic verification record
  */
-export function issueVerificationRecordFromOutput(params = {}) {
-  if (!params || typeof params !== "object") {
+export function issueVerificationRecordFromOutput(outputOrParams = {}, maybeParams = null) {
+  if (!outputOrParams || typeof outputOrParams !== "object") {
     throw new TypeError("issueVerificationRecordFromOutput requires a non-null object argument.");
   }
+
+  // Support 2-argument form (rawOutput, params) as well as single-argument form
+  const params = (maybeParams && typeof maybeParams === "object")
+    ? { rawOutput: outputOrParams, ...maybeParams }
+    : outputOrParams;
 
   // Support envelope form { rawOutput, ... } and candidate record form { ok, evaluations, ... }
   const rawEvaluations = params.evaluations || params.rawOutput?.evaluations;
@@ -322,7 +327,13 @@ export function issueVerificationRecordFromOutput(params = {}) {
     contextGaps: params.contextGaps || params.runContext?.contextGaps,
     strictObjectiveBinding: isDirectCandidate ? false : true,
     strictEvidenceValidation: isDirectCandidate ? false : true,
-    ...params.options
+    ...params.options,
+    contextGaps: mergeContextGaps(
+      params.contextGaps,
+      params.options?.contextGaps,
+      params.contextPackage?.contextGaps,
+      params.runContext?.contextGaps
+    )
   };
 
   const validated = validateVerificationOutput(rawOutput, context);
@@ -370,6 +381,11 @@ export function issueVerificationRecordFromOutput(params = {}) {
     (verifierOmissions.some(o => o.evidenceSupport === "UNCERTAIN") ? "UNCERTAIN" :
       (verifierOmissions.length > 0 ? "DEFECTS_FOUND" :
         (evaluations.length === 0 ? "CLEAN" : null)));
+
+  // Defensive check: params.overallStatus must NEVER downgrade UNCERTAIN or DEFECTS_FOUND to CLEAN
+  if (validated.overallStatus === "UNCERTAIN" || validated.overallStatus === "DEFECTS_FOUND") {
+    overallStatus = validated.overallStatus;
+  }
 
   const disagreementLedger = Array.isArray(params.disagreementLedger) ? params.disagreementLedger : [];
 
@@ -570,6 +586,21 @@ export function isSubstantiveContestedReasoning(text) {
     return false;
   }
 
+  // Reject bare noun assertions without code constructs or line numbers (e.g. "The parameter is safe.", "The query is safe.", "Parameter is harmless.")
+  if (/^(?:(?:the|this|that)\s+)?(?:parameter|buffer|query|token|string|variable|value|input|output|data|code|check|call|finding)s?\s+(?:is|are)\s+(?:(?:completely|totally|actually|already)\s+)?(?:safe|harmless|benign|handled|valid|fine|okay|ok|correct|proper|mitigated)\b/i.test(trimmed)) {
+    if (!/\b[a-zA-Z_]\w*\s*\([^)]*\)/.test(trimmed) && !/`[^`]{2,}`/.test(trimmed) && !/\b(?:line|lines|L)\s*\d+/i.test(trimmed)) {
+      return false;
+    }
+  }
+  if (/^(?:(?:the|this|that)\s+)?(?:input|parameter|data|value)s?\s+(?:is|are)\s+(?:(?:already|properly|safely)\s+)?(?:validated|sanitized|checked|escaped|handled)\b/i.test(trimmed)) {
+    if (!/\b[a-zA-Z_]\w*\s*\([^)]*\)/.test(trimmed) && !/`[^`]{2,}`/.test(trimmed) && !/\b(?:line|lines|L)\s*\d+/i.test(trimmed)) {
+      return false;
+    }
+  }
+  if (/^(?:parameter|buffer|query|token|string|variable|value|input|output)\s+is\s+(?:safe|harmless|benign|handled)\b/i.test(trimmed)) {
+    return false;
+  }
+
   // Check if candidate supplies a verifiable concrete counterexample / failure path
   if (hasConcreteCounterexample(trimmed)) {
     return true;
@@ -590,7 +621,7 @@ export function isSubstantiveContestedReasoning(text) {
     /\b(?:line|lines|L)\s*\d+/i.test(trimmed) ||  // Specific line reference e.g. line 42, L10
     /\b(?:prepared\s+statement|parameterized|bounds\s+check|input\s+validation|null[- ]check|type[- ]check)\w*\b/i.test(trimmed) ||
     /\b(?:changelog|spec(?:ification)?|doc(?:umentation)?|scope|contract|objective)\b/i.test(trimmed) ||
-    /\b(?:PII|secret|token|credential|parameter|payload|buffer|overflow|injection|memory|integer|string|regex|header|query)\b/i.test(trimmed);
+    /\bno\s+(?:PII|secrets?|credentials?|leak|vulnerability|overflow|injection)\b/i.test(trimmed);
 
   // 2. Concrete rationale or defensive mechanism explaining why the vulnerability does not hold:
   const hasDefenseMechanism =
