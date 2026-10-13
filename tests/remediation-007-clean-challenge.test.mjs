@@ -3214,3 +3214,373 @@ test("PR39-GATE-OUT-04-NEGATIVE: Tier 1 omission policy (strict omission blockin
   assert.equal(orchestratorIsTier1.gate.decision, "block", "Orchestrator isTier1: true must block Medium omission");
   assert.match(orchestratorIsTier1.gate.reason, /Supported Medium Omission \(Tier 1\)/i);
 });
+
+test("PR39-GATE-OUT-05-NEGATIVE: Context Package missing or incomplete fileCoverageManifest fails closed to UNCERTAIN/human_review_required (CONTEXT_COVERAGE_INTEGRITY)", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-test-p1-05-"));
+  const tmpOut = path.join(tmpDir, "dogfood-run.json");
+  const headSha = "a".repeat(40);
+
+  const changeSet = {
+    ok: true,
+    schemaVersion: "1.0.0",
+    repository: { name: "test/repo", root: "/repo" },
+    headSha,
+    totalFiles: 2,
+    totalAdditions: 4,
+    totalDeletions: 0,
+    files: [
+      { path: "src/auth.js", additions: 2, deletions: 0, riskTier: 2 },
+      { path: "src/crypto.js", additions: 2, deletions: 0, riskTier: 2 }
+    ],
+    diffHunks: "+ const a = 1;\n+ const b = 2;"
+  };
+
+  const cleanVerifier = createMockVerifierAdapter("claude");
+
+  try {
+    // 1. ContextPackage with missing fileCoverageManifest must FAIL-CLOSED (UNCERTAIN)
+    const missingManifestPackage = {
+      schemaVersion: "1.0.0",
+      headSha,
+      repositoryRoot: "/repo",
+      contentDigest: crypto.createHash("sha256").update(changeSet.diffHunks).digest("hex"),
+      layers: { layer1AstEnclosure: { callees: [] } },
+      budgetAccounting: { consumedBytes: 100 }
+    };
+
+    const reportMissing = await runDogfoodReview({
+      mock: true,
+      changeSet,
+      head: headSha,
+      contextPackage: missingManifestPackage,
+      verifierAdapter: cleanVerifier,
+      out: tmpOut,
+      log: false
+    });
+
+    assert.notEqual(reportMissing.gate.decision, "approve");
+    assert.equal(reportMissing.gate.decision, "human_review_required");
+    assert.equal(reportMissing.summary.cleanChallengeStatus, "UNCERTAIN");
+    assert.equal(reportMissing.isExecutionComplete, false);
+
+    // 2. ContextPackage with non-array fileCoverageManifest must FAIL-CLOSED (UNCERTAIN)
+    const nonArrayManifestPackage = {
+      ...missingManifestPackage,
+      fileCoverageManifest: { "src/auth.js": true }
+    };
+
+    const reportNonArray = await runDogfoodReview({
+      mock: true,
+      changeSet,
+      head: headSha,
+      contextPackage: nonArrayManifestPackage,
+      verifierAdapter: cleanVerifier,
+      out: tmpOut,
+      log: false
+    });
+
+    assert.notEqual(reportNonArray.gate.decision, "approve");
+    assert.equal(reportNonArray.gate.decision, "human_review_required");
+    assert.equal(reportNonArray.summary.cleanChallengeStatus, "UNCERTAIN");
+
+    // 3. ContextPackage covering only 1 of 2 reviewed files must FAIL-CLOSED (UNCERTAIN)
+    const partialCoveragePackage = {
+      ...missingManifestPackage,
+      fileCoverageManifest: [
+        { file: "src/auth.js", inspected: true, calleesExtracted: [] }
+      ]
+    };
+
+    const reportPartial = await runDogfoodReview({
+      mock: true,
+      changeSet,
+      head: headSha,
+      contextPackage: partialCoveragePackage,
+      verifierAdapter: cleanVerifier,
+      out: tmpOut,
+      log: false
+    });
+
+    assert.notEqual(reportPartial.gate.decision, "approve");
+    assert.equal(reportPartial.gate.decision, "human_review_required");
+    assert.equal(reportPartial.summary.cleanChallengeStatus, "UNCERTAIN");
+
+    // 4. Positive control: Complete coverage manifest covering both files succeeds with APPROVE
+    const completeCoveragePackage = {
+      ...missingManifestPackage,
+      fileCoverageManifest: [
+        { file: "src/auth.js", inspected: true, calleesExtracted: [] },
+        { file: "src/crypto.js", inspected: true, calleesExtracted: [] }
+      ]
+    };
+
+    const reportComplete = await runDogfoodReview({
+      mock: true,
+      changeSet,
+      head: headSha,
+      contextPackage: completeCoveragePackage,
+      verifierAdapter: cleanVerifier,
+      out: tmpOut,
+      log: false
+    });
+
+    assert.equal(reportComplete.gate.decision, "approve");
+    assert.equal(reportComplete.summary.cleanChallengeStatus, "SUCCESS");
+    assert.equal(reportComplete.isExecutionComplete, true);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("PR39-GATE-OUT-06-NEGATIVE: Producer findings with duplicate IDs or evaluation sharing strictly rejected with DUPLICATE_FINDING_ID / FINDING_SET_BINDING_MISMATCH", async () => {
+  const changeSet = {
+    ok: true,
+    totalFiles: 1,
+    files: [{ path: "src/app.js", additions: 2, deletions: 0 }],
+    diffHunks: "+ auth();\n+ query();"
+  };
+
+  const duplicateFindings = [
+    { id: "SEC-DUPE", title: "First issue", severity: "medium", file: "src/app.js", line_start: 1, corroborations: 1 },
+    { id: "SEC-DUPE", title: "Second issue", severity: "medium", file: "src/app.js", line_start: 2, corroborations: 1 }
+  ];
+
+  const uniqueFindings = [
+    { id: "SEC-01", title: "First issue", severity: "medium", file: "src/app.js", line_start: 1, corroborations: 1 },
+    { id: "SEC-02", title: "Second issue", severity: "medium", file: "src/app.js", line_start: 2, corroborations: 1 }
+  ];
+
+  const mockAdapter = {
+    executeVerification: async () => ({
+      overallStatus: "DEFECTS_FOUND",
+      evaluations: [
+        {
+          findingId: "SEC-01",
+          verdict: "SUPPORTED",
+          locatorAccurate: true,
+          typeAccurate: true,
+          severityAccurate: true,
+          reasoning: "Confirmed issue 1"
+        },
+        {
+          findingId: "SEC-02",
+          verdict: "SUPPORTED",
+          locatorAccurate: true,
+          typeAccurate: true,
+          severityAccurate: true,
+          reasoning: "Confirmed issue 2"
+        }
+      ],
+      verifierOmissions: []
+    })
+  };
+
+  // 1. conductIndependentVerification throws DUPLICATE_FINDING_ID on duplicate producer finding IDs
+  await assert.rejects(
+    async () => {
+      await conductIndependentVerification(changeSet, duplicateFindings, mockAdapter);
+    },
+    /DUPLICATE_FINDING_ID/i,
+    "conductIndependentVerification must reject duplicate producer finding IDs"
+  );
+
+  // 2. validateVerificationOutput fails closed when verifier returns duplicate evaluation IDs
+  const outputWithDupeEvals = {
+    overallStatus: "DEFECTS_FOUND",
+    evaluations: [
+      { findingId: "SEC-01", verdict: "SUPPORTED", locatorAccurate: true, typeAccurate: true, severityAccurate: true },
+      { findingId: "SEC-01", verdict: "SUPPORTED", locatorAccurate: true, typeAccurate: true, severityAccurate: true }
+    ],
+    verifierOmissions: []
+  };
+
+  const validatedDupe = validateVerificationOutput(outputWithDupeEvals, {
+    changeSet,
+    producerFindings: uniqueFindings
+  });
+  assert.equal(validatedDupe.ok, false);
+  assert.equal(validatedDupe.executionStatus, "malformed_output");
+  assert.match(validatedDupe.error, /DUPLICATE_FINDING_ID/i);
+
+  // 3. evaluateIsolatedTestGate blocks when consensus findings contain duplicate IDs
+  const consensusWithDupe = makeTrustedConsensus(duplicateFindings, { tier: 2 });
+  const validRecord = issueVerificationRecordFromOutput({
+    ok: true,
+    verificationMode: "producer_verification",
+    evaluations: [
+      { findingId: "SEC-01", verdict: "SUPPORTED", locatorAccurate: true, typeAccurate: true, severityAccurate: true, reasoning: "r1" },
+      { findingId: "SEC-02", verdict: "SUPPORTED", locatorAccurate: true, typeAccurate: true, severityAccurate: true, reasoning: "r2" }
+    ],
+    verifierOmissions: []
+  });
+
+  const gateDupeFindings = evaluateIsolatedTestGate(consensusWithDupe, {
+    tier: 2,
+    verificationRecord: validRecord
+  });
+  assert.equal(gateDupeFindings.decision, "block");
+  assert.match(gateDupeFindings.reason, /DUPLICATE_FINDING_ID/i);
+
+  // 4. evaluateIsolatedTestGate blocks when verification record evaluations attempt to share/reuse 1 evaluation across 2 findings
+  const consensusUnique = makeTrustedConsensus(uniqueFindings, { tier: 2 });
+  const recordWithSingleSharedEval = issueVerificationRecordFromOutput({
+    ok: true,
+    verificationMode: "producer_verification",
+    evaluations: [
+      { findingId: "SEC-01", verdict: "CONTESTED", classification: "CONTRADICTED", locatorAccurate: true, typeAccurate: true, severityAccurate: true, reasoning: "Contested finding 1" }
+    ],
+    verifierOmissions: []
+  });
+
+  const gateSharedEval = evaluateIsolatedTestGate(consensusUnique, {
+    tier: 2,
+    verificationRecord: recordWithSingleSharedEval
+  });
+  assert.equal(gateSharedEval.decision, "block");
+  assert.match(gateSharedEval.reason, /FINDING_SET_BINDING_MISMATCH/i);
+});
+
+test("PR39-GATE-OUT-07-NEGATIVE: Ungrounded CONTESTED verdict without substantive reasoning fails closed or downgrades to INSUFFICIENT_EVIDENCE (UNGROUNDED_CONTESTED_VERDICT)", async () => {
+  const changeSet = {
+    ok: true,
+    totalFiles: 1,
+    files: [{ path: "src/auth.js", additions: 1, deletions: 0 }],
+    diffHunks: "+ check();"
+  };
+
+  const producerFindings = [
+    { id: "SEC-SOLITARY", title: "Solitary finding", severity: "medium", file: "src/auth.js", line_start: 1, corroborations: 1 }
+  ];
+
+  // 1. validateVerificationOutput under strict validation fails closed on ungrounded CONTESTED
+  const ungroundedOutput = {
+    overallStatus: "CLEAN",
+    evaluations: [
+      {
+        findingId: "SEC-SOLITARY",
+        verdict: "CONTESTED",
+        locatorAccurate: true,
+        typeAccurate: true,
+        severityAccurate: true,
+        reasoning: "",
+        dissent: "Contested by independent verifier" // Default/vacuous placeholder
+      }
+    ],
+    verifierOmissions: []
+  };
+
+  const strictRes = validateVerificationOutput(ungroundedOutput, {
+    changeSet,
+    producerFindings,
+    strict: true
+  });
+  assert.equal(strictRes.ok, false);
+  assert.equal(strictRes.executionStatus, "malformed_output");
+  assert.match(strictRes.error, /UNGROUNDED_CONTESTED_VERDICT/i);
+
+  // 2. validateVerificationOutput in non-strict mode downgrades ungrounded CONTESTED to INSUFFICIENT_EVIDENCE
+  const nonStrictRes = validateVerificationOutput(ungroundedOutput, {
+    changeSet,
+    producerFindings,
+    strict: false
+  });
+  assert.equal(nonStrictRes.ok, true);
+  assert.equal(nonStrictRes.evaluations[0].verdict, "INSUFFICIENT_EVIDENCE");
+  assert.notEqual(nonStrictRes.evaluations[0].verdict, "CONTESTED");
+  assert.match(nonStrictRes.evaluations[0].dissent, /Insufficient evidence in diff/i);
+
+  // 3. validateVerificationRecord rejects records containing ungrounded CONTESTED evaluations
+  const recordCandidate = {
+    schemaVersion: "1.0.0",
+    verifiedAt: new Date().toISOString(),
+    changeSetDigest: "sha256:" + "0".repeat(64),
+    producer: {
+      providerName: "agy",
+      findingsCount: 1,
+      findings: producerFindings
+    },
+    verifier: {
+      providerName: "claude",
+      actualModel: { value: "claude-mock", source: "runtime" }
+    },
+    evaluations: [
+      {
+        findingId: "SEC-SOLITARY",
+        verdict: "CONTESTED",
+        locatorAccurate: true,
+        typeAccurate: true,
+        severityAccurate: true,
+        reasoning: "",
+        dissent: ""
+      }
+    ],
+    verifierOmissions: [],
+    disagreementLedger: [],
+    summary: {
+      totalEvaluated: 1,
+      supportedCount: 0,
+      partiallySupportedCount: 0,
+      contestedCount: 1,
+      insufficientEvidenceCount: 0,
+      omissionsCount: 0
+    }
+  };
+
+  const recordValidation = verifierModule.validateVerificationRecord(recordCandidate);
+  assert.equal(recordValidation.valid, false);
+  assert.ok(recordValidation.errors.some(e => /UNGROUNDED_CONTESTED_VERDICT/i.test(e)));
+
+  // 4. evaluateIsolatedTestGate in strict mode blocks on ungrounded CONTESTED evaluation
+  const consensus = makeTrustedConsensus(producerFindings, { tier: 2 });
+
+  const ungroundedSyntheticRecord = issueVerificationRecordFromOutput({
+    ok: true,
+    verificationMode: "producer_verification",
+    evaluations: [
+      {
+        findingId: "SEC-SOLITARY",
+        verdict: "CONTESTED",
+        classification: "CONTRADICTED",
+        locatorAccurate: true,
+        typeAccurate: true,
+        severityAccurate: true,
+        reasoning: "",
+        dissent: "Contested by independent verifier"
+      }
+    ],
+    verifierOmissions: []
+  });
+
+  const strictGateRes = evaluateIsolatedTestGate(consensus, {
+    tier: 2,
+    strict: true,
+    verificationRecord: ungroundedSyntheticRecord
+  });
+  assert.equal(strictGateRes.decision, "block");
+  assert.match(strictGateRes.reason, /UNGROUNDED_CONTESTED_VERDICT/i);
+
+  // 5. Positive control: Grounded CONTESTED evaluation with concrete counter-evidence is preserved as CONTESTED
+  const groundedOutput = {
+    overallStatus: "CLEAN",
+    evaluations: [
+      {
+        findingId: "SEC-SOLITARY",
+        verdict: "CONTESTED",
+        locatorAccurate: true,
+        typeAccurate: true,
+        severityAccurate: true,
+        reasoning: "The parameter is verified by check() on line 1; no injection possible."
+      }
+    ],
+    verifierOmissions: []
+  };
+
+  const groundedRes = validateVerificationOutput(groundedOutput, {
+    changeSet,
+    producerFindings,
+    strict: true
+  });
+  assert.equal(groundedRes.ok, true);
+  assert.equal(groundedRes.evaluations[0].verdict, "CONTESTED");
+  assert.equal(groundedRes.evaluations[0].reasoning, "The parameter is verified by check() on line 1; no injection possible.");
+});

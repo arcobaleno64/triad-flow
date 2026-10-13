@@ -530,6 +530,25 @@ export function hasConcreteCounterexample(candidateOrReasoning) {
   return false;
 }
 
+/**
+ * Evaluates whether a contested evaluation provides substantive counter-evidence,
+ * reasoning, counterexample, or dissent explaining why the finding is contested (PR-39 Item 3).
+ * Vacuous placeholders ("Contested by independent verifier", "contested", "none", etc.) return false.
+ *
+ * @param {string|null|undefined} text
+ * @returns {boolean}
+ */
+export function isSubstantiveContestedReasoning(text) {
+  if (!text || typeof text !== "string") return false;
+  const trimmed = text.trim();
+  if (trimmed.length === 0) return false;
+  if (/^contested by independent verifier\.?$/i.test(trimmed)) return false;
+  if (/^contested\.?$/i.test(trimmed)) return false;
+  if (/^none\.?$/i.test(trimmed)) return false;
+  if (/^n\/a\.?$/i.test(trimmed)) return false;
+  return true;
+}
+
 
 /**
  * Truncates a UTF-8 buffer or string to at most maxBytes without splitting
@@ -881,6 +900,43 @@ export function validateVerificationOutput(rawOutput, context = {}) {
   // Validate each evaluation under Default-Deny
   const normalizedEvaluations = [];
   const rawEvaluations = Array.isArray(parsed.evaluations) ? parsed.evaluations : [];
+
+  // Pre-scan raw evaluations to reject duplicate finding IDs unless non-strict conflicting verdicts (self-contradiction)
+  const evsByFindingId = new Map();
+  for (let i = 0; i < rawEvaluations.length; i++) {
+    const item = rawEvaluations[i];
+    if (item && typeof item === "object" && !Array.isArray(item)) {
+      const fid = item.findingId !== undefined && item.findingId !== null
+        ? String(item.findingId).trim().toLowerCase()
+        : "";
+      if (fid) {
+        if (!evsByFindingId.has(fid)) {
+          evsByFindingId.set(fid, []);
+        }
+        evsByFindingId.get(fid).push(item);
+      }
+    }
+  }
+
+  for (const [fid, items] of evsByFindingId.entries()) {
+    if (items.length > 1) {
+      const distinctVerdicts = new Set(
+        items.map(it => String(it.verdict || "").toUpperCase().trim())
+      );
+      if (context.strict || context.strictValidation || distinctVerdicts.size <= 1 || distinctVerdicts.size !== items.length) {
+        return Object.freeze({
+          ok: false,
+          valid: false,
+          executionStatus: EXECUTION_STATUS.MALFORMED_OUTPUT,
+          evaluations: Object.freeze([]),
+          verifierOmissions: Object.freeze([]),
+          usage: null,
+          error: `Verifier evaluations contain duplicate finding ID '${items[0].findingId}' (DUPLICATE_FINDING_ID).`
+        });
+      }
+    }
+  }
+
   for (let i = 0; i < rawEvaluations.length; i++) {
     const item = rawEvaluations[i];
     if (!item || typeof item !== "object" || Array.isArray(item)) {
@@ -1000,6 +1056,7 @@ export function validateVerificationOutput(rawOutput, context = {}) {
         error: `objectiveImpact for finding '${findingId}' must be NOT_ASSESSED when no patch objective is bound.`
       });
     }
+    let effectiveVerdict = rawVerdict;
     const reasoning = item.reasoning !== undefined && item.reasoning !== null
       ? String(item.reasoning).trim()
       : "";
@@ -1008,8 +1065,31 @@ export function validateVerificationOutput(rawOutput, context = {}) {
     if (item.dissent !== undefined && item.dissent !== null) {
       const dStr = String(item.dissent).trim();
       dissent = dStr.length > 0 ? dStr : null;
-    } else if (rawVerdict === VERIFICATION_VERDICTS.CONTESTED) {
-      dissent = reasoning || "Contested by independent verifier";
+    }
+
+    if (rawVerdict === VERIFICATION_VERDICTS.CONTESTED) {
+      const hasSubstantiveGrounding = isSubstantiveContestedReasoning(dissent) ||
+        isSubstantiveContestedReasoning(reasoning) ||
+        (typeof item.counterexample === "string" && item.counterexample.trim().length > 0);
+
+      if (!hasSubstantiveGrounding) {
+        if (context.strictValidation || context.strict) {
+          return Object.freeze({
+            ok: false,
+            valid: false,
+            executionStatus: EXECUTION_STATUS.MALFORMED_OUTPUT,
+            evaluations: Object.freeze([]),
+            verifierOmissions: Object.freeze([]),
+            usage: null,
+            error: `Evaluation at index ${i} for finding '${findingId}' has CONTESTED verdict without substantive reasoning, counterexample, or dissent (UNGROUNDED_CONTESTED_VERDICT).`
+          });
+        }
+        // Downgrade ungrounded CONTESTED to INSUFFICIENT_EVIDENCE
+        effectiveVerdict = VERIFICATION_VERDICTS.INSUFFICIENT_EVIDENCE;
+        dissent = "Insufficient evidence in diff to corroborate finding (ungrounded CONTESTED downgraded; missing substantive counter-evidence).";
+      } else {
+        dissent = dissent || reasoning;
+      }
     } else if (rawVerdict === VERIFICATION_VERDICTS.INSUFFICIENT_EVIDENCE) {
       dissent = reasoning || "Insufficient evidence in diff to corroborate finding";
     } else if (!locatorAccurate || !severityAccurate || !typeAccurate) {
@@ -1017,17 +1097,17 @@ export function validateVerificationOutput(rawOutput, context = {}) {
       if (!locatorAccurate) contestedFields.push("locator");
       if (!severityAccurate) contestedFields.push("severity");
       if (!typeAccurate) contestedFields.push("type");
-      dissent = reasoning || `${contestedFields.join(" and ")} contested by independent verifier`;
+      dissent = dissent || reasoning || `${contestedFields.join(" and ")} contested by independent verifier`;
     }
 
     normalizedEvaluations.push(deepFreeze({
       findingId,
-      verdict: rawVerdict,
+      verdict: effectiveVerdict,
       locatorAccurate,
       typeAccurate,
       severityAccurate,
       objectiveImpact,
-      reasoning,
+      reasoning: reasoning || (dissent || ""),
       dissent
     }));
   }
@@ -1626,7 +1706,7 @@ export class CliVerifierAdapter {
  * @param {number} index
  * @returns {object|null}
  */
-function findEvaluationForProducerFinding(evaluations, pf, index) {
+function findEvaluationForProducerFinding(evaluations, pf, index, usedIndices = null) {
   if (!Array.isArray(evaluations)) return null;
 
   const targetId = pf && typeof pf === "object"
@@ -1645,25 +1725,33 @@ function findEvaluationForProducerFinding(evaluations, pf, index) {
   ]);
 
   const matches = [];
-  for (const ev of evaluations) {
+  for (let evIdx = 0; evIdx < evaluations.length; evIdx++) {
+    if (usedIndices && usedIndices.has(evIdx)) continue;
+    const ev = evaluations[evIdx];
     const evId = String(ev.findingId || "").trim();
     const evIdLower = evId.toLowerCase();
     if (candidateKeys.has(evId) || candidateKeys.has(evIdLower)) {
-      matches.push(ev);
+      matches.push({ ev, evIdx });
     } else {
       const cleanMatch = evIdLower.replace(/^finding\s*(?:#|no\.?)?\s*/i, "").trim();
       if (candidateKeys.has(cleanMatch)) {
-        matches.push(ev);
+        matches.push({ ev, evIdx });
       }
     }
   }
 
   if (matches.length === 0) return null;
-  if (matches.length === 1) return matches[0];
+  if (matches.length === 1) {
+    if (usedIndices) usedIndices.add(matches[0].evIdx);
+    return matches[0].ev;
+  }
 
   // Self-contradiction by verifier under Default-Deny
-  const verdicts = new Set(matches.map(m => m.verdict));
+  const verdicts = new Set(matches.map(m => m.ev.verdict));
   if (verdicts.size > 1) {
+    if (usedIndices) {
+      for (const m of matches) usedIndices.add(m.evIdx);
+    }
     return {
       findingId: targetId,
       verdict: VERIFICATION_VERDICTS.CONTESTED,
@@ -1675,7 +1763,8 @@ function findEvaluationForProducerFinding(evaluations, pf, index) {
     };
   }
 
-  return matches[0];
+  if (usedIndices) usedIndices.add(matches[0].evIdx);
+  return matches[0].ev;
 }
 
 /**
@@ -1713,6 +1802,24 @@ export async function conductIndependentVerification(changeSet, producerFindings
 
   // 1. Bit-for-bit verbatim preservation of producer findings (Immutability Guarantee)
   const preservedProducerFindings = Object.freeze(cloneDeep(producerFindings).map(f => deepFreeze(f)));
+
+  // Validate producer findings have strictly unique IDs (PR-39 Item 2 / DUPLICATE_FINDING_ID)
+  const seenProducerIds = new Set();
+  for (let i = 0; i < preservedProducerFindings.length; i++) {
+    const pf = preservedProducerFindings[i];
+    const fid = pf && typeof pf === "object"
+      ? (pf.id !== undefined && pf.id !== null && String(pf.id).trim().length > 0
+          ? String(pf.id).trim()
+          : (pf.findingId !== undefined && pf.findingId !== null && String(pf.findingId).trim().length > 0
+              ? String(pf.findingId).trim()
+              : `finding-${i + 1}`))
+      : `finding-${i + 1}`;
+    const normId = fid.toLowerCase();
+    if (seenProducerIds.has(normId)) {
+      throw new Error(`Producer findings contain duplicate finding ID '${fid}' (DUPLICATE_FINDING_ID).`);
+    }
+    seenProducerIds.add(normId);
+  }
 
   // Map finding IDs to producer finding objects
   const producerFindingsMap = new Map();
@@ -1832,13 +1939,14 @@ export async function conductIndependentVerification(changeSet, producerFindings
 
   // 6. Map evaluations and guarantee 100% coverage of producer findings
   const finalEvaluations = [];
+  const usedEvalIndices = new Set();
   for (let i = 0; i < preservedProducerFindings.length; i++) {
     const pf = preservedProducerFindings[i];
     const findingId = pf && typeof pf === "object"
       ? (pf.id !== undefined && pf.id !== null ? String(pf.id) : (pf.findingId !== undefined && pf.findingId !== null ? String(pf.findingId) : `finding-${i + 1}`))
       : `finding-${i + 1}`;
 
-    const matched = validated.ok ? findEvaluationForProducerFinding(validated.evaluations, pf, i) : null;
+    const matched = validated.ok ? findEvaluationForProducerFinding(validated.evaluations, pf, i, usedEvalIndices) : null;
 
     if (matched) {
       const isFullySupported = matched.verdict === VERIFICATION_VERDICTS.SUPPORTED &&
@@ -2047,6 +2155,20 @@ export function validateVerificationRecord(record) {
       errors.push("Producer requires a 'findings' array.");
     } else if (record.producer.findingsCount !== record.producer.findings.length) {
       errors.push(`Producer 'findingsCount' (${record.producer.findingsCount}) does not match findings array length (${record.producer.findings.length}).`);
+    } else {
+      const seenProducerFids = new Set();
+      for (let i = 0; i < record.producer.findings.length; i++) {
+        const pf = record.producer.findings[i];
+        const fid = pf && typeof pf === "object"
+          ? (pf.id !== undefined && pf.id !== null && String(pf.id).trim().length > 0 ? String(pf.id).trim() : (pf.findingId !== undefined && pf.findingId !== null && String(pf.findingId).trim().length > 0 ? String(pf.findingId).trim() : `finding-${i + 1}`))
+          : `finding-${i + 1}`;
+        const normFid = fid.toLowerCase();
+        if (seenProducerFids.has(normFid)) {
+          errors.push(`Producer findings contain duplicate finding ID '${fid}' (DUPLICATE_FINDING_ID).`);
+          break;
+        }
+        seenProducerFids.add(normFid);
+      }
     }
   }
 
@@ -2070,18 +2192,35 @@ export function validateVerificationRecord(record) {
       errors.push(`Evaluations count (${record.evaluations.length}) does not match producer findings count (${record.producer.findingsCount}).`);
     }
 
+    const seenEvalFids = new Set();
     for (let i = 0; i < record.evaluations.length; i++) {
       const ev = record.evaluations[i];
       if (!ev || typeof ev !== "object") {
         errors.push(`Evaluation at index ${i} is not a plain object.`);
       } else {
-        if (!ev.findingId) errors.push(`Evaluation at index ${i} missing 'findingId'.`);
+        if (!ev.findingId) {
+          errors.push(`Evaluation at index ${i} missing 'findingId'.`);
+        } else {
+          const normEvId = String(ev.findingId).trim().toLowerCase();
+          if (seenEvalFids.has(normEvId)) {
+            errors.push(`Evaluations contain duplicate finding ID '${ev.findingId}' (DUPLICATE_FINDING_ID).`);
+          }
+          seenEvalFids.add(normEvId);
+        }
         if (!VALID_VERDICTS.has(ev.verdict)) errors.push(`Evaluation at index ${i} has invalid verdict '${ev.verdict}'.`);
         if (typeof ev.locatorAccurate !== "boolean") errors.push(`Evaluation at index ${i} requires boolean 'locatorAccurate'.`);
         if (typeof ev.typeAccurate !== "boolean") errors.push(`Evaluation at index ${i} requires boolean 'typeAccurate'.`);
         if (typeof ev.severityAccurate !== "boolean") errors.push(`Evaluation at index ${i} requires boolean 'severityAccurate'.`);
         if (ev.objectiveImpact !== undefined && !VALID_OBJECTIVE_IMPACTS.has(ev.objectiveImpact)) {
           errors.push(`Evaluation at index ${i} has invalid objectiveImpact '${ev.objectiveImpact}'.`);
+        }
+        if (ev.verdict === VERIFICATION_VERDICTS.CONTESTED) {
+          const hasGrounding = isSubstantiveContestedReasoning(ev.reasoning) ||
+            isSubstantiveContestedReasoning(ev.dissent) ||
+            (typeof ev.counterexample === "string" && ev.counterexample.trim().length > 0);
+          if (!hasGrounding) {
+            errors.push(`Evaluation at index ${i} for finding '${ev.findingId}' has ungrounded CONTESTED verdict without substantive counter-evidence (UNGROUNDED_CONTESTED_VERDICT).`);
+          }
         }
       }
     }

@@ -1048,11 +1048,39 @@ export async function runDogfoodReview(userOptions = {}) {
           pkgInvalidReason = `ContextPackage diff contentDigest mismatch ('${pkgDigest}').`;
         }
       }
+
+      // Validate fileCoverageManifest (PR-39 Item 1 / CONTEXT_COVERAGE_INTEGRITY)
+      if (!pkgInvalid) {
+        if (!Array.isArray(pkg.fileCoverageManifest)) {
+          pkgInvalid = true;
+          pkgInvalidReason = "ContextPackage missing required fileCoverageManifest array.";
+        } else if (pkg.fileCoverageManifest.some(m => !m || typeof m !== "object" || Array.isArray(m))) {
+          pkgInvalid = true;
+          pkgInvalidReason = "ContextPackage fileCoverageManifest contains invalid non-object entries.";
+        } else if (pkg.fileCoverageManifest.some(m => !m.file && !m.path)) {
+          pkgInvalid = true;
+          pkgInvalidReason = "ContextPackage fileCoverageManifest contains entries without valid file path.";
+        } else if (Array.isArray(changeSet?.files) && changeSet.files.length > 0) {
+          const coveredFiles = new Set(
+            pkg.fileCoverageManifest
+              .map(m => normalizeCanonicalPath(String(m.file || m.path || "")))
+              .filter(Boolean)
+          );
+          for (const f of changeSet.files) {
+            const expectedPath = normalizeCanonicalPath(String(typeof f === "string" ? f : (f?.path || f?.file || "")));
+            if (expectedPath && !coveredFiles.has(expectedPath)) {
+              pkgInvalid = true;
+              pkgInvalidReason = `ContextPackage fileCoverageManifest does not cover file under review: '${expectedPath}'.`;
+              break;
+            }
+          }
+        }
+      }
     }
 
     if (pkgInvalid) {
       contextExtractionFailed = true;
-      contextExtractionError = `External contextPackage failed identity binding: ${pkgInvalidReason}`;
+      contextExtractionError = `External contextPackage failed identity or coverage binding: ${pkgInvalidReason}`;
       contextPackage = null;
       if (log) console.warn(`  ⚠️ Failed to bind external contextPackage: ${contextExtractionError}`);
     } else {

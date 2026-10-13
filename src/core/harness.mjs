@@ -13,7 +13,8 @@ import {
   RunContext,
   normalizeDigest,
   normalizeObjective,
-  normalizeCommitSha
+  normalizeCommitSha,
+  isSubstantiveContestedReasoning
 } from "./independent-verifier.mjs";
 
 export {
@@ -23,7 +24,8 @@ export {
   RunContext,
   normalizeDigest,
   normalizeObjective,
-  normalizeCommitSha
+  normalizeCommitSha,
+  isSubstantiveContestedReasoning
 } from "./independent-verifier.mjs";
 
 export const SECRET_PATTERNS = [
@@ -691,12 +693,69 @@ function _evaluatePostVerificationGateCore(consensus, verificationRecord, option
   // Finding Set Binding Verification (P1, PR-39 Item 3):
   // When findings are present, verify that current findings strictly match findings bound to verificationRecord.
   if (findings.length > 0) {
+    // Check for duplicate finding IDs in producer findings (PR-39 Item 2 / DUPLICATE_FINDING_ID)
+    const seenFindingIds = new Set();
+    for (let i = 0; i < findings.length; i++) {
+      const fId = getFindingId(findings[i], i);
+      const normFId = fId.toLowerCase();
+      if (seenFindingIds.has(normFId)) {
+        return {
+          decision: "block",
+          reason: `Gate Fail-Closed: Producer findings contain duplicate finding ID '${fId}' (DUPLICATE_FINDING_ID).`,
+          criticals: [],
+          advisoryFindings: []
+        };
+      }
+      seenFindingIds.add(normFId);
+    }
+
+    // Check for duplicate finding IDs in verificationRecord evaluations (PR-39 Item 2 / DUPLICATE_FINDING_ID)
+    const seenEvalIds = new Set();
+    for (let i = 0; i < evaluations.length; i++) {
+      const evId = String(evaluations[i]?.findingId || evaluations[i]?.id || "").trim();
+      if (evId) {
+        const normEvId = evId.toLowerCase();
+        if (seenEvalIds.has(normEvId)) {
+          return {
+            decision: "block",
+            reason: `Gate Fail-Closed: Verification record contains duplicate evaluation for finding ID '${evId}' (DUPLICATE_FINDING_ID).`,
+            criticals: [],
+            advisoryFindings: []
+          };
+        }
+        seenEvalIds.add(normEvId);
+      }
+    }
+
+    if (evaluations.length !== findings.length) {
+      return {
+        decision: "block",
+        reason: `Gate Fail-Closed: Verification record finding set mismatch (FINDING_SET_BINDING_MISMATCH: finding count ${findings.length} vs evaluations count ${evaluations.length}).`,
+        criticals: [],
+        advisoryFindings: []
+      };
+    }
+
     const boundProducerFindings = (Array.isArray(verificationRecord.producer?.findings) && verificationRecord.producer.findings.length > 0)
       ? verificationRecord.producer.findings
       : ((Array.isArray(verificationRecord.producerFindings) && verificationRecord.producerFindings.length > 0)
           ? verificationRecord.producerFindings
           : null);
     if (boundProducerFindings) {
+      const seenBoundIds = new Set();
+      for (let i = 0; i < boundProducerFindings.length; i++) {
+        const boundId = getFindingId(boundProducerFindings[i], i);
+        const normBoundId = boundId.toLowerCase();
+        if (seenBoundIds.has(normBoundId)) {
+          return {
+            decision: "block",
+            reason: `Gate Fail-Closed: Bound producer findings contain duplicate finding ID '${boundId}' (DUPLICATE_FINDING_ID).`,
+            criticals: [],
+            advisoryFindings: []
+          };
+        }
+        seenBoundIds.add(normBoundId);
+      }
       if (boundProducerFindings.length !== findings.length) {
         return {
           decision: "block",
@@ -719,14 +778,6 @@ function _evaluatePostVerificationGateCore(consensus, verificationRecord, option
       }
     } else {
       // Synthetic or evaluation-only record: verify evaluations count and ID correspondence
-      if (evaluations.length !== findings.length) {
-        return {
-          decision: "block",
-          reason: `Gate Fail-Closed: Verification record finding set mismatch (FINDING_SET_BINDING_MISMATCH: finding count ${findings.length} vs evaluations count ${evaluations.length}).`,
-          criticals: [],
-          advisoryFindings: []
-        };
-      }
       const matchedEvalIndices = new Set();
       for (let i = 0; i < findings.length; i++) {
         const curId = getFindingId(findings[i], i);
@@ -802,16 +853,17 @@ function _evaluatePostVerificationGateCore(consensus, verificationRecord, option
   }
 
   // Phase A: Evaluate Producer Findings
+  const usedEvaluationIndices = new Set();
   for (let i = 0; i < findings.length; i++) {
     const f = findings[i];
     if (!f) continue;
 
     const fId = getFindingId(f, i);
-    let evalMatch = evaluations.find(e => String(e?.findingId).trim() === fId);
-    if (!evalMatch) {
-      evalMatch = evaluations.find(e => String(e?.findingId).trim().toLowerCase() === fId.toLowerCase() || String(e?.id).trim() === fId);
+    let evalMatchIdx = evaluations.findIndex((e, idx) => !usedEvaluationIndices.has(idx) && String(e?.findingId).trim() === fId);
+    if (evalMatchIdx === -1) {
+      evalMatchIdx = evaluations.findIndex((e, idx) => !usedEvaluationIndices.has(idx) && (String(e?.findingId).trim().toLowerCase() === fId.toLowerCase() || String(e?.id).trim() === fId));
     }
-    if (!evalMatch) {
+    if (evalMatchIdx === -1) {
       return {
         decision: "block",
         reason: `Gate Fail-Closed: Verification record finding set mismatch (FINDING_SET_BINDING_MISMATCH: missing evaluation for finding '${fId}').`,
@@ -819,9 +871,32 @@ function _evaluatePostVerificationGateCore(consensus, verificationRecord, option
         advisoryFindings: []
       };
     }
+    usedEvaluationIndices.add(evalMatchIdx);
+    const evalMatch = evaluations[evalMatchIdx];
 
-    const verdict = String(evalMatch?.verdict || "INSUFFICIENT_EVIDENCE").toUpperCase();
-    const classification = String(evalMatch?.classification || "").toUpperCase();
+    let verdict = String(evalMatch?.verdict || "INSUFFICIENT_EVIDENCE").toUpperCase();
+    let classification = String(evalMatch?.classification || "").toUpperCase();
+
+    // Invariant (PR-39 Item 3 / UNGROUNDED_CONTESTED_VERDICT):
+    // CONTESTED verdict MUST be backed by substantive reasoning, counterexample, or dissent.
+    if (verdict === "CONTESTED") {
+      const hasSubstantive = isSubstantiveContestedReasoning(evalMatch?.reasoning) ||
+        isSubstantiveContestedReasoning(evalMatch?.dissent) ||
+        (typeof evalMatch?.counterexample === "string" && evalMatch.counterexample.trim().length > 0);
+      if (!hasSubstantive) {
+        if (isStrict) {
+          return {
+            decision: "block",
+            reason: `Gate Fail-Closed: Verification record contains ungrounded CONTESTED evaluation for finding '${fId}' without substantive counter-evidence (UNGROUNDED_CONTESTED_VERDICT).`,
+            criticals: [],
+            advisoryFindings: []
+          };
+        }
+        verdict = "INSUFFICIENT_EVIDENCE";
+        classification = "UNVERIFIABLE";
+      }
+    }
+
     const isContested = verdict === "CONTESTED" || classification === "CONTRADICTED";
     const isSupported = verdict === "SUPPORTED";
     const isInsufficient = verdict === "INSUFFICIENT_EVIDENCE" || classification === "UNVERIFIABLE";
