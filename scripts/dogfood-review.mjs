@@ -27,7 +27,8 @@ import {
   resolveProviderProfile
 } from "../src/adapters/cli-transport.mjs";
 import { aggregateConsensus } from "../src/core/loop.mjs";
-import { evaluateGateDecision } from "../src/core/harness.mjs";
+import { evaluateGateDecision, normalizeDigest } from "../src/core/harness.mjs";
+import { normalizeCanonicalPath } from "../src/core/scoring.mjs";
 import {
   EXECUTION_STATUS,
   convertProviderResultToSentryReport
@@ -974,6 +975,84 @@ export async function runDogfoodReview(userOptions = {}) {
     contextExtractionFailed = true;
     contextExtractionError = "Missing trusted repository root for exact-head context construction.";
     if (log) console.warn(`  ⚠️ Failed to extract callee contextPackage for verification: ${contextExtractionError}`);
+  } else if (userOptions.contextPackage) {
+    // Validate externally provided contextPackage identity binding (PR-39 Item 1)
+    const pkg = userOptions.contextPackage;
+    let pkgInvalid = false;
+    let pkgInvalidReason = "";
+
+    if (!pkg || typeof pkg !== "object" || Array.isArray(pkg)) {
+      pkgInvalid = true;
+      pkgInvalidReason = "ContextPackage must be a non-null object.";
+    } else if (Object.keys(pkg).length === 0 || !pkg.layers || !pkg.budgetAccounting) {
+      pkgInvalid = true;
+      pkgInvalidReason = "ContextPackage is empty or missing required layers/budget accounting.";
+    } else {
+      // Validate headSha
+      const pkgHead = pkg.headSha ? String(pkg.headSha).trim().toLowerCase() : "";
+      if (commitSha) {
+        if (!pkgHead) {
+          pkgInvalid = true;
+          pkgInvalidReason = `ContextPackage missing headSha (expected '${commitSha}').`;
+        } else if (!headsConsistent(pkgHead, commitSha)) {
+          pkgInvalid = true;
+          pkgInvalidReason = `ContextPackage cross-head mismatch (package headSha: '${pkgHead}', expected: '${commitSha}').`;
+        }
+      }
+
+      // Validate target repo
+      const pkgRepo = pkg.repositoryRoot || pkg.repository?.root || pkg.targetRepo || pkg.repo || null;
+      if (!pkgInvalid && targetRepo && pkgRepo) {
+        const normPkgRepo = normalizeCanonicalPath(path.resolve(String(pkgRepo)));
+        const normTargetRepo = normalizeCanonicalPath(path.resolve(String(targetRepo)));
+        if (normPkgRepo !== normTargetRepo) {
+          pkgInvalid = true;
+          pkgInvalidReason = `ContextPackage repositoryRoot mismatch ('${normPkgRepo}' vs '${normTargetRepo}').`;
+        }
+      }
+
+      // Validate diff contentDigest
+      if (!pkgInvalid) {
+        const validDigests = new Set();
+        if (changeSet?.contentDigest) {
+          const d = normalizeDigest(changeSet.contentDigest);
+          if (d) validDigests.add(d);
+        }
+        if (changeSet?.changeSetDigest) {
+          const d = normalizeDigest(changeSet.changeSetDigest);
+          if (d) validDigests.add(d);
+        }
+        if (typeof changeSet?.diffHunks === "string") {
+          const d1 = normalizeDigest(crypto.createHash("sha256").update(changeSet.diffHunks, "utf8").digest("hex"));
+          if (d1) validDigests.add(d1);
+          const normalizedHunks = changeSet.diffHunks.replace(/\r\n/g, "\n");
+          const d2 = normalizeDigest(crypto.createHash("sha256").update(normalizedHunks, "utf8").digest("hex"));
+          if (d2) validDigests.add(d2);
+          const d3 = normalizeDigest(crypto.createHash("sha256").update(changeSet.diffHunks.trim(), "utf8").digest("hex"));
+          if (d3) validDigests.add(d3);
+          const d4 = normalizeDigest(crypto.createHash("sha256").update(normalizedHunks.trim(), "utf8").digest("hex"));
+          if (d4) validDigests.add(d4);
+        }
+
+        const pkgDigest = pkg.contentDigest ? normalizeDigest(pkg.contentDigest) : "";
+        if (!pkgDigest) {
+          pkgInvalid = true;
+          pkgInvalidReason = "ContextPackage missing required diff contentDigest.";
+        } else if (validDigests.size > 0 && !validDigests.has(pkgDigest)) {
+          pkgInvalid = true;
+          pkgInvalidReason = `ContextPackage diff contentDigest mismatch ('${pkgDigest}').`;
+        }
+      }
+    }
+
+    if (pkgInvalid) {
+      contextExtractionFailed = true;
+      contextExtractionError = `External contextPackage failed identity binding: ${pkgInvalidReason}`;
+      contextPackage = null;
+      if (log) console.warn(`  ⚠️ Failed to bind external contextPackage: ${contextExtractionError}`);
+    } else {
+      contextPackage = pkg;
+    }
   } else if (!contextPackage && changeSet?.files?.length > 0 && targetRepo && commitSha) {
     try {
       contextPackage = buildContextPackage(
@@ -1023,7 +1102,7 @@ export async function runDogfoodReview(userOptions = {}) {
             reason: contextExtractionError,
             targetFiles: changeSet?.files?.map(f => f.path) || []
           }
-        ] : (userOptions.contextGaps || null),
+        ] : (userOptions.contextGaps || contextPackage?.contextGaps || null),
         timeoutMs,
         signal: userOptions.signal || null,
         verificationMode: "producer_verification"
@@ -1059,7 +1138,7 @@ export async function runDogfoodReview(userOptions = {}) {
               reason: contextExtractionError,
               targetFiles: changeSet?.files?.map(f => f.path) || []
             }
-          ] : (userOptions.contextGaps || null),
+          ] : (userOptions.contextGaps || contextPackage?.contextGaps || null),
           timeoutMs,
           signal: userOptions.signal || null,
           verificationMode: "clean_challenge"

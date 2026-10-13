@@ -228,6 +228,9 @@ export function normalizeFinding(raw) {
   return {
     valid: true,
     finding: {
+      id: raw.id !== undefined && raw.id !== null && String(raw.id).trim().length > 0
+        ? String(raw.id).trim()
+        : (raw.findingId !== undefined && raw.findingId !== null && String(raw.findingId).trim().length > 0 ? String(raw.findingId).trim() : undefined),
       title,
       severity: rawSev,
       file,
@@ -524,6 +527,29 @@ export function evaluateIsolatedTestGate(consensus, options = {}) {
  * - Structural failures (coverage, quorum, capability, verification error) strictly FAIL-CLOSED BLOCK
  * - Verifier omissions evaluated across Tier 1 and Tier 2 per 13-branch decision truth table (§3.1.1)
  */
+function getFindingId(f, i) {
+  if (!f) return `finding-${i + 1}`;
+  if (f.id !== undefined && f.id !== null && String(f.id).trim().length > 0) {
+    return String(f.id).trim();
+  }
+  if (f.findingId !== undefined && f.findingId !== null && String(f.findingId).trim().length > 0) {
+    return String(f.findingId).trim();
+  }
+  return `finding-${i + 1}`;
+}
+
+function getFindingSignature(f) {
+  if (!f || typeof f !== "object") return "";
+  const id = f.id !== undefined && f.id !== null ? String(f.id).trim() : (f.findingId !== undefined && f.findingId !== null ? String(f.findingId).trim() : "");
+  const ruleId = String(f.ruleId || "").trim();
+  const title = String(f.title || f.name || f.message || "").trim();
+  const file = String(f.file || f.path || "").trim();
+  const line = String(f.line ?? f.startLine ?? f.line_start ?? "").trim();
+  const severity = String(f.severity || "").trim().toLowerCase();
+  const cwe = String(f.cwe || "").trim();
+  return `${id}|${ruleId}|${title}|${file}|${line}|${severity}|${cwe}`;
+}
+
 function _evaluatePostVerificationGateCore(consensus, verificationRecord, options = {}, { allowSynthetic = false } = {}) {
   // Row 13: Execution Failure / Timeout / Malformed
   if (!verificationRecord || verificationRecord.ok === false) {
@@ -661,6 +687,60 @@ function _evaluatePostVerificationGateCore(consensus, verificationRecord, option
   }
   const evaluations = Array.isArray(verificationRecord.evaluations) ? verificationRecord.evaluations : [];
   const omissions = Array.isArray(verificationRecord.verifierOmissions) ? verificationRecord.verifierOmissions : [];
+
+  // Finding Set Binding Verification (P1, PR-39 Item 3):
+  // When findings are present, verify that current findings strictly match findings bound to verificationRecord.
+  if (findings.length > 0) {
+    const boundProducerFindings = (Array.isArray(verificationRecord.producer?.findings) && verificationRecord.producer.findings.length > 0)
+      ? verificationRecord.producer.findings
+      : ((Array.isArray(verificationRecord.producerFindings) && verificationRecord.producerFindings.length > 0)
+          ? verificationRecord.producerFindings
+          : null);
+    if (boundProducerFindings) {
+      if (boundProducerFindings.length !== findings.length) {
+        return {
+          decision: "block",
+          reason: `Gate Fail-Closed: Verification record finding set mismatch (FINDING_SET_BINDING_MISMATCH: count ${findings.length} vs bound ${boundProducerFindings.length}).`,
+          criticals: [],
+          advisoryFindings: []
+        };
+      }
+      for (let i = 0; i < findings.length; i++) {
+        const curId = getFindingId(findings[i], i);
+        const boundId = getFindingId(boundProducerFindings[i], i);
+        if (curId !== boundId || getFindingSignature(findings[i]) !== getFindingSignature(boundProducerFindings[i])) {
+          return {
+            decision: "block",
+            reason: `Gate Fail-Closed: Verification record finding set mismatch (FINDING_SET_BINDING_MISMATCH: finding at index ${i} does not match bound producer finding).`,
+            criticals: [],
+            advisoryFindings: []
+          };
+        }
+      }
+    } else {
+      // Synthetic or evaluation-only record: verify evaluations count and ID correspondence
+      if (evaluations.length !== findings.length) {
+        return {
+          decision: "block",
+          reason: `Gate Fail-Closed: Verification record finding set mismatch (FINDING_SET_BINDING_MISMATCH: finding count ${findings.length} vs evaluations count ${evaluations.length}).`,
+          criticals: [],
+          advisoryFindings: []
+        };
+      }
+      for (let i = 0; i < findings.length; i++) {
+        const curId = getFindingId(findings[i], i);
+        const match = evaluations.find(e => String(e?.findingId).trim() === curId);
+        if (!match) {
+          return {
+            decision: "block",
+            reason: `Gate Fail-Closed: Verification record finding set mismatch (FINDING_SET_BINDING_MISMATCH: missing evaluation for finding '${curId}').`,
+            criticals: [],
+            advisoryFindings: []
+          };
+        }
+      }
+    }
+  }
   const hasBoundPatchObjective =
     typeof verificationRecord.patchObjective === "string" &&
     verificationRecord.patchObjective.trim().length > 0;
@@ -721,11 +801,8 @@ function _evaluatePostVerificationGateCore(consensus, verificationRecord, option
     const f = findings[i];
     if (!f) continue;
 
-    const evalMatch = evaluations.find(e =>
-      (f.id && String(e.findingId) === String(f.id)) ||
-      (f.findingId && String(e.findingId) === String(f.findingId)) ||
-      String(e.findingId) === `finding-${i + 1}`
-    ) || evaluations[i];
+    const fId = getFindingId(f, i);
+    const evalMatch = evaluations.find(e => String(e?.findingId).trim() === fId);
 
     const verdict = String(evalMatch?.verdict || "INSUFFICIENT_EVIDENCE").toUpperCase();
     const classification = String(evalMatch?.classification || "").toUpperCase();

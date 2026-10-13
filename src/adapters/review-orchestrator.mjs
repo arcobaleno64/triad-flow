@@ -233,6 +233,11 @@ export async function orchestrateReview(changeSet, adapters = {}, options = {}) 
   }
 
   const plan = options.plan || evaluateDiffScale(changeSet.files);
+  const evaluatedScale = (!plan || plan.highestRisk === undefined) ? evaluateDiffScale(changeSet?.files || []) : null;
+  const computedHighestRisk = plan?.highestRisk ?? evaluatedScale?.highestRisk;
+  const diffTier = options.tier !== undefined
+    ? Number(options.tier)
+    : (computedHighestRisk !== undefined ? Number(computedHighestRisk) : undefined);
   const hasMacro = Boolean(adapters.macro && typeof adapters.macro.executeReview === "function");
   const hasMicro = Boolean(adapters.micro && typeof adapters.micro.executeReview === "function");
 
@@ -243,7 +248,10 @@ export async function orchestrateReview(changeSet, adapters = {}, options = {}) 
       micro: { error: "No configured micro sentry provider" }
     };
     const consensus = aggregateConsensus(rawReports);
-    const gate = evaluateGateDecision(consensus, { strict });
+    const gate = evaluateGateDecision(consensus, {
+      strict,
+      ...(diffTier !== undefined ? { tier: diffTier } : {})
+    });
 
     return {
       runId,
@@ -287,6 +295,7 @@ export async function orchestrateReview(changeSet, adapters = {}, options = {}) 
       const consensus = aggregateConsensus(rawReports, { policy: "STRICT_HETEROGENEOUS" });
       const gate = evaluateGateDecision(consensus, {
         strict,
+        ...(diffTier !== undefined ? { tier: diffTier } : {}),
         ...(options.preliminary === true ? { preliminary: true } : {})
       });
 
@@ -343,6 +352,7 @@ export async function orchestrateReview(changeSet, adapters = {}, options = {}) 
       ? { decision: "block", reason: "Gate Fail-Closed: Verification record binding mismatch (FORGED_OR_STALE_RECORD)." }
       : evaluateGateDecision(consensus, {
           strict,
+          ...(diffTier !== undefined ? { tier: diffTier } : {}),
           ...(isPreliminaryOpt ? { preliminary: true } : {}),
           ...(options.verificationRecord ? { verificationRecord: options.verificationRecord } : {}),
           ...(canonicalRunContext ? { runContext: canonicalRunContext } : {})
@@ -419,6 +429,7 @@ export async function orchestrateReview(changeSet, adapters = {}, options = {}) 
     ? { decision: "block", reason: "Gate Fail-Closed: Verification record binding mismatch (FORGED_OR_STALE_RECORD)." }
     : evaluateGateDecision(consensus, {
         strict,
+        ...(diffTier !== undefined ? { tier: diffTier } : {}),
         ...(isPreliminaryOpt ? { preliminary: true } : {}),
         ...(options.verificationRecord ? { verificationRecord: options.verificationRecord } : {}),
         ...(canonicalRunContext ? { runContext: canonicalRunContext } : {})

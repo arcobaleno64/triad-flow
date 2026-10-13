@@ -2800,3 +2800,297 @@ test("007-DELTA-P1-04-NEGATIVE: Verifier reporting DEFECTS_FOUND without any SUP
   assert.equal(gateRes.decision, "human_review_required");
   assert.match(gateRes.reason, /Verifier Status Inconsistent: Verifier declared DEFECTS_FOUND without any SUPPORTED omission/i);
 });
+
+test("PR39-GATE-OUT-01-NEGATIVE: Empty or cross-head contextPackage cannot achieve CLEAN approval", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-test-p1-01-"));
+  const tmpOut = path.join(tmpDir, "dogfood-run.json");
+  const headSha = "1".repeat(40);
+
+  const cleanChangeSet = {
+    ok: true,
+    schemaVersion: "1.0.0",
+    repository: { name: "test/repo", root: "/repo" },
+    headSha,
+    totalFiles: 1,
+    totalAdditions: 2,
+    totalDeletions: 0,
+    files: [{ path: "src/auth.js", additions: 2, deletions: 0, riskTier: 2 }],
+    diffHunks: "+ const a = 1;"
+  };
+
+  const cleanVerifier = createMockVerifierAdapter("claude");
+
+  try {
+    // 1. Empty contextPackage ({}) must NOT achieve CLEAN approval
+    const reportEmpty = await runDogfoodReview({
+      mock: true,
+      changeSet: cleanChangeSet,
+      head: headSha,
+      contextPackage: {},
+      verifierAdapter: cleanVerifier,
+      out: tmpOut,
+      log: false
+    });
+
+    assert.notEqual(reportEmpty.gate.decision, "approve", "Empty contextPackage must not be approved");
+    assert.equal(reportEmpty.gate.decision, "human_review_required");
+    assert.equal(reportEmpty.summary.cleanChallengeStatus, "UNCERTAIN");
+    assert.equal(reportEmpty.isExecutionComplete, false);
+
+    // 2. Cross-head contextPackage must NOT achieve CLEAN approval
+    const crossHeadPackage = {
+      schemaVersion: "1.0.0",
+      headSha: "2".repeat(40), // Mismatched SHA
+      repositoryRoot: "/repo",
+      contentDigest: crypto.createHash("sha256").update(cleanChangeSet.diffHunks).digest("hex"),
+      layers: { layer1AstEnclosure: { callees: [] } },
+      budgetAccounting: { consumedBytes: 100 }
+    };
+
+    const reportCrossHead = await runDogfoodReview({
+      mock: true,
+      changeSet: cleanChangeSet,
+      head: headSha,
+      contextPackage: crossHeadPackage,
+      verifierAdapter: cleanVerifier,
+      out: tmpOut,
+      log: false
+    });
+
+    assert.notEqual(reportCrossHead.gate.decision, "approve", "Cross-head contextPackage must not be approved");
+    assert.equal(reportCrossHead.gate.decision, "human_review_required");
+    assert.equal(reportCrossHead.summary.cleanChallengeStatus, "UNCERTAIN");
+    assert.equal(reportCrossHead.isExecutionComplete, false);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("PR39-GATE-OUT-02-NEGATIVE: Same method name with different receivers must not mask external sensitive calls or overwrite context gaps", () => {
+  const diffHunks = [
+    "@@ -10,6 +10,10 @@",
+    "+ this.validateAccess(request);",
+    "+ auth.validateAccess(request);"
+  ].join("\n");
+
+  const candidates = extractCandidateCallSymbols(diffHunks);
+
+  // Both candidates must be preserved with distinct identities
+  assert.equal(candidates.length, 2, "Both qualified calls must be extracted as distinct candidates");
+  const thisCall = candidates.find(c => c.symbol === "validateAccess" && c.qualifier === "this");
+  const authCall = candidates.find(c => c.symbol === "validateAccess" && c.qualifier === "auth");
+  assert.ok(thisCall, "this.validateAccess candidate must exist");
+  assert.ok(authCall, "auth.validateAccess candidate must exist");
+  assert.equal(thisCall.isSensitive, true);
+  assert.equal(authCall.isSensitive, true);
+
+  // When source code defines validateAccess locally AND imports auth from external service:
+  const sourceCode = `
+import { auth } from "auth-service";
+
+export class Service {
+  validateAccess(req) {
+    return true;
+  }
+  handle(req) {
+    this.validateAccess(req);
+    auth.validateAccess(req);
+  }
+}
+`;
+
+  const res = extractLocalCalleeContext(sourceCode, diffHunks, "src/service.js");
+
+  // this.validateAccess is resolved as a local callee
+  const localCallee = res.callees.find(c => c.symbol === "validateAccess");
+  assert.ok(localCallee, "Local definition of this.validateAccess must be extracted into callees");
+
+  // auth.validateAccess MUST NOT be masked by the local definition and MUST emit an unresolved context gap
+  const authGap = res.contextGaps.find(g => g.symbol === "validateAccess" && g.qualifier === "auth");
+  assert.ok(authGap, "External auth.validateAccess must emit context gap and not be masked by this.validateAccess");
+  assert.equal(authGap.reason, "EXTERNAL_CALLEE_UNRESOLVED");
+});
+
+test("PR39-GATE-OUT-03-NEGATIVE: Same ChangeSet with different producer findings cannot reuse old verifier evaluation", async () => {
+  const changeSet = {
+    ok: true,
+    totalFiles: 1,
+    files: [{ path: "src/db.js", additions: 1, deletions: 0 }],
+    diffHunks: "+ db.query();"
+  };
+
+  const mockVerifier = {
+    executeVerification: async () => ({
+      overallStatus: "CLEAN",
+      evaluations: [
+        {
+          findingId: "finding-old",
+          verdict: "CONTESTED",
+          classification: "CONTRADICTED",
+          locatorAccurate: false,
+          typeAccurate: false,
+          severityAccurate: false,
+          reasoning: "False positive"
+        }
+      ],
+      verifierOmissions: []
+    })
+  };
+
+  // Old record produced for finding-old
+  const oldRecord = await conductIndependentVerification(
+    changeSet,
+    [{ id: "finding-old", title: "Old XSS Finding", severity: "high", file: "src/view.js" }],
+    mockVerifier,
+    { verificationMode: "producer_verification" }
+  );
+
+  const consensusNew = makeTrustedConsensus([
+    { id: "finding-new", title: "New Injection Vulnerability", severity: "high", file: "src/db.js", corroborations: 1 }
+  ], { tier: 2 });
+
+  // Attempting to evaluate consensusNew against oldRecord must fail closed with FINDING_SET_BINDING_MISMATCH
+  const gateMismatch = evaluateGateDecision(consensusNew, {
+    tier: 2,
+    verificationRecord: oldRecord
+  });
+
+  assert.equal(gateMismatch.decision, "block");
+  assert.match(gateMismatch.reason, /FINDING_SET_BINDING_MISMATCH/i);
+
+  // Incompatible count mismatch on synthetic record evaluated via evaluateIsolatedTestGate
+  const consensusMultiple = makeTrustedConsensus([
+    { id: "f1", title: "Finding 1", severity: "medium", file: "a.js", corroborations: 1 },
+    { id: "f2", title: "Finding 2", severity: "medium", file: "b.js", corroborations: 1 }
+  ], { tier: 2 });
+
+  const recordSingle = issueVerificationRecordFromOutput({
+    ok: true,
+    verificationMode: "producer_verification",
+    evaluations: [
+      {
+        findingId: "f1",
+        verdict: "CONTESTED",
+        classification: "CONTRADICTED",
+        locatorAccurate: true,
+        typeAccurate: true,
+        severityAccurate: true
+      }
+    ],
+    verifierOmissions: []
+  });
+
+  const gateCountMismatch = evaluateIsolatedTestGate(consensusMultiple, {
+    tier: 2,
+    verificationRecord: recordSingle
+  });
+
+  assert.equal(gateCountMismatch.decision, "block");
+  assert.match(gateCountMismatch.reason, /FINDING_SET_BINDING_MISMATCH/i);
+});
+
+test("PR39-GATE-OUT-04-NEGATIVE: Tier 1 omission policy (strict omission blocking) is preserved identically between orchestrator and direct gate calls", async () => {
+  const hunks = "diff --git a/src/auth.js b/src/auth.js\n@@ -1,1 +1,2 @@\n+const token = 1;";
+  const contentDigest = crypto.createHash("sha256").update(hunks).digest("hex");
+  const changeSet = {
+    ok: true,
+    schemaVersion: "1.0.0",
+    scopeMode: "working-tree",
+    repository: { root: "/repo", hasHead: true, currentBranch: "main" },
+    headSha: "a".repeat(40),
+    contentDigest,
+    totalFiles: 1,
+    totalAdditions: 1,
+    totalDeletions: 0,
+    files: [{ path: "src/auth.js", additions: 1, deletions: 0, riskTier: 1 }],
+    diffHunks: hunks
+  };
+
+  const mockAdapter = {
+    providerName: "mock-sentry",
+    modelName: "test-model",
+    executeReview: async () => ({
+      ok: true,
+      executionStatus: "success",
+      findings: [],
+      coverage: { coveredFiles: ["src/auth.js"], omittedFiles: [] },
+      providerIdentity: { provider: "mock-sentry", family: "anthropic", model: "test" }
+    })
+  };
+
+  const consensusClean = makeTrustedConsensus([], { tier: 1 });
+
+  // Mock verifier that reports a SUPPORTED Medium omission with a concrete verifiable counterexample
+  const mockVerifier = {
+    executeVerification: async () => ({
+      overallStatus: "DEFECTS_FOUND",
+      evaluations: [],
+      verifierOmissions: [
+        {
+          title: "Unchecked permission boundary in auth module",
+          severity: "medium",
+          evidenceSupport: "SUPPORTED",
+          locatorAccurate: true,
+          file: "src/auth.js",
+          line_start: 1,
+          line_end: 1,
+          counterexample: "calling validateToken(null) returns null and causes crash"
+        }
+      ]
+    })
+  };
+
+  const trustedRecord = await conductIndependentVerification(
+    changeSet,
+    [],
+    mockVerifier,
+    {
+      verificationMode: "clean_challenge",
+      headSha: changeSet.headSha,
+      changeSetDigest: changeSet.contentDigest
+    }
+  );
+
+  const runContext = new RunContext({
+    headSha: changeSet.headSha,
+    contentDigest: changeSet.contentDigest
+  });
+
+  // Direct Gate: Tier 1 strictly blocks Medium omission (decision: "block")
+  const directGateT1 = evaluateGateDecision(consensusClean, {
+    tier: 1,
+    verificationRecord: trustedRecord,
+    runContext
+  });
+  assert.equal(directGateT1.decision, "block", "Tier 1 direct gate strictly blocks Medium omission");
+  assert.match(directGateT1.reason, /Supported Medium Omission \(Tier 1\)/i);
+
+  // Direct Gate: Tier 2 routes Medium omission to human_review_required
+  const directGateT2 = evaluateGateDecision(consensusClean, {
+    tier: 2,
+    verificationRecord: trustedRecord,
+    runContext
+  });
+  assert.equal(directGateT2.decision, "human_review_required", "Tier 2 direct gate routes Medium omission to human review");
+  assert.match(directGateT2.reason, /Supported Medium Omission \(Tier 2\)/i);
+
+  // Orchestrator with tier: 1: Must forward tier: 1 and block identically
+  const orchestratorT1 = await orchestrateReview(changeSet, { macro: mockAdapter }, {
+    tier: 1,
+    plan: { mode: "single", highestRisk: 1 },
+    verificationRecord: trustedRecord
+  });
+  assert.equal(orchestratorT1.gate.decision, directGateT1.decision, "Orchestrator tier 1 must match direct gate tier 1 decision");
+  assert.equal(orchestratorT1.gate.decision, "block");
+  assert.match(orchestratorT1.gate.reason, /Supported Medium Omission \(Tier 1\)/i);
+
+  // Orchestrator with tier: 2: Must forward tier: 2 and route to human review identically
+  const orchestratorT2 = await orchestrateReview(changeSet, { macro: mockAdapter }, {
+    tier: 2,
+    plan: { mode: "single", highestRisk: 2 },
+    verificationRecord: trustedRecord
+  });
+  assert.equal(orchestratorT2.gate.decision, directGateT2.decision, "Orchestrator tier 2 must match direct gate tier 2 decision");
+  assert.equal(orchestratorT2.gate.decision, "human_review_required");
+  assert.match(orchestratorT2.gate.reason, /Supported Medium Omission \(Tier 2\)/i);
+});

@@ -634,8 +634,13 @@ export function extractCandidateCallSymbols(diffHunks) {
       const isSensitive = Boolean(sensitiveCategory || isGuardLine);
       const symCategory = isSensitive ? (sensitiveCategory || lineCategory || "input_validation") : null;
 
-      if (!seen.has(sym)) {
-        seen.add(sym);
+      const receiverKey = isQualified
+        ? (qualifiers.length > 0 ? qualifiers.join(".") : (qualifier || "qualified"))
+        : "";
+      const callKey = receiverKey ? `${receiverKey}.${sym}` : sym;
+
+      if (!seen.has(callKey)) {
+        seen.add(callKey);
         candidates.push({
           symbol: sym,
           qualifier,
@@ -648,7 +653,13 @@ export function extractCandidateCallSymbols(diffHunks) {
           category: symCategory
         });
       } else if (isAdded) {
-        const existing = candidates.find(c => c.symbol === sym);
+        const existing = candidates.find(c => {
+          const cReceiverKey = c.isQualified
+            ? (c.qualifiers?.length > 0 ? c.qualifiers.join(".") : (c.qualifier || "qualified"))
+            : "";
+          const cCallKey = cReceiverKey ? `${cReceiverKey}.${c.symbol}` : c.symbol;
+          return cCallKey === callKey;
+        });
         if (existing) {
           if (!existing.isAdded) {
             existing.isAdded = true;
