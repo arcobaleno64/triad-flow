@@ -4328,6 +4328,46 @@ test("PR39-ROUND2-ITEM1-NEGATIVE: Bare passive defense declarations ('Prepared s
   });
   assert.equal(groundedGate.decision, "approve");
   assert.equal(groundedGate.advisoryFindings.length, 1);
+
+  // 4. Subtle evasion attempts must also be rejected
+  const evasivePhrases = [
+    "Prepared statements are used (in our opinion).",
+    "Bounds check exists earlier (as designed).",
+    "There is no injection because prepared statements are used.",
+    "No vulnerability because bounds check exists earlier.",
+    "Because bounds check exists earlier, no overflow possible.",
+    "As noted, prepared statements are used.",
+    "In this codebase, prepared statements are used.",
+    "Bounds check exists earlier according to 'our policy'.",
+    "Bounds check exists earlier in the contract.",
+    "Prepared statements are used `per team standards`."
+  ];
+
+  for (const phrase of evasivePhrases) {
+    assert.equal(isSubstantiveContestedReasoning(phrase), false, `Evasive phrase '${phrase}' must return false from isSubstantiveContestedReasoning`);
+    const record = issueVerificationRecordFromOutput({
+      ok: true,
+      verificationMode: "producer_verification",
+      evaluations: [
+        {
+          findingId: "SEC-MED-99",
+          verdict: "CONTESTED",
+          classification: "CONTRADICTED",
+          locatorAccurate: true,
+          typeAccurate: true,
+          severityAccurate: true,
+          reasoning: phrase
+        }
+      ],
+      verifierOmissions: []
+    });
+    const gate = evaluateIsolatedTestGate(consensus, {
+      tier: 2,
+      strict: false,
+      verificationRecord: record
+    });
+    assert.notEqual(gate.decision, "approve", `Evasive phrase '${phrase}' must not achieve APPROVE`);
+  }
 });
 
 test("PR39-ROUND2-ITEM2-NEGATIVE: Context coverage rejects manifest entry with exactHeadAvailable: false and fails closed with UNCERTAIN", async () => {
@@ -4404,6 +4444,34 @@ test("PR39-ROUND2-ITEM2-NEGATIVE: Context coverage rejects manifest entry with e
     assert.equal(reportAvailable.gate.decision, "approve");
     assert.equal(reportAvailable.summary.cleanChallengeStatus, "SUCCESS");
     assert.equal(reportAvailable.isExecutionComplete, true);
+
+    // Case 3: External contextPackage admits contentAvailable: false
+    const packageContentUnavailable = {
+      schemaVersion: "1.0.0",
+      headSha,
+      repositoryRoot: "/repo",
+      contentDigest: computedHash,
+      fileCoverageManifest: [
+        { file: "src/auth.js", inspected: true, contentAvailable: false, calleesExtracted: [] }
+      ],
+      layers: { layer1AstEnclosure: { callees: [] } },
+      budgetAccounting: { consumedBytes: 100 }
+    };
+
+    const reportContentUnavailable = await runDogfoodReview({
+      mock: true,
+      changeSet,
+      head: headSha,
+      contextPackage: packageContentUnavailable,
+      verifierAdapter: cleanVerifier,
+      out: tmpOut,
+      log: false
+    });
+
+    assert.notEqual(reportContentUnavailable.gate.decision, "approve");
+    assert.equal(reportContentUnavailable.gate.decision, "human_review_required");
+    assert.equal(reportContentUnavailable.summary.cleanChallengeStatus, "UNCERTAIN");
+    assert.equal(reportContentUnavailable.isExecutionComplete, false);
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
@@ -4468,6 +4536,58 @@ test("PR39-ROUND2-ITEM3-NEGATIVE: ChangeSet missing repository property or valid
     assert.equal(reportEmptyRepo.gate.decision, "human_review_required");
     assert.equal(reportEmptyRepo.summary.cleanChallengeStatus, "UNCERTAIN");
     assert.equal(reportEmptyRepo.isExecutionComplete, false);
+
+    // Case 3: changeSet.repository exists but root is invalid type (root: 123)
+    const changeSetInvalidTypeRepo = {
+      ok: true,
+      schemaVersion: "1.0.0",
+      repository: { name: "test/repo", root: 123 },
+      headSha,
+      contentDigest: computedHash,
+      totalFiles: 1,
+      files: [{ path: "src/auth.js", additions: 1, deletions: 0, riskTier: 2 }],
+      diffHunks: diffContent
+    };
+
+    const reportInvalidTypeRepo = await runDogfoodReview({
+      mock: true,
+      changeSet: changeSetInvalidTypeRepo,
+      head: headSha,
+      verifierAdapter: cleanVerifier,
+      out: tmpOut,
+      log: false
+    });
+
+    assert.notEqual(reportInvalidTypeRepo.gate.decision, "approve");
+    assert.equal(reportInvalidTypeRepo.gate.decision, "human_review_required");
+    assert.equal(reportInvalidTypeRepo.summary.cleanChallengeStatus, "UNCERTAIN");
+    assert.equal(reportInvalidTypeRepo.isExecutionComplete, false);
+
+    // Case 4: changeSet.repository exists but root is blank whitespace (root: "   ")
+    const changeSetWhitespaceRepo = {
+      ok: true,
+      schemaVersion: "1.0.0",
+      repository: { name: "test/repo", root: "   " },
+      headSha,
+      contentDigest: computedHash,
+      totalFiles: 1,
+      files: [{ path: "src/auth.js", additions: 1, deletions: 0, riskTier: 2 }],
+      diffHunks: diffContent
+    };
+
+    const reportWhitespaceRepo = await runDogfoodReview({
+      mock: true,
+      changeSet: changeSetWhitespaceRepo,
+      head: headSha,
+      verifierAdapter: cleanVerifier,
+      out: tmpOut,
+      log: false
+    });
+
+    assert.notEqual(reportWhitespaceRepo.gate.decision, "approve");
+    assert.equal(reportWhitespaceRepo.gate.decision, "human_review_required");
+    assert.equal(reportWhitespaceRepo.summary.cleanChallengeStatus, "UNCERTAIN");
+    assert.equal(reportWhitespaceRepo.isExecutionComplete, false);
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
@@ -4600,4 +4720,31 @@ test("PR39-ROUND2-ITEM4-NEGATIVE: Verifier omission with evidenceSupport: CONTES
   });
   assert.equal(groundedGate.decision, "approve");
   assert.equal(groundedGate.advisoryFindings.length, 1);
+
+  // 3. Evasive passive defense in verifier omission downgrades to INSUFFICIENT_EVIDENCE
+  const rawOutputPassiveOmission = {
+    overallStatus: "CLEAN",
+    evaluations: [],
+    verifierOmissions: [
+      {
+        findingId: "OMIT-02",
+        title: "Potential missing auth check",
+        severity: "high",
+        evidenceSupport: "CONTESTED",
+        file: "src/auth.js",
+        line_start: 1,
+        line_end: 1,
+        reasoning: "Prepared statements are used (in our opinion)."
+      }
+    ]
+  };
+
+  const validatedPassive = validateVerificationOutput(rawOutputPassiveOmission, {
+    changeSet,
+    producerFindings: [],
+    providerName: "claude",
+    verificationMode: "clean_challenge"
+  });
+  assert.equal(validatedPassive.ok, true);
+  assert.equal(validatedPassive.verifierOmissions[0].evidenceSupport, "INSUFFICIENT_EVIDENCE");
 });

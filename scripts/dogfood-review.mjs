@@ -976,7 +976,14 @@ export async function runDogfoodReview(userOptions = {}) {
   let contextExtractionFailed = false;
   let contextExtractionError = null;
 
-  if (changeSet?.repository == null || changeSet?.repository?.root === null || (typeof changeSet?.repository === "object" && (("root" in changeSet.repository && !changeSet.repository.root) || Object.keys(changeSet.repository).length === 0))) {
+  const isRepoMissingOrNull = changeSet?.repository == null;
+  const isRepoInvalidType = !isRepoMissingOrNull && typeof changeSet.repository !== "object" && typeof changeSet.repository !== "string";
+  const isRepoObjectInvalid = changeSet?.repository !== null && typeof changeSet?.repository === "object" && (
+    Object.keys(changeSet.repository).length === 0 ||
+    ("root" in changeSet.repository && (typeof changeSet.repository.root !== "string" || changeSet.repository.root.trim().length === 0))
+  );
+
+  if (isRepoMissingOrNull || isRepoInvalidType || isRepoObjectInvalid) {
     contextExtractionFailed = true;
     contextExtractionError = "Missing trusted repository root for exact-head context construction.";
     if (log) console.warn(`  ⚠️ Failed to extract callee contextPackage for verification: ${contextExtractionError}`);
@@ -1128,7 +1135,7 @@ export async function runDogfoodReview(userOptions = {}) {
         contextExtractionError = contextPackage?.error?.message || "buildContextPackage returned invalid or non-ok contextPackage";
         if (log) console.warn("  ⚠️ Failed to extract callee contextPackage for verification:", contextExtractionError);
       } else if (Array.isArray(contextPackage.fileCoverageManifest)) {
-        const unavailableEntry = contextPackage.fileCoverageManifest.find(m => m && (m.exactHeadAvailable === false || m.exactHeadUnavailable === true));
+        const unavailableEntry = contextPackage.fileCoverageManifest.find(m => m && (m.exactHeadAvailable === false || m.exactHeadUnavailable === true || m.contentAvailable === false));
         if (unavailableEntry) {
           contextExtractionFailed = true;
           contextExtractionError = `Exact-head content unavailable for file: '${unavailableEntry.file || unavailableEntry.path}'.`;

@@ -574,6 +574,56 @@ export function isNonVacuousContestedReasoning(text) {
  * @param {string|null|undefined} text
  * @returns {boolean}
  */
+const ENGLISH_PROSE_STOP_WORDS = new Set([
+  "used", "exists", "earlier", "place", "done", "opinion", "designed",
+  "comments", "comment", "notes", "note", "stated", "see", "example",
+  "here", "is", "are", "were", "was", "has", "have", "had", "be", "been",
+  "being", "as", "in", "on", "at", "to", "for", "from", "with", "by",
+  "or", "and", "not", "but", "because", "since", "while", "when", "if",
+  "that", "this", "which", "also", "already", "actually", "per", "we", "our"
+]);
+
+function hasConcreteCodeBinding(str) {
+  // 1. Specific line reference e.g. line 42, lines 10-15, L10, file.js:42
+  if (/\b(?:line|lines|L)\s*#?\s*\d+\b/i.test(str) || /:\d+\b/.test(str)) {
+    return true;
+  }
+  // 2. Member or index access e.g. obj.prop, obj->prop, arr[0]
+  if (/(?:\.|\->)[a-zA-Z_$]\w*/.test(str) || /\[\s*['"]?\w+['"]?\s*\]/.test(str)) {
+    return true;
+  }
+  // 3. Concrete function / method invocation e.g. escapeHtml(), query(sql, [id]), (idx < length)
+  const matches = str.matchAll(/\b([a-zA-Z_$]\w*)\s*\(([^)]*)\)/g);
+  for (const m of matches) {
+    const fnName = m[1];
+    const args = m[2].trim();
+    if (ENGLISH_PROSE_STOP_WORDS.has(fnName.toLowerCase())) continue;
+    if (args.length === 0) return true;
+    if (/[<>=+\-*!&|\[\]"'\$\_\.:\/\\]/.test(args) || args.split(/\s+/).length <= 2) {
+      const words = args.toLowerCase().split(/\s+/);
+      const allStop = words.every(w => ENGLISH_PROSE_STOP_WORDS.has(w));
+      if (!allStop) return true;
+    }
+  }
+  // 4. Code snippet in backticks (must not be an arbitrary multi-word English prose phrase)
+  const backtickMatches = str.match(/`([^`]+)`/g);
+  if (backtickMatches) {
+    const hasValidBacktick = backtickMatches.some(b => {
+      const inner = b.slice(1, -1).trim();
+      if (inner.length === 0) return false;
+      if (inner.split(/\s+/).length > 2 && !/[()<>=+\-*!&|\[\]\$\_\.:\/\\]/.test(inner)) return false;
+      return true;
+    });
+    if (hasValidBacktick) return true;
+  }
+  // 5. Explicit data-bound logging / PII assertion (e.g. "Log contains no PII, benign debugging only.")
+  if (/\b(?:log|logger|console)\b.*\bno\s+(?:PII|secrets?|credentials?)\b/i.test(str) ||
+      /\bno\s+(?:PII|secrets?|credentials?)\b.*\b(?:log|logger|console)\b/i.test(str)) {
+    return true;
+  }
+  return false;
+}
+
 export function isSubstantiveContestedReasoning(text) {
   if (!isNonVacuousContestedReasoning(text)) return false;
   const trimmed = text.trim();
@@ -586,21 +636,20 @@ export function isSubstantiveContestedReasoning(text) {
     return false;
   }
 
-  // Reject bare passive declarations of defenses/checks without concrete code locations, identifiers, backticks, line references, or verifiable mechanics
-  if (/^(?:(?:the|this|that|there\s+(?:is|are))\s+)?(?:prepared\s+statements?|parameterized\s+(?:queries|statements?)|bounds?\s+checks?|input\s+validations?|null[- ]checks?|type[- ]checks?|sanitizations?|validations?|checks?|guards?|defenses?)\s+(?:are|is|exists?|were|was|used|present|applied|done|performed|implemented|in\s+place|earlier)\b/i.test(trimmed)) {
-    if (!/\b[a-zA-Z_]\w*\s*\([^)]*\)/.test(trimmed) && !/`[^`]{2,}`/.test(trimmed) && !/\b(?:line|lines|L)\s*\d+\b/i.test(trimmed) && !/(?:\.|\->)[a-zA-Z_$]\w*/.test(trimmed)) {
-      return false;
-    }
+  // Reject bare passive declarations of defenses/checks anywhere in the text without concrete code binding or verifiable mechanics
+  const hasPassiveDefense = /\b(?:prepared\s+statements?|parameterized\s+(?:queries|statements?)|bounds?\s+checks?|input\s+validations?|null[- ]checks?|type[- ]checks?|sanitizations?|validations?|checks?|guards?|defenses?)\s+(?:are|is|exists?|were|was|used|present|applied|done|performed|implemented|in\s+place|earlier)\b/i.test(trimmed);
+  if (hasPassiveDefense && !hasConcreteCodeBinding(trimmed)) {
+    return false;
   }
 
   // Reject bare noun assertions without code constructs or line numbers (e.g. "The parameter is safe.", "The query is safe.", "Parameter is harmless.")
   if (/^(?:(?:the|this|that)\s+)?(?:parameter|buffer|query|token|string|variable|value|input|output|data|code|check|call|finding)s?\s+(?:is|are)\s+(?:(?:completely|totally|actually|already)\s+)?(?:safe|harmless|benign|handled|valid|fine|okay|ok|correct|proper|mitigated)\b/i.test(trimmed)) {
-    if (!/\b[a-zA-Z_]\w*\s*\([^)]*\)/.test(trimmed) && !/`[^`]{2,}`/.test(trimmed) && !/\b(?:line|lines|L)\s*\d+/i.test(trimmed)) {
+    if (!hasConcreteCodeBinding(trimmed)) {
       return false;
     }
   }
   if (/^(?:(?:the|this|that)\s+)?(?:input|parameter|data|value)s?\s+(?:is|are)\s+(?:(?:already|properly|safely)\s+)?(?:validated|sanitized|checked|escaped|handled)\b/i.test(trimmed)) {
-    if (!/\b[a-zA-Z_]\w*\s*\([^)]*\)/.test(trimmed) && !/`[^`]{2,}`/.test(trimmed) && !/\b(?:line|lines|L)\s*\d+/i.test(trimmed)) {
+    if (!hasConcreteCodeBinding(trimmed)) {
       return false;
     }
   }
@@ -619,15 +668,7 @@ export function isSubstantiveContestedReasoning(text) {
   }
 
   // 1. Concrete code element, construct, location, or parameter reference:
-  const hasCodeElement =
-    /\b[a-zA-Z_]\w*\s*\([^)]*\)/.test(trimmed) || // Function or method call e.g. check(), escapeHtml()
-    /`[^`]{2,}`/.test(trimmed) ||                 // Code snippet in backticks
-    /['"][^'"]{2,}['"]/.test(trimmed) ||          // Identifier or string literal in quotes
-    /(?:\.|\->)[a-zA-Z_$]\w*/.test(trimmed) ||     // Member access e.g. obj.prop
-    /\[\s*['"`]?\w+['"`]?\s*\]/.test(trimmed) ||  // Index access e.g. [0] or ['key']
-    /\b(?:line|lines|L)\s*\d+/i.test(trimmed) ||  // Specific line reference e.g. line 42, L10
-    /\b(?:changelog|spec(?:ification)?|doc(?:umentation)?|scope|contract|objective)\b/i.test(trimmed) ||
-    /\bno\s+(?:PII|secrets?|credentials?|leak|vulnerability|overflow|injection)\b/i.test(trimmed);
+  const hasCodeElement = hasConcreteCodeBinding(trimmed) || /\b(?:changelog|spec(?:ification)?|doc(?:umentation)?|scope|contract|objective)\b/i.test(trimmed);
 
   // 2. Concrete rationale or defensive mechanism explaining why the vulnerability does not hold:
   const hasDefenseMechanism =
@@ -1462,6 +1503,8 @@ export function validateVerificationOutput(rawOutput, context = {}) {
         confirmationSource: IMMUTABLE_CONFIRMATION_SOURCE,
         reasoning,
         ...(candidate.counterexample ? { counterexample: String(candidate.counterexample).trim() } : {}),
+        ...(candidate.recommendation ? { recommendation: String(candidate.recommendation).trim() } : {}),
+        ...(candidate.body ? { body: String(candidate.body).trim() } : {}),
         dissent: candidate.dissent ? String(candidate.dissent).trim() : null
       });
 
