@@ -60,6 +60,7 @@ import {
   hasConcreteCounterexample,
   createMockVerifierAdapter,
   buildVerificationPrompt,
+  isSubstantiveContestedReasoning,
   OBJECTIVE_IMPACTS,
   VERIFICATION_VERDICTS
 } from "../src/core/independent-verifier.mjs";
@@ -3327,6 +3328,51 @@ test("PR39-GATE-OUT-05-NEGATIVE: Context Package missing or incomplete fileCover
     assert.equal(reportComplete.gate.decision, "approve");
     assert.equal(reportComplete.summary.cleanChallengeStatus, "SUCCESS");
     assert.equal(reportComplete.isExecutionComplete, true);
+
+    // 5. ContextPackage where a file has inspected: false must FAIL-CLOSED (UNCERTAIN)
+    const uninspectedFilePackage = {
+      ...missingManifestPackage,
+      fileCoverageManifest: [
+        { file: "src/auth.js", inspected: true, calleesExtracted: [] },
+        { file: "src/crypto.js", inspected: false, calleesExtracted: [] }
+      ]
+    };
+
+    const reportUninspected = await runDogfoodReview({
+      mock: true,
+      changeSet,
+      head: headSha,
+      contextPackage: uninspectedFilePackage,
+      verifierAdapter: cleanVerifier,
+      out: tmpOut,
+      log: false
+    });
+
+    assert.notEqual(reportUninspected.gate.decision, "approve");
+    assert.equal(reportUninspected.gate.decision, "human_review_required");
+    assert.equal(reportUninspected.summary.cleanChallengeStatus, "UNCERTAIN");
+
+    // 6. Positive control: Absolute path manifest normalized against repository root succeeds
+    const absolutePathPackage = {
+      ...missingManifestPackage,
+      fileCoverageManifest: [
+        { file: "/repo/src/auth.js", inspected: true, calleesExtracted: [] },
+        { file: "/repo/src/crypto.js", inspected: true, calleesExtracted: [] }
+      ]
+    };
+
+    const reportAbsolute = await runDogfoodReview({
+      mock: true,
+      changeSet,
+      head: headSha,
+      contextPackage: absolutePathPackage,
+      verifierAdapter: cleanVerifier,
+      out: tmpOut,
+      log: false
+    });
+
+    assert.equal(reportAbsolute.gate.decision, "approve");
+    assert.equal(reportAbsolute.summary.cleanChallengeStatus, "SUCCESS");
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
@@ -3438,6 +3484,52 @@ test("PR39-GATE-OUT-06-NEGATIVE: Producer findings with duplicate IDs or evaluat
   });
   assert.equal(gateSharedEval.decision, "block");
   assert.match(gateSharedEval.reason, /FINDING_SET_BINDING_MISMATCH/i);
+
+  // 5. conductIndependentVerification rejects case-insensitive duplicate producer finding IDs
+  const caseInsensitiveDupeFindings = [
+    { id: "SEC-XSS", title: "First issue", severity: "medium", file: "src/app.js", line_start: 1 },
+    { id: "sec-xss", title: "Second issue", severity: "medium", file: "src/app.js", line_start: 2 }
+  ];
+  await assert.rejects(
+    async () => {
+      await conductIndependentVerification(changeSet, caseInsensitiveDupeFindings, mockAdapter);
+    },
+    /DUPLICATE_FINDING_ID/i
+  );
+
+  // 6. evaluateIsolatedTestGate blocks when zero-finding consensus contains evaluations
+  const zeroConsensus = makeTrustedConsensus([], { tier: 2 });
+  const zeroRecordWithEvals = issueVerificationRecordFromOutput({
+    ok: true,
+    verificationMode: "clean_challenge",
+    evaluations: [
+      { findingId: "ROGUE-01", verdict: "SUPPORTED", locatorAccurate: true, typeAccurate: true, severityAccurate: true, reasoning: "r" }
+    ],
+    verifierOmissions: []
+  });
+  const gateZeroWithEvals = evaluateIsolatedTestGate(zeroConsensus, {
+    tier: 2,
+    verificationRecord: zeroRecordWithEvals
+  });
+  assert.equal(gateZeroWithEvals.decision, "block");
+  assert.match(gateZeroWithEvals.reason, /Clean Challenge verifier output contains unexpected 'evaluations' array|FINDING_SET_BINDING_MISMATCH/i);
+
+  // 7. evaluateIsolatedTestGate blocks when verification record contains evaluation with missing finding ID
+  const recordWithMissingFid = issueVerificationRecordFromOutput({
+    ok: true,
+    verificationMode: "producer_verification",
+    evaluations: [
+      { findingId: "", verdict: "SUPPORTED", locatorAccurate: true, typeAccurate: true, severityAccurate: true, reasoning: "r1" },
+      { findingId: "SEC-02", verdict: "SUPPORTED", locatorAccurate: true, typeAccurate: true, severityAccurate: true, reasoning: "r2" }
+    ],
+    verifierOmissions: []
+  });
+  const gateMissingFid = evaluateIsolatedTestGate(consensusUnique, {
+    tier: 2,
+    verificationRecord: recordWithMissingFid
+  });
+  assert.equal(gateMissingFid.decision, "block");
+  assert.match(gateMissingFid.reason, /missing required 'findingId'|MALFORMED_OUTPUT/i);
 });
 
 test("PR39-GATE-OUT-07-NEGATIVE: Ungrounded CONTESTED verdict without substantive reasoning fails closed or downgrades to INSUFFICIENT_EVIDENCE (UNGROUNDED_CONTESTED_VERDICT)", async () => {
@@ -3583,4 +3675,68 @@ test("PR39-GATE-OUT-07-NEGATIVE: Ungrounded CONTESTED verdict without substantiv
   assert.equal(groundedRes.ok, true);
   assert.equal(groundedRes.evaluations[0].verdict, "CONTESTED");
   assert.equal(groundedRes.evaluations[0].reasoning, "The parameter is verified by check() on line 1; no injection possible.");
+
+  // 6. Vacuous counterexample (e.g. "none", "n/a") does not bypass grounding check in strict mode
+  const vacuousCounterexampleOutput = {
+    overallStatus: "CLEAN",
+    evaluations: [
+      {
+        findingId: "SEC-SOLITARY",
+        verdict: "CONTESTED",
+        locatorAccurate: true,
+        typeAccurate: true,
+        severityAccurate: true,
+        reasoning: "",
+        counterexample: "n/a"
+      }
+    ],
+    verifierOmissions: []
+  };
+  const vacuousCounterexampleRes = validateVerificationOutput(vacuousCounterexampleOutput, {
+    changeSet,
+    producerFindings,
+    strict: true
+  });
+  assert.equal(vacuousCounterexampleRes.ok, false);
+  assert.match(vacuousCounterexampleRes.error, /UNGROUNDED_CONTESTED_VERDICT/i);
+
+  // 7. evaluateIsolatedTestGate blocks when evaluation has classification CONTRADICTED without substantive counter-evidence
+  const ungroundedContradictedRecord = issueVerificationRecordFromOutput({
+    ok: true,
+    verificationMode: "producer_verification",
+    evaluations: [
+      {
+        findingId: "SEC-SOLITARY",
+        verdict: "INSUFFICIENT_EVIDENCE",
+        classification: "CONTRADICTED",
+        locatorAccurate: true,
+        typeAccurate: true,
+        severityAccurate: true,
+        reasoning: "none",
+        dissent: ""
+      }
+    ],
+    verifierOmissions: []
+  });
+  const contradictedGateRes = evaluateIsolatedTestGate(consensus, {
+    tier: 2,
+    strict: true,
+    verificationRecord: ungroundedContradictedRecord
+  });
+  assert.equal(contradictedGateRes.decision, "block");
+  assert.match(contradictedGateRes.reason, /UNGROUNDED_CONTESTED_VERDICT/i);
+
+  // 8. Unit assertions for isSubstantiveContestedReasoning helper
+  assert.equal(isSubstantiveContestedReasoning(""), false);
+  assert.equal(isSubstantiveContestedReasoning("   "), false);
+  assert.equal(isSubstantiveContestedReasoning("no"), false);
+  assert.equal(isSubstantiveContestedReasoning("n/a"), false);
+  assert.equal(isSubstantiveContestedReasoning("none"), false);
+  assert.equal(isSubstantiveContestedReasoning("contested"), false);
+  assert.equal(isSubstantiveContestedReasoning("Contested by independent verifier"), false);
+  assert.equal(isSubstantiveContestedReasoning("Contested by independent verifier."), false);
+  assert.equal(isSubstantiveContestedReasoning("Contested by verifier"), false);
+  assert.equal(isSubstantiveContestedReasoning("locator and severity contested by independent verifier"), false);
+  assert.equal(isSubstantiveContestedReasoning("No reasoning provided"), false);
+  assert.equal(isSubstantiveContestedReasoning("The input is safely sanitized by escapeHtml() on line 42."), true);
 });

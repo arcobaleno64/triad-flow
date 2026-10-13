@@ -541,11 +541,10 @@ export function hasConcreteCounterexample(candidateOrReasoning) {
 export function isSubstantiveContestedReasoning(text) {
   if (!text || typeof text !== "string") return false;
   const trimmed = text.trim();
-  if (trimmed.length === 0) return false;
-  if (/^contested by independent verifier\.?$/i.test(trimmed)) return false;
-  if (/^contested\.?$/i.test(trimmed)) return false;
-  if (/^none\.?$/i.test(trimmed)) return false;
-  if (/^n\/a\.?$/i.test(trimmed)) return false;
+  if (trimmed.length < 5) return false;
+  if (/^(?:contested|disputed|rejected)(?:\s+by\s+(?:independent\s+)?(?:verifier|reviewer)(?:\s+stage)?)?\.?$/i.test(trimmed)) return false;
+  if (/^(?:none|n\/?a|na|null|undefined|tbd|unknown|no|false|disagree|disputed|no reasoning(?: provided)?)\.?$/i.test(trimmed)) return false;
+  if (/^(?:(?:locator|type|severity)(?:\s+and\s+(?:locator|type|severity))*\s+)?contested by independent verifier\.?$/i.test(trimmed)) return false;
   return true;
 }
 
@@ -1070,7 +1069,7 @@ export function validateVerificationOutput(rawOutput, context = {}) {
     if (rawVerdict === VERIFICATION_VERDICTS.CONTESTED) {
       const hasSubstantiveGrounding = isSubstantiveContestedReasoning(dissent) ||
         isSubstantiveContestedReasoning(reasoning) ||
-        (typeof item.counterexample === "string" && item.counterexample.trim().length > 0);
+        isSubstantiveContestedReasoning(item.counterexample);
 
       if (!hasSubstantiveGrounding) {
         if (context.strictValidation || context.strict) {
@@ -1107,7 +1106,7 @@ export function validateVerificationOutput(rawOutput, context = {}) {
       typeAccurate,
       severityAccurate,
       objectiveImpact,
-      reasoning: reasoning || (dissent || ""),
+      reasoning: isSubstantiveContestedReasoning(reasoning) ? reasoning : (dissent || ""),
       dissent
     }));
   }
@@ -1713,28 +1712,42 @@ function findEvaluationForProducerFinding(evaluations, pf, index, usedIndices = 
     ? (pf.id !== undefined && pf.id !== null ? String(pf.id) : (pf.findingId !== undefined && pf.findingId !== null ? String(pf.findingId) : `finding-${index + 1}`))
     : `finding-${index + 1}`;
 
-  const candidateKeys = new Set([
-    targetId,
-    targetId.toLowerCase(),
-    `finding-${index + 1}`,
-    `finding-${index + 1}`.toLowerCase(),
-    String(index + 1),
-    `#${index + 1}`,
-    `finding #${index + 1}`.toLowerCase(),
-    `finding ${index + 1}`.toLowerCase()
-  ]);
+  const targetIdLower = targetId.toLowerCase();
+  const cleanTargetId = targetIdLower.replace(/^finding\s*(?:#|no\.?)?\s*/i, "").trim();
 
-  const matches = [];
+  // First pass: exact and case-insensitive matches against targetId
+  const exactMatches = [];
   for (let evIdx = 0; evIdx < evaluations.length; evIdx++) {
     if (usedIndices && usedIndices.has(evIdx)) continue;
     const ev = evaluations[evIdx];
     const evId = String(ev.findingId || "").trim();
     const evIdLower = evId.toLowerCase();
-    if (candidateKeys.has(evId) || candidateKeys.has(evIdLower)) {
-      matches.push({ ev, evIdx });
-    } else {
+    const cleanEvId = evIdLower.replace(/^finding\s*(?:#|no\.?)?\s*/i, "").trim();
+
+    if (evId === targetId || evIdLower === targetIdLower || (cleanEvId && cleanEvId === cleanTargetId)) {
+      exactMatches.push({ ev, evIdx });
+    }
+  }
+
+  let matches = exactMatches;
+
+  // Second pass: if no exact match, allow index aliases (e.g. "finding-1", "Finding #1", "1")
+  if (matches.length === 0) {
+    const aliasKeys = new Set([
+      `finding-${index + 1}`,
+      `finding-${index + 1}`.toLowerCase(),
+      String(index + 1),
+      `#${index + 1}`,
+      `finding #${index + 1}`.toLowerCase(),
+      `finding ${index + 1}`.toLowerCase()
+    ]);
+    for (let evIdx = 0; evIdx < evaluations.length; evIdx++) {
+      if (usedIndices && usedIndices.has(evIdx)) continue;
+      const ev = evaluations[evIdx];
+      const evId = String(ev.findingId || "").trim();
+      const evIdLower = evId.toLowerCase();
       const cleanMatch = evIdLower.replace(/^finding\s*(?:#|no\.?)?\s*/i, "").trim();
-      if (candidateKeys.has(cleanMatch)) {
+      if (aliasKeys.has(evId) || aliasKeys.has(evIdLower) || aliasKeys.has(cleanMatch)) {
         matches.push({ ev, evIdx });
       }
     }
@@ -1763,7 +1776,9 @@ function findEvaluationForProducerFinding(evaluations, pf, index, usedIndices = 
     };
   }
 
-  if (usedIndices) usedIndices.add(matches[0].evIdx);
+  if (usedIndices) {
+    for (const m of matches) usedIndices.add(m.evIdx);
+  }
   return matches[0].ev;
 }
 
@@ -2214,10 +2229,10 @@ export function validateVerificationRecord(record) {
         if (ev.objectiveImpact !== undefined && !VALID_OBJECTIVE_IMPACTS.has(ev.objectiveImpact)) {
           errors.push(`Evaluation at index ${i} has invalid objectiveImpact '${ev.objectiveImpact}'.`);
         }
-        if (ev.verdict === VERIFICATION_VERDICTS.CONTESTED) {
+        if (ev.verdict === VERIFICATION_VERDICTS.CONTESTED || ev.classification === DISAGREEMENT_CLASSIFICATIONS.CONTRADICTED) {
           const hasGrounding = isSubstantiveContestedReasoning(ev.reasoning) ||
             isSubstantiveContestedReasoning(ev.dissent) ||
-            (typeof ev.counterexample === "string" && ev.counterexample.trim().length > 0);
+            isSubstantiveContestedReasoning(ev.counterexample);
           if (!hasGrounding) {
             errors.push(`Evaluation at index ${i} for finding '${ev.findingId}' has ungrounded CONTESTED verdict without substantive counter-evidence (UNGROUNDED_CONTESTED_VERDICT).`);
           }

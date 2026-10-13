@@ -1063,11 +1063,12 @@ export async function runDogfoodReview(userOptions = {}) {
         } else if (Array.isArray(changeSet?.files) && changeSet.files.length > 0) {
           const coveredFiles = new Set(
             pkg.fileCoverageManifest
-              .map(m => normalizeCanonicalPath(String(m.file || m.path || "")))
+              .filter(m => m && m.inspected !== false)
+              .map(m => normalizeCanonicalPath(String(m.file || m.path || ""), targetRepo))
               .filter(Boolean)
           );
           for (const f of changeSet.files) {
-            const expectedPath = normalizeCanonicalPath(String(typeof f === "string" ? f : (f?.path || f?.file || "")));
+            const expectedPath = normalizeCanonicalPath(String(typeof f === "string" ? f : (f?.path || f?.file || "")), targetRepo);
             if (expectedPath && !coveredFiles.has(expectedPath)) {
               pkgInvalid = true;
               pkgInvalidReason = `ContextPackage fileCoverageManifest does not cover file under review: '${expectedPath}'.`;

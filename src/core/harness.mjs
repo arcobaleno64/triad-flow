@@ -668,7 +668,18 @@ function _evaluatePostVerificationGateCore(consensus, verificationRecord, option
   }
 
   const findings = Array.isArray(consensus?.findings) ? consensus.findings : [];
+  const evaluations = Array.isArray(verificationRecord.evaluations) ? verificationRecord.evaluations : [];
+  const omissions = Array.isArray(verificationRecord.verifierOmissions) ? verificationRecord.verifierOmissions : [];
+
   if (findings.length === 0) {
+    if (evaluations.length > 0) {
+      return {
+        decision: "block",
+        reason: `Gate Fail-Closed: Verification record finding set mismatch (FINDING_SET_BINDING_MISMATCH: zero-finding consensus cannot bind evaluations).`,
+        criticals: [],
+        advisoryFindings: []
+      };
+    }
     if (verificationRecord.verificationMode !== "clean_challenge") {
       return {
         decision: "block",
@@ -687,8 +698,6 @@ function _evaluatePostVerificationGateCore(consensus, verificationRecord, option
       };
     }
   }
-  const evaluations = Array.isArray(verificationRecord.evaluations) ? verificationRecord.evaluations : [];
-  const omissions = Array.isArray(verificationRecord.verifierOmissions) ? verificationRecord.verifierOmissions : [];
 
   // Finding Set Binding Verification (P1, PR-39 Item 3):
   // When findings are present, verify that current findings strictly match findings bound to verificationRecord.
@@ -712,19 +721,26 @@ function _evaluatePostVerificationGateCore(consensus, verificationRecord, option
     // Check for duplicate finding IDs in verificationRecord evaluations (PR-39 Item 2 / DUPLICATE_FINDING_ID)
     const seenEvalIds = new Set();
     for (let i = 0; i < evaluations.length; i++) {
-      const evId = String(evaluations[i]?.findingId || evaluations[i]?.id || "").trim();
-      if (evId) {
-        const normEvId = evId.toLowerCase();
-        if (seenEvalIds.has(normEvId)) {
-          return {
-            decision: "block",
-            reason: `Gate Fail-Closed: Verification record contains duplicate evaluation for finding ID '${evId}' (DUPLICATE_FINDING_ID).`,
-            criticals: [],
-            advisoryFindings: []
-          };
-        }
-        seenEvalIds.add(normEvId);
+      const ev = evaluations[i];
+      const evId = String(ev?.findingId || ev?.id || "").trim();
+      if (!evId) {
+        return {
+          decision: "block",
+          reason: `Gate Fail-Closed: Verification record evaluation at index ${i} is missing finding ID (MALFORMED_OUTPUT).`,
+          criticals: [],
+          advisoryFindings: []
+        };
       }
+      const normEvId = evId.toLowerCase();
+      if (seenEvalIds.has(normEvId)) {
+        return {
+          decision: "block",
+          reason: `Gate Fail-Closed: Verification record contains duplicate evaluation for finding ID '${evId}' (DUPLICATE_FINDING_ID).`,
+          criticals: [],
+          advisoryFindings: []
+        };
+      }
+      seenEvalIds.add(normEvId);
     }
 
     if (evaluations.length !== findings.length) {
@@ -879,10 +895,10 @@ function _evaluatePostVerificationGateCore(consensus, verificationRecord, option
 
     // Invariant (PR-39 Item 3 / UNGROUNDED_CONTESTED_VERDICT):
     // CONTESTED verdict MUST be backed by substantive reasoning, counterexample, or dissent.
-    if (verdict === "CONTESTED") {
+    if (verdict === "CONTESTED" || classification === "CONTRADICTED") {
       const hasSubstantive = isSubstantiveContestedReasoning(evalMatch?.reasoning) ||
         isSubstantiveContestedReasoning(evalMatch?.dissent) ||
-        (typeof evalMatch?.counterexample === "string" && evalMatch.counterexample.trim().length > 0);
+        isSubstantiveContestedReasoning(evalMatch?.counterexample);
       if (!hasSubstantive) {
         if (isStrict) {
           return {
