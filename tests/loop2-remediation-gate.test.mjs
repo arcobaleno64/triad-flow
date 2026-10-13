@@ -400,7 +400,7 @@ test("Synthetic Matrix 4: Solitary finding + verifier CONTESTED is removed from 
   ], { tier: 2 });
   const rec = issueVerificationRecordFromOutput({
     ok: true,
-    evaluations: [{ findingId: "f1", verdict: "CONTESTED", classification: "CONTRADICTED", locatorAccurate: true, typeAccurate: true, severityAccurate: true, reasoning: "Prepared statements are used." }]
+    evaluations: [{ findingId: "f1", verdict: "CONTESTED", classification: "CONTRADICTED", locatorAccurate: true, typeAccurate: true, severityAccurate: true, reasoning: "Prepared statements are used via query(sql, [id]) on line 42." }]
   });
   const gate = evaluateGateDecision(consensus, { tier: 2, verificationRecord: rec });
   assert.equal(gate.decision, "approve", "Solitary contested finding must be removed from blocking set");
@@ -424,7 +424,7 @@ test("Synthetic Matrix 6: Critical/High finding contested by verifier requires H
   ], { tier: 2 });
   const rec = issueVerificationRecordFromOutput({
     ok: true,
-    evaluations: [{ findingId: "f1", verdict: "CONTESTED", classification: "CONTRADICTED", locatorAccurate: true, typeAccurate: true, severityAccurate: true, reasoning: "Bounds check exists earlier." }]
+    evaluations: [{ findingId: "f1", verdict: "CONTESTED", classification: "CONTRADICTED", locatorAccurate: true, typeAccurate: true, severityAccurate: true, reasoning: "Bounds check exists earlier at line 10 (idx < length)." }]
   });
   const gate = evaluateGateDecision(consensus, { tier: 2, verificationRecord: rec });
   assert.equal(gate.decision, "human_review_required", "Contested Critical cannot silently approve");

@@ -586,6 +586,13 @@ export function isSubstantiveContestedReasoning(text) {
     return false;
   }
 
+  // Reject bare passive declarations of defenses/checks without concrete code locations, identifiers, backticks, line references, or verifiable mechanics
+  if (/^(?:(?:the|this|that|there\s+(?:is|are))\s+)?(?:prepared\s+statements?|parameterized\s+(?:queries|statements?)|bounds?\s+checks?|input\s+validations?|null[- ]checks?|type[- ]checks?|sanitizations?|validations?|checks?|guards?|defenses?)\s+(?:are|is|exists?|were|was|used|present|applied|done|performed|implemented|in\s+place|earlier)\b/i.test(trimmed)) {
+    if (!/\b[a-zA-Z_]\w*\s*\([^)]*\)/.test(trimmed) && !/`[^`]{2,}`/.test(trimmed) && !/\b(?:line|lines|L)\s*\d+\b/i.test(trimmed) && !/(?:\.|\->)[a-zA-Z_$]\w*/.test(trimmed)) {
+      return false;
+    }
+  }
+
   // Reject bare noun assertions without code constructs or line numbers (e.g. "The parameter is safe.", "The query is safe.", "Parameter is harmless.")
   if (/^(?:(?:the|this|that)\s+)?(?:parameter|buffer|query|token|string|variable|value|input|output|data|code|check|call|finding)s?\s+(?:is|are)\s+(?:(?:completely|totally|actually|already)\s+)?(?:safe|harmless|benign|handled|valid|fine|okay|ok|correct|proper|mitigated)\b/i.test(trimmed)) {
     if (!/\b[a-zA-Z_]\w*\s*\([^)]*\)/.test(trimmed) && !/`[^`]{2,}`/.test(trimmed) && !/\b(?:line|lines|L)\s*\d+/i.test(trimmed)) {
@@ -619,7 +626,6 @@ export function isSubstantiveContestedReasoning(text) {
     /(?:\.|\->)[a-zA-Z_$]\w*/.test(trimmed) ||     // Member access e.g. obj.prop
     /\[\s*['"`]?\w+['"`]?\s*\]/.test(trimmed) ||  // Index access e.g. [0] or ['key']
     /\b(?:line|lines|L)\s*\d+/i.test(trimmed) ||  // Specific line reference e.g. line 42, L10
-    /\b(?:prepared\s+statement|parameterized|bounds\s+check|input\s+validation|null[- ]check|type[- ]check)\w*\b/i.test(trimmed) ||
     /\b(?:changelog|spec(?:ification)?|doc(?:umentation)?|scope|contract|objective)\b/i.test(trimmed) ||
     /\bno\s+(?:PII|secrets?|credentials?|leak|vulnerability|overflow|injection)\b/i.test(trimmed);
 
@@ -1393,6 +1399,18 @@ export function validateVerificationOutput(rawOutput, context = {}) {
         const hasCounter = hasConcreteCounterexample(candidate);
         const hasValidLocator = locatorAccurate === true && lineStart >= 1 && lineEnd >= lineStart;
         if (!hasCounter || !hasValidLocator) {
+          evidenceSupport = "INSUFFICIENT_EVIDENCE";
+        }
+      }
+
+      // Invariant (Item 4): CONTESTED omission strictly requires substantive counter-evidence
+      if (evidenceSupport === "CONTESTED") {
+        const hasSubstantive = isSubstantiveContestedReasoning(candidate.reasoning) ||
+          isSubstantiveContestedReasoning(candidate.dissent) ||
+          isSubstantiveContestedReasoning(candidate.counterexample) ||
+          isSubstantiveContestedReasoning(candidate.recommendation) ||
+          isSubstantiveContestedReasoning(candidate.body);
+        if (!hasSubstantive) {
           evidenceSupport = "INSUFFICIENT_EVIDENCE";
         }
       }

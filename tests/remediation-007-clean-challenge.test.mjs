@@ -3908,12 +3908,16 @@ test("PR39-DELTA-P1-02-NEGATIVE: Substantive contested grounding rejects generic
   assert.equal(isSubstantiveContestedReasoning("Parameter is safe and handled."), false);
   assert.equal(isSubstantiveContestedReasoning("Input is validated."), false);
   assert.equal(isSubstantiveContestedReasoning("Finding is invalid."), false);
+  assert.equal(isSubstantiveContestedReasoning("Prepared statements are used."), false);
+  assert.equal(isSubstantiveContestedReasoning("Bounds check exists earlier."), false);
+  assert.equal(isSubstantiveContestedReasoning("Input validation is implemented."), false);
+  assert.equal(isSubstantiveContestedReasoning("Parameterized queries are used."), false);
 
   // Must accept substantive counter-evidence
   assert.equal(isSubstantiveContestedReasoning("The input is safely sanitized by escapeHtml() on line 42."), true);
   assert.equal(isSubstantiveContestedReasoning("The parameter is verified by check() on line 1; no injection possible."), true);
-  assert.equal(isSubstantiveContestedReasoning("Prepared statements are used."), true);
-  assert.equal(isSubstantiveContestedReasoning("Bounds check exists earlier."), true);
+  assert.equal(isSubstantiveContestedReasoning("Prepared statements are used via query(sql, [id]) on line 42."), true);
+  assert.equal(isSubstantiveContestedReasoning("Bounds check exists earlier at line 10 (idx < length)."), true);
   assert.equal(isSubstantiveContestedReasoning("Log contains no PII, benign debugging only."), true);
   assert.equal(isSubstantiveContestedReasoning("Actually safe, verified sanitized by sanitizeInput()."), true);
 
@@ -4224,4 +4228,376 @@ test("PR39-DELTA-P1-04-NEGATIVE: getFindingSignature includes line_end, type, re
   });
   assert.equal(gateUntampered.decision, "block");
   assert.match(gateUntampered.reason, /Found critical\/high severity finding/i);
+});
+
+test("PR39-ROUND2-ITEM1-NEGATIVE: Bare passive defense declarations ('Prepared statements are used.', 'Bounds check exists earlier.') without concrete code location/symbol binding cannot achieve APPROVE", async () => {
+  const solitaryMediumFinding = [
+    { id: "SEC-MED-99", title: "Potential SQL/Buffer defect", severity: "medium", file: "src/db.js", line_start: 25, corroborations: 1 }
+  ];
+  const consensus = makeTrustedConsensus(solitaryMediumFinding, { tier: 2 });
+
+  // 1. Bare passive claim: "Prepared statements are used."
+  const recordBarePrepared = issueVerificationRecordFromOutput({
+    ok: true,
+    verificationMode: "producer_verification",
+    evaluations: [
+      {
+        findingId: "SEC-MED-99",
+        verdict: "CONTESTED",
+        classification: "CONTRADICTED",
+        locatorAccurate: true,
+        typeAccurate: true,
+        severityAccurate: true,
+        reasoning: "Prepared statements are used."
+      }
+    ],
+    verifierOmissions: []
+  });
+
+  const strictGate1 = evaluateIsolatedTestGate(consensus, {
+    tier: 2,
+    strict: true,
+    verificationRecord: recordBarePrepared
+  });
+  assert.equal(strictGate1.decision, "block");
+  assert.match(strictGate1.reason, /UNGROUNDED_CONTESTED_VERDICT/i);
+
+  const nonStrictGate1 = evaluateIsolatedTestGate(consensus, {
+    tier: 2,
+    strict: false,
+    verificationRecord: recordBarePrepared
+  });
+  assert.equal(nonStrictGate1.decision, "human_review_required");
+  assert.notEqual(nonStrictGate1.decision, "approve");
+
+  // 2. Bare passive claim: "Bounds check exists earlier."
+  const recordBareBounds = issueVerificationRecordFromOutput({
+    ok: true,
+    verificationMode: "producer_verification",
+    evaluations: [
+      {
+        findingId: "SEC-MED-99",
+        verdict: "CONTESTED",
+        classification: "CONTRADICTED",
+        locatorAccurate: true,
+        typeAccurate: true,
+        severityAccurate: true,
+        reasoning: "Bounds check exists earlier."
+      }
+    ],
+    verifierOmissions: []
+  });
+
+  const strictGate2 = evaluateIsolatedTestGate(consensus, {
+    tier: 2,
+    strict: true,
+    verificationRecord: recordBareBounds
+  });
+  assert.equal(strictGate2.decision, "block");
+  assert.match(strictGate2.reason, /UNGROUNDED_CONTESTED_VERDICT/i);
+
+  const nonStrictGate2 = evaluateIsolatedTestGate(consensus, {
+    tier: 2,
+    strict: false,
+    verificationRecord: recordBareBounds
+  });
+  assert.equal(nonStrictGate2.decision, "human_review_required");
+  assert.notEqual(nonStrictGate2.decision, "approve");
+
+  // 3. Positive control: Grounded counter-evidence referencing code element and line number achieves APPROVE in Tier 2
+  const recordGrounded = issueVerificationRecordFromOutput({
+    ok: true,
+    verificationMode: "producer_verification",
+    evaluations: [
+      {
+        findingId: "SEC-MED-99",
+        verdict: "CONTESTED",
+        classification: "CONTRADICTED",
+        locatorAccurate: true,
+        typeAccurate: true,
+        severityAccurate: true,
+        reasoning: "Prepared statements are used via query(sql, [id]) on line 42; no injection possible."
+      }
+    ],
+    verifierOmissions: []
+  });
+
+  const groundedGate = evaluateIsolatedTestGate(consensus, {
+    tier: 2,
+    verificationRecord: recordGrounded
+  });
+  assert.equal(groundedGate.decision, "approve");
+  assert.equal(groundedGate.advisoryFindings.length, 1);
+});
+
+test("PR39-ROUND2-ITEM2-NEGATIVE: Context coverage rejects manifest entry with exactHeadAvailable: false and fails closed with UNCERTAIN", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-round2-item2-"));
+  const tmpOut = path.join(tmpDir, "dogfood-run.json");
+  const headSha = "93a63e30a039239212d54db501ce2b0655f3bd49";
+  const diffContent = "+ const securePatch = true;";
+  const computedHash = crypto.createHash("sha256").update(diffContent).digest("hex");
+  const cleanVerifier = createMockVerifierAdapter("claude");
+
+  try {
+    const changeSet = {
+      ok: true,
+      schemaVersion: "1.0.0",
+      repository: { name: "test/repo", root: "/repo" },
+      headSha,
+      contentDigest: computedHash,
+      totalFiles: 1,
+      files: [{ path: "src/auth.js", additions: 1, deletions: 0, riskTier: 2 }],
+      diffHunks: diffContent
+    };
+
+    // Case 1: External contextPackage admits exactHeadAvailable: false
+    const packageExactHeadUnavailable = {
+      schemaVersion: "1.0.0",
+      headSha,
+      repositoryRoot: "/repo",
+      contentDigest: computedHash,
+      fileCoverageManifest: [
+        { file: "src/auth.js", inspected: true, exactHeadAvailable: false, calleesExtracted: [] }
+      ],
+      layers: { layer1AstEnclosure: { callees: [] } },
+      budgetAccounting: { consumedBytes: 100 }
+    };
+
+    const reportUnavailable = await runDogfoodReview({
+      mock: true,
+      changeSet,
+      head: headSha,
+      contextPackage: packageExactHeadUnavailable,
+      verifierAdapter: cleanVerifier,
+      out: tmpOut,
+      log: false
+    });
+
+    assert.notEqual(reportUnavailable.gate.decision, "approve");
+    assert.equal(reportUnavailable.gate.decision, "human_review_required");
+    assert.equal(reportUnavailable.summary.cleanChallengeStatus, "UNCERTAIN");
+    assert.equal(reportUnavailable.isExecutionComplete, false);
+
+    // Case 2: Positive control - exactHeadAvailable: true succeeds with APPROVE
+    const packageExactHeadAvailable = {
+      schemaVersion: "1.0.0",
+      headSha,
+      repositoryRoot: "/repo",
+      contentDigest: computedHash,
+      fileCoverageManifest: [
+        { file: "src/auth.js", inspected: true, exactHeadAvailable: true, calleesExtracted: [] }
+      ],
+      layers: { layer1AstEnclosure: { callees: [] } },
+      budgetAccounting: { consumedBytes: 100 }
+    };
+
+    const reportAvailable = await runDogfoodReview({
+      mock: true,
+      changeSet,
+      head: headSha,
+      contextPackage: packageExactHeadAvailable,
+      verifierAdapter: cleanVerifier,
+      out: tmpOut,
+      log: false
+    });
+
+    assert.equal(reportAvailable.gate.decision, "approve");
+    assert.equal(reportAvailable.summary.cleanChallengeStatus, "SUCCESS");
+    assert.equal(reportAvailable.isExecutionComplete, true);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("PR39-ROUND2-ITEM3-NEGATIVE: ChangeSet missing repository property or valid repository root fails closed with UNCERTAIN", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-round2-item3-"));
+  const tmpOut = path.join(tmpDir, "dogfood-run.json");
+  const headSha = "93a63e30a039239212d54db501ce2b0655f3bd49";
+  const diffContent = "+ const securePatch = true;\n";
+  const computedHash = crypto.createHash("sha256").update(diffContent).digest("hex");
+  const cleanVerifier = createMockVerifierAdapter("claude");
+
+  try {
+    // Case 1: changeSet.repository is completely undefined (missing property)
+    const changeSetMissingRepo = {
+      ok: true,
+      schemaVersion: "1.0.0",
+      headSha,
+      contentDigest: computedHash,
+      totalFiles: 1,
+      files: [{ path: "src/auth.js", additions: 1, deletions: 0, riskTier: 2 }],
+      diffHunks: diffContent
+    };
+
+    const reportMissingRepo = await runDogfoodReview({
+      mock: true,
+      changeSet: changeSetMissingRepo,
+      head: headSha,
+      verifierAdapter: cleanVerifier,
+      out: tmpOut,
+      log: false
+    });
+
+    assert.notEqual(reportMissingRepo.gate.decision, "approve");
+    assert.equal(reportMissingRepo.gate.decision, "human_review_required");
+    assert.equal(reportMissingRepo.summary.cleanChallengeStatus, "UNCERTAIN");
+    assert.equal(reportMissingRepo.isExecutionComplete, false);
+
+    // Case 2: changeSet.repository exists but lacks a valid root (repository: {})
+    const changeSetEmptyRepo = {
+      ok: true,
+      schemaVersion: "1.0.0",
+      repository: { name: "test/repo", root: "" },
+      headSha,
+      contentDigest: computedHash,
+      totalFiles: 1,
+      files: [{ path: "src/auth.js", additions: 1, deletions: 0, riskTier: 2 }],
+      diffHunks: diffContent
+    };
+
+    const reportEmptyRepo = await runDogfoodReview({
+      mock: true,
+      changeSet: changeSetEmptyRepo,
+      head: headSha,
+      verifierAdapter: cleanVerifier,
+      out: tmpOut,
+      log: false
+    });
+
+    assert.notEqual(reportEmptyRepo.gate.decision, "approve");
+    assert.equal(reportEmptyRepo.gate.decision, "human_review_required");
+    assert.equal(reportEmptyRepo.summary.cleanChallengeStatus, "UNCERTAIN");
+    assert.equal(reportEmptyRepo.isExecutionComplete, false);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("PR39-ROUND2-ITEM4-NEGATIVE: Verifier omission with evidenceSupport: CONTESTED requires substantive counter-evidence or downgrades to Human Review", async () => {
+  // 1. Unit test validateVerificationOutput: ungrounded CONTESTED omission downgrades to INSUFFICIENT_EVIDENCE
+  const changeSet = {
+    ok: true,
+    totalFiles: 1,
+    files: [{ path: "src/auth.js", additions: 2, deletions: 0 }],
+    diffHunks: "+ const auth = 1;\n"
+  };
+
+  const rawOutputUngrounded = {
+    overallStatus: "CLEAN",
+    evaluations: [],
+    verifierOmissions: [
+      {
+        findingId: "OMIT-01",
+        title: "Potential missing auth check",
+        severity: "high",
+        evidenceSupport: "CONTESTED",
+        file: "src/auth.js",
+        line_start: 1,
+        line_end: 1,
+        reasoning: "The parameter is safe."
+      }
+    ]
+  };
+
+  const validatedUngrounded = validateVerificationOutput(rawOutputUngrounded, {
+    changeSet,
+    producerFindings: [],
+    providerName: "claude",
+    verificationMode: "clean_challenge"
+  });
+  assert.equal(validatedUngrounded.ok, true);
+  assert.equal(validatedUngrounded.verifierOmissions[0].evidenceSupport, "INSUFFICIENT_EVIDENCE");
+
+  // Grounded CONTESTED omission retains CONTESTED
+  const rawOutputGrounded = {
+    overallStatus: "CLEAN",
+    evaluations: [],
+    verifierOmissions: [
+      {
+        findingId: "OMIT-01",
+        title: "Potential missing auth check",
+        severity: "high",
+        evidenceSupport: "CONTESTED",
+        file: "src/auth.js",
+        line_start: 1,
+        line_end: 1,
+        reasoning: "The input is safely sanitized by escapeHtml() on line 42."
+      }
+    ]
+  };
+
+  const validatedGrounded = validateVerificationOutput(rawOutputGrounded, {
+    changeSet,
+    producerFindings: [],
+    providerName: "claude",
+    verificationMode: "clean_challenge"
+  });
+  assert.equal(validatedGrounded.ok, true);
+  assert.equal(validatedGrounded.verifierOmissions[0].evidenceSupport, "CONTESTED");
+
+  // 2. Gate Integration evaluateIsolatedTestGate:
+  // A Tier 2 zero-finding consensus with a high-severity CONTESTED omission without substantive reasoning
+  const consensus = makeTrustedConsensus([], { tier: 2 });
+
+  const recordWithUngroundedOmission = issueVerificationRecordFromOutput({
+    ok: true,
+    verificationMode: "clean_challenge",
+    evaluations: [],
+    verifierOmissions: [
+      {
+        findingId: "OMIT-01",
+        title: "Potential missing auth check",
+        severity: "high",
+        evidenceSupport: "CONTESTED",
+        file: "src/auth.js",
+        line_start: 1,
+        line_end: 1,
+        reasoning: "The parameter is safe."
+      }
+    ]
+  });
+
+  // Strict mode: blocks with UNGROUNDED_CONTESTED_VERDICT
+  const strictGate = evaluateIsolatedTestGate(consensus, {
+    tier: 2,
+    strict: true,
+    verificationRecord: recordWithUngroundedOmission
+  });
+  assert.equal(strictGate.decision, "block");
+  assert.match(strictGate.reason, /UNGROUNDED_CONTESTED_VERDICT/i);
+
+  // Non-strict mode: downgrades to INSUFFICIENT_EVIDENCE -> human_review_required (NOT approve!)
+  const nonStrictGate = evaluateIsolatedTestGate(consensus, {
+    tier: 2,
+    strict: false,
+    verificationRecord: recordWithUngroundedOmission
+  });
+  assert.equal(nonStrictGate.decision, "human_review_required");
+  assert.notEqual(nonStrictGate.decision, "approve");
+
+  // Positive control: Grounded CONTESTED omission with substantive counter-evidence passes as Advisory in Tier 2 -> APPROVE
+  const recordWithGroundedOmission = issueVerificationRecordFromOutput({
+    ok: true,
+    verificationMode: "clean_challenge",
+    evaluations: [],
+    verifierOmissions: [
+      {
+        findingId: "OMIT-01",
+        title: "Potential missing auth check",
+        severity: "high",
+        evidenceSupport: "CONTESTED",
+        file: "src/auth.js",
+        line_start: 1,
+        line_end: 1,
+        reasoning: "The input is safely sanitized by escapeHtml() on line 42."
+      }
+    ]
+  });
+
+  const groundedGate = evaluateIsolatedTestGate(consensus, {
+    tier: 2,
+    verificationRecord: recordWithGroundedOmission
+  });
+  assert.equal(groundedGate.decision, "approve");
+  assert.equal(groundedGate.advisoryFindings.length, 1);
 });

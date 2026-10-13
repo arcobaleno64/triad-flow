@@ -967,13 +967,16 @@ export async function runDogfoodReview(userOptions = {}) {
     verifierTimedOut = true;
   });
 
-  // Extract exact-head callee context package across modified files (Spec §3.3, P1-02)
-  const targetRepo = changeSet?.repository?.root || (!changeSetProvided ? repoDir : null);
+  // Extract exact-head callee context package across modified files (Spec §3.3, P1-02, Item 3)
+  const repoRootCandidate = changeSet?.repository?.root || (!changeSetProvided ? repoDir : null);
+  const targetRepo = (typeof repoRootCandidate === "string" && repoRootCandidate.trim().length > 0)
+    ? repoRootCandidate.trim()
+    : null;
   let contextPackage = userOptions.contextPackage || null;
   let contextExtractionFailed = false;
   let contextExtractionError = null;
 
-  if (changeSet?.repository === null || changeSet?.repository?.root === null) {
+  if (changeSet?.repository == null || changeSet?.repository?.root === null || (typeof changeSet?.repository === "object" && (("root" in changeSet.repository && !changeSet.repository.root) || Object.keys(changeSet.repository).length === 0))) {
     contextExtractionFailed = true;
     contextExtractionError = "Missing trusted repository root for exact-head context construction.";
     if (log) console.warn(`  ⚠️ Failed to extract callee contextPackage for verification: ${contextExtractionError}`);
@@ -1067,7 +1070,7 @@ export async function runDogfoodReview(userOptions = {}) {
         }
       }
 
-      // Validate fileCoverageManifest (PR-39 Item 1 / CONTEXT_COVERAGE_INTEGRITY)
+      // Validate fileCoverageManifest (PR-39 Item 1 / CONTEXT_COVERAGE_INTEGRITY, Item 2)
       if (!pkgInvalid) {
         if (!Array.isArray(pkg.fileCoverageManifest)) {
           pkgInvalid = true;
@@ -1078,10 +1081,13 @@ export async function runDogfoodReview(userOptions = {}) {
         } else if (pkg.fileCoverageManifest.some(m => !m.file && !m.path)) {
           pkgInvalid = true;
           pkgInvalidReason = "ContextPackage fileCoverageManifest contains entries without valid file path.";
+        } else if (pkg.fileCoverageManifest.some(m => m && (m.exactHeadAvailable === false || m.exactHeadUnavailable === true || m.contentAvailable === false))) {
+          pkgInvalid = true;
+          pkgInvalidReason = "ContextPackage fileCoverageManifest contains entries where exact-head content is unavailable (exactHeadAvailable is false).";
         } else if (Array.isArray(changeSet?.files) && changeSet.files.length > 0) {
           const coveredFiles = new Set(
             pkg.fileCoverageManifest
-              .filter(m => m && m.inspected !== false)
+              .filter(m => m && m.inspected !== false && m.exactHeadAvailable !== false && m.exactHeadUnavailable !== true && m.contentAvailable !== false)
               .map(m => normalizeCanonicalPath(String(m.file || m.path || ""), targetRepo))
               .filter(Boolean)
           );
@@ -1089,7 +1095,7 @@ export async function runDogfoodReview(userOptions = {}) {
             const expectedPath = normalizeCanonicalPath(String(typeof f === "string" ? f : (f?.path || f?.file || "")), targetRepo);
             if (expectedPath && !coveredFiles.has(expectedPath)) {
               pkgInvalid = true;
-              pkgInvalidReason = `ContextPackage fileCoverageManifest does not cover file under review: '${expectedPath}'.`;
+              pkgInvalidReason = `ContextPackage fileCoverageManifest does not cover file under review with valid exact-head content: '${expectedPath}'.`;
               break;
             }
           }
@@ -1121,6 +1127,13 @@ export async function runDogfoodReview(userOptions = {}) {
         contextExtractionFailed = true;
         contextExtractionError = contextPackage?.error?.message || "buildContextPackage returned invalid or non-ok contextPackage";
         if (log) console.warn("  ⚠️ Failed to extract callee contextPackage for verification:", contextExtractionError);
+      } else if (Array.isArray(contextPackage.fileCoverageManifest)) {
+        const unavailableEntry = contextPackage.fileCoverageManifest.find(m => m && (m.exactHeadAvailable === false || m.exactHeadUnavailable === true));
+        if (unavailableEntry) {
+          contextExtractionFailed = true;
+          contextExtractionError = `Exact-head content unavailable for file: '${unavailableEntry.file || unavailableEntry.path}'.`;
+          if (log) console.warn("  ⚠️ Exact-head context unavailable:", contextExtractionError);
+        }
       }
     } catch (err) {
       contextExtractionFailed = true;
@@ -1153,7 +1166,7 @@ export async function runDogfoodReview(userOptions = {}) {
             {
               code: "EXACT_HEAD_CONTEXT_FAILED",
               reason: contextExtractionError,
-              targetFiles: changeSet?.files?.map(f => f.path) || []
+              targetFiles: changeSet?.files?.map(f => typeof f === "string" ? f : (f?.path || f?.file || "")) || []
             }
           ] : null,
           userOptions.contextGaps,
@@ -1193,7 +1206,7 @@ export async function runDogfoodReview(userOptions = {}) {
               {
                 code: "EXACT_HEAD_CONTEXT_FAILED",
                 reason: contextExtractionError,
-                targetFiles: changeSet?.files?.map(f => f.path) || []
+                targetFiles: changeSet?.files?.map(f => typeof f === "string" ? f : (f?.path || f?.file || "")) || []
               }
             ] : null,
             userOptions.contextGaps,

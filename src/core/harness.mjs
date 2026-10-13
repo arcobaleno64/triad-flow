@@ -1076,6 +1076,25 @@ function _evaluatePostVerificationGateCore(consensus, verificationRecord, option
 
     // Row 8 & 9: Contested Omission
     if (evidenceSupport === "CONTESTED") {
+      const hasSubstantive = isSubstantiveContestedReasoning(omission.reasoning) ||
+        isSubstantiveContestedReasoning(omission.dissent) ||
+        isSubstantiveContestedReasoning(omission.counterexample) ||
+        isSubstantiveContestedReasoning(omission.recommendation) ||
+        isSubstantiveContestedReasoning(omission.body);
+      if (!hasSubstantive) {
+        if (isStrict) {
+          return {
+            decision: "block",
+            reason: `Gate Fail-Closed: Verification record contains ungrounded CONTESTED omission '${omission.title}' without substantive counter-evidence (UNGROUNDED_CONTESTED_VERDICT).`,
+            criticals: [],
+            advisoryFindings: []
+          };
+        }
+        hasHumanReview = true;
+        humanReviewReasons.push(`Ungrounded contested omission lacks substantive counter-evidence (INSUFFICIENT_EVIDENCE): "${omission.title}"`);
+        continue;
+      }
+
       if (isTier1 && (rawSev === "critical" || rawSev === "high")) {
         // Row 9: Tier 1 Critical/High -> HUMAN_REVIEW_REQUIRED
         hasHumanReview = true;
