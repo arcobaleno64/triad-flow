@@ -727,10 +727,14 @@ function _evaluatePostVerificationGateCore(consensus, verificationRecord, option
           advisoryFindings: []
         };
       }
+      const matchedEvalIndices = new Set();
       for (let i = 0; i < findings.length; i++) {
         const curId = getFindingId(findings[i], i);
-        const match = evaluations.find(e => String(e?.findingId).trim() === curId);
-        if (!match) {
+        let matchIdx = evaluations.findIndex((e, idx) => !matchedEvalIndices.has(idx) && String(e?.findingId).trim() === curId);
+        if (matchIdx === -1) {
+          matchIdx = evaluations.findIndex((e, idx) => !matchedEvalIndices.has(idx) && (String(e?.findingId).trim().toLowerCase() === curId.toLowerCase() || String(e?.id).trim() === curId));
+        }
+        if (matchIdx === -1) {
           return {
             decision: "block",
             reason: `Gate Fail-Closed: Verification record finding set mismatch (FINDING_SET_BINDING_MISMATCH: missing evaluation for finding '${curId}').`,
@@ -738,13 +742,14 @@ function _evaluatePostVerificationGateCore(consensus, verificationRecord, option
             advisoryFindings: []
           };
         }
+        matchedEvalIndices.add(matchIdx);
       }
     }
   }
   const hasBoundPatchObjective =
     typeof verificationRecord.patchObjective === "string" &&
     verificationRecord.patchObjective.trim().length > 0;
-  const isTier1 = options?.tier === 1;
+  const isTier1 = options?.tier === 1 || options?.isTier1 === true;
   const isStrict = Boolean(options && (options.strict || isTier1));
 
   let hasBlocker = false;
@@ -802,7 +807,18 @@ function _evaluatePostVerificationGateCore(consensus, verificationRecord, option
     if (!f) continue;
 
     const fId = getFindingId(f, i);
-    const evalMatch = evaluations.find(e => String(e?.findingId).trim() === fId);
+    let evalMatch = evaluations.find(e => String(e?.findingId).trim() === fId);
+    if (!evalMatch) {
+      evalMatch = evaluations.find(e => String(e?.findingId).trim().toLowerCase() === fId.toLowerCase() || String(e?.id).trim() === fId);
+    }
+    if (!evalMatch) {
+      return {
+        decision: "block",
+        reason: `Gate Fail-Closed: Verification record finding set mismatch (FINDING_SET_BINDING_MISMATCH: missing evaluation for finding '${fId}').`,
+        criticals: [],
+        advisoryFindings: []
+      };
+    }
 
     const verdict = String(evalMatch?.verdict || "INSUFFICIENT_EVIDENCE").toUpperCase();
     const classification = String(evalMatch?.classification || "").toUpperCase();

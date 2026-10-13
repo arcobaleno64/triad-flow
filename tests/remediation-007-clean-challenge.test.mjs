@@ -2861,6 +2861,55 @@ test("PR39-GATE-OUT-01-NEGATIVE: Empty or cross-head contextPackage cannot achie
     assert.equal(reportCrossHead.gate.decision, "human_review_required");
     assert.equal(reportCrossHead.summary.cleanChallengeStatus, "UNCERTAIN");
     assert.equal(reportCrossHead.isExecutionComplete, false);
+
+    // 3. Mismatched repositoryRoot must NOT achieve CLEAN approval
+    const mismatchedRepoPackage = {
+      schemaVersion: "1.0.0",
+      headSha,
+      repositoryRoot: "/completely/different/repo",
+      contentDigest: crypto.createHash("sha256").update(cleanChangeSet.diffHunks).digest("hex"),
+      layers: { layer1AstEnclosure: { callees: [] } },
+      budgetAccounting: { consumedBytes: 100 }
+    };
+
+    const reportMismatchedRepo = await runDogfoodReview({
+      mock: true,
+      changeSet: cleanChangeSet,
+      head: headSha,
+      contextPackage: mismatchedRepoPackage,
+      verifierAdapter: cleanVerifier,
+      out: tmpOut,
+      log: false
+    });
+
+    assert.notEqual(reportMismatchedRepo.gate.decision, "approve", "Mismatched repo contextPackage must not be approved");
+    assert.equal(reportMismatchedRepo.gate.decision, "human_review_required");
+    assert.equal(reportMismatchedRepo.summary.cleanChallengeStatus, "UNCERTAIN");
+    assert.equal(reportMismatchedRepo.isExecutionComplete, false);
+
+    // 4. Missing repositoryRoot when targetRepo is known must NOT achieve CLEAN approval
+    const missingRepoPackage = {
+      schemaVersion: "1.0.0",
+      headSha,
+      contentDigest: crypto.createHash("sha256").update(cleanChangeSet.diffHunks).digest("hex"),
+      layers: { layer1AstEnclosure: { callees: [] } },
+      budgetAccounting: { consumedBytes: 100 }
+    };
+
+    const reportMissingRepo = await runDogfoodReview({
+      mock: true,
+      changeSet: cleanChangeSet,
+      head: headSha,
+      contextPackage: missingRepoPackage,
+      verifierAdapter: cleanVerifier,
+      out: tmpOut,
+      log: false
+    });
+
+    assert.notEqual(reportMissingRepo.gate.decision, "approve", "Missing repo contextPackage must not be approved");
+    assert.equal(reportMissingRepo.gate.decision, "human_review_required");
+    assert.equal(reportMissingRepo.summary.cleanChallengeStatus, "UNCERTAIN");
+    assert.equal(reportMissingRepo.isExecutionComplete, false);
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
@@ -2909,6 +2958,26 @@ export class Service {
   const authGap = res.contextGaps.find(g => g.symbol === "validateAccess" && g.qualifier === "auth");
   assert.ok(authGap, "External auth.validateAccess must emit context gap and not be masked by this.validateAccess");
   assert.equal(authGap.reason, "EXTERNAL_CALLEE_UNRESOLVED");
+
+  // When source code defines validateAccess locally WITHOUT importing auth (e.g. auth is a method parameter):
+  const sourceCodeNoImport = `
+export class Service {
+  validateAccess(req) {
+    return true;
+  }
+  handle(auth, req) {
+    this.validateAccess(req);
+    auth.validateAccess(req);
+  }
+}
+`;
+
+  const resNoImport = extractLocalCalleeContext(sourceCodeNoImport, diffHunks, "src/service.js");
+  const localCalleeNoImport = resNoImport.callees.find(c => c.symbol === "validateAccess");
+  assert.ok(localCalleeNoImport, "Local definition of this.validateAccess must be extracted into callees even without import");
+  const authGapNoImport = resNoImport.contextGaps.find(g => g.symbol === "validateAccess" && g.qualifier === "auth");
+  assert.ok(authGapNoImport, "Unimported auth.validateAccess must emit context gap and not be masked by this.validateAccess");
+  assert.equal(authGapNoImport.reason, "EXTERNAL_CALLEE_UNRESOLVED");
 });
 
 test("PR39-GATE-OUT-03-NEGATIVE: Same ChangeSet with different producer findings cannot reuse old verifier evaluation", async () => {
@@ -2987,6 +3056,39 @@ test("PR39-GATE-OUT-03-NEGATIVE: Same ChangeSet with different producer findings
 
   assert.equal(gateCountMismatch.decision, "block");
   assert.match(gateCountMismatch.reason, /FINDING_SET_BINDING_MISMATCH/i);
+
+  // Incompatible finding ID mapping on synthetic record evaluated via evaluateIsolatedTestGate
+  const recordIdMismatch = issueVerificationRecordFromOutput({
+    ok: true,
+    verificationMode: "producer_verification",
+    evaluations: [
+      {
+        findingId: "f1",
+        verdict: "CONTESTED",
+        classification: "CONTRADICTED",
+        locatorAccurate: true,
+        typeAccurate: true,
+        severityAccurate: true
+      },
+      {
+        findingId: "f_unrelated",
+        verdict: "CONTESTED",
+        classification: "CONTRADICTED",
+        locatorAccurate: true,
+        typeAccurate: true,
+        severityAccurate: true
+      }
+    ],
+    verifierOmissions: []
+  });
+
+  const gateIdMismatch = evaluateIsolatedTestGate(consensusMultiple, {
+    tier: 2,
+    verificationRecord: recordIdMismatch
+  });
+
+  assert.equal(gateIdMismatch.decision, "block");
+  assert.match(gateIdMismatch.reason, /FINDING_SET_BINDING_MISMATCH/i);
 });
 
 test("PR39-GATE-OUT-04-NEGATIVE: Tier 1 omission policy (strict omission blocking) is preserved identically between orchestrator and direct gate calls", async () => {
@@ -3093,4 +3195,22 @@ test("PR39-GATE-OUT-04-NEGATIVE: Tier 1 omission policy (strict omission blockin
   assert.equal(orchestratorT2.gate.decision, directGateT2.decision, "Orchestrator tier 2 must match direct gate tier 2 decision");
   assert.equal(orchestratorT2.gate.decision, "human_review_required");
   assert.match(orchestratorT2.gate.reason, /Supported Medium Omission \(Tier 2\)/i);
+
+  // Direct Gate with isTier1: true strictly blocks Medium omission
+  const directGateIsTier1 = evaluateGateDecision(consensusClean, {
+    isTier1: true,
+    verificationRecord: trustedRecord,
+    runContext
+  });
+  assert.equal(directGateIsTier1.decision, "block", "Direct gate isTier1: true strictly blocks Medium omission");
+  assert.match(directGateIsTier1.reason, /Supported Medium Omission \(Tier 1\)/i);
+
+  // Orchestrator with isTier1: true: Must forward isTier1: true and block identically
+  const orchestratorIsTier1 = await orchestrateReview(changeSet, { macro: mockAdapter }, {
+    isTier1: true,
+    plan: { mode: "single", highestRisk: 2 },
+    verificationRecord: trustedRecord
+  });
+  assert.equal(orchestratorIsTier1.gate.decision, "block", "Orchestrator isTier1: true must block Medium omission");
+  assert.match(orchestratorIsTier1.gate.reason, /Supported Medium Omission \(Tier 1\)/i);
 });

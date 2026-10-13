@@ -373,6 +373,81 @@ export function findFunctionDefinitions(lines, symbol) {
 }
 
 /**
+ * Finds candidate definition line ranges for a qualified symbol (e.g. auth.validateAccess, Class::method).
+ * Ensures qualified calls with explicit receivers are not conflated with bare or unrelated methods.
+ *
+ * @param {string[]} lines
+ * @param {string} qualifier
+ * @param {string} symbol
+ * @returns {Array<{ startLine: number, endLine: number }>}
+ */
+export function findQualifiedFunctionDefinitions(lines, qualifier, symbol) {
+  if (!qualifier || !symbol || !Array.isArray(lines)) return [];
+  const matches = [];
+  const escapedSym = symbol.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const escapedQual = qualifier.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const qualPascal = qualifier.charAt(0).toUpperCase() + qualifier.slice(1);
+  const escapedPascal = qualPascal.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+  const QUAL_DEF_REGEX = new RegExp(
+    `(?:` +
+    `^(?:\\s*(?:[a-zA-Z0-9_<>*&]|::)+\\s+)+(?:${escapedQual}|${escapedPascal})::${escapedSym}\\s*\\(|` +
+    `^\\s*(?:export\\s+)?(?:const|let|var)?\\s*(?:${escapedQual}|${escapedPascal})\\.${escapedSym}\\s*=\\s*|` +
+    `^\\s*(?:export\\s+)?(?:const|let|var)?\\s*(?:${escapedQual}|${escapedPascal})\\.prototype\\.${escapedSym}\\s*=\\s*` +
+    `)`
+  );
+
+  const CLASS_REGEX = new RegExp(`^\\s*(?:export\\s+)?(?:default\\s+)?class\\s+(?:${escapedQual}|${escapedPascal})\\b`);
+  let insideMatchingClass = false;
+  let classBraceDepth = 0;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    if (QUAL_DEF_REGEX.test(line)) {
+      const braceIdx = line.indexOf("{");
+      if (braceIdx !== -1) {
+        const endLine = findBraceScopeEnd(lines, i);
+        matches.push({ startLine: i + 1, endLine });
+        if (endLine > i + 1) i = endLine - 1;
+        continue;
+      }
+    }
+
+    if (CLASS_REGEX.test(line)) {
+      insideMatchingClass = true;
+      classBraceDepth = 0;
+    }
+
+    if (insideMatchingClass) {
+      for (const ch of line) {
+        if (ch === "{") classBraceDepth++;
+        else if (ch === "}") {
+          classBraceDepth--;
+          if (classBraceDepth <= 0) {
+            insideMatchingClass = false;
+            break;
+          }
+        }
+      }
+      if (insideMatchingClass && line.includes(symbol)) {
+        const METHOD_REGEX = new RegExp(`^\\s*(?:static\\s+)?(?:async\\s+)?${escapedSym}\\s*\\(`);
+        if (METHOD_REGEX.test(line)) {
+          const braceIdx = line.indexOf("{");
+          if (braceIdx !== -1) {
+            const endLine = findBraceScopeEnd(lines, i);
+            matches.push({ startLine: i + 1, endLine });
+            if (endLine > i + 1) i = endLine - 1;
+          }
+        }
+      }
+    }
+  }
+
+  return matches;
+}
+
+/**
  * Classifies a token or text fragment into a sensitive category according to RFC-027-01.
  * Evaluates default_values ahead of input_validation to ensure default-handling macros
  * and routines (such as CHECK_MAP_DEFAULT or isMapValueDefault) receive appropriate prioritization.
@@ -906,11 +981,20 @@ export function extractLocalCalleeContext(fileContent, diffHunks, targetFile, op
     }
 
     // 2. Find function definitions in same file
-    const defMatches = findFunctionDefinitions(lines, symbol);
+    let defMatches = [];
+    if (candidate.isQualified && candidate.qualifier && candidate.qualifier !== "this" && candidate.qualifier !== "self") {
+      defMatches = findQualifiedFunctionDefinitions(lines, candidate.qualifier, symbol);
+    } else {
+      defMatches = findFunctionDefinitions(lines, symbol);
+    }
 
     if (defMatches.length === 0) {
       const isDynamic = Boolean(candidate.lineText && (candidate.lineText.includes(`->${symbol}`) || candidate.lineText.includes(`virtual`)));
-      const reason = isDynamic ? "MACRO_OR_DYNAMIC" : "UNRESOLVED_SYMBOL";
+      const reason = isDynamic
+        ? "MACRO_OR_DYNAMIC"
+        : (candidate.isQualified && candidate.qualifier !== "this" && candidate.qualifier !== "self"
+            ? "EXTERNAL_CALLEE_UNRESOLVED"
+            : "UNRESOLVED_SYMBOL");
       const unresolvedEntry = {
         symbol,
         ...(candidate.qualifier ? { qualifier: candidate.qualifier } : {}),
@@ -951,6 +1035,7 @@ export function extractLocalCalleeContext(fileContent, diffHunks, targetFile, op
       const snippet = extractBoundedFunctionSnippet(lines, match.startLine, match.endLine);
       callees.push({
         symbol,
+        ...(candidate.qualifier ? { qualifier: candidate.qualifier } : {}),
         file: targetFile,
         definition: snippet.definition,
         lines: snippet.lines,
@@ -1415,6 +1500,7 @@ export function buildContextPackage(changeSet, targetFile, options = {}) {
       runId,
       targetFile: filePaths.length === 1 ? normalizeCanonicalPath(filePaths[0]) : "multi-file",
       ...(headSha ? { headSha } : {}),
+      ...(repoRoot ? { repositoryRoot: repoRoot } : {}),
       scopeMode: changeSet?.scopeMode || "working-tree",
       contentDigest,
       layers: budgeted.layers,
@@ -1540,6 +1626,7 @@ export function buildContextPackage(changeSet, targetFile, options = {}) {
     runId,
     targetFile: normTarget,
     ...(headSha ? { headSha } : {}),
+    ...(repoRoot ? { repositoryRoot: repoRoot } : {}),
     scopeMode: changeSet?.scopeMode || "working-tree",
     contentDigest,
     layers: budgeted.layers,

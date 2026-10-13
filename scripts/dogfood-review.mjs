@@ -1002,12 +1002,17 @@ export async function runDogfoodReview(userOptions = {}) {
 
       // Validate target repo
       const pkgRepo = pkg.repositoryRoot || pkg.repository?.root || pkg.targetRepo || pkg.repo || null;
-      if (!pkgInvalid && targetRepo && pkgRepo) {
-        const normPkgRepo = normalizeCanonicalPath(path.resolve(String(pkgRepo)));
-        const normTargetRepo = normalizeCanonicalPath(path.resolve(String(targetRepo)));
-        if (normPkgRepo !== normTargetRepo) {
+      if (!pkgInvalid && targetRepo) {
+        if (!pkgRepo) {
           pkgInvalid = true;
-          pkgInvalidReason = `ContextPackage repositoryRoot mismatch ('${normPkgRepo}' vs '${normTargetRepo}').`;
+          pkgInvalidReason = `ContextPackage missing required repositoryRoot (expected '${targetRepo}').`;
+        } else {
+          const normPkgRepo = normalizeCanonicalPath(path.resolve(String(pkgRepo)));
+          const normTargetRepo = normalizeCanonicalPath(path.resolve(String(targetRepo)));
+          if (normPkgRepo !== normTargetRepo) {
+            pkgInvalid = true;
+            pkgInvalidReason = `ContextPackage repositoryRoot mismatch ('${normPkgRepo}' vs '${normTargetRepo}').`;
+          }
         }
       }
 
