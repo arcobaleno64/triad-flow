@@ -1069,7 +1069,8 @@ export async function runDogfoodReview(userOptions = {}) {
         signal: userOptions.signal || null,
         maxConcurrency: userOptions.stagedConcurrency || 2,
         contextPackage,
-        contextGaps: effectiveContextGaps
+        contextGaps: effectiveContextGaps,
+        cwd: targetRepo
       });
       stagedChunkCount = Array.isArray(res?.receipts) ? res.receipts.length : null;
       stagedTimeoutCount = Array.isArray(res?.receipts)
@@ -1082,32 +1083,90 @@ export async function runDogfoodReview(userOptions = {}) {
   const pAgy = executeAgyReview().then(res => ({ res, latencyMs: Date.now() - tAgy0 }));
 
   const tClaude0 = Date.now();
-  const pClaude = reviewAdapters.claude.executeReview({
-    runId: `${runId}-claude`,
-    role: "claude",
-    changeSet,
-    policyId: "TRI_PARTY_HETEROGENEOUS",
-    timeoutMs,
-    patchObjective: userOptions.patchObjective || null,
-    objectiveContract,
-    signal: userOptions.signal || null,
-    contextPackage,
-    contextGaps: effectiveContextGaps
-  }).then(res => ({ res, latencyMs: Date.now() - tClaude0 }));
+  const executeClaudeReview = async () => {
+    const providerRunId = `${runId}-claude`;
+    let res = await reviewAdapters.claude.executeReview({
+      runId: providerRunId,
+      role: "claude",
+      changeSet,
+      policyId: "TRI_PARTY_HETEROGENEOUS",
+      timeoutMs,
+      patchObjective: userOptions.patchObjective || null,
+      objectiveContract,
+      signal: userOptions.signal || null,
+      contextPackage,
+      contextGaps: effectiveContextGaps
+    });
+
+    if (res?.executionStatus === EXECUTION_STATUS.PAYLOAD_TOO_LARGE) {
+      if (log) console.log("    ℹ [claude] Prompt exceeds limit; delegating to staged chunked review (RFC-027-01)...");
+      stagedFallbackUsed = true;
+      res = await executeStagedReview(changeSet, reviewAdapters.claude, {
+        runId: providerRunId,
+        role: "claude",
+        policyId: "TRI_PARTY_HETEROGENEOUS",
+        timeoutMs,
+        patchObjective: userOptions.patchObjective || null,
+        objectiveContract,
+        signal: userOptions.signal || null,
+        maxConcurrency: userOptions.stagedConcurrency || 2,
+        contextPackage,
+        contextGaps: effectiveContextGaps,
+        cwd: targetRepo
+      });
+      if (stagedChunkCount === null) {
+        stagedChunkCount = Array.isArray(res?.receipts) ? res.receipts.length : null;
+      }
+      stagedTimeoutCount += Array.isArray(res?.receipts)
+        ? res.receipts.filter(r => r?.status === "timeout").length
+        : 0;
+    }
+    return res;
+  };
+  const pClaude = executeClaudeReview().then(res => ({ res, latencyMs: Date.now() - tClaude0 }));
 
   const tCodex0 = Date.now();
-  const pCodex = reviewAdapters.codex.executeReview({
-    runId: `${runId}-codex`,
-    role: "codex",
-    changeSet,
-    policyId: "TRI_PARTY_HETEROGENEOUS",
-    timeoutMs,
-    patchObjective: userOptions.patchObjective || null,
-    objectiveContract,
-    signal: userOptions.signal || null,
-    contextPackage,
-    contextGaps: effectiveContextGaps
-  }).then(res => ({ res, latencyMs: Date.now() - tCodex0 }));
+  const executeCodexReview = async () => {
+    const providerRunId = `${runId}-codex`;
+    let res = await reviewAdapters.codex.executeReview({
+      runId: providerRunId,
+      role: "codex",
+      changeSet,
+      policyId: "TRI_PARTY_HETEROGENEOUS",
+      timeoutMs,
+      patchObjective: userOptions.patchObjective || null,
+      objectiveContract,
+      signal: userOptions.signal || null,
+      contextPackage,
+      contextGaps: effectiveContextGaps
+    });
+
+    if (res?.executionStatus === EXECUTION_STATUS.PAYLOAD_TOO_LARGE) {
+      if (log) console.log("    ℹ [codex] Prompt exceeds limit; delegating to staged chunked review (RFC-027-01)...");
+      stagedFallbackUsed = true;
+      res = await executeStagedReview(changeSet, reviewAdapters.codex, {
+        runId: providerRunId,
+        role: "codex",
+        policyId: "TRI_PARTY_HETEROGENEOUS",
+        timeoutMs,
+        patchObjective: userOptions.patchObjective || null,
+        objectiveContract,
+        signal: userOptions.signal || null,
+        maxConcurrency: userOptions.stagedConcurrency || 2,
+        contextPackage,
+        contextGaps: effectiveContextGaps,
+        cwd: targetRepo
+      });
+      if (stagedChunkCount === null) {
+        stagedChunkCount = Array.isArray(res?.receipts) ? res.receipts.length : null;
+      }
+      stagedTimeoutCount += Array.isArray(res?.receipts)
+        ? res.receipts.filter(r => r?.status === "timeout").length
+        : 0;
+    }
+    return res;
+  };
+  const pCodex = executeCodexReview().then(res => ({ res, latencyMs: Date.now() - tCodex0 }));
 
   const [agyOut, claudeOut, codexOut] = await Promise.all([pAgy, pClaude, pCodex]);
   const reviewerPhaseDurationMs = Date.now() - t0;

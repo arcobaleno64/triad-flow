@@ -16,6 +16,7 @@ import { reconcileFindings } from "../core/reconciler.mjs";
 import { classifyFileRisk, RISK_TIERS } from "../core/graph-router.mjs";
 import { normalizeCanonicalPath } from "../core/scoring.mjs";
 import { normalizeFinding } from "../core/harness.mjs";
+import { mergeContextGaps } from "../core/independent-verifier.mjs";
 import { EXECUTION_STATUS, COVERAGE_OMISSION_CODES, safeRenderUntrusted, safeGet, safeIsArray, safeArrayLength, safeErrorMessage } from "./provider-contract.mjs";
 
 export { COVERAGE_OMISSION_CODES };
@@ -312,6 +313,37 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
   const limits = options.limits || {};
   const checkpointStore = new CheckpointStore({ cwd: options.cwd });
 
+  const callerContextPackage = options.contextPackage !== undefined
+    ? options.contextPackage
+    : (changeSet?.contextPackage !== undefined ? changeSet.contextPackage : undefined);
+
+  const callerContextGaps = options.contextGaps !== undefined
+    ? options.contextGaps
+    : (changeSet?.contextGaps !== undefined ? changeSet.contextGaps : undefined);
+
+  if (callerContextPackage && typeof callerContextPackage === "object" && callerContextPackage.headSha && changeSet?.headSha) {
+    if (callerContextPackage.headSha !== changeSet.headSha) {
+      return {
+        runId,
+        ok: false,
+        executionStatus: EXECUTION_STATUS.ERROR,
+        error: `ContextPackage headSha (${callerContextPackage.headSha}) does not match changeSet headSha (${changeSet.headSha}).`,
+        providerIdentity: {
+          provider: adapter.providerName || role,
+          model: adapter.modelName || "unknown-model",
+          family: adapter.family || "unknown",
+          transport: "cli-staged",
+          runId
+        },
+        status: "incomplete",
+        findings: [],
+        coverage: { coveredFiles: [], omittedFiles: [], isComplete: false },
+        violations: [`ContextPackage headSha mismatch: ${callerContextPackage.headSha} vs ${changeSet.headSha}`],
+        receipts: []
+      };
+    }
+  }
+
   // Stage 1: Triage & Chunk Partitioning
   const chunks = partitionChangeSetIntoChunks(changeSet, {
     runId,
@@ -513,20 +545,37 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
     }
     const effectiveChunkTimeoutMs = Math.max(1, Math.min(nominalChunkBudgetMs, remainingGlobalMs));
 
-    const contextPkg = buildContextPackage({
-      ...changeSet,
-      diffHunks: chunk.diffHunks,
-      files: chunk.targetFiles.map(p => ({ path: p, additions: 0, deletions: 0 }))
-    }, chunkTarget, {
-      runId,
-      repositoryRoot: options.cwd || process.cwd()
-    });
+    let contextPkg;
+    const hasExtractionFailedGap = Array.isArray(callerContextGaps) && callerContextGaps.some(g => g?.code === "EXACT_HEAD_CONTEXT_FAILED");
+    if (callerContextPackage !== undefined) {
+      contextPkg = callerContextPackage;
+    } else if (hasExtractionFailedGap) {
+      contextPkg = null;
+    } else {
+      contextPkg = buildContextPackage({
+        ...changeSet,
+        diffHunks: chunk.diffHunks,
+        files: chunk.targetFiles.map(p => ({ path: p, additions: 0, deletions: 0 }))
+      }, chunkTarget, {
+        runId,
+        repositoryRoot: options.cwd || process.cwd()
+      });
+    }
+
+    const effectiveChunkContextGaps = mergeContextGaps(
+      callerContextGaps,
+      contextPkg?.contextGaps
+    );
 
     const prompt = buildEvidenceReviewPrompt({
       ...changeSet,
       diffHunks: chunk.diffHunks,
       files: chunk.targetFiles.map(p => ({ path: p, additions: 0, deletions: 0 }))
-    }, role, limits, contextPkg, { patchObjective: options.patchObjective });
+    }, role, limits, contextPkg, {
+      patchObjective: options.patchObjective,
+      objectiveContract: options.objectiveContract,
+      contextGaps: effectiveChunkContextGaps
+    });
 
     const chunkStartTime = Date.now();
     let timedOutByScheduler = false;
@@ -568,7 +617,11 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
           contentDigest: crypto.createHash("sha256").update(chunk.diffHunks || "", "utf8").digest("hex")
         },
         limits,
-        prompt
+        prompt,
+        contextPackage: contextPkg,
+        contextGaps: effectiveChunkContextGaps,
+        patchObjective: options.patchObjective,
+        objectiveContract: options.objectiveContract
       });
     } catch (err) {
       chunkResult = {

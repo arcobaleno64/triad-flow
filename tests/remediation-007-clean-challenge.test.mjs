@@ -114,6 +114,8 @@ import {
 
 
 import { CliReviewAdapter } from "../src/adapters/cli-transport.mjs";
+import { executeStagedReview } from "../src/adapters/staged-review.mjs";
+import { EXECUTION_STATUS } from "../src/adapters/provider-contract.mjs";
 
 // ============================================================================
 // Test Suite Helpers & Fixtures
@@ -5200,6 +5202,307 @@ test("PR39-ROUND5-DUAL-VISIBILITY-02-NEGATIVE: Failed context extraction propaga
     assert.equal(report.gate.decision, "human_review_required");
     assert.equal(report.summary.cleanChallengeStatus, "UNCERTAIN");
     assert.equal(report.isExecutionComplete, false);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("PR39-ROUND6-STAGED-DUAL-VISIBILITY-01: Staged Fallback receives identical Exact-Head ContextPackage and ContextGaps as Clean Challenge verifier (§3.3.4 Dual Visibility, P1-DV-01)", async () => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), "tf-round6-staged-vis-01-"));
+  const tmpOut = path.join(repo, "dogfood-run.json");
+  execFileSync("git", ["init", "-b", "main"], { cwd: repo, stdio: "ignore" });
+  execFileSync("git", ["config", "user.name", "Test User"], { cwd: repo, stdio: "ignore" });
+  execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: repo, stdio: "ignore" });
+
+  const targetFile = "src/core/harness.mjs";
+  const fullPath = path.join(repo, targetFile);
+  fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+  fs.writeFileSync(fullPath, "export function harnessHelper() { return 42; }\n");
+  execFileSync("git", ["add", targetFile], { cwd: repo, stdio: "ignore" });
+  execFileSync("git", ["commit", "-m", "Initial commit"], { cwd: repo, stdio: "ignore" });
+  const headSha = execFileSync("git", ["rev-parse", "HEAD"], { cwd: repo, encoding: "utf8" }).trim();
+  const diffContent = "--- a/src/core/harness.mjs\n+++ b/src/core/harness.mjs\n@@ -1,1 +1,2 @@\n export function harnessHelper() { return 42; }\n+const call = harnessHelper();\n";
+  const repoRoot = repo;
+
+  let agyCalls = 0;
+  const capturedAgyChunkInputs = [];
+  const capturingAdapters = {
+    agy: new CliReviewAdapter({
+      command: "agy",
+      providerName: "agy",
+      family: "google",
+      modelName: "gemini-3.8-flash",
+      execFn: async (callContext) => {
+        agyCalls++;
+        if (agyCalls === 1) {
+          // First call triggers staged fallback via PAYLOAD_TOO_LARGE
+          return {
+            stdout: "",
+            executionStatus: EXECUTION_STATUS.PAYLOAD_TOO_LARGE,
+            error: "Prompt exceeds Windows argv limit (RFC-027-01)"
+          };
+        }
+        // Subsequent calls are staged chunk review executions
+        capturedAgyChunkInputs.push(callContext);
+        return {
+          stdout: JSON.stringify({
+            findings: [],
+            coverage: { coveredFiles: ["src/core/harness.mjs"], omittedFiles: [] },
+            providerIdentity: { provider: "agy", family: "google", model: "gemini-3.8-flash" }
+          })
+        };
+      }
+    }),
+    claude: new CliReviewAdapter({
+      command: "claude",
+      providerName: "claude",
+      family: "anthropic",
+      modelName: "claude-5.5-sonnet",
+      execFn: async () => ({
+        stdout: JSON.stringify({
+          findings: [],
+          coverage: { coveredFiles: ["src/core/harness.mjs"], omittedFiles: [] },
+          providerIdentity: { provider: "claude", family: "anthropic", model: "claude-5.5-sonnet" }
+        })
+      })
+    }),
+    codex: new CliReviewAdapter({
+      command: "codex",
+      providerName: "codex",
+      family: "openai",
+      modelName: "gpt-6.1-sol",
+      execFn: async () => ({
+        stdout: JSON.stringify({
+          findings: [],
+          coverage: { coveredFiles: ["src/core/harness.mjs"], omittedFiles: [] },
+          providerIdentity: { provider: "codex", family: "openai", model: "gpt-6.1-sol" }
+        })
+      })
+    })
+  };
+
+  let capturedVerifierContextPackage = null;
+  const instrumentedVerifier = createMockVerifierAdapter("claude", {
+    executeVerification: async (adapterInput) => {
+      capturedVerifierContextPackage = adapterInput?.contextPackage || null;
+      return {
+        ok: true,
+        overallStatus: "CLEAN",
+        evaluations: [],
+        verifierOmissions: []
+      };
+    }
+  });
+
+  try {
+    const changeSet = {
+      ok: true,
+      schemaVersion: "1.0.0",
+      repository: {
+        root: repoRoot,
+        headSha,
+        name: "arcobaleno64/triad-flow"
+      },
+      headSha,
+      totalFiles: 1,
+      files: [{ path: "src/core/harness.mjs", additions: 1, deletions: 0, riskTier: 1 }],
+      diffHunks: diffContent
+    };
+
+    const report = await runDogfoodReview({
+      mock: false,
+      changeSet,
+      head: headSha,
+      repoDir: repoRoot,
+      repository: "arcobaleno64/triad-flow",
+      reviewAdapters: capturingAdapters,
+      verifierAdapter: instrumentedVerifier,
+      out: tmpOut,
+      log: false
+    });
+
+    // 1. Verify Staged Fallback was invoked
+    assert.ok(report.telemetryMetrics.stagedFallbackUsed, "Staged fallback must have been triggered");
+    assert.ok(capturedAgyChunkInputs.length > 0, "At least one staged chunk review must have executed");
+
+    // 2. Verify all staged chunk executions received the exact-head contextPackage and gaps
+    for (const chunkCall of capturedAgyChunkInputs) {
+      assert.ok(chunkCall.input.contextPackage, "Staged chunk review must receive contextPackage");
+      assert.equal(typeof chunkCall.input.contextPackage, "object");
+      assert.ok(chunkCall.input.contextPackage.layers, "Staged chunk contextPackage must have layers");
+      assert.equal(chunkCall.input.contextPackage.headSha, headSha, "Staged chunk contextPackage must match headSha");
+
+      // Verify the prompt formatted for staged chunk contains enclosing code context XML block
+      assert.match(chunkCall.prompt, /\[CODE CONTEXT & AST ENCLOSURES\]/, "Staged chunk prompt must contain [CODE CONTEXT & AST ENCLOSURES]");
+    }
+
+    // 3. Verify Clean Challenge verifier received the identical contextPackage
+    assert.ok(report.telemetryMetrics.cleanChallengeAttempted, "Clean challenge must be attempted for 0-finding consensus");
+    assert.equal(report.telemetryMetrics.cleanChallengeStatus, "SUCCESS");
+    assert.ok(report.verificationRecord, "Verification record must be present");
+    assert.equal(report.verificationRecord.ok, true);
+    assert.equal(report.verificationRecord.verificationMode, "clean_challenge");
+    assert.ok(capturedVerifierContextPackage, "Verifier must have received contextPackage");
+    assert.equal(capturedVerifierContextPackage.headSha, headSha);
+
+    // 4. Gate decision reaches APPROVE under clean challenge with dual visibility in staged review
+    assert.equal(report.gate.decision, "approve");
+  } finally {
+    fs.rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("PR39-ROUND6-STAGED-DUAL-VISIBILITY-02-NEGATIVE: Staged Fallback propagates EXACT_HEAD_CONTEXT_FAILED gaps to chunk reviews and fails closed when context extraction fails (§3.3.4 Dual Visibility, P1-DV-01)", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-round6-staged-vis-02-"));
+  const tmpOut = path.join(tmpDir, "dogfood-run.json");
+  const headSha = "93a63e30a039239212d54db501ce2b0655f3bd49";
+  const diffContent = "+ const patch = 1;\n";
+
+  let agyCalls = 0;
+  const capturedAgyChunkInputs = [];
+  const capturingAdapters = {
+    agy: new CliReviewAdapter({
+      command: "agy",
+      providerName: "agy",
+      family: "google",
+      modelName: "gemini-3.8-flash",
+      execFn: async (callContext) => {
+        agyCalls++;
+        if (agyCalls === 1) {
+          return {
+            stdout: "",
+            executionStatus: EXECUTION_STATUS.PAYLOAD_TOO_LARGE,
+            error: "Prompt exceeds Windows argv limit"
+          };
+        }
+        capturedAgyChunkInputs.push(callContext);
+        return {
+          stdout: JSON.stringify({
+            findings: [],
+            coverage: { coveredFiles: ["src/auth.js"], omittedFiles: [] },
+            providerIdentity: { provider: "agy", family: "google", model: "gemini-3.8-flash" }
+          })
+        };
+      }
+    }),
+    claude: new CliReviewAdapter({
+      command: "claude",
+      providerName: "claude",
+      family: "anthropic",
+      modelName: "claude-5.5-sonnet",
+      execFn: async () => ({
+        stdout: JSON.stringify({
+          findings: [],
+          coverage: { coveredFiles: ["src/auth.js"], omittedFiles: [] },
+          providerIdentity: { provider: "claude", family: "anthropic", model: "claude-5.5-sonnet" }
+        })
+      })
+    }),
+    codex: new CliReviewAdapter({
+      command: "codex",
+      providerName: "codex",
+      family: "openai",
+      modelName: "gpt-6.1-sol",
+      execFn: async () => ({
+        stdout: JSON.stringify({
+          findings: [],
+          coverage: { coveredFiles: ["src/auth.js"], omittedFiles: [] },
+          providerIdentity: { provider: "codex", family: "openai", model: "gpt-6.1-sol" }
+        })
+      })
+    })
+  };
+
+  const cleanVerifier = createMockVerifierAdapter("claude");
+
+  try {
+    // Missing trusted repository root -> context extraction fails
+    const changeSetMissingRepoRoot = {
+      ok: true,
+      schemaVersion: "1.0.0",
+      repository: { headSha }, // missing root string
+      headSha,
+      totalFiles: 1,
+      files: [{ path: "src/auth.js", additions: 1, deletions: 0, riskTier: 1 }],
+      diffHunks: diffContent
+    };
+
+    const report = await runDogfoodReview({
+      mock: false,
+      changeSet: changeSetMissingRepoRoot,
+      head: headSha,
+      reviewAdapters: capturingAdapters,
+      verifierAdapter: cleanVerifier,
+      out: tmpOut,
+      log: false
+    });
+
+    // 1. Verify Staged Fallback executed
+    assert.ok(report.telemetryMetrics.stagedFallbackUsed);
+    assert.ok(capturedAgyChunkInputs.length > 0);
+
+    // 2. Verify all staged chunk executions received EXACT_HEAD_CONTEXT_FAILED in contextGaps and NO fabricated contextPackage
+    for (const chunkCall of capturedAgyChunkInputs) {
+      assert.equal(chunkCall.input.contextPackage, undefined, "Staged chunk must not have fabricated contextPackage");
+      assert.ok(Array.isArray(chunkCall.input.contextGaps), "Staged chunk must receive contextGaps");
+      const hasExactHeadFailed = chunkCall.input.contextGaps.some(g => g.code === "EXACT_HEAD_CONTEXT_FAILED");
+      assert.ok(hasExactHeadFailed, "Staged chunk must receive EXACT_HEAD_CONTEXT_FAILED gap");
+
+      // Verify the prompt contains [UNRESOLVED CODE CONTEXT GAPS]
+      assert.match(chunkCall.prompt, /\[UNRESOLVED CODE CONTEXT GAPS\]/, "Staged chunk prompt must contain [UNRESOLVED CODE CONTEXT GAPS]");
+      assert.match(chunkCall.prompt, /EXACT_HEAD_CONTEXT_FAILED/, "Staged chunk prompt must mention EXACT_HEAD_CONTEXT_FAILED");
+    }
+
+    // 3. Gate evaluation fails closed to human_review_required, clean approval NOT granted
+    assert.equal(report.gate.decision, "human_review_required");
+    assert.equal(report.summary.cleanChallengeStatus, "UNCERTAIN");
+    assert.equal(report.isExecutionComplete, false);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("PR39-ROUND6-STAGED-DUAL-VISIBILITY-03-NEGATIVE: executeStagedReview rejects inconsistent contextPackage headSha and fails closed immediately (§3.3.4 Dual Visibility, P1-DV-01)", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-round6-staged-vis-03-"));
+  const expectedHeadSha = "1111111111111111111111111111111111111111";
+  const conflictingHeadSha = "2222222222222222222222222222222222222222";
+
+  let adapterInvoked = false;
+  const mockAdapter = new CliReviewAdapter({
+    command: "agy",
+    providerName: "agy",
+    family: "google",
+    modelName: "gemini-3.8-flash",
+    execFn: async () => {
+      adapterInvoked = true;
+      return { stdout: "{}" };
+    }
+  });
+
+  const changeSet = {
+    ok: true,
+    schemaVersion: "1.0.0",
+    headSha: expectedHeadSha,
+    totalFiles: 1,
+    files: [{ path: "src/auth.js", additions: 1, deletions: 0, riskTier: 1 }],
+    diffHunks: "+ const patch = 1;\n"
+  };
+
+  try {
+    const result = await executeStagedReview(changeSet, mockAdapter, {
+      cwd: tmpDir,
+      contextPackage: {
+        headSha: conflictingHeadSha,
+        layers: {}
+      }
+    });
+
+    // Mismatched contextPackage must fail closed immediately without executing chunks
+    assert.equal(result.ok, false);
+    assert.equal(result.executionStatus, EXECUTION_STATUS.ERROR);
+    assert.match(result.error, /does not match changeSet headSha/i);
+    assert.equal(adapterInvoked, false, "Adapter must not be invoked when contextPackage is inconsistent");
+    assert.ok(result.violations.length > 0);
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }

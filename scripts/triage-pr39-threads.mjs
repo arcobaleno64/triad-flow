@@ -281,6 +281,17 @@ const triageRecords = [
     exactHead: BASELINE_HEAD_SHA
   },
   {
+    threadId: "PRRT_kwDOUWarIc6re31K",
+    path: "scripts/dogfood-review.mjs",
+    line: 984,
+    title: "Fail closed when context-package extraction throws",
+    resolutionCategory: "FIXED",
+    evidenceLinkOrReasoning: "Commit 8375c65 / 02be43c; locator scripts/dogfood-review.mjs:1013-1028. Extraction failures register EXACT_HEAD_CONTEXT_FAILED in effectiveContextGaps, causing downstream gate evaluation to fail closed to human_review_required. Tested in tests/remediation-007-clean-challenge.test.mjs ('PR39-ROUND5-DUAL-VISIBILITY-02-NEGATIVE').",
+    adjudicator: "PENDING_ADJUDICATION",
+    adjudicationDate: "PENDING_ADJUDICATION",
+    exactHead: BASELINE_HEAD_SHA
+  },
+  {
     threadId: "PRRT_kwDOUWarIc6re31P",
     path: "src/core/harness.mjs",
     line: 686,
@@ -403,6 +414,21 @@ const triageRecords = [
   }
 ];
 
+const deltaFindings = [
+  {
+    id: "P1-DV-01",
+    severity: "P1",
+    status: "REMEDIATED",
+    title: "Staged Review 未沿用已驗證的 Context (§3.3.4 Dual Visibility)",
+    locations: [
+      "scripts/dogfood-review.mjs:1059-1077",
+      "src/adapters/staged-review.mjs:516-572"
+    ],
+    issue: "Staged fallback (executeStagedReview / executeChunk) was rebuilding context independently rather than forwarding caller-provided exact-head contextPackage and contextGaps, breaking §3.3.4 Dual Visibility identical contextual enclosure invariant.",
+    remediation: "executeStagedReview and executeChunk now forward caller-provided contextPackage and effectiveContextGaps through to prompt assembly and chunk adapter calls, ensuring identical enclosures between primary sentries and Clean Challenge verifier. Fail-closed behavior enforced on context absence or inconsistency."
+  }
+];
+
 // 1. Build JSON Ledger
 const jsonLedger = {
   metadata: {
@@ -414,6 +440,7 @@ const jsonLedger = {
     totalOutdatedThreads: triageRecords.length,
     verdictCounts: {
       FIXED: triageRecords.filter(r => r.resolutionCategory === "FIXED").length,
+      FIX_REQUIRED_DUAL_VISIBILITY: triageRecords.filter(r => r.resolutionCategory === "FIX_REQUIRED_DUAL_VISIBILITY").length,
       ACCEPTED_RISK: triageRecords.filter(r => r.resolutionCategory === "ACCEPTED_RISK").length,
       DUPLICATE: triageRecords.filter(r => r.resolutionCategory === "DUPLICATE").length,
       NOT_APPLICABLE: triageRecords.filter(r => r.resolutionCategory === "NOT_APPLICABLE").length,
@@ -431,6 +458,7 @@ const jsonLedger = {
     },
     governanceNotice: "Thread batch resolution on GitHub is NOT AUTHORIZED. This ledger is an evidence-only triage record; zero review threads have been mutated on GitHub."
   },
+  deltaFindings,
   threads: triageRecords.map(r => ({
     threadId: r.threadId,
     resolutionCategory: r.resolutionCategory,
@@ -483,6 +511,19 @@ const mdLines = [
   `- **NOT_APPLICABLE**: ${triageRecords.filter(r => r.resolutionCategory === "NOT_APPLICABLE").length}`,
   `- **UNRESOLVED**: ${triageRecords.filter(r => r.resolutionCategory === "UNRESOLVED").length}`,
   "",
+  "## ⚠️ Active Delta Review Findings: P1-DV-01 (Staged Fallback Dual Visibility)",
+  "",
+  "> [!IMPORTANT]",
+  "> **P1-DV-01: Staged Review 未沿用已驗證的 Context (§3.3.4 Dual Visibility)**:",
+  "> - **Severity**: `P1`",
+  "> - **Status**: `REMEDIATED` (Tested & verified)",
+  "> - **Locations**:",
+  ">   - `scripts/dogfood-review.mjs:1059-1077`",
+  ">   - `src/adapters/staged-review.mjs:516-572`",
+  "> - **Issue**: Staged fallback (`executeStagedReview` / `executeChunk`) was rebuilding context independently rather than forwarding caller-provided exact-head `contextPackage` and `contextGaps`, breaking §3.3.4 Dual Visibility identical contextual enclosure invariant.",
+  "> - **Remediation**: `executeStagedReview` and `executeChunk` now forward caller-provided `contextPackage` and `effectiveContextGaps` through to prompt assembly and chunk adapter calls, ensuring identical enclosures between primary sentries and Clean Challenge verifier. Fail-closed behavior enforced on context absence or inconsistency.",
+  "> - **Verification Evidence**: `tests/remediation-007-clean-challenge.test.mjs` (`PR39-ROUND6-STAGED-DUAL-VISIBILITY-01`, `PR39-ROUND6-STAGED-DUAL-VISIBILITY-02-NEGATIVE`, `PR39-ROUND6-STAGED-DUAL-VISIBILITY-03-NEGATIVE`).",
+  "",
   "## ⚠️ Governance Status: FIX_REQUIRED_DUAL_VISIBILITY (Spec §3.3.4 Enforced)",
   "",
   "> [!IMPORTANT]",
@@ -511,7 +552,7 @@ mdLines.push(
   "## Head SHA Provenance Distinction",
   "",
   `- **Triage Baseline Extraction Head**: \`${BASELINE_HEAD_SHA}\``,
-  "- **Triage Baseline Status**: 100 unresolved threads (36 outdated, 64 current) on PR #39.",
+  "- **Triage Baseline Status**: 112 review threads (37 outdated, 75 current) on PR #39.",
   "- **Post-Remediation Push Head**: Distinct commit generated on `origin/fix/remediation-007-clean-challenge` incorporating technical boundary remediations P1-A, P1-B, and evidence ledger artifacts."
 );
 
