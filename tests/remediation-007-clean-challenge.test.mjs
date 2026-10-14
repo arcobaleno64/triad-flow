@@ -5010,11 +5010,17 @@ test("PR39-ROUND4-P1-B-NEGATIVE: Injected changeSet with string-typed repository
 });
 
 test("PR39-ROUND5-DUAL-VISIBILITY-01: runDogfoodReview extracts contextPackage before primary review and injects it into both primary sentries and Clean Challenge verifier (§3.3.4 Dual Visibility)", async () => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-round5-dual-vis-01-"));
-  const tmpOut = path.join(tmpDir, "dogfood-run.json");
-  const headSha = "93a63e30a039239212d54db501ce2b0655f3bd49";
-  const diffContent = "+ const securePatch = true;\n";
-  const repoRoot = path.resolve(".");
+  const repo = setupTmpGitRepo("tf-round5-dual-vis-01-");
+  const tmpOut = path.join(repo, "dogfood-run.json");
+  const targetFile = "src/core/harness.mjs";
+  const fullPath = path.join(repo, targetFile);
+  fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+  fs.writeFileSync(fullPath, "export function harnessHelper() { return 42; }\n");
+  execFileSync("git", ["add", targetFile], { cwd: repo, stdio: "ignore" });
+  execFileSync("git", ["commit", "-m", "Initial commit"], { cwd: repo, stdio: "ignore" });
+  const headSha = execFileSync("git", ["rev-parse", "HEAD"], { cwd: repo, encoding: "utf8" }).trim();
+  const diffContent = "--- a/src/core/harness.mjs\n+++ b/src/core/harness.mjs\n@@ -1,1 +1,2 @@\n export function harnessHelper() { return 42; }\n+const call = harnessHelper();\n";
+  const repoRoot = repo;
 
   const capturedPrimaryInputs = {
     agy: null,
@@ -5066,7 +5072,8 @@ test("PR39-ROUND5-DUAL-VISIBILITY-01: runDogfoodReview extracts contextPackage b
       schemaVersion: "1.0.0",
       repository: {
         root: repoRoot,
-        headSha
+        headSha,
+        name: "arcobaleno64/triad-flow"
       },
       headSha,
       totalFiles: 1,
@@ -5079,6 +5086,7 @@ test("PR39-ROUND5-DUAL-VISIBILITY-01: runDogfoodReview extracts contextPackage b
       changeSet,
       head: headSha,
       repoDir: repoRoot,
+      repository: "arcobaleno64/triad-flow",
       reviewAdapters: capturingAdapters,
       verifierAdapter: instrumentedVerifier,
       out: tmpOut,
@@ -5110,7 +5118,7 @@ test("PR39-ROUND5-DUAL-VISIBILITY-01: runDogfoodReview extracts contextPackage b
     // 3. Gate decision reaches APPROVE under clean challenge with dual visibility
     assert.equal(report.gate.decision, "approve");
   } finally {
-    fs.rmSync(tmpDir, { recursive: true, force: true });
+    fs.rmSync(repo, { recursive: true, force: true });
   }
 });
 
