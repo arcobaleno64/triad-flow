@@ -299,9 +299,10 @@ export function formatContextGaps(contextGaps) {
   const lines = [
     `The following referenced callee definitions on sensitive execution paths could not be deterministically extracted from the target commit:`,
     ...contextGaps.map(gap => {
-      const loc = gap.line ? `${gap.file}:${gap.line}` : (gap.file || "unknown");
-      const cat = gap.category ? ` [Category: ${gap.category}]` : "";
-      return `  - Symbol: '${gap.symbol}' (Reason: ${gap.reason || "UNRESOLVED_SYMBOL"})${cat} at ${loc}`;
+      const sym = gap.symbol || gap.code || "unknown";
+      const loc = gap.line ? `${gap.file}:${gap.line}` : (gap.file || (Array.isArray(gap.targetFiles) ? gap.targetFiles.join(", ") : "unknown"));
+      const cat = gap.category ? ` [Category: ${gap.category}]` : (gap.code ? ` [Code: ${gap.code}]` : "");
+      return `  - Symbol: '${sym}' (Reason: ${gap.reason || "UNRESOLVED_SYMBOL"})${cat} at ${loc}`;
     }),
     ``,
     `MANDATORY UNCERTAINTY INSTRUCTION:`,
@@ -364,7 +365,9 @@ export function buildEvidenceReviewPrompt(changeSet, role = "macro", limits = DE
     sections.push(``, `[CODE CONTEXT & AST ENCLOSURES]`, contextBlock);
   }
 
-  const contextGaps = contextPackage?.contextGaps || options?.contextGaps || [];
+  const contextGaps = (Array.isArray(options?.contextGaps) && Array.isArray(contextPackage?.contextGaps))
+    ? [...contextPackage.contextGaps, ...options.contextGaps]
+    : (contextPackage?.contextGaps || options?.contextGaps || []);
   const contextGapsBlock = formatContextGaps(contextGaps);
   if (contextGapsBlock) {
     sections.push(``, `[UNRESOLVED CODE CONTEXT GAPS]`, contextGapsBlock);
@@ -510,5 +513,6 @@ export function buildEvidenceReviewPrompt(changeSet, role = "macro", limits = DE
  * Retains exact compatibility with legacy expectations while supporting enhanced structured outputs.
  */
 export function buildReviewPrompt(changeSet, role = "macro", limits = DEFAULT_LIMITS, options = {}) {
-  return buildEvidenceReviewPrompt(changeSet, role, limits, null, options);
+  const contextPackage = options?.contextPackage || changeSet?.contextPackage || null;
+  return buildEvidenceReviewPrompt(changeSet, role, limits, contextPackage, options);
 }

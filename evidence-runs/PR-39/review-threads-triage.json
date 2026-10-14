@@ -8,7 +8,7 @@
     "totalOutdatedThreads": 36,
     "verdictCounts": {
       "FIXED": 34,
-      "ACCEPTED_RISK": 1,
+      "ACCEPTED_RISK": 0,
       "DUPLICATE": 1,
       "NOT_APPLICABLE": 0,
       "UNRESOLVED": 0
@@ -238,8 +238,8 @@
     },
     {
       "threadId": "PRRT_kwDOUWarIc6ra7ki",
-      "resolutionCategory": "ACCEPTED_RISK",
-      "evidenceLinkOrReasoning": "REQUIRES EXPLICIT USER GOVERNANCE AUTHORIZATION. Architectural Decision: In Track D1 Shadow Dogfood Review, primary sentries (agy, claude, codex) intentionally perform zero-knowledge diff review to preserve independent multi-party consensus and benchmark reproducibility without prompt bias; context package extraction is strictly reserved for the 4th-party sentry Clean Challenge verifier (claude-5.5-sonnet).",
+      "resolutionCategory": "FIX_REQUIRED_DUAL_VISIBILITY",
+      "evidenceLinkOrReasoning": "Per governance ruling, ACCEPTED_RISK is NOT approved. Spec baseline: REMEDIATION-007 §3.3.4 (Dual Visibility requires contextPackage injected simultaneously into both Sentry primary review and Clean Challenge verifier). Implementation fix in scripts/dogfood-review.mjs approved under Option B; GitHub thread remains UNRESOLVED until verified.",
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "exactHead": "bd9bc9001ee4cfee34671d6563d97deb793ff1ae",
@@ -359,7 +359,7 @@
     {
       "threadId": "PRRT_kwDOUWarIc6rsajd",
       "resolutionCategory": "DUPLICATE",
-      "evidenceLinkOrReasoning": "Duplicate of Thread 22 (PRRT_kwDOUWarIc6ra7ki). Both raise exact-head callee context availability before primary reviewer invocation in runDogfoodReview.",
+      "evidenceLinkOrReasoning": "Duplicate of Thread 22 (PRRT_kwDOUWarIc6ra7ki). Disposition subordinate to Thread 22 (FIX_REQUIRED_DUAL_VISIBILITY under REMEDIATION-007 §3.3.4). GitHub thread remains UNRESOLVED.",
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "exactHead": "bd9bc9001ee4cfee34671d6563d97deb793ff1ae",

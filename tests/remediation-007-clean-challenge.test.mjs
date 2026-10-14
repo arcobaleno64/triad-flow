@@ -5008,3 +5008,191 @@ test("PR39-ROUND4-P1-B-NEGATIVE: Injected changeSet with string-typed repository
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 });
+
+test("PR39-ROUND5-DUAL-VISIBILITY-01: runDogfoodReview extracts contextPackage before primary review and injects it into both primary sentries and Clean Challenge verifier (§3.3.4 Dual Visibility)", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-round5-dual-vis-01-"));
+  const tmpOut = path.join(tmpDir, "dogfood-run.json");
+  const headSha = "93a63e30a039239212d54db501ce2b0655f3bd49";
+  const diffContent = "+ const securePatch = true;\n";
+  const repoRoot = path.resolve(".");
+
+  const capturedPrimaryInputs = {
+    agy: null,
+    claude: null,
+    codex: null
+  };
+
+  const createCapturingAdapter = (name, family, model) => {
+    return new CliReviewAdapter({
+      command: name,
+      providerName: name,
+      family,
+      modelName: model,
+      execFn: async (callContext) => {
+        capturedPrimaryInputs[name] = callContext;
+        return {
+          stdout: JSON.stringify({
+            findings: [],
+            coverage: { coveredFiles: ["src/core/harness.mjs"], omittedFiles: [] },
+            providerIdentity: { provider: name, family, model }
+          })
+        };
+      }
+    });
+  };
+
+  const capturingAdapters = {
+    agy: createCapturingAdapter("agy", "google", "gemini-3.8-flash"),
+    claude: createCapturingAdapter("claude", "anthropic", "claude-5.5-sonnet"),
+    codex: createCapturingAdapter("codex", "openai", "gpt-6.1-sol")
+  };
+
+  let capturedVerifierContextPackage = null;
+  const instrumentedVerifier = createMockVerifierAdapter("claude", {
+    executeVerification: async (adapterInput) => {
+      capturedVerifierContextPackage = adapterInput?.contextPackage || null;
+      return {
+        ok: true,
+        overallStatus: "CLEAN",
+        evaluations: [],
+        verifierOmissions: []
+      };
+    }
+  });
+
+  try {
+    const changeSet = {
+      ok: true,
+      schemaVersion: "1.0.0",
+      repository: {
+        root: repoRoot,
+        headSha
+      },
+      headSha,
+      totalFiles: 1,
+      files: [{ path: "src/core/harness.mjs", additions: 1, deletions: 0, riskTier: 1 }],
+      diffHunks: diffContent
+    };
+
+    const report = await runDogfoodReview({
+      mock: false,
+      changeSet,
+      head: headSha,
+      repoDir: repoRoot,
+      reviewAdapters: capturingAdapters,
+      verifierAdapter: instrumentedVerifier,
+      out: tmpOut,
+      log: false
+    });
+
+    // 1. Verify all three primary sentries received the contextPackage and effectiveContextGaps
+    for (const [name, captured] of Object.entries(capturedPrimaryInputs)) {
+      assert.ok(captured, `Primary sentry ${name} must have been invoked and captured`);
+      assert.ok(captured.input.contextPackage, `Primary sentry ${name} must receive contextPackage`);
+      assert.equal(typeof captured.input.contextPackage, "object");
+      assert.ok(captured.input.contextPackage.layers, `Primary sentry ${name} contextPackage must have layers`);
+      assert.ok(captured.input.contextPackage.budgetAccounting, `Primary sentry ${name} contextPackage must have budgetAccounting`);
+      assert.equal(captured.input.contextPackage.headSha, headSha, `Primary sentry ${name} contextPackage must match headSha`);
+
+      // Verify the review prompt formatted for primary sentry contains enclosing code context XML block
+      assert.match(captured.prompt, /\[CODE CONTEXT & AST ENCLOSURES\]/, `Primary sentry ${name} prompt must contain [CODE CONTEXT & AST ENCLOSURES]`);
+    }
+
+    // 2. Verify Clean Challenge verifier received the exact same contextPackage content
+    assert.ok(report.telemetryMetrics.cleanChallengeAttempted, "Clean challenge must be attempted for 0-finding consensus");
+    assert.equal(report.telemetryMetrics.cleanChallengeStatus, "SUCCESS");
+    assert.ok(report.verificationRecord, "Verification record must be present");
+    assert.equal(report.verificationRecord.ok, true);
+    assert.equal(report.verificationRecord.verificationMode, "clean_challenge");
+    assert.ok(capturedVerifierContextPackage, "Verifier must have received contextPackage");
+    assert.equal(capturedVerifierContextPackage.headSha, headSha);
+
+    // 3. Gate decision reaches APPROVE under clean challenge with dual visibility
+    assert.equal(report.gate.decision, "approve");
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("PR39-ROUND5-DUAL-VISIBILITY-02-NEGATIVE: Failed context extraction propagates EXACT_HEAD_CONTEXT_FAILED to primary sentries and fails closed (§3.3.4 Dual Visibility)", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-round5-dual-vis-02-"));
+  const tmpOut = path.join(tmpDir, "dogfood-run.json");
+  const headSha = "93a63e30a039239212d54db501ce2b0655f3bd49";
+  const diffContent = "+ const patch = 1;\n";
+
+  const capturedPrimaryInputs = {
+    agy: null,
+    claude: null,
+    codex: null
+  };
+
+  const createCapturingAdapter = (name, family, model) => {
+    return new CliReviewAdapter({
+      command: name,
+      providerName: name,
+      family,
+      modelName: model,
+      execFn: async (callContext) => {
+        capturedPrimaryInputs[name] = callContext;
+        return {
+          stdout: JSON.stringify({
+            findings: [],
+            coverage: { coveredFiles: ["src/auth.js"], omittedFiles: [] },
+            providerIdentity: { provider: name, family, model }
+          })
+        };
+      }
+    });
+  };
+
+  const capturingAdapters = {
+    agy: createCapturingAdapter("agy", "google", "gemini-3.8-flash"),
+    claude: createCapturingAdapter("claude", "anthropic", "claude-5.5-sonnet"),
+    codex: createCapturingAdapter("codex", "openai", "gpt-6.1-sol")
+  };
+
+  const cleanVerifier = createMockVerifierAdapter("claude");
+
+  try {
+    // Missing trusted repository root -> context extraction fails
+    const changeSetMissingRepoRoot = {
+      ok: true,
+      schemaVersion: "1.0.0",
+      repository: { headSha }, // missing root string
+      headSha,
+      totalFiles: 1,
+      files: [{ path: "src/auth.js", additions: 1, deletions: 0, riskTier: 1 }],
+      diffHunks: diffContent
+    };
+
+    const report = await runDogfoodReview({
+      mock: false,
+      changeSet: changeSetMissingRepoRoot,
+      head: headSha,
+      reviewAdapters: capturingAdapters,
+      verifierAdapter: cleanVerifier,
+      out: tmpOut,
+      log: false
+    });
+
+    // 1. Verify all primary sentries received EXACT_HEAD_CONTEXT_FAILED in contextGaps
+    for (const [name, captured] of Object.entries(capturedPrimaryInputs)) {
+      assert.ok(captured, `Primary sentry ${name} must be captured`);
+      assert.equal(captured.input.contextPackage, undefined, `Primary sentry ${name} must not have contextPackage when extraction failed`);
+      assert.ok(Array.isArray(captured.input.contextGaps), `Primary sentry ${name} must receive contextGaps`);
+      const hasExactHeadFailed = captured.input.contextGaps.some(g => g.code === "EXACT_HEAD_CONTEXT_FAILED");
+      assert.ok(hasExactHeadFailed, `Primary sentry ${name} must receive EXACT_HEAD_CONTEXT_FAILED gap`);
+
+      // Verify the prompt contains [UNRESOLVED CODE CONTEXT GAPS]
+      assert.match(captured.prompt, /\[UNRESOLVED CODE CONTEXT GAPS\]/, `Primary sentry ${name} prompt must contain [UNRESOLVED CODE CONTEXT GAPS]`);
+      assert.match(captured.prompt, /EXACT_HEAD_CONTEXT_FAILED/, `Primary sentry ${name} prompt must mention EXACT_HEAD_CONTEXT_FAILED`);
+    }
+
+    // 2. Gate evaluation fails closed to human_review_required
+    assert.equal(report.gate.decision, "human_review_required");
+    assert.equal(report.summary.cleanChallengeStatus, "UNCERTAIN");
+    assert.equal(report.isExecutionComplete, false);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});

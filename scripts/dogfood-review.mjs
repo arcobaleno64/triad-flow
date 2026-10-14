@@ -835,139 +835,7 @@ export async function runDogfoodReview(userOptions = {}) {
         exclusions
       });
 
-  let stagedFallbackUsed = false;
-  let stagedChunkCount = null;
-  let stagedTimeoutCount = 0;
-  let stagedTelemetry = null;
-  const tAgy0 = Date.now();
-  const executeAgyReview = async () => {
-    const providerRunId = `${runId}-agy`;
-    let res = await reviewAdapters.agy.executeReview({
-      runId: providerRunId,
-      role: "agy",
-      changeSet,
-      policyId: "TRI_PARTY_HETEROGENEOUS",
-      timeoutMs,
-      patchObjective: userOptions.patchObjective || null,
-      objectiveContract,
-      signal: userOptions.signal || null
-    });
-
-    if (res?.executionStatus === EXECUTION_STATUS.PAYLOAD_TOO_LARGE) {
-      if (log) console.log("    ℹ [agy] Prompt exceeds Windows argv limit; delegating to staged chunked review (RFC-027-01)...");
-      stagedFallbackUsed = true;
-      res = await executeStagedReview(changeSet, reviewAdapters.agy, {
-        runId: providerRunId,
-        role: "agy",
-        policyId: "TRI_PARTY_HETEROGENEOUS",
-        timeoutMs,
-        patchObjective: userOptions.patchObjective || null,
-        objectiveContract,
-        signal: userOptions.signal || null,
-        maxConcurrency: userOptions.stagedConcurrency || 2
-      });
-      stagedChunkCount = Array.isArray(res?.receipts) ? res.receipts.length : null;
-      stagedTimeoutCount = Array.isArray(res?.receipts)
-        ? res.receipts.filter(r => r?.status === "timeout").length
-        : 0;
-      stagedTelemetry = res?.telemetry || null;
-    }
-    return res;
-  };
-  const pAgy = executeAgyReview().then(res => ({ res, latencyMs: Date.now() - tAgy0 }));
-
-  const tClaude0 = Date.now();
-  const pClaude = reviewAdapters.claude.executeReview({
-    runId: `${runId}-claude`,
-    role: "claude",
-    changeSet,
-    policyId: "TRI_PARTY_HETEROGENEOUS",
-    timeoutMs,
-    patchObjective: userOptions.patchObjective || null,
-    objectiveContract,
-    signal: userOptions.signal || null
-  }).then(res => ({ res, latencyMs: Date.now() - tClaude0 }));
-
-  const tCodex0 = Date.now();
-  const pCodex = reviewAdapters.codex.executeReview({
-    runId: `${runId}-codex`,
-    role: "codex",
-    changeSet,
-    policyId: "TRI_PARTY_HETEROGENEOUS",
-    timeoutMs,
-    patchObjective: userOptions.patchObjective || null,
-    objectiveContract,
-    signal: userOptions.signal || null
-  }).then(res => ({ res, latencyMs: Date.now() - tCodex0 }));
-
-  const [agyOut, claudeOut, codexOut] = await Promise.all([pAgy, pClaude, pCodex]);
-  const reviewerPhaseDurationMs = Date.now() - t0;
-
-  const rawReports = {
-    agy: {
-      ...convertProviderResultToSentryReport(agyOut.res, "agy"),
-      latencyMs: agyOut.latencyMs,
-      executionStatus: agyOut.res?.executionStatus || "unknown"
-    },
-    claude: {
-      ...convertProviderResultToSentryReport(claudeOut.res, "claude"),
-      latencyMs: claudeOut.latencyMs,
-      executionStatus: claudeOut.res?.executionStatus || "unknown"
-    },
-    codex: {
-      ...convertProviderResultToSentryReport(codexOut.res, "codex"),
-      latencyMs: codexOut.latencyMs,
-      executionStatus: codexOut.res?.executionStatus || "unknown"
-    }
-  };
-
-  if (log) {
-    console.log(`  ✔ Google agy:   status=${rawReports.agy.executionStatus} (${rawReports.agy.findings?.length || 0} findings, ${agyOut.latencyMs}ms)${agyOut.res?.error ? ` - error: ${agyOut.res.error}` : ""}`);
-    console.log(`  ✔ Anthropic claude: status=${rawReports.claude.executionStatus} (${rawReports.claude.findings?.length || 0} findings, ${claudeOut.latencyMs}ms)${claudeOut.res?.error ? ` - error: ${claudeOut.res.error}` : ""}`);
-    console.log(`  ✔ OpenAI codex: status=${rawReports.codex.executionStatus} (${rawReports.codex.findings?.length || 0} findings, ${codexOut.latencyMs}ms)${codexOut.res?.error ? ` - error: ${codexOut.res.error}` : ""}`);
-  }
-
-  // 4. Consensus & Pre-Verification Gate Evaluation
-  if (log) console.log("\n[4/5] Evaluating consensus & pre-verification gate...");
-  const consensus = aggregateConsensus(rawReports, {
-    policy: "TRI_PARTY_HETEROGENEOUS",
-    tier: diffTier
-  });
-
-  const isStrict = Boolean(userOptions.strict || false);
-  const preGate = evaluateGateDecision(consensus, {
-    tier: diffTier,
-    strict: isStrict
-  });
-
-  const findings = consensus.findings || [];
-  if (log) {
-    console.log(`  ★ Consensus Verdict: ${consensus.verdict} (Quorum reached: ${consensus.quorumReached})`);
-    console.log(`  🛡️ Pre-Verification Gate: ${preGate.decision.toUpperCase()} (${preGate.reason})`);
-    console.log(`  📋 Consensus Findings: ${findings.length}`);
-    for (const f of findings) {
-      console.log(`    • [${f.severity?.toUpperCase() || "MEDIUM"}] ${f.title} (${f.file}:${f.line_start || 1})`);
-    }
-  }
-
-  // 5. Verification & Telemetry Compilation
-  if (log) console.log("\n[5/5] Compiling operational telemetry into dogfood-run.json...");
-  let verificationRecord = null;
-  let verifierTimedOut = false;
-  const isStructuralFailure = !consensus.quorumReached ||
-    consensus.verdict === "error" ||
-    preGate.reason?.includes("UNTRUSTED_CONSENSUS") ||
-    preGate.reason?.includes("Quorum failure");
-
-  let cleanChallengeAttempted = false;
-  let cleanChallengeDurationMs = 0;
-  let cleanChallengeStatus = "SKIPPED";
-
-  const instrumentedVerifier = instrumentVerifierAdapter(verifierAdapter, () => {
-    verifierTimedOut = true;
-  });
-
-  // Extract exact-head callee context package across modified files (Spec §3.3, P1-02, Item 3)
+  // Extract exact-head callee context package across modified files (Spec §3.3.4 Dual Visibility, P1-02, Item 3)
   const repoRootCandidate = changeSet?.repository?.root || (!changeSetProvided ? repoDir : null);
   const targetRepo = (typeof repoRootCandidate === "string" && repoRootCandidate.trim().length > 0)
     ? repoRootCandidate.trim()
@@ -986,7 +854,7 @@ export async function runDogfoodReview(userOptions = {}) {
   if (!isRepoValidObject) {
     contextExtractionFailed = true;
     contextExtractionError = "Missing trusted repository root for exact-head context construction.";
-    if (log) console.warn(`  ⚠️ Failed to extract callee contextPackage for verification: ${contextExtractionError}`);
+    if (log) console.warn(`  ⚠️ Failed to extract callee contextPackage: ${contextExtractionError}`);
   } else if (contextPackage) {
     // Validate externally provided contextPackage identity binding (PR-39 Item 1)
     const pkg = contextPackage;
@@ -1133,7 +1001,7 @@ export async function runDogfoodReview(userOptions = {}) {
       if (!contextPackage || contextPackage.ok === false) {
         contextExtractionFailed = true;
         contextExtractionError = contextPackage?.error?.message || "buildContextPackage returned invalid or non-ok contextPackage";
-        if (log) console.warn("  ⚠️ Failed to extract callee contextPackage for verification:", contextExtractionError);
+        if (log) console.warn("  ⚠️ Failed to extract callee contextPackage:", contextExtractionError);
       } else if (Array.isArray(contextPackage.fileCoverageManifest)) {
         const unavailableEntry = contextPackage.fileCoverageManifest.find(m => m && (m.exactHeadAvailable === false || m.exactHeadUnavailable === true || m.contentAvailable === false));
         if (unavailableEntry) {
@@ -1145,9 +1013,168 @@ export async function runDogfoodReview(userOptions = {}) {
     } catch (err) {
       contextExtractionFailed = true;
       contextExtractionError = err?.message || String(err);
-      if (log) console.warn("  ⚠️ Failed to extract callee contextPackage for verification:", contextExtractionError);
+      if (log) console.warn("  ⚠️ Failed to extract callee contextPackage:", contextExtractionError);
     }
   }
+
+  const effectiveContextGaps = mergeContextGaps(
+    contextExtractionFailed ? [
+      {
+        code: "EXACT_HEAD_CONTEXT_FAILED",
+        symbol: "exact-head-context",
+        reason: contextExtractionError,
+        targetFiles: changeSet?.files?.map(f => typeof f === "string" ? f : (f?.path || f?.file || "")) || []
+      }
+    ] : null,
+    userOptions.contextGaps,
+    contextPackage?.contextGaps
+  );
+
+  if (contextPackage && changeSet && typeof changeSet === "object") {
+    try {
+      changeSet.contextPackage = contextPackage;
+    } catch {}
+  }
+
+  let stagedFallbackUsed = false;
+  let stagedChunkCount = null;
+  let stagedTimeoutCount = 0;
+  let stagedTelemetry = null;
+  const tAgy0 = Date.now();
+  const executeAgyReview = async () => {
+    const providerRunId = `${runId}-agy`;
+    let res = await reviewAdapters.agy.executeReview({
+      runId: providerRunId,
+      role: "agy",
+      changeSet,
+      policyId: "TRI_PARTY_HETEROGENEOUS",
+      timeoutMs,
+      patchObjective: userOptions.patchObjective || null,
+      objectiveContract,
+      signal: userOptions.signal || null,
+      contextPackage,
+      contextGaps: effectiveContextGaps
+    });
+
+    if (res?.executionStatus === EXECUTION_STATUS.PAYLOAD_TOO_LARGE) {
+      if (log) console.log("    ℹ [agy] Prompt exceeds Windows argv limit; delegating to staged chunked review (RFC-027-01)...");
+      stagedFallbackUsed = true;
+      res = await executeStagedReview(changeSet, reviewAdapters.agy, {
+        runId: providerRunId,
+        role: "agy",
+        policyId: "TRI_PARTY_HETEROGENEOUS",
+        timeoutMs,
+        patchObjective: userOptions.patchObjective || null,
+        objectiveContract,
+        signal: userOptions.signal || null,
+        maxConcurrency: userOptions.stagedConcurrency || 2,
+        contextPackage,
+        contextGaps: effectiveContextGaps
+      });
+      stagedChunkCount = Array.isArray(res?.receipts) ? res.receipts.length : null;
+      stagedTimeoutCount = Array.isArray(res?.receipts)
+        ? res.receipts.filter(r => r?.status === "timeout").length
+        : 0;
+      stagedTelemetry = res?.telemetry || null;
+    }
+    return res;
+  };
+  const pAgy = executeAgyReview().then(res => ({ res, latencyMs: Date.now() - tAgy0 }));
+
+  const tClaude0 = Date.now();
+  const pClaude = reviewAdapters.claude.executeReview({
+    runId: `${runId}-claude`,
+    role: "claude",
+    changeSet,
+    policyId: "TRI_PARTY_HETEROGENEOUS",
+    timeoutMs,
+    patchObjective: userOptions.patchObjective || null,
+    objectiveContract,
+    signal: userOptions.signal || null,
+    contextPackage,
+    contextGaps: effectiveContextGaps
+  }).then(res => ({ res, latencyMs: Date.now() - tClaude0 }));
+
+  const tCodex0 = Date.now();
+  const pCodex = reviewAdapters.codex.executeReview({
+    runId: `${runId}-codex`,
+    role: "codex",
+    changeSet,
+    policyId: "TRI_PARTY_HETEROGENEOUS",
+    timeoutMs,
+    patchObjective: userOptions.patchObjective || null,
+    objectiveContract,
+    signal: userOptions.signal || null,
+    contextPackage,
+    contextGaps: effectiveContextGaps
+  }).then(res => ({ res, latencyMs: Date.now() - tCodex0 }));
+
+  const [agyOut, claudeOut, codexOut] = await Promise.all([pAgy, pClaude, pCodex]);
+  const reviewerPhaseDurationMs = Date.now() - t0;
+
+  const rawReports = {
+    agy: {
+      ...convertProviderResultToSentryReport(agyOut.res, "agy"),
+      latencyMs: agyOut.latencyMs,
+      executionStatus: agyOut.res?.executionStatus || "unknown"
+    },
+    claude: {
+      ...convertProviderResultToSentryReport(claudeOut.res, "claude"),
+      latencyMs: claudeOut.latencyMs,
+      executionStatus: claudeOut.res?.executionStatus || "unknown"
+    },
+    codex: {
+      ...convertProviderResultToSentryReport(codexOut.res, "codex"),
+      latencyMs: codexOut.latencyMs,
+      executionStatus: codexOut.res?.executionStatus || "unknown"
+    }
+  };
+
+  if (log) {
+    console.log(`  ✔ Google agy:   status=${rawReports.agy.executionStatus} (${rawReports.agy.findings?.length || 0} findings, ${agyOut.latencyMs}ms)${agyOut.res?.error ? ` - error: ${agyOut.res.error}` : ""}`);
+    console.log(`  ✔ Anthropic claude: status=${rawReports.claude.executionStatus} (${rawReports.claude.findings?.length || 0} findings, ${claudeOut.latencyMs}ms)${claudeOut.res?.error ? ` - error: ${claudeOut.res.error}` : ""}`);
+    console.log(`  ✔ OpenAI codex: status=${rawReports.codex.executionStatus} (${rawReports.codex.findings?.length || 0} findings, ${codexOut.latencyMs}ms)${codexOut.res?.error ? ` - error: ${codexOut.res.error}` : ""}`);
+  }
+
+  // 4. Consensus & Pre-Verification Gate Evaluation
+  if (log) console.log("\n[4/5] Evaluating consensus & pre-verification gate...");
+  const consensus = aggregateConsensus(rawReports, {
+    policy: "TRI_PARTY_HETEROGENEOUS",
+    tier: diffTier
+  });
+
+  const isStrict = Boolean(userOptions.strict || false);
+  const preGate = evaluateGateDecision(consensus, {
+    tier: diffTier,
+    strict: isStrict
+  });
+
+  const findings = consensus.findings || [];
+  if (log) {
+    console.log(`  ★ Consensus Verdict: ${consensus.verdict} (Quorum reached: ${consensus.quorumReached})`);
+    console.log(`  🛡️ Pre-Verification Gate: ${preGate.decision.toUpperCase()} (${preGate.reason})`);
+    console.log(`  📋 Consensus Findings: ${findings.length}`);
+    for (const f of findings) {
+      console.log(`    • [${f.severity?.toUpperCase() || "MEDIUM"}] ${f.title} (${f.file}:${f.line_start || 1})`);
+    }
+  }
+
+  // 5. Verification & Telemetry Compilation
+  if (log) console.log("\n[5/5] Compiling operational telemetry into dogfood-run.json...");
+  let verificationRecord = null;
+  let verifierTimedOut = false;
+  const isStructuralFailure = !consensus.quorumReached ||
+    consensus.verdict === "error" ||
+    preGate.reason?.includes("UNTRUSTED_CONSENSUS") ||
+    preGate.reason?.includes("Quorum failure");
+
+  let cleanChallengeAttempted = false;
+  let cleanChallengeDurationMs = 0;
+  let cleanChallengeStatus = "SKIPPED";
+
+  const instrumentedVerifier = instrumentVerifierAdapter(verifierAdapter, () => {
+    verifierTimedOut = true;
+  });
 
   if (findings.length > 0 && !isStructuralFailure) {
     cleanChallengeAttempted = false;
@@ -1168,17 +1195,7 @@ export async function runDogfoodReview(userOptions = {}) {
         headSha: commitSha,
         runContext,
         contextPackage,
-        contextGaps: mergeContextGaps(
-          contextExtractionFailed ? [
-            {
-              code: "EXACT_HEAD_CONTEXT_FAILED",
-              reason: contextExtractionError,
-              targetFiles: changeSet?.files?.map(f => typeof f === "string" ? f : (f?.path || f?.file || "")) || []
-            }
-          ] : null,
-          userOptions.contextGaps,
-          contextPackage?.contextGaps
-        ),
+        contextGaps: effectiveContextGaps,
         timeoutMs,
         signal: userOptions.signal || null,
         verificationMode: "producer_verification"
@@ -1208,17 +1225,7 @@ export async function runDogfoodReview(userOptions = {}) {
           headSha: commitSha,
           runContext,
           contextPackage,
-          contextGaps: mergeContextGaps(
-            contextExtractionFailed ? [
-              {
-                code: "EXACT_HEAD_CONTEXT_FAILED",
-                reason: contextExtractionError,
-                targetFiles: changeSet?.files?.map(f => typeof f === "string" ? f : (f?.path || f?.file || "")) || []
-              }
-            ] : null,
-            userOptions.contextGaps,
-            contextPackage?.contextGaps
-          ),
+          contextGaps: effectiveContextGaps,
           timeoutMs,
           signal: userOptions.signal || null,
           verificationMode: "clean_challenge"

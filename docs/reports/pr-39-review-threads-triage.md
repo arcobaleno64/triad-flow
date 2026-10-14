@@ -24,20 +24,22 @@
 
 - **Total Outdated Threads**: 36
 - **FIXED**: 34
-- **ACCEPTED_RISK**: 1 *(Flags: Thread 22 / `PRRT_kwDOUWarIc6ra7ki` requires explicit user governance authorization)*
-- **DUPLICATE**: 1 *(Thread 34 duplicate of Thread 22)*
+- **FIX_REQUIRED_DUAL_VISIBILITY**: 1 *(Thread 22 / `PRRT_kwDOUWarIc6ra7ki`: ACCEPTED_RISK rejected; spec baseline §3.3.4 Dual Visibility enforced)*
+- **DUPLICATE**: 1 *(Thread 34 duplicate of Thread 22; disposition subordinate to Thread 22)*
+- **ACCEPTED_RISK**: 0 *(0 formally approved; rejected by governance ruling)*
 - **NOT_APPLICABLE**: 0
 - **UNRESOLVED**: 0
 
-## ⚠️ Explicit Governance Authorization Flag (ACCEPTED_RISK)
+## ⚠️ Governance Status: FIX_REQUIRED_DUAL_VISIBILITY (Spec §3.3.4 Enforced)
 
-> [!WARNING]
-> **Candidate ACCEPTED_RISK Flagged for User Governance Authorization**:
+> [!IMPORTANT]
+> **ACCEPTED_RISK Rejected — Implementation Fix Required per REMEDIATION-007 §3.3.4**:
 > - **Thread ID**: `PRRT_kwDOUWarIc6ra7ki` (and Duplicate `PRRT_kwDOUWarIc6rsajd`)
 > - **Location**: `scripts/dogfood-review.mjs:972`
 > - **Issue**: Suggests extracting and passing exact-head callee context package to primary sentries (agy, claude, codex) before initial tri-party review.
-> - **Technical Rationale**: In Track D1 Shadow Dogfood Review, primary sentries intentionally perform zero-knowledge diff review to preserve independent multi-party consensus and benchmark reproducibility without prompt bias. Callee context extraction is strictly bounded to the 4th-party sentry Clean Challenge verifier (claude-5.5-sonnet).
-> - **Governance Requirement**: Marking this thread as resolved under `ACCEPTED_RISK` requires explicit user governance authorization.
+> - **Governance Ruling**: User has explicitly **rejected** `ACCEPTED_RISK` and approved **Option B** (fix implementation in `scripts/dogfood-review.mjs` to inject `contextPackage` into primary review prompts as well as Clean Challenge verifier).
+> - **Normative Spec Baseline**: `REMEDIATION-007 §3.3.4 Dual Visibility` ("The generated contextPackage MUST be injected simultaneously into: 1. Sentry review prompts... 2. Clean Challenge verifier prompts...").
+> - **Status**: Marked as `FIX_REQUIRED_DUAL_VISIBILITY`. GitHub thread remains **UNRESOLVED**.
 
 ## Auditable 6-Field Evidence Triage Table
 
@@ -64,7 +66,7 @@
 | 19 | `PRRT_kwDOUWarIc6rY13u` | **FIXED** | Commit 3e95008; locator src/core/independent-verifier.mjs:2143-2155, 2361. Canonical normContract.exclusions derives both prompt text and verification record exclusions, preventing discrepancies between verifier scope and gate binding. | `PENDING_ADJUDICATION` | `PENDING_ADJUDICATION` | `bd9bc9001ee4...` |
 | 20 | `PRRT_kwDOUWarIc6rY139` | **FIXED** | Commit 23a82a2; locator src/core/independent-verifier.mjs:1531-1541. In clean_challenge mode (reviewing 0 producer findings), returning a non-empty evaluations array fails closed with MALFORMED_OUTPUT. Tested in tests/remediation-007-clean-challenge.test.mjs ('007-AUDIT-THREAD-35'). | `PENDING_ADJUDICATION` | `PENDING_ADJUDICATION` | `bd9bc9001ee4...` |
 | 21 | `PRRT_kwDOUWarIc6ra7kH` | **FIXED** | Commits c418bb1, 0ac63a1; locator src/adapters/review-orchestrator.mjs:51-95, 345-360. buildCanonicalRunContext derives and binds authoritative RunContext from current changeSet content digests before gate evaluation. Tested in tests/remediation-007-clean-challenge.test.mjs ('007-AUDIT-THREAD-37'). | `PENDING_ADJUDICATION` | `PENDING_ADJUDICATION` | `bd9bc9001ee4...` |
-| 22 | `PRRT_kwDOUWarIc6ra7ki` | **ACCEPTED_RISK** | REQUIRES EXPLICIT USER GOVERNANCE AUTHORIZATION. Architectural Decision: In Track D1 Shadow Dogfood Review, primary sentries (agy, claude, codex) intentionally perform zero-knowledge diff review to preserve independent multi-party consensus and benchmark reproducibility without prompt bias; context package extraction is strictly reserved for the 4th-party sentry Clean Challenge verifier (claude-5.5-sonnet). | `PENDING_ADJUDICATION` | `PENDING_ADJUDICATION` | `bd9bc9001ee4...` |
+| 22 | `PRRT_kwDOUWarIc6ra7ki` | **FIX_REQUIRED_DUAL_VISIBILITY** | Per governance ruling, ACCEPTED_RISK is NOT approved. Spec baseline: REMEDIATION-007 §3.3.4 (Dual Visibility requires contextPackage injected simultaneously into both Sentry primary review and Clean Challenge verifier). Implementation fix in scripts/dogfood-review.mjs approved under Option B; GitHub thread remains UNRESOLVED until verified. | `PENDING_ADJUDICATION` | `PENDING_ADJUDICATION` | `bd9bc9001ee4...` |
 | 23 | `PRRT_kwDOUWarIc6ra7kt` | **FIXED** | Commit 3e95008; locator src/adapters/review-prompts.mjs:163-260. Callee definitions and XML attributes are escaped via escapeXmlText and escapeXmlAttribute before XML prompt assembly. Tested in tests/remediation-007-clean-challenge.test.mjs ('007-AUDIT-THREAD-42'). | `PENDING_ADJUDICATION` | `PENDING_ADJUDICATION` | `bd9bc9001ee4...` |
 | 24 | `PRRT_kwDOUWarIc6re305` | **FIXED** | Commit 0ac63a1; locator src/adapters/review-orchestrator.mjs:51-95. buildCanonicalRunContext strictly recomputes digest from diffHunks and verifies declared digests against recomputed values. Tested in tests/remediation-007-clean-challenge.test.mjs ('007-DELTA-P1-01-NEGATIVE'). | `PENDING_ADJUDICATION` | `PENDING_ADJUDICATION` | `bd9bc9001ee4...` |
 | 25 | `PRRT_kwDOUWarIc6re31A` | **FIXED** | Commits 2580fd5, 76e8652; locator src/core/context-builder.mjs:700-740. Qualified calls (auth.validateAccess, this.verifyToken) are extracted with qualifiers and classified for sensitivity. Tested in tests/remediation-007-clean-challenge.test.mjs ('007-DELTA-P1-03'). | `PENDING_ADJUDICATION` | `PENDING_ADJUDICATION` | `bd9bc9001ee4...` |
@@ -76,7 +78,7 @@
 | 31 | `PRRT_kwDOUWarIc6rrHOT` | **FIXED** | Commits 0b90fcb, 6e2f120; locator src/core/harness.mjs:260-280. getFindingSignature incorporates title, file, line, line_end, type, cwe, severity, and recommendation for comprehensive tampering protection. Tested in tests/remediation-007-clean-challenge.test.mjs ('PR39-DELTA-P1-04-NEGATIVE'). | `PENDING_ADJUDICATION` | `PENDING_ADJUDICATION` | `bd9bc9001ee4...` |
 | 32 | `PRRT_kwDOUWarIc6rr-JA` | **FIXED** | Commit 0b90fcb; locator src/core/independent-verifier.mjs:687-730. mergeContextGaps unions caller gaps and package gaps, ensuring empty caller arrays cannot wipe out package gaps. Tested in tests/remediation-007-clean-challenge.test.mjs ('PR39-DELTA-P1-03-NEGATIVE'). | `PENDING_ADJUDICATION` | `PENDING_ADJUDICATION` | `bd9bc9001ee4...` |
 | 33 | `PRRT_kwDOUWarIc6rsKB6` | **FIXED** | Commit 0b90fcb; locator scripts/dogfood-review.mjs:1033-1078. Declared digests validated against recomputed diff hashes before validating package digest. Tested in tests/remediation-007-clean-challenge.test.mjs ('PR39-DELTA-P1-01-NEGATIVE'). | `PENDING_ADJUDICATION` | `PENDING_ADJUDICATION` | `bd9bc9001ee4...` |
-| 34 | `PRRT_kwDOUWarIc6rsajd` | **DUPLICATE** | Duplicate of Thread 22 (PRRT_kwDOUWarIc6ra7ki). Both raise exact-head callee context availability before primary reviewer invocation in runDogfoodReview. | `PENDING_ADJUDICATION` | `PENDING_ADJUDICATION` | `bd9bc9001ee4...` |
+| 34 | `PRRT_kwDOUWarIc6rsajd` | **DUPLICATE** | Duplicate of Thread 22 (PRRT_kwDOUWarIc6ra7ki). Disposition subordinate to Thread 22 (FIX_REQUIRED_DUAL_VISIBILITY under REMEDIATION-007 §3.3.4). GitHub thread remains UNRESOLVED. | `PENDING_ADJUDICATION` | `PENDING_ADJUDICATION` | `bd9bc9001ee4...` |
 | 35 | `PRRT_kwDOUWarIc6rtv6E` | **FIXED** | Commits cc1de22, bd9bc90; locator scripts/dogfood-review.mjs:976-989. Omitted repository or object missing root fails closed to contextExtractionFailed = true with EXACT_HEAD_CONTEXT_FAILED. Negative test: tests/remediation-007-clean-challenge.test.mjs ('PR39-ROUND3-ITEM2-NEGATIVE'). | `PENDING_ADJUDICATION` | `PENDING_ADJUDICATION` | `bd9bc9001ee4...` |
 | 36 | `PRRT_kwDOUWarIc6rtv6M` | **FIXED** | Commits cf6be07, eda22b9, e7f1527; locator scripts/dogfood-review.mjs:1091-1100. Reject manifests where exactHeadAvailable === false or exactHeadUnavailable === true, setting pkgInvalid = true and failing closed. Tested in tests/remediation-007-clean-challenge.test.mjs ('PR39-ROUND2-ITEM2-NEGATIVE'). | `PENDING_ADJUDICATION` | `PENDING_ADJUDICATION` | `bd9bc9001ee4...` |
 

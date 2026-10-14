@@ -2162,7 +2162,9 @@ export async function conductIndependentVerification(changeSet, producerFindings
     patchObjective,
     objectiveContract: normContract,
     headSha,
-    verificationMode
+    verificationMode,
+    contextPackage: options.contextPackage || changeSet?.contextPackage || null,
+    contextGaps: options.contextGaps || null
   };
 
   let rawOutput = null;
