@@ -1036,7 +1036,9 @@ export async function runDogfoodReview(userOptions = {}) {
     } catch {}
   }
 
-  let stagedFallbackUsed = false;
+  let agyStagedFallbackUsed = false;
+  let claudeStagedFallbackUsed = false;
+  let codexStagedFallbackUsed = false;
   let stagedChunkCount = null;
   let stagedTimeoutCount = 0;
   let stagedTelemetry = null;
@@ -1058,7 +1060,7 @@ export async function runDogfoodReview(userOptions = {}) {
 
     if (res?.executionStatus === EXECUTION_STATUS.PAYLOAD_TOO_LARGE) {
       if (log) console.log("    ℹ [agy] Prompt exceeds Windows argv limit; delegating to staged chunked review (RFC-027-01)...");
-      stagedFallbackUsed = true;
+      agyStagedFallbackUsed = true;
       res = await executeStagedReview(changeSet, reviewAdapters.agy, {
         runId: providerRunId,
         role: "agy",
@@ -1102,7 +1104,7 @@ export async function runDogfoodReview(userOptions = {}) {
 
     if (res?.executionStatus === EXECUTION_STATUS.PAYLOAD_TOO_LARGE) {
       if (log) console.log("    ℹ [claude] Prompt exceeds limit; delegating to staged chunked review (RFC-027-01)...");
-      stagedFallbackUsed = true;
+      claudeStagedFallbackUsed = true;
       res = await executeStagedReview(changeSet, reviewAdapters.claude, {
         runId: providerRunId,
         role: "claude",
@@ -1148,7 +1150,7 @@ export async function runDogfoodReview(userOptions = {}) {
 
     if (res?.executionStatus === EXECUTION_STATUS.PAYLOAD_TOO_LARGE) {
       if (log) console.log("    ℹ [codex] Prompt exceeds limit; delegating to staged chunked review (RFC-027-01)...");
-      stagedFallbackUsed = true;
+      codexStagedFallbackUsed = true;
       res = await executeStagedReview(changeSet, reviewAdapters.codex, {
         runId: providerRunId,
         role: "codex",
@@ -1177,6 +1179,7 @@ export async function runDogfoodReview(userOptions = {}) {
   const pCodex = executeCodexReview().then(res => ({ res, latencyMs: Date.now() - tCodex0 }));
 
   const [agyOut, claudeOut, codexOut] = await Promise.all([pAgy, pClaude, pCodex]);
+  const stagedFallbackUsed = Boolean(agyStagedFallbackUsed || claudeStagedFallbackUsed || codexStagedFallbackUsed);
   const reviewerPhaseDurationMs = Date.now() - t0;
 
   const rawReports = {
@@ -1397,9 +1400,9 @@ export async function runDogfoodReview(userOptions = {}) {
       excludedFiles: changeSet.excludedFiles || []
     },
     providerTelemetry: {
-      agy: { ...buildProviderTelemetry(agyOut, rawReports.agy), stagedFallbackUsed },
-      claude: { ...buildProviderTelemetry(claudeOut, rawReports.claude), stagedFallbackUsed: false },
-      codex: { ...buildProviderTelemetry(codexOut, rawReports.codex), stagedFallbackUsed: false }
+      agy: { ...buildProviderTelemetry(agyOut, rawReports.agy), stagedFallbackUsed: agyStagedFallbackUsed },
+      claude: { ...buildProviderTelemetry(claudeOut, rawReports.claude), stagedFallbackUsed: claudeStagedFallbackUsed },
+      codex: { ...buildProviderTelemetry(codexOut, rawReports.codex), stagedFallbackUsed: codexStagedFallbackUsed }
     },
     consensus: {
       verdict: consensus.verdict,

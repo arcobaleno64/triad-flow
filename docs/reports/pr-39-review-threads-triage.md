@@ -2,7 +2,7 @@
 
 > **Governance Notice & Execution Boundaries**
 > - **Target PR**: [#39 (fix/remediation-007-clean-challenge)](https://github.com/arcobaleno64/triad-flow/pull/39)
-> - **Extraction Timestamp**: `2026-10-13T09:55:54Z`
+> - **Extraction Timestamp**: `2026-10-14T11:41:22Z`
 > - **Baseline Extraction Head SHA**: `bd9bc9001ee4cfee34671d6563d97deb793ff1ae`
 > - **Mutation Policy**: Zero GitHub mutations performed. `THREAD_BATCH_RESOLUTION = NOT_AUTHORIZED`; `GITHUB_RULESET_BYPASS = NOT_AUTHORIZED`; `SQUASH_MERGE = NOT_AUTHORIZED`.
 > - **Adjudication State**: All candidate records marked `PENDING_ADJUDICATION` under Default-Deny.
@@ -22,15 +22,15 @@
 
 ## Summary of Candidate Classifications
 
-- **Total Outdated Threads**: 37
-- **FIXED**: 35
+- **Total Outdated Threads**: 38
+- **FIXED**: 36
 - **FIX_REQUIRED_DUAL_VISIBILITY**: 1 *(Thread 22 / `PRRT_kwDOUWarIc6ra7ki`: ACCEPTED_RISK rejected; spec baseline §3.3.4 Dual Visibility enforced)*
 - **DUPLICATE**: 1 *(Thread 34 duplicate of Thread 22; disposition subordinate to Thread 22)*
 - **ACCEPTED_RISK**: 0 *(0 formally approved; rejected by governance ruling)*
 - **NOT_APPLICABLE**: 0
 - **UNRESOLVED**: 0
 
-## ⚠️ Active Delta Review Findings: P1-DV-01 (Staged Fallback Dual Visibility)
+## ⚠️ Active Delta Review Findings
 
 > [!IMPORTANT]
 > **P1-DV-01: Staged Review 未沿用已驗證的 Context (§3.3.4 Dual Visibility)**:
@@ -42,6 +42,26 @@
 > - **Issue**: Staged fallback (`executeStagedReview` / `executeChunk`) was rebuilding context independently rather than forwarding caller-provided exact-head `contextPackage` and `contextGaps`, breaking §3.3.4 Dual Visibility identical contextual enclosure invariant.
 > - **Remediation**: `executeStagedReview` and `executeChunk` now forward caller-provided `contextPackage` and `effectiveContextGaps` through to prompt assembly and chunk adapter calls, ensuring identical enclosures between primary sentries and Clean Challenge verifier. Fail-closed behavior enforced on context absence or inconsistency.
 > - **Verification Evidence**: `tests/remediation-007-clean-challenge.test.mjs` (`PR39-ROUND6-STAGED-DUAL-VISIBILITY-01`, `PR39-ROUND6-STAGED-DUAL-VISIBILITY-02-NEGATIVE`, `PR39-ROUND6-STAGED-DUAL-VISIBILITY-03-NEGATIVE`).
+
+> [!IMPORTANT]
+> **P1-DV-02: executeStagedReview 在 contextPackage 為 null/falsy 時繞過重新擷取 (§3.3.4 Dual Visibility)**:
+> - **Severity**: `P1`
+> - **Status**: `REMEDIATED` (Tested & verified)
+> - **Locations**:
+>   - `src/adapters/staged-review.mjs:592-645`
+> - **Issue**: `staged-review.mjs` 以 `callerContextPackage !== undefined` 判斷是否沿用外部 Context，當明確傳入 null 且無 EXACT_HEAD_CONTEXT_FAILED 時略過 `buildContextPackage` 重新擷取，導致缺少必要 Context 與不確定性提示即進入 Chunk Review。
+> - **Remediation**: `executeStagedReview` 強化 `callerContextPackage` 驗證，僅在有效非空物件時直接沿用；若為 null/undefined 且無 extraction gap 則強制呼叫 `buildContextPackage` 重新擷取有效 exact-head contextPackage。若擷取失敗或 exact-head 不可用，則傳播 `EXACT_HEAD_CONTEXT_FAILED` 不確定性 gap 並阻止 Clean Approval。
+> - **Verification Evidence**: `tests/remediation-007-clean-challenge.test.mjs` (`PR39-ROUND7-STAGED-NULL-CONTEXT-REEXTRACTION-01`, `PR39-ROUND7-STAGED-NULL-CONTEXT-FAIL-CLOSED-02-NEGATIVE`).
+
+> [!IMPORTANT]
+> **P2-TELEMETRY-01: 三方 Staged 遙測歸屬錯誤 (dogfood-review.mjs providerTelemetry)**:
+> - **Severity**: `P2`
+> - **Status**: `REMEDIATED` (Tested & verified)
+> - **Locations**:
+>   - `scripts/dogfood-review.mjs:1400-1402`
+> - **Issue**: `dogfood-review.mjs` 將全域 `stagedFallbackUsed` 寫給 agy，並將 claude、codex 固定為 false，導致單一 Provider (如 Claude 或 Codex) 觸發 Staged Fallback 時遙測歸屬錯誤。
+> - **Remediation**: 分別追蹤 `agyStagedFallbackUsed`, `claudeStagedFallbackUsed`, `codexStagedFallbackUsed`，並如實填入 `providerTelemetry[provider].stagedFallbackUsed`。
+> - **Verification Evidence**: `tests/remediation-007-clean-challenge.test.mjs` (`PR39-ROUND7-PROVIDER-TELEMETRY-ATTRIBUTION-01`).
 
 ## ⚠️ Governance Status: FIX_REQUIRED_DUAL_VISIBILITY (Spec §3.3.4 Enforced)
 
@@ -95,9 +115,11 @@
 | 35 | `PRRT_kwDOUWarIc6rsajd` | **DUPLICATE** | Duplicate of Thread 22 (PRRT_kwDOUWarIc6ra7ki). Disposition subordinate to Thread 22 (FIX_REQUIRED_DUAL_VISIBILITY under REMEDIATION-007 §3.3.4). GitHub thread remains UNRESOLVED. | `PENDING_ADJUDICATION` | `PENDING_ADJUDICATION` | `bd9bc9001ee4...` |
 | 36 | `PRRT_kwDOUWarIc6rtv6E` | **FIXED** | Commits cc1de22, bd9bc90; locator scripts/dogfood-review.mjs:976-989. Omitted repository or object missing root fails closed to contextExtractionFailed = true with EXACT_HEAD_CONTEXT_FAILED. Negative test: tests/remediation-007-clean-challenge.test.mjs ('PR39-ROUND3-ITEM2-NEGATIVE'). | `PENDING_ADJUDICATION` | `PENDING_ADJUDICATION` | `bd9bc9001ee4...` |
 | 37 | `PRRT_kwDOUWarIc6rtv6M` | **FIXED** | Commits cf6be07, eda22b9, e7f1527; locator scripts/dogfood-review.mjs:1091-1100. Reject manifests where exactHeadAvailable === false or exactHeadUnavailable === true, setting pkgInvalid = true and failing closed. Tested in tests/remediation-007-clean-challenge.test.mjs ('PR39-ROUND2-ITEM2-NEGATIVE'). | `PENDING_ADJUDICATION` | `PENDING_ADJUDICATION` | `bd9bc9001ee4...` |
+| 38 | `PRRT_kwDOUWarIc6sMI7c` | **FIXED** | Commits a71082c, HEAD; locator src/adapters/staged-review.mjs:610-630. Preserves and merges caller-provided contextGaps with chunk-level contextPkg gaps, injecting effectiveChunkContextGaps into buildEvidenceReviewPrompt and adapter.executeReview. Tested in tests/remediation-007-clean-challenge.test.mjs ('PR39-ROUND6-STAGED-DUAL-VISIBILITY-01', 'PR39-ROUND6-STAGED-DUAL-VISIBILITY-02-NEGATIVE'). | `PENDING_ADJUDICATION` | `PENDING_ADJUDICATION` | `a71082c7b2bc...` |
 
 ## Head SHA Provenance Distinction
 
 - **Triage Baseline Extraction Head**: `bd9bc9001ee4cfee34671d6563d97deb793ff1ae`
-- **Triage Baseline Status**: 112 review threads (37 outdated, 75 current) on PR #39.
-- **Post-Remediation Push Head**: Distinct commit generated on `origin/fix/remediation-007-clean-challenge` incorporating technical boundary remediations P1-A, P1-B, and evidence ledger artifacts.
+- **Current Verified Head**: `a71082c7b2bc4d29f17cee60c5c0f7abe7fe45d0`
+- **Triage Status**: 125 review threads (38 outdated, 87 current) on PR #39.
+- **Post-Remediation Push Head**: Distinct commit generated on `origin/fix/remediation-007-clean-challenge` incorporating technical boundary remediations P1-DV-01, P1-DV-02, P2-TELEMETRY-01, and evidence ledger artifacts.

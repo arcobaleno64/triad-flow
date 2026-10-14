@@ -3,11 +3,12 @@
     "targetPr": "https://github.com/arcobaleno64/triad-flow/pull/39",
     "prNumber": 39,
     "branch": "fix/remediation-007-clean-challenge",
-    "extractionTimestamp": "2026-10-13T09:55:54Z",
+    "extractionTimestamp": "2026-10-14T11:41:22Z",
     "baselineHeadSha": "bd9bc9001ee4cfee34671d6563d97deb793ff1ae",
-    "totalOutdatedThreads": 37,
+    "currentHeadSha": "a71082c7b2bc4d29f17cee60c5c0f7abe7fe45d0",
+    "totalOutdatedThreads": 38,
     "verdictCounts": {
-      "FIXED": 35,
+      "FIXED": 36,
       "FIX_REQUIRED_DUAL_VISIBILITY": 1,
       "ACCEPTED_RISK": 0,
       "DUPLICATE": 1,
@@ -38,6 +39,28 @@
       ],
       "issue": "Staged fallback (executeStagedReview / executeChunk) was rebuilding context independently rather than forwarding caller-provided exact-head contextPackage and contextGaps, breaking §3.3.4 Dual Visibility identical contextual enclosure invariant.",
       "remediation": "executeStagedReview and executeChunk now forward caller-provided contextPackage and effectiveContextGaps through to prompt assembly and chunk adapter calls, ensuring identical enclosures between primary sentries and Clean Challenge verifier. Fail-closed behavior enforced on context absence or inconsistency."
+    },
+    {
+      "id": "P1-DV-02",
+      "severity": "P1",
+      "status": "REMEDIATED",
+      "title": "executeStagedReview 在 contextPackage 為 null/falsy 時繞過重新擷取 (§3.3.4 Dual Visibility)",
+      "locations": [
+        "src/adapters/staged-review.mjs:592-645"
+      ],
+      "issue": "staged-review.mjs 以 callerContextPackage !== undefined 判斷是否沿用外部 Context，當明確傳入 null 且無 EXACT_HEAD_CONTEXT_FAILED 時略過 buildContextPackage 重新擷取，導致缺少必要 Context 與不確定性提示即進入 Chunk Review。",
+      "remediation": "executeStagedReview 強化 callerContextPackage 驗證，僅在有效非空物件時直接沿用；若為 null/undefined 且無 extraction gap 則強制呼叫 buildContextPackage 重新擷取有效 exact-head contextPackage。若擷取失敗或 exact-head 不可用，則傳播 EXACT_HEAD_CONTEXT_FAILED 不確定性 gap 並阻止 Clean Approval。"
+    },
+    {
+      "id": "P2-TELEMETRY-01",
+      "severity": "P2",
+      "status": "REMEDIATED",
+      "title": "三方 Staged 遙測歸屬錯誤 (dogfood-review.mjs providerTelemetry)",
+      "locations": [
+        "scripts/dogfood-review.mjs:1400-1402"
+      ],
+      "issue": "dogfood-review.mjs 將全域 stagedFallbackUsed 寫給 agy，並將 claude、codex 固定為 false，導致單一 Provider (如 Claude) 觸發 Staged Fallback 時遙測歸屬錯誤。",
+      "remediation": "分別追蹤 agyStagedFallbackUsed, claudeStagedFallbackUsed, codexStagedFallbackUsed，並如實填入 providerTelemetry[provider].stagedFallbackUsed。"
     }
   ],
   "threads": [
@@ -410,6 +433,16 @@
       "exactHead": "bd9bc9001ee4cfee34671d6563d97deb793ff1ae",
       "fileLocation": "scripts/dogfood-review.mjs:1084",
       "title": "Reject manifests that lack exact-head coverage"
+    },
+    {
+      "threadId": "PRRT_kwDOUWarIc6sMI7c",
+      "resolutionCategory": "FIXED",
+      "evidenceLinkOrReasoning": "Commits a71082c, HEAD; locator src/adapters/staged-review.mjs:610-630. Preserves and merges caller-provided contextGaps with chunk-level contextPkg gaps, injecting effectiveChunkContextGaps into buildEvidenceReviewPrompt and adapter.executeReview. Tested in tests/remediation-007-clean-challenge.test.mjs ('PR39-ROUND6-STAGED-DUAL-VISIBILITY-01', 'PR39-ROUND6-STAGED-DUAL-VISIBILITY-02-NEGATIVE').",
+      "adjudicator": "PENDING_ADJUDICATION",
+      "adjudicationDate": "PENDING_ADJUDICATION",
+      "exactHead": "a71082c7b2bc4d29f17cee60c5c0f7abe7fe45d0",
+      "fileLocation": "src/adapters/staged-review.mjs:622",
+      "title": "Preserve context gaps in staged fallback prompts"
     }
   ]
 }

@@ -589,27 +589,73 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
         : { path: p, additions: 0, deletions: 0 };
     });
 
-    let contextPkg;
+    let contextPkg = null;
+    let fallbackExtractionGaps = [];
     const hasExtractionFailedGap = Array.isArray(callerContextGaps) && callerContextGaps.some(g => g?.code === "EXACT_HEAD_CONTEXT_FAILED");
-    if (callerContextPackage !== undefined) {
+    const hasValidCallerContext = Boolean(
+      callerContextPackage &&
+      typeof callerContextPackage === "object" &&
+      !Array.isArray(callerContextPackage)
+    );
+
+    if (hasValidCallerContext) {
       contextPkg = callerContextPackage;
     } else if (hasExtractionFailedGap) {
       contextPkg = null;
     } else {
-      contextPkg = buildContextPackage({
-        ...changeSet,
-        diffHunks: chunk.diffHunks,
-        files: chunkFiles
-      }, chunk.targetFiles, {
-        runId,
-        headSha: expectedHeadSha || undefined,
-        repositoryRoot: options.cwd || process.cwd()
-      });
+      try {
+        const extracted = buildContextPackage({
+          ...changeSet,
+          diffHunks: chunk.diffHunks,
+          files: chunkFiles
+        }, chunk.targetFiles, {
+          runId,
+          headSha: expectedHeadSha || undefined,
+          repositoryRoot: options.cwd || process.cwd()
+        });
+
+        if (extracted && typeof extracted === "object" && extracted.ok !== false) {
+          let unavailableEntry = null;
+          if (Array.isArray(extracted.fileCoverageManifest)) {
+            unavailableEntry = extracted.fileCoverageManifest.find(
+              m => m && (m.exactHeadAvailable === false || m.exactHeadUnavailable === true || m.contentAvailable === false)
+            );
+          }
+          if (unavailableEntry) {
+            contextPkg = null;
+            fallbackExtractionGaps.push({
+              code: "EXACT_HEAD_CONTEXT_FAILED",
+              symbol: "exact-head-context",
+              reason: `Exact-head content unavailable for file: '${unavailableEntry.file || unavailableEntry.path}'.`,
+              targetFiles: chunk.targetFiles
+            });
+          } else {
+            contextPkg = extracted;
+          }
+        } else {
+          contextPkg = null;
+          fallbackExtractionGaps.push({
+            code: "EXACT_HEAD_CONTEXT_FAILED",
+            symbol: "exact-head-context",
+            reason: extracted?.error?.message || extracted?.error || "Failed to extract valid contextPackage for staged review chunk",
+            targetFiles: chunk.targetFiles
+          });
+        }
+      } catch (extractErr) {
+        contextPkg = null;
+        fallbackExtractionGaps.push({
+          code: "EXACT_HEAD_CONTEXT_FAILED",
+          symbol: "exact-head-context",
+          reason: extractErr?.message || String(extractErr),
+          targetFiles: chunk.targetFiles
+        });
+      }
     }
 
     const effectiveChunkContextGaps = mergeContextGaps(
       callerContextGaps,
-      contextPkg?.contextGaps
+      contextPkg?.contextGaps,
+      fallbackExtractionGaps.length > 0 ? fallbackExtractionGaps : null
     );
 
     const prompt = buildEvidenceReviewPrompt({
@@ -733,7 +779,8 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
       durationMs: chunkDurationMs,
       budgetAllocatedMs: effectiveChunkTimeoutMs,
       result: chunkResult,
-      rawResult
+      rawResult,
+      contextGaps: effectiveChunkContextGaps
     };
   }
 
@@ -796,6 +843,7 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
 
   // Deterministic Reduction in strict chunkIndex order (RFC-027-01 §8.8 / REMEDIATION-006)
   const accumulatedFindings = [];
+  const allEncounteredContextGaps = [];
   const coveredFiles = new Set();
   const omittedFiles = [];
   const chunkReceipts = [];
@@ -805,6 +853,10 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
     const outcome = chunkRawOutcomes[idx];
     const chunkResult = outcome.result;
     const chunkDurationMs = outcome.durationMs;
+
+    if (Array.isArray(outcome?.contextGaps)) {
+      allEncounteredContextGaps.push(...outcome.contextGaps);
+    }
 
     // Handle chunk outcome
     if (chunkResult && chunkResult.ok) {
@@ -1258,6 +1310,7 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
       isComplete
     },
     violations: coverageEval.violations,
+    contextGaps: mergeContextGaps(callerContextGaps, allEncounteredContextGaps),
     receipts: chunkReceipts,
     telemetry: {
       stagedFallbackUsed: true,
