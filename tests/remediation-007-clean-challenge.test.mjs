@@ -6004,3 +6004,205 @@ test("PR39-ROUND7-PROVIDER-TELEMETRY-ATTRIBUTION-01: runDogfoodReview truthfully
     fs.rmSync(repo, { recursive: true, force: true });
   }
 });
+
+test("PR39-ROUND7-STAGED-REPOSITORY-ROOT-FALLBACK-03: executeStagedReview falls back to changeSet.repository.root when options.cwd is omitted (P1-DV-02)", async () => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), "tf-round7-reporoot-fallback-"));
+  execFileSync("git", ["init", "-b", "main"], { cwd: repo, stdio: "ignore" });
+  execFileSync("git", ["config", "user.name", "Test User"], { cwd: repo, stdio: "ignore" });
+  execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: repo, stdio: "ignore" });
+
+  const targetFile = "src/tokens.js";
+  const fullPath = path.join(repo, targetFile);
+  fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+  fs.writeFileSync(fullPath, "export function createToken() { return 'tf-token-42'; }\n");
+  execFileSync("git", ["add", targetFile], { cwd: repo, stdio: "ignore" });
+  execFileSync("git", ["commit", "-m", "Initial commit"], { cwd: repo, stdio: "ignore" });
+  const headSha = execFileSync("git", ["rev-parse", "HEAD"], { cwd: repo, encoding: "utf8" }).trim();
+  const diffContent = "--- a/src/tokens.js\n+++ b/src/tokens.js\n@@ -1,1 +1,2 @@\n export function createToken() { return 'tf-token-42'; }\n+const tok = createToken();\n";
+
+  const capturedChunkInputs = [];
+  const capturingAdapter = new CliReviewAdapter({
+    command: "agy",
+    providerName: "agy",
+    family: "google",
+    modelName: "gemini-3.8-flash",
+    execFn: async (callContext) => {
+      capturedChunkInputs.push(callContext);
+      return {
+        stdout: JSON.stringify({
+          findings: [],
+          coverage: { coveredFiles: ["src/tokens.js"], omittedFiles: [] },
+          providerIdentity: { provider: "agy", family: "google", model: "gemini-3.8-flash" }
+        })
+      };
+    }
+  });
+
+  try {
+    const changeSet = {
+      ok: true,
+      schemaVersion: "1.0.0",
+      repository: {
+        root: repo,
+        headSha,
+        name: "arcobaleno64/triad-flow"
+      },
+      headSha,
+      totalFiles: 1,
+      files: [{ path: "src/tokens.js", additions: 1, deletions: 0, riskTier: 1 }],
+      diffHunks: diffContent
+    };
+
+    // Notice options.cwd is OMITTED; must resolve repositoryRoot from changeSet.repository.root
+    const result = await executeStagedReview(changeSet, capturingAdapter, {
+      headSha,
+      contextPackage: null
+    });
+
+    assert.equal(result.ok, true, "executeStagedReview must succeed via changeSet.repository.root fallback");
+    assert.equal(result.status, "completed");
+    assert.ok(capturedChunkInputs.length > 0, "Chunk reviews must have executed");
+    assert.ok(capturedChunkInputs[0].input.contextPackage, "ContextPackage must be extracted from changeSet.repository.root");
+    assert.equal(capturedChunkInputs[0].input.contextPackage.headSha, headSha);
+    assert.match(capturedChunkInputs[0].prompt, /\[CODE CONTEXT & AST ENCLOSURES\]/);
+  } finally {
+    fs.rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("PR39-ROUND7-STAGED-CORRUPTED-CONTEXT-FAIL-CLOSED-04-NEGATIVE: executeStagedReview fails closed with EXACT_HEAD_CONTEXT_FAILED on corrupted callerContextPackage (P1-DV-02)", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-round7-corrupted-"));
+  const diffContent = "--- a/src/auth.js\n+++ b/src/auth.js\n@@ -1,1 +1,2 @@\n+const token = 1;\n";
+  const headSha = "1234567890123456789012345678901234567890";
+
+  const capturedChunkInputs = [];
+  const capturingAdapter = new CliReviewAdapter({
+    command: "agy",
+    providerName: "agy",
+    family: "google",
+    modelName: "gemini-3.8-flash",
+    execFn: async (callContext) => {
+      capturedChunkInputs.push(callContext);
+      return {
+        stdout: JSON.stringify({
+          findings: [],
+          coverage: { coveredFiles: ["src/auth.js"], omittedFiles: [] },
+          providerIdentity: { provider: "agy", family: "google", model: "gemini-3.8-flash" }
+        })
+      };
+    }
+  });
+
+  try {
+    const changeSet = {
+      ok: true,
+      schemaVersion: "1.0.0",
+      headSha,
+      repository: {
+        root: tmpDir,
+        headSha
+      },
+      totalFiles: 1,
+      files: [{ path: "src/auth.js", additions: 1, deletions: 0, riskTier: 1 }],
+      diffHunks: diffContent
+    };
+
+    // Case 1: Caller passes contextPackage with ok: false without contextGaps
+    const result1 = await executeStagedReview(changeSet, capturingAdapter, {
+      cwd: tmpDir,
+      headSha,
+      contextPackage: {
+        ok: false,
+        headSha,
+        error: "Previous extraction crashed"
+      }
+    });
+
+    assert.ok(result1.contextGaps.some(g => g.code === "EXACT_HEAD_CONTEXT_FAILED"), "Must generate EXACT_HEAD_CONTEXT_FAILED gap when ok: false");
+    assert.ok(!capturedChunkInputs[0].input.contextPackage, "Chunk must not receive broken contextPackage");
+
+    // Case 2: Caller passes contextPackage with exactHeadAvailable: false in manifest without gaps
+    capturedChunkInputs.length = 0;
+    const result2 = await executeStagedReview(changeSet, capturingAdapter, {
+      cwd: tmpDir,
+      headSha,
+      contextPackage: {
+        ok: true,
+        headSha,
+        fileCoverageManifest: [
+          { file: "src/auth.js", inspected: true, exactHeadAvailable: false }
+        ]
+      }
+    });
+
+    assert.ok(result2.contextGaps.some(g => g.code === "EXACT_HEAD_CONTEXT_FAILED"), "Must generate EXACT_HEAD_CONTEXT_FAILED gap when manifest has exactHeadAvailable: false");
+    assert.ok(!capturedChunkInputs[0].input.contextPackage, "Chunk must not receive broken contextPackage");
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("PR39-ROUND7-STAGED-VACUOUS-OBJECT-REEXTRACTION-05: executeStagedReview re-extracts exact-head context when callerContextPackage is an empty object (P1-DV-02)", async () => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), "tf-round7-vacuous-obj-"));
+  execFileSync("git", ["init", "-b", "main"], { cwd: repo, stdio: "ignore" });
+  execFileSync("git", ["config", "user.name", "Test User"], { cwd: repo, stdio: "ignore" });
+  execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: repo, stdio: "ignore" });
+
+  const targetFile = "src/service.js";
+  const fullPath = path.join(repo, targetFile);
+  fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+  fs.writeFileSync(fullPath, "export function serve() { return 'ok'; }\n");
+  execFileSync("git", ["add", targetFile], { cwd: repo, stdio: "ignore" });
+  execFileSync("git", ["commit", "-m", "Initial commit"], { cwd: repo, stdio: "ignore" });
+  const headSha = execFileSync("git", ["rev-parse", "HEAD"], { cwd: repo, encoding: "utf8" }).trim();
+  const diffContent = "--- a/src/service.js\n+++ b/src/service.js\n@@ -1,1 +1,2 @@\n export function serve() { return 'ok'; }\n+const s = serve();\n";
+
+  const capturedChunkInputs = [];
+  const capturingAdapter = new CliReviewAdapter({
+    command: "agy",
+    providerName: "agy",
+    family: "google",
+    modelName: "gemini-3.8-flash",
+    execFn: async (callContext) => {
+      capturedChunkInputs.push(callContext);
+      return {
+        stdout: JSON.stringify({
+          findings: [],
+          coverage: { coveredFiles: ["src/service.js"], omittedFiles: [] },
+          providerIdentity: { provider: "agy", family: "google", model: "gemini-3.8-flash" }
+        })
+      };
+    }
+  });
+
+  try {
+    const changeSet = {
+      ok: true,
+      schemaVersion: "1.0.0",
+      repository: {
+        root: repo,
+        headSha,
+        name: "arcobaleno64/triad-flow"
+      },
+      headSha,
+      totalFiles: 1,
+      files: [{ path: "src/service.js", additions: 1, deletions: 0, riskTier: 1 }],
+      diffHunks: diffContent
+    };
+
+    // Pass contextPackage: {} (empty vacuous object without layers or manifest)
+    const result = await executeStagedReview(changeSet, capturingAdapter, {
+      cwd: repo,
+      headSha,
+      contextPackage: {}
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.status, "completed");
+    assert.ok(capturedChunkInputs[0].input.contextPackage, "ContextPackage must be re-extracted rather than passed as empty object");
+    assert.ok(capturedChunkInputs[0].input.contextPackage.layers, "Re-extracted contextPackage must contain layers");
+    assert.match(capturedChunkInputs[0].prompt, /\[CODE CONTEXT & AST ENCLOSURES\]/);
+  } finally {
+    fs.rmSync(repo, { recursive: true, force: true });
+  }
+});

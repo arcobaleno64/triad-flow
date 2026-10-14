@@ -311,7 +311,8 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
   const runId = options.runId || crypto.randomUUID();
   const role = options.role || "macro";
   const limits = options.limits || {};
-  const checkpointStore = new CheckpointStore({ cwd: options.cwd });
+  const repoRoot = options.cwd || changeSet?.repository?.root || process.cwd();
+  const checkpointStore = new CheckpointStore({ cwd: repoRoot });
 
   const callerContextPackage = options.contextPackage !== undefined
     ? options.contextPackage
@@ -378,6 +379,108 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
       }
     }
   }
+
+  let resolvedContextPackage = null;
+  const fallbackExtractionGaps = [];
+  const hasExtractionFailedGap = Array.isArray(callerContextGaps) && callerContextGaps.some(g => g?.code === "EXACT_HEAD_CONTEXT_FAILED");
+
+  const isCallerContextObject = Boolean(
+    callerContextPackage &&
+    typeof callerContextPackage === "object" &&
+    !Array.isArray(callerContextPackage)
+  );
+
+  const callerHasUnavailableManifest = isCallerContextObject &&
+    Array.isArray(callerContextPackage.fileCoverageManifest) &&
+    callerContextPackage.fileCoverageManifest.some(
+      m => m && (m.exactHeadAvailable === false || m.exactHeadUnavailable === true || m.contentAvailable === false)
+    );
+
+  const isCallerContextVacuous = isCallerContextObject &&
+    !callerContextPackage.layers &&
+    !Array.isArray(callerContextPackage.fileCoverageManifest);
+
+  const hasValidCallerContext = isCallerContextObject &&
+    callerContextPackage.ok !== false &&
+    !callerHasUnavailableManifest &&
+    !isCallerContextVacuous;
+
+  if (hasValidCallerContext) {
+    resolvedContextPackage = callerContextPackage;
+  } else if (hasExtractionFailedGap) {
+    resolvedContextPackage = null;
+  } else if (callerHasUnavailableManifest || (isCallerContextObject && callerContextPackage.ok === false)) {
+    // Explicitly invalid/unavailable caller contextPackage without extraction gap fails closed
+    resolvedContextPackage = null;
+    const unavailableEntry = isCallerContextObject && Array.isArray(callerContextPackage.fileCoverageManifest)
+      ? callerContextPackage.fileCoverageManifest.find(m => m && (m.exactHeadAvailable === false || m.exactHeadUnavailable === true || m.contentAvailable === false))
+      : null;
+    fallbackExtractionGaps.push({
+      code: "EXACT_HEAD_CONTEXT_FAILED",
+      symbol: "exact-head-context",
+      reason: unavailableEntry
+        ? `Exact-head content unavailable for file: '${unavailableEntry.file || unavailableEntry.path}'.`
+        : (callerContextPackage?.error?.message || callerContextPackage?.error || "Caller contextPackage has ok: false or unavailable exact-head content"),
+      targetFiles: Array.isArray(changeSet?.files) ? changeSet.files.map(f => typeof f === "string" ? f : f?.path).filter(Boolean) : []
+    });
+  } else {
+    // Explicitly null, undefined, or empty/vacuous contextPackage without extraction gap:
+    // Re-extract valid exact-head contextPackage via buildContextPackage
+    try {
+      const extracted = buildContextPackage(
+        changeSet,
+        null,
+        {
+          runId,
+          headSha: expectedHeadSha || undefined,
+          repositoryRoot: repoRoot,
+          cwd: repoRoot
+        }
+      );
+
+      if (extracted && typeof extracted === "object" && extracted.ok !== false) {
+        let unavailableEntry = null;
+        if (Array.isArray(extracted.fileCoverageManifest)) {
+          unavailableEntry = extracted.fileCoverageManifest.find(
+            m => m && (m.exactHeadAvailable === false || m.exactHeadUnavailable === true || m.contentAvailable === false)
+          );
+        }
+        if (unavailableEntry) {
+          resolvedContextPackage = null;
+          fallbackExtractionGaps.push({
+            code: "EXACT_HEAD_CONTEXT_FAILED",
+            symbol: "exact-head-context",
+            reason: `Exact-head content unavailable for file: '${unavailableEntry.file || unavailableEntry.path}'.`,
+            targetFiles: Array.isArray(changeSet?.files) ? changeSet.files.map(f => typeof f === "string" ? f : f?.path).filter(Boolean) : []
+          });
+        } else {
+          resolvedContextPackage = extracted;
+        }
+      } else {
+        resolvedContextPackage = null;
+        fallbackExtractionGaps.push({
+          code: "EXACT_HEAD_CONTEXT_FAILED",
+          symbol: "exact-head-context",
+          reason: extracted?.error?.message || extracted?.error || "Failed to extract valid contextPackage for staged review",
+          targetFiles: Array.isArray(changeSet?.files) ? changeSet.files.map(f => typeof f === "string" ? f : f?.path).filter(Boolean) : []
+        });
+      }
+    } catch (extractErr) {
+      resolvedContextPackage = null;
+      fallbackExtractionGaps.push({
+        code: "EXACT_HEAD_CONTEXT_FAILED",
+        symbol: "exact-head-context",
+        reason: extractErr?.message || String(extractErr),
+        targetFiles: Array.isArray(changeSet?.files) ? changeSet.files.map(f => typeof f === "string" ? f : f?.path).filter(Boolean) : []
+      });
+    }
+  }
+
+  const effectiveStagedContextGaps = mergeContextGaps(
+    callerContextGaps,
+    resolvedContextPackage?.contextGaps,
+    fallbackExtractionGaps.length > 0 ? fallbackExtractionGaps : null
+  );
 
   // Stage 1: Triage & Chunk Partitioning
   const chunks = partitionChangeSetIntoChunks(changeSet, {
@@ -589,73 +692,10 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
         : { path: p, additions: 0, deletions: 0 };
     });
 
-    let contextPkg = null;
-    let fallbackExtractionGaps = [];
-    const hasExtractionFailedGap = Array.isArray(callerContextGaps) && callerContextGaps.some(g => g?.code === "EXACT_HEAD_CONTEXT_FAILED");
-    const hasValidCallerContext = Boolean(
-      callerContextPackage &&
-      typeof callerContextPackage === "object" &&
-      !Array.isArray(callerContextPackage)
-    );
-
-    if (hasValidCallerContext) {
-      contextPkg = callerContextPackage;
-    } else if (hasExtractionFailedGap) {
-      contextPkg = null;
-    } else {
-      try {
-        const extracted = buildContextPackage({
-          ...changeSet,
-          diffHunks: chunk.diffHunks,
-          files: chunkFiles
-        }, chunk.targetFiles, {
-          runId,
-          headSha: expectedHeadSha || undefined,
-          repositoryRoot: options.cwd || process.cwd()
-        });
-
-        if (extracted && typeof extracted === "object" && extracted.ok !== false) {
-          let unavailableEntry = null;
-          if (Array.isArray(extracted.fileCoverageManifest)) {
-            unavailableEntry = extracted.fileCoverageManifest.find(
-              m => m && (m.exactHeadAvailable === false || m.exactHeadUnavailable === true || m.contentAvailable === false)
-            );
-          }
-          if (unavailableEntry) {
-            contextPkg = null;
-            fallbackExtractionGaps.push({
-              code: "EXACT_HEAD_CONTEXT_FAILED",
-              symbol: "exact-head-context",
-              reason: `Exact-head content unavailable for file: '${unavailableEntry.file || unavailableEntry.path}'.`,
-              targetFiles: chunk.targetFiles
-            });
-          } else {
-            contextPkg = extracted;
-          }
-        } else {
-          contextPkg = null;
-          fallbackExtractionGaps.push({
-            code: "EXACT_HEAD_CONTEXT_FAILED",
-            symbol: "exact-head-context",
-            reason: extracted?.error?.message || extracted?.error || "Failed to extract valid contextPackage for staged review chunk",
-            targetFiles: chunk.targetFiles
-          });
-        }
-      } catch (extractErr) {
-        contextPkg = null;
-        fallbackExtractionGaps.push({
-          code: "EXACT_HEAD_CONTEXT_FAILED",
-          symbol: "exact-head-context",
-          reason: extractErr?.message || String(extractErr),
-          targetFiles: chunk.targetFiles
-        });
-      }
-    }
-
+    const contextPkg = resolvedContextPackage;
     const effectiveChunkContextGaps = mergeContextGaps(
-      callerContextGaps,
-      contextPkg?.contextGaps,
-      fallbackExtractionGaps.length > 0 ? fallbackExtractionGaps : null
+      effectiveStagedContextGaps,
+      contextPkg?.contextGaps
     );
 
     const prompt = buildEvidenceReviewPrompt({
@@ -1310,7 +1350,8 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
       isComplete
     },
     violations: coverageEval.violations,
-    contextGaps: mergeContextGaps(callerContextGaps, allEncounteredContextGaps),
+    contextPackage: resolvedContextPackage,
+    contextGaps: mergeContextGaps(effectiveStagedContextGaps, allEncounteredContextGaps),
     receipts: chunkReceipts,
     telemetry: {
       stagedFallbackUsed: true,

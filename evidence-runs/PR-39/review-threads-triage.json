@@ -46,7 +46,8 @@
       "status": "REMEDIATED",
       "title": "executeStagedReview 在 contextPackage 為 null/falsy 時繞過重新擷取 (§3.3.4 Dual Visibility)",
       "locations": [
-        "src/adapters/staged-review.mjs:592-645"
+        "src/adapters/staged-review.mjs:380-480",
+        "src/adapters/staged-review.mjs:690-705"
       ],
       "issue": "staged-review.mjs 以 callerContextPackage !== undefined 判斷是否沿用外部 Context，當明確傳入 null 且無 EXACT_HEAD_CONTEXT_FAILED 時略過 buildContextPackage 重新擷取，導致缺少必要 Context 與不確定性提示即進入 Chunk Review。",
       "remediation": "executeStagedReview 強化 callerContextPackage 驗證，僅在有效非空物件時直接沿用；若為 null/undefined 且無 extraction gap 則強制呼叫 buildContextPackage 重新擷取有效 exact-head contextPackage。若擷取失敗或 exact-head 不可用，則傳播 EXACT_HEAD_CONTEXT_FAILED 不確定性 gap 並阻止 Clean Approval。"

@@ -48,10 +48,11 @@
 > - **Severity**: `P1`
 > - **Status**: `REMEDIATED` (Tested & verified)
 > - **Locations**:
->   - `src/adapters/staged-review.mjs:592-645`
+>   - `src/adapters/staged-review.mjs:380-480`
+>   - `src/adapters/staged-review.mjs:690-705`
 > - **Issue**: `staged-review.mjs` 以 `callerContextPackage !== undefined` 判斷是否沿用外部 Context，當明確傳入 null 且無 EXACT_HEAD_CONTEXT_FAILED 時略過 `buildContextPackage` 重新擷取，導致缺少必要 Context 與不確定性提示即進入 Chunk Review。
 > - **Remediation**: `executeStagedReview` 強化 `callerContextPackage` 驗證，僅在有效非空物件時直接沿用；若為 null/undefined 且無 extraction gap 則強制呼叫 `buildContextPackage` 重新擷取有效 exact-head contextPackage。若擷取失敗或 exact-head 不可用，則傳播 `EXACT_HEAD_CONTEXT_FAILED` 不確定性 gap 並阻止 Clean Approval。
-> - **Verification Evidence**: `tests/remediation-007-clean-challenge.test.mjs` (`PR39-ROUND7-STAGED-NULL-CONTEXT-REEXTRACTION-01`, `PR39-ROUND7-STAGED-NULL-CONTEXT-FAIL-CLOSED-02-NEGATIVE`).
+> - **Verification Evidence**: `tests/remediation-007-clean-challenge.test.mjs` (`PR39-ROUND7-STAGED-NULL-CONTEXT-REEXTRACTION-01`, `PR39-ROUND7-STAGED-NULL-CONTEXT-FAIL-CLOSED-02-NEGATIVE`, `PR39-ROUND7-STAGED-REPOSITORY-ROOT-FALLBACK-03`, `PR39-ROUND7-STAGED-CORRUPTED-CONTEXT-FAIL-CLOSED-04-NEGATIVE`, `PR39-ROUND7-STAGED-VACUOUS-OBJECT-REEXTRACTION-05`).
 
 > [!IMPORTANT]
 > **P2-TELEMETRY-01: 三方 Staged 遙測歸屬錯誤 (dogfood-review.mjs providerTelemetry)**:
