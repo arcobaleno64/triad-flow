@@ -5334,6 +5334,7 @@ test("PR39-ROUND6-STAGED-DUAL-VISIBILITY-01: Staged Fallback receives identical 
 
       // Verify the prompt formatted for staged chunk contains enclosing code context XML block
       assert.match(chunkCall.prompt, /\[CODE CONTEXT & AST ENCLOSURES\]/, "Staged chunk prompt must contain [CODE CONTEXT & AST ENCLOSURES]");
+      assert.strictEqual(chunkCall.input.contextPackage, capturedVerifierContextPackage, "Staged chunk review and verifier must receive identical exact-head contextPackage reference");
     }
 
     // 3. Verify Clean Challenge verifier received the identical contextPackage
@@ -5505,5 +5506,216 @@ test("PR39-ROUND6-STAGED-DUAL-VISIBILITY-03-NEGATIVE: executeStagedReview reject
     assert.ok(result.violations.length > 0);
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("PR39-ROUND6-STAGED-DUAL-VISIBILITY-04-NEGATIVE: executeStagedReview rejects inconsistent contextPackage headSha when headSha is on repository.headSha (§3.3.4 Dual Visibility, P1-DV-01)", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-round6-staged-vis-04-"));
+  const expectedHeadSha = "1111111111111111111111111111111111111111";
+  const conflictingHeadSha = "2222222222222222222222222222222222222222";
+
+  let adapterInvoked = false;
+  const mockAdapter = new CliReviewAdapter({
+    command: "agy",
+    providerName: "agy",
+    family: "google",
+    modelName: "gemini-3.8-flash",
+    execFn: async () => {
+      adapterInvoked = true;
+      return { stdout: "{}" };
+    }
+  });
+
+  // ChangeSet has headSha nested under repository.headSha (no top-level changeSet.headSha)
+  const changeSet = {
+    ok: true,
+    schemaVersion: "1.0.0",
+    repository: {
+      headSha: expectedHeadSha,
+      root: tmpDir
+    },
+    totalFiles: 1,
+    files: [{ path: "src/auth.js", additions: 1, deletions: 0, riskTier: 1 }],
+    diffHunks: "+ const patch = 1;\n"
+  };
+
+  try {
+    const result = await executeStagedReview(changeSet, mockAdapter, {
+      cwd: tmpDir,
+      contextPackage: {
+        headSha: conflictingHeadSha,
+        layers: {}
+      }
+    });
+
+    assert.equal(result.ok, false);
+    assert.equal(result.executionStatus, EXECUTION_STATUS.ERROR);
+    assert.match(result.error, /does not match changeSet headSha/i);
+    assert.equal(adapterInvoked, false, "Adapter must not be invoked when contextPackage contradicts repository.headSha");
+    assert.ok(result.violations.length > 0);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("PR39-ROUND6-STAGED-DUAL-VISIBILITY-05-NEGATIVE: executeStagedReview rejects non-object contextPackage and fails closed (§3.3.4 Dual Visibility, P1-DV-01)", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-round6-staged-vis-05-"));
+  let adapterInvoked = false;
+  const mockAdapter = new CliReviewAdapter({
+    command: "agy",
+    providerName: "agy",
+    family: "google",
+    modelName: "gemini-3.8-flash",
+    execFn: async () => {
+      adapterInvoked = true;
+      return { stdout: "{}" };
+    }
+  });
+
+  const changeSet = {
+    ok: true,
+    schemaVersion: "1.0.0",
+    headSha: "1111111111111111111111111111111111111111",
+    totalFiles: 1,
+    files: [{ path: "src/auth.js", additions: 1, deletions: 0, riskTier: 1 }],
+    diffHunks: "+ const patch = 1;\n"
+  };
+
+  try {
+    const resultStr = await executeStagedReview(changeSet, mockAdapter, {
+      cwd: tmpDir,
+      contextPackage: "invalid-string-context-package"
+    });
+    assert.equal(resultStr.ok, false);
+    assert.equal(resultStr.executionStatus, EXECUTION_STATUS.ERROR);
+    assert.match(resultStr.error, /must be an object/i);
+    assert.equal(adapterInvoked, false);
+
+    const resultArr = await executeStagedReview(changeSet, mockAdapter, {
+      cwd: tmpDir,
+      contextPackage: ["invalid-array-context-package"]
+    });
+    assert.equal(resultArr.ok, false);
+    assert.equal(resultArr.executionStatus, EXECUTION_STATUS.ERROR);
+    assert.match(resultArr.error, /must be an object/i);
+    assert.equal(adapterInvoked, false);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("PR39-ROUND6-STAGED-DUAL-VISIBILITY-06: Claude staged review fallback populates stagedTelemetry and forwards exact-head contextPackage (§3.3.4 Dual Visibility, P1-DV-01)", async () => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), "tf-round6-staged-vis-06-"));
+  const tmpOut = path.join(repo, "dogfood-run.json");
+  execFileSync("git", ["init", "-b", "main"], { cwd: repo, stdio: "ignore" });
+  execFileSync("git", ["config", "user.name", "Test User"], { cwd: repo, stdio: "ignore" });
+  execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: repo, stdio: "ignore" });
+
+  const targetFile = "src/crypto.js";
+  const fullPath = path.join(repo, targetFile);
+  fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+  fs.writeFileSync(fullPath, "export function encrypt() { return true; }\n");
+  execFileSync("git", ["add", targetFile], { cwd: repo, stdio: "ignore" });
+  execFileSync("git", ["commit", "-m", "Initial commit"], { cwd: repo, stdio: "ignore" });
+  const headSha = execFileSync("git", ["rev-parse", "HEAD"], { cwd: repo, encoding: "utf8" }).trim();
+  const diffContent = "--- a/src/crypto.js\n+++ b/src/crypto.js\n@@ -1,1 +1,2 @@\n export function encrypt() { return true; }\n+const call = encrypt();\n";
+
+  let claudeCalls = 0;
+  const capturedClaudeChunkInputs = [];
+  const capturingAdapters = {
+    agy: new CliReviewAdapter({
+      command: "agy",
+      providerName: "agy",
+      family: "google",
+      modelName: "gemini-3.8-flash",
+      execFn: async () => ({
+        stdout: JSON.stringify({
+          findings: [],
+          coverage: { coveredFiles: ["src/crypto.js"], omittedFiles: [] },
+          providerIdentity: { provider: "agy", family: "google", model: "gemini-3.8-flash" }
+        })
+      })
+    }),
+    claude: new CliReviewAdapter({
+      command: "claude",
+      providerName: "claude",
+      family: "anthropic",
+      modelName: "claude-5.5-sonnet",
+      execFn: async (callContext) => {
+        claudeCalls++;
+        if (claudeCalls === 1) {
+          // Claude hits PAYLOAD_TOO_LARGE and triggers staged fallback
+          return {
+            stdout: "",
+            executionStatus: EXECUTION_STATUS.PAYLOAD_TOO_LARGE,
+            error: "Prompt exceeds buffer limit"
+          };
+        }
+        capturedClaudeChunkInputs.push(callContext);
+        return {
+          stdout: JSON.stringify({
+            findings: [],
+            coverage: { coveredFiles: ["src/crypto.js"], omittedFiles: [] },
+            providerIdentity: { provider: "claude", family: "anthropic", model: "claude-5.5-sonnet" }
+          })
+        };
+      }
+    }),
+    codex: new CliReviewAdapter({
+      command: "codex",
+      providerName: "codex",
+      family: "openai",
+      modelName: "gpt-6.1-sol",
+      execFn: async () => ({
+        stdout: JSON.stringify({
+          findings: [],
+          coverage: { coveredFiles: ["src/crypto.js"], omittedFiles: [] },
+          providerIdentity: { provider: "codex", family: "openai", model: "gpt-6.1-sol" }
+        })
+      })
+    })
+  };
+
+  const cleanVerifier = createMockVerifierAdapter("claude");
+
+  try {
+    const changeSet = {
+      ok: true,
+      schemaVersion: "1.0.0",
+      repository: {
+        root: repo,
+        headSha,
+        name: "arcobaleno64/triad-flow"
+      },
+      headSha,
+      totalFiles: 1,
+      files: [{ path: "src/crypto.js", additions: 1, deletions: 0, riskTier: 1 }],
+      diffHunks: diffContent
+    };
+
+    const report = await runDogfoodReview({
+      mock: false,
+      changeSet,
+      head: headSha,
+      repoDir: repo,
+      repository: "arcobaleno64/triad-flow",
+      reviewAdapters: capturingAdapters,
+      verifierAdapter: cleanVerifier,
+      out: tmpOut,
+      log: false
+    });
+
+    assert.ok(report.telemetryMetrics.stagedFallbackUsed, "Staged fallback must have been triggered");
+    assert.ok(capturedClaudeChunkInputs.length > 0, "Claude must have executed staged chunks");
+    for (const chunkCall of capturedClaudeChunkInputs) {
+      assert.ok(chunkCall.input.contextPackage);
+      assert.equal(chunkCall.input.contextPackage.headSha, headSha);
+      assert.match(chunkCall.prompt, /\[CODE CONTEXT & AST ENCLOSURES\]/);
+    }
+    // Verify telemetry phaseMetrics captured
+    assert.ok(report.telemetryMetrics.phaseMetrics, "phaseMetrics must be populated when Claude triggers staged review");
+    assert.equal(report.gate.decision, "approve");
+  } finally {
+    fs.rmSync(repo, { recursive: true, force: true });
   }
 });

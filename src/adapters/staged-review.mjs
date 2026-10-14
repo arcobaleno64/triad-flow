@@ -16,7 +16,7 @@ import { reconcileFindings } from "../core/reconciler.mjs";
 import { classifyFileRisk, RISK_TIERS } from "../core/graph-router.mjs";
 import { normalizeCanonicalPath } from "../core/scoring.mjs";
 import { normalizeFinding } from "../core/harness.mjs";
-import { mergeContextGaps } from "../core/independent-verifier.mjs";
+import { mergeContextGaps, normalizeCommitSha } from "../core/independent-verifier.mjs";
 import { EXECUTION_STATUS, COVERAGE_OMISSION_CODES, safeRenderUntrusted, safeGet, safeIsArray, safeArrayLength, safeErrorMessage } from "./provider-contract.mjs";
 
 export { COVERAGE_OMISSION_CODES };
@@ -321,13 +321,24 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
     ? options.contextGaps
     : (changeSet?.contextGaps !== undefined ? changeSet.contextGaps : undefined);
 
-  if (callerContextPackage && typeof callerContextPackage === "object" && callerContextPackage.headSha && changeSet?.headSha) {
-    if (callerContextPackage.headSha !== changeSet.headSha) {
+  const expectedHeadSha = normalizeCommitSha(
+    changeSet?.headSha ||
+    changeSet?.head ||
+    changeSet?.repository?.commitSha ||
+    changeSet?.repository?.headSha ||
+    changeSet?.repository?.head ||
+    options.headSha ||
+    options.head ||
+    ""
+  );
+
+  if (callerContextPackage !== undefined && callerContextPackage !== null) {
+    if (typeof callerContextPackage !== "object" || Array.isArray(callerContextPackage)) {
       return {
         runId,
         ok: false,
         executionStatus: EXECUTION_STATUS.ERROR,
-        error: `ContextPackage headSha (${callerContextPackage.headSha}) does not match changeSet headSha (${changeSet.headSha}).`,
+        error: `ContextPackage must be an object when provided.`,
         providerIdentity: {
           provider: adapter.providerName || role,
           model: adapter.modelName || "unknown-model",
@@ -338,9 +349,33 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
         status: "incomplete",
         findings: [],
         coverage: { coveredFiles: [], omittedFiles: [], isComplete: false },
-        violations: [`ContextPackage headSha mismatch: ${callerContextPackage.headSha} vs ${changeSet.headSha}`],
+        violations: [`Invalid contextPackage type: expected object`],
         receipts: []
       };
+    }
+
+    const pkgHeadSha = normalizeCommitSha(callerContextPackage.headSha || "");
+    if (callerContextPackage.headSha && expectedHeadSha) {
+      if (pkgHeadSha !== expectedHeadSha) {
+        return {
+          runId,
+          ok: false,
+          executionStatus: EXECUTION_STATUS.ERROR,
+          error: `ContextPackage headSha (${callerContextPackage.headSha}) does not match changeSet headSha (${changeSet?.headSha || expectedHeadSha}).`,
+          providerIdentity: {
+            provider: adapter.providerName || role,
+            model: adapter.modelName || "unknown-model",
+            family: adapter.family || "unknown",
+            transport: "cli-staged",
+            runId
+          },
+          status: "incomplete",
+          findings: [],
+          coverage: { coveredFiles: [], omittedFiles: [], isComplete: false },
+          violations: [`ContextPackage headSha mismatch: ${callerContextPackage.headSha} vs ${changeSet?.headSha || expectedHeadSha}`],
+          receipts: []
+        };
+      }
     }
   }
 
@@ -545,6 +580,15 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
     }
     const effectiveChunkTimeoutMs = Math.max(1, Math.min(nominalChunkBudgetMs, remainingGlobalMs));
 
+    const chunkFiles = chunk.targetFiles.map(p => {
+      const existing = Array.isArray(changeSet?.files)
+        ? changeSet.files.find(f => (typeof f === "string" ? f : f?.path) === p)
+        : null;
+      return existing && typeof existing === "object"
+        ? existing
+        : { path: p, additions: 0, deletions: 0 };
+    });
+
     let contextPkg;
     const hasExtractionFailedGap = Array.isArray(callerContextGaps) && callerContextGaps.some(g => g?.code === "EXACT_HEAD_CONTEXT_FAILED");
     if (callerContextPackage !== undefined) {
@@ -555,9 +599,10 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
       contextPkg = buildContextPackage({
         ...changeSet,
         diffHunks: chunk.diffHunks,
-        files: chunk.targetFiles.map(p => ({ path: p, additions: 0, deletions: 0 }))
-      }, chunkTarget, {
+        files: chunkFiles
+      }, chunk.targetFiles, {
         runId,
+        headSha: expectedHeadSha || undefined,
         repositoryRoot: options.cwd || process.cwd()
       });
     }
@@ -570,7 +615,7 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
     const prompt = buildEvidenceReviewPrompt({
       ...changeSet,
       diffHunks: chunk.diffHunks,
-      files: chunk.targetFiles.map(p => ({ path: p, additions: 0, deletions: 0 }))
+      files: chunkFiles
     }, role, limits, contextPkg, {
       patchObjective: options.patchObjective,
       objectiveContract: options.objectiveContract,
@@ -613,7 +658,7 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
         changeSet: {
           ...changeSet,
           diffHunks: chunk.diffHunks,
-          files: chunk.targetFiles.map(p => ({ path: p, additions: 0, deletions: 0 })),
+          files: chunkFiles,
           contentDigest: crypto.createHash("sha256").update(chunk.diffHunks || "", "utf8").digest("hex")
         },
         limits,

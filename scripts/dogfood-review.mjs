@@ -1076,7 +1076,9 @@ export async function runDogfoodReview(userOptions = {}) {
       stagedTimeoutCount = Array.isArray(res?.receipts)
         ? res.receipts.filter(r => r?.status === "timeout").length
         : 0;
-      stagedTelemetry = res?.telemetry || null;
+      if (!stagedTelemetry && res?.telemetry) {
+        stagedTelemetry = res.telemetry;
+      }
     }
     return res;
   };
@@ -1120,6 +1122,9 @@ export async function runDogfoodReview(userOptions = {}) {
       stagedTimeoutCount += Array.isArray(res?.receipts)
         ? res.receipts.filter(r => r?.status === "timeout").length
         : 0;
+      if (!stagedTelemetry && res?.telemetry) {
+        stagedTelemetry = res.telemetry;
+      }
     }
     return res;
   };
@@ -1163,6 +1168,9 @@ export async function runDogfoodReview(userOptions = {}) {
       stagedTimeoutCount += Array.isArray(res?.receipts)
         ? res.receipts.filter(r => r?.status === "timeout").length
         : 0;
+      if (!stagedTelemetry && res?.telemetry) {
+        stagedTelemetry = res.telemetry;
+      }
     }
     return res;
   };
