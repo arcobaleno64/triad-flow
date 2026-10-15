@@ -2,8 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 
 const BASELINE_HEAD_SHA = "bd9bc9001ee4cfee34671d6563d97deb793ff1ae";
-const CURRENT_HEAD_SHA = "d621bd99b93e46b15e522260a1bcaafb0d53d493";
-const EXTRACTION_TIMESTAMP = "2026-10-15T00:35:10Z";
+const CURRENT_HEAD_SHA = "089b66fb166888baf7ad47fae76081586ad2fa38";
+const EXTRACTION_TIMESTAMP = "2026-10-15T01:27:00Z";
 
 const triageRecords = [
   {
@@ -445,6 +445,17 @@ const triageRecords = [
     adjudicator: "PENDING_ADJUDICATION",
     adjudicationDate: "PENDING_ADJUDICATION",
     exactHead: CURRENT_HEAD_SHA
+  },
+  {
+    threadId: "PRRT_kwDOUWarIc6slAMk",
+    path: "src/adapters/staged-review.mjs",
+    line: 422,
+    title: "Bind caller context packages to the reviewed change set",
+    resolutionCategory: "FIXED",
+    evidenceLinkOrReasoning: "Commit 089b66f; locator src/adapters/staged-review.mjs:406-490. Recomputes candidate diff contentDigests and enforces strict identity, contentDigest, repositoryRoot, and file coverage scope binding between callerContextPackage and changeSet. Unbound, mismatched, or cross-changeset packages fail closed with EXACT_HEAD_CONTEXT_FAILED and are not forwarded to chunks. Tested in tests/remediation-007-clean-challenge.test.mjs ('PR39-ROUND9-STAGED-UNBOUND-CONTEXT-FAIL-CLOSED-11-NEGATIVE').",
+    adjudicator: "PENDING_ADJUDICATION",
+    adjudicationDate: "PENDING_ADJUDICATION",
+    exactHead: CURRENT_HEAD_SHA
   }
 ];
 
@@ -506,6 +517,28 @@ const deltaFindings = [
     ],
     issue: "dogfood-review.mjs 之 stagedTelemetry 與 stagedChunkCount 使用共用變數，多 Provider 同時觸發 Staged Fallback 時僅保留單一 Provider 遙測，造成其他 Provider 的 Chunk 數、Timeout 數與預算統計被覆蓋。",
     remediation: "dogfood-review.mjs 獨立追蹤各 Provider 之 stagedTelemetry、stagedChunkCount 與 stagedTimeoutCount，於 providerTelemetry 中提供各 Provider 細部數據，並在全域 telemetryMetrics 與 phaseMetrics.byProvider 準確彙總，避免多 Provider 同時 Staged 時數據遺失。"
+  },
+  {
+    id: "P1-CONTEXT-BINDING-01",
+    severity: "P1",
+    status: "REMEDIATED",
+    title: "外部 Context 未完整綁定 ChangeSet (staged-review.mjs)",
+    locations: [
+      "src/adapters/staged-review.mjs:406-490"
+    ],
+    issue: "在 staged-review.mjs 中，hasHeadOrDigest 只要求存在非空的 headSha、contentDigest 或 digest 其中之一，未比對 contentDigest 與實際 changeSet.diffHunks。一份具有非空 Layers、有效形式 Manifest、但只有過期 Digest 而沒有 Head SHA 的 Context 存在被當成有效輸入的路徑。",
+    remediation: "重新計算 diff contentDigest，嚴格比對 caller contextPackage 之 headSha、contentDigest、repositoryRoot 及檔案涵蓋範圍。非空 Context 必須具備與目前 ChangeSet 一致的 Head SHA 或 Content Digest 綁定，驗證失敗即 Fail-Closed 注入 EXACT_HEAD_CONTEXT_FAILED 並阻斷 Clean Approval。"
+  },
+  {
+    id: "P1-CONTEXT-GAPS-01",
+    severity: "P1",
+    status: "REMEDIATED",
+    title: "明確傳入空陣列可能遮蔽既有 Gap (staged-review.mjs options.contextGaps)",
+    locations: [
+      "src/adapters/staged-review.mjs:321-325"
+    ],
+    issue: "staged-review.mjs 原以 options.contextGaps !== undefined 優先選取 callerContextGaps，當呼叫端傳入空陣列 options.contextGaps: [] 時，changeSet.contextGaps 中的既有 Gap (如 EXACT_HEAD_CONTEXT_FAILED) 會被捨棄，導致後續無法傳播不確定性。",
+    remediation: "以 mergeContextGaps(options.contextGaps, changeSet?.contextGaps) 合併兩者，確保傳入空陣列無法清除既有 contextGaps。"
   }
 ];
 
@@ -647,6 +680,26 @@ const mdLines = [
   "> - **Remediation**: `dogfood-review.mjs` 獨立追蹤各 Provider 之 `stagedTelemetry`、`stagedChunkCount` 與 `stagedTimeoutCount`，於 `providerTelemetry` 中提供各 Provider 細部數據，並在全域 `telemetryMetrics` 與 `phaseMetrics.byProvider` 準確彙總，避免多 Provider 同時 Staged 時數據遺失。",
   "> - **Verification Evidence**: `tests/remediation-007-clean-challenge.test.mjs` (`PR39-ROUND8-STAGED-MULTI-PROVIDER-TELEMETRY-08`).",
   "",
+  "> [!IMPORTANT]",
+  "> **P1-CONTEXT-BINDING-01: 外部 Context 未完整綁定 ChangeSet (staged-review.mjs)**:",
+  "> - **Severity**: `P1`",
+  "> - **Status**: `REMEDIATED` (Tested & verified)",
+  "> - **Locations**:",
+  ">   - `src/adapters/staged-review.mjs:406-490`",
+  "> - **Issue**: 在 `staged-review.mjs` 中，`hasHeadOrDigest` 只要求存在非空的 `headSha`、`contentDigest` 或 `digest` 其中之一，未比對 `contentDigest` 與實際 `changeSet.diffHunks`。一份具有非空 Layers、有效形式 Manifest、但只有過期 Digest 而沒有 Head SHA 的 Context 存在被當成有效輸入的路徑。",
+  "> - **Remediation**: 重新計算 diff `contentDigest`，嚴格比對 caller `contextPackage` 之 `headSha`、`contentDigest`、`repositoryRoot` 及檔案涵蓋範圍。非空 Context 必須具備與目前 ChangeSet 一致的 Head SHA 或 Content Digest 綁定，驗證失敗即 Fail-Closed 注入 `EXACT_HEAD_CONTEXT_FAILED` 並阻斷 Clean Approval。",
+  "> - **Verification Evidence**: `tests/remediation-007-clean-challenge.test.mjs` (`PR39-ROUND9-STAGED-UNBOUND-CONTEXT-FAIL-CLOSED-11-NEGATIVE`).",
+  "",
+  "> [!IMPORTANT]",
+  "> **P1-CONTEXT-GAPS-01: 明確傳入空陣列可能遮蔽既有 Gap (staged-review.mjs options.contextGaps)**:",
+  "> - **Severity**: `P1`",
+  "> - **Status**: `REMEDIATED` (Tested & verified)",
+  "> - **Locations**:",
+  ">   - `src/adapters/staged-review.mjs:321-325`",
+  "> - **Issue**: `staged-review.mjs` 原以 `options.contextGaps !== undefined` 優先選取 `callerContextGaps`，當呼叫端傳入空陣列 `options.contextGaps: []` 時，`changeSet.contextGaps` 中的既有 Gap (如 `EXACT_HEAD_CONTEXT_FAILED`) 會被捨棄，導致後續無法傳播不確定性。",
+  "> - **Remediation**: 以 `mergeContextGaps(options.contextGaps, changeSet?.contextGaps)` 合併兩者，確保傳入空陣列無法清除既有 `contextGaps`。",
+  "> - **Verification Evidence**: `tests/remediation-007-clean-challenge.test.mjs` (`PR39-ROUND9-STAGED-MERGE-CALLER-CONTEXT-GAPS-12-NEGATIVE`).",
+  "",
   "## ⚠️ Governance Status: FIX_REQUIRED_DUAL_VISIBILITY (Spec §3.3.4 Enforced)",
   "",
   "> [!IMPORTANT]",
@@ -676,8 +729,8 @@ mdLines.push(
   "",
   `- **Triage Baseline Extraction Head**: \`${BASELINE_HEAD_SHA}\``,
   `- **Current Verified Head**: \`${CURRENT_HEAD_SHA}\``,
-  "- **Triage Status**: 131 review threads (40 outdated, 91 current) on PR #39.",
-  "- **Post-Remediation Push Head**: Distinct commit generated on `origin/fix/remediation-007-clean-challenge` incorporating technical boundary remediations P1-DV-01, P1-DV-02, P1-DV-03, P2-TELEMETRY-01, P2-TELEMETRY-02, and evidence ledger artifacts."
+  "- **Triage Status**: 131 review threads (41 outdated, 90 current) on PR #39.",
+  "- **Post-Remediation Push Head**: Distinct commit generated on `origin/fix/remediation-007-clean-challenge` incorporating technical boundary remediations P1-DV-01, P1-DV-02, P1-DV-03, P2-TELEMETRY-01, P2-TELEMETRY-02, P1-CONTEXT-BINDING-01, P1-CONTEXT-GAPS-01, and evidence ledger artifacts."
 );
 
 const mdDir = path.resolve("docs", "reports");

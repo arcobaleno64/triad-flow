@@ -3,12 +3,12 @@
     "targetPr": "https://github.com/arcobaleno64/triad-flow/pull/39",
     "prNumber": 39,
     "branch": "fix/remediation-007-clean-challenge",
-    "extractionTimestamp": "2026-10-15T00:35:10Z",
+    "extractionTimestamp": "2026-10-15T01:27:00Z",
     "baselineHeadSha": "bd9bc9001ee4cfee34671d6563d97deb793ff1ae",
-    "currentHeadSha": "d621bd99b93e46b15e522260a1bcaafb0d53d493",
-    "totalOutdatedThreads": 40,
+    "currentHeadSha": "089b66fb166888baf7ad47fae76081586ad2fa38",
+    "totalOutdatedThreads": 41,
     "verdictCounts": {
-      "FIXED": 38,
+      "FIXED": 39,
       "FIX_REQUIRED_DUAL_VISIBILITY": 1,
       "ACCEPTED_RISK": 0,
       "DUPLICATE": 1,
@@ -85,6 +85,28 @@
       ],
       "issue": "dogfood-review.mjs 之 stagedTelemetry 與 stagedChunkCount 使用共用變數，多 Provider 同時觸發 Staged Fallback 時僅保留單一 Provider 遙測，造成其他 Provider 的 Chunk 數、Timeout 數與預算統計被覆蓋。",
       "remediation": "dogfood-review.mjs 獨立追蹤各 Provider 之 stagedTelemetry、stagedChunkCount 與 stagedTimeoutCount，於 providerTelemetry 中提供各 Provider 細部數據，並在全域 telemetryMetrics 與 phaseMetrics.byProvider 準確彙總，避免多 Provider 同時 Staged 時數據遺失。"
+    },
+    {
+      "id": "P1-CONTEXT-BINDING-01",
+      "severity": "P1",
+      "status": "REMEDIATED",
+      "title": "外部 Context 未完整綁定 ChangeSet (staged-review.mjs)",
+      "locations": [
+        "src/adapters/staged-review.mjs:406-490"
+      ],
+      "issue": "在 staged-review.mjs 中，hasHeadOrDigest 只要求存在非空的 headSha、contentDigest 或 digest 其中之一，未比對 contentDigest 與實際 changeSet.diffHunks。一份具有非空 Layers、有效形式 Manifest、但只有過期 Digest 而沒有 Head SHA 的 Context 存在被當成有效輸入的路徑。",
+      "remediation": "重新計算 diff contentDigest，嚴格比對 caller contextPackage 之 headSha、contentDigest、repositoryRoot 及檔案涵蓋範圍。非空 Context 必須具備與目前 ChangeSet 一致的 Head SHA 或 Content Digest 綁定，驗證失敗即 Fail-Closed 注入 EXACT_HEAD_CONTEXT_FAILED 並阻斷 Clean Approval。"
+    },
+    {
+      "id": "P1-CONTEXT-GAPS-01",
+      "severity": "P1",
+      "status": "REMEDIATED",
+      "title": "明確傳入空陣列可能遮蔽既有 Gap (staged-review.mjs options.contextGaps)",
+      "locations": [
+        "src/adapters/staged-review.mjs:321-325"
+      ],
+      "issue": "staged-review.mjs 原以 options.contextGaps !== undefined 優先選取 callerContextGaps，當呼叫端傳入空陣列 options.contextGaps: [] 時，changeSet.contextGaps 中的既有 Gap (如 EXACT_HEAD_CONTEXT_FAILED) 會被捨棄，導致後續無法傳播不確定性。",
+      "remediation": "以 mergeContextGaps(options.contextGaps, changeSet?.contextGaps) 合併兩者，確保傳入空陣列無法清除既有 contextGaps。"
     }
   ],
   "threads": [
@@ -464,7 +486,7 @@
       "evidenceLinkOrReasoning": "Commits a71082c, HEAD; locator src/adapters/staged-review.mjs:610-630. Preserves and merges caller-provided contextGaps with chunk-level contextPkg gaps, injecting effectiveChunkContextGaps into buildEvidenceReviewPrompt and adapter.executeReview. Tested in tests/remediation-007-clean-challenge.test.mjs ('PR39-ROUND6-STAGED-DUAL-VISIBILITY-01', 'PR39-ROUND6-STAGED-DUAL-VISIBILITY-02-NEGATIVE').",
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
-      "exactHead": "d621bd99b93e46b15e522260a1bcaafb0d53d493",
+      "exactHead": "089b66fb166888baf7ad47fae76081586ad2fa38",
       "fileLocation": "src/adapters/staged-review.mjs:622",
       "title": "Preserve context gaps in staged fallback prompts"
     },
@@ -474,7 +496,7 @@
       "evidenceLinkOrReasoning": "Commits 187a878, d621bd9, HEAD; locator src/adapters/staged-review.mjs:385-480. When callerContextPackage is null, undefined, or vacuous ({}, { layers: {} }), staged review invokes buildContextPackage with repositoryRoot fallback. If unavailable, fails closed with EXACT_HEAD_CONTEXT_FAILED. Tested in tests/remediation-007-clean-challenge.test.mjs ('PR39-ROUND7-STAGED-NULL-CONTEXT-REEXTRACTION-01', 'PR39-ROUND7-STAGED-NULL-CONTEXT-FAIL-CLOSED-02-NEGATIVE', 'PR39-ROUND7-STAGED-VACUOUS-OBJECT-REEXTRACTION-05', 'PR39-ROUND8-STAGED-VACUOUS-LAYERS-REEXTRACTION-06', 'PR39-ROUND8-STAGED-VACUOUS-LAYERS-FAIL-CLOSED-07-NEGATIVE').",
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
-      "exactHead": "d621bd99b93e46b15e522260a1bcaafb0d53d493",
+      "exactHead": "089b66fb166888baf7ad47fae76081586ad2fa38",
       "fileLocation": "src/adapters/staged-review.mjs:385",
       "title": "Re-extract exact-head contextPackage when options.contextPackage is null or empty"
     },
@@ -484,9 +506,19 @@
       "evidenceLinkOrReasoning": "Commits 187a878, d621bd9, HEAD; locator scripts/dogfood-review.mjs:1040-1175, 1400-1465. Provider telemetry individually tracks agyStagedFallbackUsed, claudeStagedFallbackUsed, and codexStagedFallbackUsed alongside per-provider chunk counts and timeout metrics. Tested in tests/remediation-007-clean-challenge.test.mjs ('PR39-ROUND7-STAGED-PROVIDER-TELEMETRY-ATTRIBUTION-02', 'PR39-ROUND8-STAGED-MULTI-PROVIDER-TELEMETRY-08').",
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
-      "exactHead": "d621bd99b93e46b15e522260a1bcaafb0d53d493",
+      "exactHead": "089b66fb166888baf7ad47fae76081586ad2fa38",
       "fileLocation": "scripts/dogfood-review.mjs:1400",
       "title": "Attribute stagedFallbackUsed and staged review telemetry per provider"
+    },
+    {
+      "threadId": "PRRT_kwDOUWarIc6slAMk",
+      "resolutionCategory": "FIXED",
+      "evidenceLinkOrReasoning": "Commit 089b66f; locator src/adapters/staged-review.mjs:406-490. Recomputes candidate diff contentDigests and enforces strict identity, contentDigest, repositoryRoot, and file coverage scope binding between callerContextPackage and changeSet. Unbound, mismatched, or cross-changeset packages fail closed with EXACT_HEAD_CONTEXT_FAILED and are not forwarded to chunks. Tested in tests/remediation-007-clean-challenge.test.mjs ('PR39-ROUND9-STAGED-UNBOUND-CONTEXT-FAIL-CLOSED-11-NEGATIVE').",
+      "adjudicator": "PENDING_ADJUDICATION",
+      "adjudicationDate": "PENDING_ADJUDICATION",
+      "exactHead": "089b66fb166888baf7ad47fae76081586ad2fa38",
+      "fileLocation": "src/adapters/staged-review.mjs:422",
+      "title": "Bind caller context packages to the reviewed change set"
     }
   ]
 }
