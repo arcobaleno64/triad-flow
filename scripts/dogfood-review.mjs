@@ -1207,7 +1207,7 @@ export async function runDogfoodReview(userOptions = {}) {
   const stagedTimeoutCount = stagedProviders.reduce((sum, p) => sum + (p.chunkTimeoutCount || 0), 0);
   const totalStagedChunks = stagedProviders.reduce((sum, p) => sum + (p.chunkCount || 0), 0);
   const stagedChunkCount = stagedProviders.length > 0
-    ? (stagedProviders.length === 1 ? stagedProviders[0].chunkCount : totalStagedChunks)
+    ? (stagedProviders.length === 1 ? stagedProviders[0].chunkCount : (stagedProviders.some(p => p.chunkCount !== null) ? totalStagedChunks : null))
     : null;
   const reviewerPhaseDurationMs = Date.now() - t0;
 
@@ -1509,9 +1509,27 @@ export async function runDogfoodReview(userOptions = {}) {
             reason: stagedProviders.map(p => `${p.provider}: ${p.stagedTelemetry?.feasibility?.reason || "feasible"}`).join("; ")
           },
         byProvider: {
-          ...(agyStagedFallbackUsed ? { agy: stagedReviewMetrics.agy.stagedTelemetry } : {}),
-          ...(claudeStagedFallbackUsed ? { claude: stagedReviewMetrics.claude.stagedTelemetry } : {}),
-          ...(codexStagedFallbackUsed ? { codex: stagedReviewMetrics.codex.stagedTelemetry } : {})
+          ...(agyStagedFallbackUsed ? {
+            agy: stagedReviewMetrics.agy.stagedTelemetry || {
+              chunkCount: stagedReviewMetrics.agy.chunkCount,
+              chunkTimeoutCount: stagedReviewMetrics.agy.chunkTimeoutCount,
+              stagedFallbackUsed: true
+            }
+          } : {}),
+          ...(claudeStagedFallbackUsed ? {
+            claude: stagedReviewMetrics.claude.stagedTelemetry || {
+              chunkCount: stagedReviewMetrics.claude.chunkCount,
+              chunkTimeoutCount: stagedReviewMetrics.claude.chunkTimeoutCount,
+              stagedFallbackUsed: true
+            }
+          } : {}),
+          ...(codexStagedFallbackUsed ? {
+            codex: stagedReviewMetrics.codex.stagedTelemetry || {
+              chunkCount: stagedReviewMetrics.codex.chunkCount,
+              chunkTimeoutCount: stagedReviewMetrics.codex.chunkTimeoutCount,
+              stagedFallbackUsed: true
+            }
+          } : {})
         }
       } : {
         platform: process.platform,

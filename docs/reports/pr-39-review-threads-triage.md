@@ -70,9 +70,9 @@
 > - **Status**: `REMEDIATED` (Tested & verified)
 > - **Locations**:
 >   - `src/adapters/staged-review.mjs:385-420`
-> - **Issue**: `staged-review.mjs` 原以 `!callerContextPackage.layers` 判斷 contextPackage 是否 vacuous，當傳入 `{ layers: {} }` 或缺少 Head SHA / Digest 時，因 layers 為 truthy 而繞過 `buildContextPackage` 重新擷取，造成無效 Context 進入 Chunk Review。
-> - **Remediation**: 強化 `isCallerContextVacuous` 與 Context 驗證，要求 contextPackage 必須具備非空層級 (substantive layers) 或非空 File Coverage Manifest，且必須包含有效 Head SHA 或 Content Digest；否則視為 vacuous 強制呼叫 `buildContextPackage` 重新擷取，若擷取失敗則 fail-closed 注入 `EXACT_HEAD_CONTEXT_FAILED`。
-> - **Verification Evidence**: `tests/remediation-007-clean-challenge.test.mjs` (`PR39-ROUND8-STAGED-VACUOUS-LAYERS-REEXTRACTION-06`, `PR39-ROUND8-STAGED-VACUOUS-LAYERS-FAIL-CLOSED-07-NEGATIVE`).
+> - **Issue**: `staged-review.mjs` 原以 `!callerContextPackage.layers` 判斷 contextPackage 是否 vacuous，當傳入 `{ layers: {} }`、`[{}]` 空 manifest、缺少 Head SHA / Digest 或包含 throwing getters 時，繞過 `buildContextPackage` 重新擷取或造成未處理例外，造成無效 Context 進入 Chunk Review。
+> - **Remediation**: 強化 `isCallerContextVacuous` 與 Context 驗證，要求 contextPackage 必須具備非空層級 (substantive layers) 或具備具體檔案標識的非空 File Coverage Manifest，且必須包含有效 Head SHA 或 Content Digest；並加入安全屬性讀取防範 throwing getters 與代理攻擊；否則視為 vacuous 強制呼叫 `buildContextPackage` 重新擷取，若擷取失敗則 fail-closed 注入 `EXACT_HEAD_CONTEXT_FAILED`。
+> - **Verification Evidence**: `tests/remediation-007-clean-challenge.test.mjs` (`PR39-ROUND8-STAGED-VACUOUS-LAYERS-REEXTRACTION-06`, `PR39-ROUND8-STAGED-VACUOUS-LAYERS-FAIL-CLOSED-07-NEGATIVE`, `PR39-ROUND8-STAGED-VACUOUS-MANIFEST-EMPTY-OBJECT-09-NEGATIVE`, `PR39-ROUND8-STAGED-THROWING-GETTER-CONTEXT-10-NEGATIVE`).
 
 > [!IMPORTANT]
 > **P2-TELEMETRY-02: 多 Provider 同時觸發 Staged Fallback 時遙測彙總與 Chunk 統計覆蓋 (dogfood-review.mjs)**:

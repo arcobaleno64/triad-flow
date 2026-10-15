@@ -60,8 +60,8 @@
       "locations": [
         "src/adapters/staged-review.mjs:385-420"
       ],
-      "issue": "staged-review.mjs 原以 !callerContextPackage.layers 判斷 contextPackage 是否 vacuous，當傳入 { layers: {} } 或缺少 Head SHA / Digest 時，因 layers 為 truthy 而繞過 buildContextPackage 重新擷取，造成無效 Context 進入 Chunk Review。",
-      "remediation": "強化 isCallerContextVacuous 與 Context 驗證，要求 contextPackage 必須具備非空層級 (substantive layers) 或非空 File Coverage Manifest，且必須包含有效 Head SHA 或 Content Digest；否則視為 vacuous 強制呼叫 buildContextPackage 重新擷取，若擷取失敗則 fail-closed 注入 EXACT_HEAD_CONTEXT_FAILED。"
+      "issue": "staged-review.mjs 原以 !callerContextPackage.layers 判斷 contextPackage 是否 vacuous，當傳入 { layers: {} }、[{}] 空 manifest、缺少 Head SHA / Digest 或包含 throwing getters 時，繞過 buildContextPackage 重新擷取或造成未處理例外，導致無效或損毀 Context 進入 Chunk Review。",
+      "remediation": "強化 isCallerContextVacuous 與 Context 驗證，要求 contextPackage 必須具備非空層級 (substantive layers) 或具備具體檔案標識的非空 File Coverage Manifest，且必須包含有效 Head SHA 或 Content Digest；並加入安全屬性讀取以防範 throwing getters 與代理攻擊；否則視為 vacuous 強制呼叫 buildContextPackage 重新擷取，若擷取失敗或物件異常則 fail-closed 注入 EXACT_HEAD_CONTEXT_FAILED。"
     },
     {
       "id": "P2-TELEMETRY-01",

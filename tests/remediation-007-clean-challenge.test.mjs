@@ -6469,3 +6469,132 @@ test("PR39-ROUND8-STAGED-MULTI-PROVIDER-TELEMETRY-08: runDogfoodReview captures 
     fs.rmSync(repo, { recursive: true, force: true });
   }
 });
+
+test("PR39-ROUND8-STAGED-VACUOUS-MANIFEST-EMPTY-OBJECT-09-NEGATIVE: executeStagedReview treats [{}] manifest as vacuous and fails closed when git extraction fails (P1-DV-03)", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-round8-vacuous-manifest-failclosed-"));
+  const diffContent = "--- a/src/secret.js\n+++ b/src/secret.js\n@@ -1,1 +1,2 @@\n+const secret = true;\n";
+  const headSha = "8888888888888888888888888888888888888888";
+
+  const capturedChunkInputs = [];
+  const capturingAdapter = new CliReviewAdapter({
+    command: "agy",
+    providerName: "agy",
+    family: "google",
+    modelName: "gemini-3.8-flash",
+    execFn: async (callContext) => {
+      capturedChunkInputs.push(callContext);
+      return {
+        stdout: JSON.stringify({
+          findings: [],
+          coverage: { coveredFiles: ["src/secret.js"], omittedFiles: [] },
+          providerIdentity: { provider: "agy", family: "google", model: "gemini-3.8-flash" }
+        })
+      };
+    }
+  });
+
+  try {
+    const changeSet = {
+      ok: true,
+      schemaVersion: "1.0.0",
+      headSha,
+      repository: {
+        root: tmpDir,
+        headSha
+      },
+      totalFiles: 1,
+      files: [{ path: "src/secret.js", additions: 1, deletions: 0, riskTier: 1 }],
+      diffHunks: diffContent
+    };
+
+    // Caller provides empty-object manifest [{}], which has no file/path coverage
+    const result = await executeStagedReview(changeSet, capturingAdapter, {
+      cwd: tmpDir,
+      headSha,
+      contextPackage: {
+        headSha,
+        fileCoverageManifest: [{}]
+      }
+    });
+
+    assert.ok(
+      result.contextGaps.some(g => g.code === "EXACT_HEAD_CONTEXT_FAILED"),
+      "Must treat [{}] manifest as vacuous and inject EXACT_HEAD_CONTEXT_FAILED when git extraction fails"
+    );
+    assert.equal(capturedChunkInputs[0].input.contextPackage, undefined, "Chunk must not receive vacuous manifest [{}]");
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("PR39-ROUND8-STAGED-THROWING-GETTER-CONTEXT-10-NEGATIVE: executeStagedReview fails closed without unhandled crash when contextPackage has throwing getters (P1-DV-03)", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-round8-throwing-getter-failclosed-"));
+  const diffContent = "--- a/src/secret.js\n+++ b/src/secret.js\n@@ -1,1 +1,2 @@\n+const secret = true;\n";
+  const headSha = "7777777777777777777777777777777777777777";
+
+  const capturingAdapter = new CliReviewAdapter({
+    command: "agy",
+    providerName: "agy",
+    family: "google",
+    modelName: "gemini-3.8-flash",
+    execFn: async () => ({
+      stdout: JSON.stringify({
+        findings: [],
+        coverage: { coveredFiles: ["src/secret.js"], omittedFiles: [] },
+        providerIdentity: { provider: "agy", family: "google", model: "gemini-3.8-flash" }
+      })
+    })
+  });
+
+  try {
+    const changeSet = {
+      ok: true,
+      schemaVersion: "1.0.0",
+      headSha,
+      repository: {
+        root: tmpDir,
+        headSha
+      },
+      totalFiles: 1,
+      files: [{ path: "src/secret.js", additions: 1, deletions: 0, riskTier: 1 }],
+      diffHunks: diffContent
+    };
+
+    // Case 1: Throwing getter on layers
+    const poisonedLayersPkg = {
+      headSha,
+      get layers() {
+        throw new Error("Malicious or corrupted getter on layers");
+      }
+    };
+
+    const result1 = await executeStagedReview(changeSet, capturingAdapter, {
+      cwd: tmpDir,
+      headSha,
+      contextPackage: poisonedLayersPkg
+    });
+
+    assert.ok(
+      result1.contextGaps.some(g => g.code === "EXACT_HEAD_CONTEXT_FAILED"),
+      "Must fail closed with EXACT_HEAD_CONTEXT_FAILED when contextPackage.layers throws"
+    );
+
+    // Case 2: Throwing getter on headSha
+    const poisonedHeadPkg = {
+      get headSha() {
+        throw new Error("Malicious or corrupted getter on headSha");
+      }
+    };
+
+    const result2 = await executeStagedReview(changeSet, capturingAdapter, {
+      cwd: tmpDir,
+      headSha,
+      contextPackage: poisonedHeadPkg
+    });
+
+    assert.equal(result2.ok, false, "Must return ok: false on throwing headSha");
+    assert.equal(result2.status, "incomplete", "Must return incomplete status on throwing headSha");
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});

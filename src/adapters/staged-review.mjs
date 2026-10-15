@@ -355,28 +355,49 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
       };
     }
 
-    const pkgHeadSha = normalizeCommitSha(callerContextPackage.headSha || "");
-    if (callerContextPackage.headSha && expectedHeadSha) {
-      if (pkgHeadSha !== expectedHeadSha) {
-        return {
-          runId,
-          ok: false,
-          executionStatus: EXECUTION_STATUS.ERROR,
-          error: `ContextPackage headSha (${callerContextPackage.headSha}) does not match changeSet headSha (${changeSet?.headSha || expectedHeadSha}).`,
-          providerIdentity: {
-            provider: adapter.providerName || role,
-            model: adapter.modelName || "unknown-model",
-            family: adapter.family || "unknown",
-            transport: "cli-staged",
-            runId
-          },
-          status: "incomplete",
-          findings: [],
-          coverage: { coveredFiles: [], omittedFiles: [], isComplete: false },
-          violations: [`ContextPackage headSha mismatch: ${callerContextPackage.headSha} vs ${changeSet?.headSha || expectedHeadSha}`],
-          receipts: []
-        };
+    try {
+      const pkgHeadSha = normalizeCommitSha(callerContextPackage.headSha || "");
+      if (callerContextPackage.headSha && expectedHeadSha) {
+        if (pkgHeadSha !== expectedHeadSha) {
+          return {
+            runId,
+            ok: false,
+            executionStatus: EXECUTION_STATUS.ERROR,
+            error: `ContextPackage headSha (${callerContextPackage.headSha}) does not match changeSet headSha (${changeSet?.headSha || expectedHeadSha}).`,
+            providerIdentity: {
+              provider: adapter.providerName || role,
+              model: adapter.modelName || "unknown-model",
+              family: adapter.family || "unknown",
+              transport: "cli-staged",
+              runId
+            },
+            status: "incomplete",
+            findings: [],
+            coverage: { coveredFiles: [], omittedFiles: [], isComplete: false },
+            violations: [`ContextPackage headSha mismatch: ${callerContextPackage.headSha} vs ${changeSet?.headSha || expectedHeadSha}`],
+            receipts: []
+          };
+        }
       }
+    } catch {
+      return {
+        runId,
+        ok: false,
+        executionStatus: EXECUTION_STATUS.ERROR,
+        error: "Caller contextPackage threw an exception when validating headSha.",
+        providerIdentity: {
+          provider: adapter.providerName || role,
+          model: adapter.modelName || "unknown-model",
+          family: adapter.family || "unknown",
+          transport: "cli-staged",
+          runId
+        },
+        status: "incomplete",
+        findings: [],
+        coverage: { coveredFiles: [], omittedFiles: [], isComplete: false },
+        violations: ["Corrupted or throwing contextPackage"],
+        receipts: []
+      };
     }
   }
 
@@ -390,37 +411,41 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
     !Array.isArray(callerContextPackage)
   );
 
-  const callerHasUnavailableManifest = isCallerContextObject &&
-    Array.isArray(callerContextPackage.fileCoverageManifest) &&
-    callerContextPackage.fileCoverageManifest.some(
-      m => m && (m.exactHeadAvailable === false || m.exactHeadUnavailable === true || m.contentAvailable === false)
-    );
+  let callerHasUnavailableManifest = false;
+  let hasSubstantiveLayers = false;
+  let hasSubstantiveManifest = false;
+  let hasHeadOrDigest = false;
+  let isCallerContextPoisoned = false;
 
-  const hasSubstantiveLayers = Boolean(
-    isCallerContextObject &&
-    callerContextPackage.layers &&
-    typeof callerContextPackage.layers === "object" &&
-    !Array.isArray(callerContextPackage.layers) &&
-    Object.values(callerContextPackage.layers).some(layer =>
-      layer && typeof layer === "object" && (Array.isArray(layer) ? layer.length > 0 : Object.keys(layer).length > 0)
-    )
-  );
+  if (isCallerContextObject) {
+    try {
+      if (Array.isArray(callerContextPackage.fileCoverageManifest)) {
+        callerHasUnavailableManifest = callerContextPackage.fileCoverageManifest.some(
+          m => m && typeof m === "object" && (m.exactHeadAvailable === false || m.exactHeadUnavailable === true || m.contentAvailable === false)
+        );
+        hasSubstantiveManifest = callerContextPackage.fileCoverageManifest.some(
+          entry => entry && typeof entry === "object" && (Boolean(entry.file) || Boolean(entry.path)) && Object.keys(entry).length > 0
+        );
+      }
 
-  const hasSubstantiveManifest = Boolean(
-    isCallerContextObject &&
-    Array.isArray(callerContextPackage.fileCoverageManifest) &&
-    callerContextPackage.fileCoverageManifest.length > 0 &&
-    callerContextPackage.fileCoverageManifest.some(entry => entry && typeof entry === "object")
-  );
+      if (callerContextPackage.layers && typeof callerContextPackage.layers === "object" && !Array.isArray(callerContextPackage.layers)) {
+        hasSubstantiveLayers = Object.values(callerContextPackage.layers).some(layer =>
+          layer && typeof layer === "object" && (Array.isArray(layer) ? layer.length > 0 : Object.keys(layer).length > 0)
+        );
+      }
 
-  const hasHeadOrDigest = Boolean(
-    isCallerContextObject &&
-    (
-      (typeof callerContextPackage.headSha === "string" && callerContextPackage.headSha.trim().length > 0) ||
-      (typeof callerContextPackage.contentDigest === "string" && callerContextPackage.contentDigest.trim().length > 0) ||
-      (typeof callerContextPackage.digest === "string" && callerContextPackage.digest.trim().length > 0)
-    )
-  );
+      const head = callerContextPackage.headSha;
+      const cDigest = callerContextPackage.contentDigest;
+      const dig = callerContextPackage.digest;
+      hasHeadOrDigest = Boolean(
+        (typeof head === "string" && head.trim().length > 0) ||
+        (typeof cDigest === "string" && cDigest.trim().length > 0) ||
+        (typeof dig === "string" && dig.trim().length > 0)
+      );
+    } catch {
+      isCallerContextPoisoned = true;
+    }
+  }
 
   // Treat contextPackage as vacuous if it lacks substantive layers/manifests OR lacks headSha/digest
   const isCallerContextVacuous = isCallerContextObject && (
@@ -428,8 +453,18 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
     !hasHeadOrDigest
   );
 
+  let callerOk = true;
+  if (isCallerContextObject) {
+    try {
+      callerOk = callerContextPackage.ok !== false;
+    } catch {
+      isCallerContextPoisoned = true;
+    }
+  }
+
   const hasValidCallerContext = isCallerContextObject &&
-    callerContextPackage.ok !== false &&
+    !isCallerContextPoisoned &&
+    callerOk &&
     !callerHasUnavailableManifest &&
     !isCallerContextVacuous;
 
@@ -437,18 +472,23 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
     resolvedContextPackage = callerContextPackage;
   } else if (hasExtractionFailedGap) {
     resolvedContextPackage = null;
-  } else if (callerHasUnavailableManifest || (isCallerContextObject && callerContextPackage.ok === false)) {
-    // Explicitly invalid/unavailable caller contextPackage without extraction gap fails closed
+  } else if (isCallerContextPoisoned || callerHasUnavailableManifest || (isCallerContextObject && !callerOk)) {
+    // Explicitly invalid/corrupted/unavailable caller contextPackage without extraction gap fails closed
     resolvedContextPackage = null;
-    const unavailableEntry = isCallerContextObject && Array.isArray(callerContextPackage.fileCoverageManifest)
-      ? callerContextPackage.fileCoverageManifest.find(m => m && (m.exactHeadAvailable === false || m.exactHeadUnavailable === true || m.contentAvailable === false))
-      : null;
+    let unavailableEntry = null;
+    try {
+      if (isCallerContextObject && Array.isArray(callerContextPackage.fileCoverageManifest)) {
+        unavailableEntry = callerContextPackage.fileCoverageManifest.find(m => m && typeof m === "object" && (m.exactHeadAvailable === false || m.exactHeadUnavailable === true || m.contentAvailable === false));
+      }
+    } catch {}
     fallbackExtractionGaps.push({
       code: "EXACT_HEAD_CONTEXT_FAILED",
       symbol: "exact-head-context",
-      reason: unavailableEntry
-        ? `Exact-head content unavailable for file: '${unavailableEntry.file || unavailableEntry.path}'.`
-        : (callerContextPackage?.error?.message || callerContextPackage?.error || "Caller contextPackage has ok: false or unavailable exact-head content"),
+      reason: isCallerContextPoisoned
+        ? "Caller contextPackage is corrupted or threw an exception during inspection"
+        : (unavailableEntry
+            ? `Exact-head content unavailable for file: '${unavailableEntry.file || unavailableEntry.path}'.`
+            : (callerContextPackage?.error?.message || callerContextPackage?.error || "Caller contextPackage has ok: false or unavailable exact-head content")),
       targetFiles: Array.isArray(changeSet?.files) ? changeSet.files.map(f => typeof f === "string" ? f : f?.path).filter(Boolean) : []
     });
   } else {
