@@ -2,8 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 
 const BASELINE_HEAD_SHA = "bd9bc9001ee4cfee34671d6563d97deb793ff1ae";
-const CURRENT_HEAD_SHA = "a71082c7b2bc4d29f17cee60c5c0f7abe7fe45d0";
-const EXTRACTION_TIMESTAMP = "2026-10-14T11:41:22Z";
+const CURRENT_HEAD_SHA = "d621bd99b93e46b15e522260a1bcaafb0d53d493";
+const EXTRACTION_TIMESTAMP = "2026-10-15T00:35:10Z";
 
 const triageRecords = [
   {
@@ -423,6 +423,28 @@ const triageRecords = [
     adjudicator: "PENDING_ADJUDICATION",
     adjudicationDate: "PENDING_ADJUDICATION",
     exactHead: CURRENT_HEAD_SHA
+  },
+  {
+    threadId: "PRRT_kwDOUWarIc6sPGEl",
+    path: "src/adapters/staged-review.mjs",
+    line: 385,
+    title: "Re-extract exact-head contextPackage when options.contextPackage is null or empty",
+    resolutionCategory: "FIXED",
+    evidenceLinkOrReasoning: "Commits 187a878, d621bd9, HEAD; locator src/adapters/staged-review.mjs:385-480. When callerContextPackage is null, undefined, or vacuous ({}, { layers: {} }), staged review invokes buildContextPackage with repositoryRoot fallback. If unavailable, fails closed with EXACT_HEAD_CONTEXT_FAILED. Tested in tests/remediation-007-clean-challenge.test.mjs ('PR39-ROUND7-STAGED-NULL-CONTEXT-REEXTRACTION-01', 'PR39-ROUND7-STAGED-NULL-CONTEXT-FAIL-CLOSED-02-NEGATIVE', 'PR39-ROUND7-STAGED-VACUOUS-OBJECT-REEXTRACTION-05', 'PR39-ROUND8-STAGED-VACUOUS-LAYERS-REEXTRACTION-06', 'PR39-ROUND8-STAGED-VACUOUS-LAYERS-FAIL-CLOSED-07-NEGATIVE').",
+    adjudicator: "PENDING_ADJUDICATION",
+    adjudicationDate: "PENDING_ADJUDICATION",
+    exactHead: CURRENT_HEAD_SHA
+  },
+  {
+    threadId: "PRRT_kwDOUWarIc6sPmwz",
+    path: "scripts/dogfood-review.mjs",
+    line: 1400,
+    title: "Attribute stagedFallbackUsed and staged review telemetry per provider",
+    resolutionCategory: "FIXED",
+    evidenceLinkOrReasoning: "Commits 187a878, d621bd9, HEAD; locator scripts/dogfood-review.mjs:1040-1175, 1400-1465. Provider telemetry individually tracks agyStagedFallbackUsed, claudeStagedFallbackUsed, and codexStagedFallbackUsed alongside per-provider chunk counts and timeout metrics. Tested in tests/remediation-007-clean-challenge.test.mjs ('PR39-ROUND7-STAGED-PROVIDER-TELEMETRY-ATTRIBUTION-02', 'PR39-ROUND8-STAGED-MULTI-PROVIDER-TELEMETRY-08').",
+    adjudicator: "PENDING_ADJUDICATION",
+    adjudicationDate: "PENDING_ADJUDICATION",
+    exactHead: CURRENT_HEAD_SHA
   }
 ];
 
@@ -452,6 +474,17 @@ const deltaFindings = [
     remediation: "executeStagedReview 強化 callerContextPackage 驗證，僅在有效非空物件時直接沿用；若為 null/undefined 且無 extraction gap 則強制呼叫 buildContextPackage 重新擷取有效 exact-head contextPackage。若擷取失敗或 exact-head 不可用，則傳播 EXACT_HEAD_CONTEXT_FAILED 不確定性 gap 並阻止 Clean Approval。"
   },
   {
+    id: "P1-DV-03",
+    severity: "P1",
+    status: "REMEDIATED",
+    title: "executeStagedReview 在部分空白 Context ({ layers: {} } 或無 Head/Digest) 時繞過重新擷取",
+    locations: [
+      "src/adapters/staged-review.mjs:385-420"
+    ],
+    issue: "staged-review.mjs 原以 !callerContextPackage.layers 判斷 contextPackage 是否 vacuous，當傳入 { layers: {} } 或缺少 Head SHA / Digest 時，因 layers 為 truthy 而繞過 buildContextPackage 重新擷取，造成無效 Context 進入 Chunk Review。",
+    remediation: "強化 isCallerContextVacuous 與 Context 驗證，要求 contextPackage 必須具備非空層級 (substantive layers) 或非空 File Coverage Manifest，且必須包含有效 Head SHA 或 Content Digest；否則視為 vacuous 強制呼叫 buildContextPackage 重新擷取，若擷取失敗則 fail-closed 注入 EXACT_HEAD_CONTEXT_FAILED。"
+  },
+  {
     id: "P2-TELEMETRY-01",
     severity: "P2",
     status: "REMEDIATED",
@@ -461,6 +494,18 @@ const deltaFindings = [
     ],
     issue: "dogfood-review.mjs 將全域 stagedFallbackUsed 寫給 agy，並將 claude、codex 固定為 false，導致單一 Provider (如 Claude) 觸發 Staged Fallback 時遙測歸屬錯誤。",
     remediation: "分別追蹤 agyStagedFallbackUsed, claudeStagedFallbackUsed, codexStagedFallbackUsed，並如實填入 providerTelemetry[provider].stagedFallbackUsed。"
+  },
+  {
+    id: "P2-TELEMETRY-02",
+    severity: "P2",
+    status: "REMEDIATED",
+    title: "多 Provider 同時觸發 Staged Fallback 時遙測彙總與 Chunk 統計覆蓋 (dogfood-review.mjs)",
+    locations: [
+      "scripts/dogfood-review.mjs:1040-1175",
+      "scripts/dogfood-review.mjs:1425-1490"
+    ],
+    issue: "dogfood-review.mjs 之 stagedTelemetry 與 stagedChunkCount 使用共用變數，多 Provider 同時觸發 Staged Fallback 時僅保留單一 Provider 遙測，造成其他 Provider 的 Chunk 數、Timeout 數與預算統計被覆蓋。",
+    remediation: "dogfood-review.mjs 獨立追蹤各 Provider 之 stagedTelemetry、stagedChunkCount 與 stagedTimeoutCount，於 providerTelemetry 中提供各 Provider 細部數據，並在全域 telemetryMetrics 與 phaseMetrics.byProvider 準確彙總，避免多 Provider 同時 Staged 時數據遺失。"
   }
 ];
 
@@ -581,6 +626,27 @@ const mdLines = [
   "> - **Remediation**: 分別追蹤 `agyStagedFallbackUsed`, `claudeStagedFallbackUsed`, `codexStagedFallbackUsed`，並如實填入 `providerTelemetry[provider].stagedFallbackUsed`。",
   "> - **Verification Evidence**: `tests/remediation-007-clean-challenge.test.mjs` (`PR39-ROUND7-PROVIDER-TELEMETRY-ATTRIBUTION-01`).",
   "",
+  "> [!IMPORTANT]",
+  "> **P1-DV-03: executeStagedReview 在部分空白 Context ({ layers: {} } 或無 Head/Digest) 時繞過重新擷取**:",
+  "> - **Severity**: `P1`",
+  "> - **Status**: `REMEDIATED` (Tested & verified)",
+  "> - **Locations**:",
+  ">   - `src/adapters/staged-review.mjs:385-420`",
+  "> - **Issue**: `staged-review.mjs` 原以 `!callerContextPackage.layers` 判斷 contextPackage 是否 vacuous，當傳入 `{ layers: {} }` 或缺少 Head SHA / Digest 時，因 layers 為 truthy 而繞過 `buildContextPackage` 重新擷取，造成無效 Context 進入 Chunk Review。",
+  "> - **Remediation**: 強化 `isCallerContextVacuous` 與 Context 驗證，要求 contextPackage 必須具備非空層級 (substantive layers) 或非空 File Coverage Manifest，且必須包含有效 Head SHA 或 Content Digest；否則視為 vacuous 強制呼叫 `buildContextPackage` 重新擷取，若擷取失敗則 fail-closed 注入 `EXACT_HEAD_CONTEXT_FAILED`。",
+  "> - **Verification Evidence**: `tests/remediation-007-clean-challenge.test.mjs` (`PR39-ROUND8-STAGED-VACUOUS-LAYERS-REEXTRACTION-06`, `PR39-ROUND8-STAGED-VACUOUS-LAYERS-FAIL-CLOSED-07-NEGATIVE`).",
+  "",
+  "> [!IMPORTANT]",
+  "> **P2-TELEMETRY-02: 多 Provider 同時觸發 Staged Fallback 時遙測彙總與 Chunk 統計覆蓋 (dogfood-review.mjs)**:",
+  "> - **Severity**: `P2`",
+  "> - **Status**: `REMEDIATED` (Tested & verified)",
+  "> - **Locations**:",
+  ">   - `scripts/dogfood-review.mjs:1040-1175`",
+  ">   - `scripts/dogfood-review.mjs:1425-1490`",
+  "> - **Issue**: `dogfood-review.mjs` 之 `stagedTelemetry` 與 `stagedChunkCount` 使用共用變數，多 Provider 同時觸發 Staged Fallback 時僅保留單一 Provider 遙測，造成其他 Provider 的 Chunk 數、Timeout 數與預算統計被覆蓋。",
+  "> - **Remediation**: `dogfood-review.mjs` 獨立追蹤各 Provider 之 `stagedTelemetry`、`stagedChunkCount` 與 `stagedTimeoutCount`，於 `providerTelemetry` 中提供各 Provider 細部數據，並在全域 `telemetryMetrics` 與 `phaseMetrics.byProvider` 準確彙總，避免多 Provider 同時 Staged 時數據遺失。",
+  "> - **Verification Evidence**: `tests/remediation-007-clean-challenge.test.mjs` (`PR39-ROUND8-STAGED-MULTI-PROVIDER-TELEMETRY-08`).",
+  "",
   "## ⚠️ Governance Status: FIX_REQUIRED_DUAL_VISIBILITY (Spec §3.3.4 Enforced)",
   "",
   "> [!IMPORTANT]",
@@ -610,8 +676,8 @@ mdLines.push(
   "",
   `- **Triage Baseline Extraction Head**: \`${BASELINE_HEAD_SHA}\``,
   `- **Current Verified Head**: \`${CURRENT_HEAD_SHA}\``,
-  "- **Triage Status**: 125 review threads (38 outdated, 87 current) on PR #39.",
-  "- **Post-Remediation Push Head**: Distinct commit generated on `origin/fix/remediation-007-clean-challenge` incorporating technical boundary remediations P1-DV-01, P1-DV-02, P2-TELEMETRY-01, and evidence ledger artifacts."
+  "- **Triage Status**: 131 review threads (40 outdated, 91 current) on PR #39.",
+  "- **Post-Remediation Push Head**: Distinct commit generated on `origin/fix/remediation-007-clean-challenge` incorporating technical boundary remediations P1-DV-01, P1-DV-02, P1-DV-03, P2-TELEMETRY-01, P2-TELEMETRY-02, and evidence ledger artifacts."
 );
 
 const mdDir = path.resolve("docs", "reports");

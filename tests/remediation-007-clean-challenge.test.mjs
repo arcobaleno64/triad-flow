@@ -6206,3 +6206,266 @@ test("PR39-ROUND7-STAGED-VACUOUS-OBJECT-REEXTRACTION-05: executeStagedReview re-
     fs.rmSync(repo, { recursive: true, force: true });
   }
 });
+
+test("PR39-ROUND8-STAGED-VACUOUS-LAYERS-REEXTRACTION-06: executeStagedReview re-extracts exact-head context when callerContextPackage is partially empty like { layers: {} } (P1-DV-03)", async () => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), "tf-round8-vacuous-layers-"));
+  execFileSync("git", ["init", "-b", "main"], { cwd: repo, stdio: "ignore" });
+  execFileSync("git", ["config", "user.name", "Test User"], { cwd: repo, stdio: "ignore" });
+  execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: repo, stdio: "ignore" });
+
+  const targetFile = "src/worker.js";
+  const fullPath = path.join(repo, targetFile);
+  fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+  fs.writeFileSync(fullPath, "export function work() { return 100; }\n");
+  execFileSync("git", ["add", targetFile], { cwd: repo, stdio: "ignore" });
+  execFileSync("git", ["commit", "-m", "Initial commit"], { cwd: repo, stdio: "ignore" });
+  const headSha = execFileSync("git", ["rev-parse", "HEAD"], { cwd: repo, encoding: "utf8" }).trim();
+  const diffContent = "--- a/src/worker.js\n+++ b/src/worker.js\n@@ -1,1 +1,2 @@\n export function work() { return 100; }\n+const w = work();\n";
+
+  const capturedChunkInputs = [];
+  const capturingAdapter = new CliReviewAdapter({
+    command: "agy",
+    providerName: "agy",
+    family: "google",
+    modelName: "gemini-3.8-flash",
+    execFn: async (callContext) => {
+      capturedChunkInputs.push(callContext);
+      return {
+        stdout: JSON.stringify({
+          findings: [],
+          coverage: { coveredFiles: ["src/worker.js"], omittedFiles: [] },
+          providerIdentity: { provider: "agy", family: "google", model: "gemini-3.8-flash" }
+        })
+      };
+    }
+  });
+
+  try {
+    const changeSet = {
+      ok: true,
+      schemaVersion: "1.0.0",
+      repository: {
+        root: repo,
+        headSha,
+        name: "arcobaleno64/triad-flow"
+      },
+      headSha,
+      totalFiles: 1,
+      files: [{ path: "src/worker.js", additions: 1, deletions: 0, riskTier: 1 }],
+      diffHunks: diffContent
+    };
+
+    // Case 1: Pass contextPackage: { layers: {} }
+    const result1 = await executeStagedReview(changeSet, capturingAdapter, {
+      cwd: repo,
+      headSha,
+      contextPackage: { layers: {} }
+    });
+
+    assert.equal(result1.ok, true);
+    assert.equal(result1.status, "completed");
+    assert.ok(capturedChunkInputs[0].input.contextPackage, "ContextPackage must be re-extracted when layers: {}");
+    assert.ok(capturedChunkInputs[0].input.contextPackage.layers, "Re-extracted contextPackage must contain layers");
+    assert.ok(Object.keys(capturedChunkInputs[0].input.contextPackage.layers).length > 0, "Re-extracted layers must not be empty");
+    assert.match(capturedChunkInputs[0].prompt, /\[CODE CONTEXT & AST ENCLOSURES\]/);
+
+    // Case 2: Pass contextPackage: { headSha, layers: {} }
+    capturedChunkInputs.length = 0;
+    const result2 = await executeStagedReview(changeSet, capturingAdapter, {
+      cwd: repo,
+      headSha,
+      contextPackage: { headSha, layers: {} }
+    });
+
+    assert.equal(result2.ok, true);
+    assert.equal(result2.status, "completed");
+    assert.ok(capturedChunkInputs[0].input.contextPackage, "ContextPackage must be re-extracted when { headSha, layers: {} }");
+    assert.ok(capturedChunkInputs[0].input.contextPackage.layers);
+    assert.ok(Object.keys(capturedChunkInputs[0].input.contextPackage.layers).length > 0);
+  } finally {
+    fs.rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("PR39-ROUND8-STAGED-VACUOUS-LAYERS-FAIL-CLOSED-07-NEGATIVE: executeStagedReview fails closed with EXACT_HEAD_CONTEXT_FAILED when contextPackage is { layers: {} } and exact-head git extraction fails (P1-DV-03)", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-round8-vacuous-failclosed-"));
+  const diffContent = "--- a/src/secret.js\n+++ b/src/secret.js\n@@ -1,1 +1,2 @@\n+const secret = true;\n";
+  const headSha = "9999999999999999999999999999999999999999";
+
+  const capturedChunkInputs = [];
+  const capturingAdapter = new CliReviewAdapter({
+    command: "agy",
+    providerName: "agy",
+    family: "google",
+    modelName: "gemini-3.8-flash",
+    execFn: async (callContext) => {
+      capturedChunkInputs.push(callContext);
+      return {
+        stdout: JSON.stringify({
+          findings: [],
+          coverage: { coveredFiles: ["src/secret.js"], omittedFiles: [] },
+          providerIdentity: { provider: "agy", family: "google", model: "gemini-3.8-flash" }
+        })
+      };
+    }
+  });
+
+  try {
+    const changeSet = {
+      ok: true,
+      schemaVersion: "1.0.0",
+      headSha,
+      repository: {
+        root: tmpDir,
+        headSha
+      },
+      totalFiles: 1,
+      files: [{ path: "src/secret.js", additions: 1, deletions: 0, riskTier: 1 }],
+      diffHunks: diffContent
+    };
+
+    const result = await executeStagedReview(changeSet, capturingAdapter, {
+      cwd: tmpDir,
+      headSha,
+      contextPackage: { layers: {} }
+    });
+
+    assert.ok(result.contextGaps.some(g => g.code === "EXACT_HEAD_CONTEXT_FAILED"), "Must inject EXACT_HEAD_CONTEXT_FAILED when git extraction fails on vacuous layers contextPackage");
+    assert.equal(capturedChunkInputs[0].input.contextPackage, undefined, "Chunk must not receive vacuous or corrupted contextPackage");
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("PR39-ROUND8-STAGED-MULTI-PROVIDER-TELEMETRY-08: runDogfoodReview captures multi-provider staged review telemetry accurately without clobbering (P2-TELEMETRY-02)", async () => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), "tf-round8-multi-provider-telemetry-"));
+  execFileSync("git", ["init", "-b", "main"], { cwd: repo, stdio: "ignore" });
+  execFileSync("git", ["config", "user.name", "Test User"], { cwd: repo, stdio: "ignore" });
+  execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: repo, stdio: "ignore" });
+
+  const targetFile = "src/crypto.js";
+  const fullPath = path.join(repo, targetFile);
+  fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+  fs.writeFileSync(fullPath, "export function encrypt(val) { return val; }\n");
+  execFileSync("git", ["add", targetFile], { cwd: repo, stdio: "ignore" });
+  execFileSync("git", ["commit", "-m", "Initial commit"], { cwd: repo, stdio: "ignore" });
+  const headSha = execFileSync("git", ["rev-parse", "HEAD"], { cwd: repo, encoding: "utf8" }).trim();
+  const diffContent = "--- a/src/crypto.js\n+++ b/src/crypto.js\n@@ -1,1 +1,2 @@\n export function encrypt(val) { return val; }\n+const enc = encrypt('test');\n";
+  const tmpOut = path.join(repo, "dogfood-run.json");
+
+  let claudeCalls = 0;
+  let codexCalls = 0;
+
+  const capturingAdapters = {
+    agy: new CliReviewAdapter({
+      command: "agy",
+      providerName: "agy",
+      family: "google",
+      modelName: "gemini-3.8-flash",
+      execFn: async () => ({
+        stdout: JSON.stringify({
+          findings: [],
+          coverage: { coveredFiles: ["src/crypto.js"], omittedFiles: [] },
+          providerIdentity: { provider: "agy", family: "google", model: "gemini-3.8-flash" }
+        })
+      })
+    }),
+    claude: new CliReviewAdapter({
+      command: "claude",
+      providerName: "claude",
+      family: "anthropic",
+      modelName: "claude-5.5-sonnet",
+      execFn: async () => {
+        claudeCalls++;
+        if (claudeCalls === 1) {
+          return {
+            stdout: "",
+            executionStatus: EXECUTION_STATUS.PAYLOAD_TOO_LARGE,
+            error: "Prompt exceeds buffer limit"
+          };
+        }
+        return {
+          stdout: JSON.stringify({
+            findings: [],
+            coverage: { coveredFiles: ["src/crypto.js"], omittedFiles: [] },
+            providerIdentity: { provider: "claude", family: "anthropic", model: "claude-5.5-sonnet" }
+          })
+        };
+      }
+    }),
+    codex: new CliReviewAdapter({
+      command: "codex",
+      providerName: "codex",
+      family: "openai",
+      modelName: "gpt-6.1-sol",
+      execFn: async () => {
+        codexCalls++;
+        if (codexCalls === 1) {
+          return {
+            stdout: "",
+            executionStatus: EXECUTION_STATUS.PAYLOAD_TOO_LARGE,
+            error: "Prompt exceeds buffer limit"
+          };
+        }
+        return {
+          stdout: JSON.stringify({
+            findings: [],
+            coverage: { coveredFiles: ["src/crypto.js"], omittedFiles: [] },
+            providerIdentity: { provider: "codex", family: "openai", model: "gpt-6.1-sol" }
+          })
+        };
+      }
+    })
+  };
+
+  const cleanVerifier = createMockVerifierAdapter("claude");
+
+  try {
+    const changeSet = {
+      ok: true,
+      schemaVersion: "1.0.0",
+      repository: {
+        root: repo,
+        headSha,
+        name: "arcobaleno64/triad-flow"
+      },
+      headSha,
+      totalFiles: 1,
+      files: [{ path: "src/crypto.js", additions: 1, deletions: 0, riskTier: 1 }],
+      diffHunks: diffContent
+    };
+
+    const report = await runDogfoodReview({
+      mock: false,
+      changeSet,
+      head: headSha,
+      repoDir: repo,
+      repository: "arcobaleno64/triad-flow",
+      reviewAdapters: capturingAdapters,
+      verifierAdapter: cleanVerifier,
+      out: tmpOut,
+      log: false
+    });
+
+    // Both Claude and Codex triggered staged fallback; agy did not
+    assert.equal(report.providerTelemetry.agy.stagedFallbackUsed, false, "agy did not trigger staged fallback");
+    assert.equal(report.providerTelemetry.claude.stagedFallbackUsed, true, "claude triggered staged fallback");
+    assert.equal(report.providerTelemetry.codex.stagedFallbackUsed, true, "codex triggered staged fallback");
+
+    // Per-provider chunk counts tracked without clobbering
+    assert.ok(report.providerTelemetry.claude.stagedChunkCount >= 1, "claude staged chunk count must be recorded");
+    assert.ok(report.providerTelemetry.codex.stagedChunkCount >= 1, "codex staged chunk count must be recorded");
+    assert.equal(report.providerTelemetry.claude.stagedTimeoutCount, 0);
+    assert.equal(report.providerTelemetry.codex.stagedTimeoutCount, 0);
+
+    // Global telemetry metrics aggregated accurately
+    assert.equal(report.telemetryMetrics.stagedFallbackUsed, true, "global stagedFallbackUsed must be true");
+    assert.ok(report.telemetryMetrics.chunkCount >= 2, "global chunk count must aggregate across staged providers");
+    assert.ok(report.telemetryMetrics.phaseMetrics.byProvider.claude, "phaseMetrics must record claude telemetry");
+    assert.ok(report.telemetryMetrics.phaseMetrics.byProvider.codex, "phaseMetrics must record codex telemetry");
+    assert.equal(report.telemetryMetrics.phaseMetrics.stagedFallbackUsed, true);
+    assert.equal(report.gate.decision, "approve");
+  } finally {
+    fs.rmSync(repo, { recursive: true, force: true });
+  }
+});

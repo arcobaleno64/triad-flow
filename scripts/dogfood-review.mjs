@@ -1039,9 +1039,26 @@ export async function runDogfoodReview(userOptions = {}) {
   let agyStagedFallbackUsed = false;
   let claudeStagedFallbackUsed = false;
   let codexStagedFallbackUsed = false;
-  let stagedChunkCount = null;
-  let stagedTimeoutCount = 0;
-  let stagedTelemetry = null;
+  const stagedReviewMetrics = {
+    agy: {
+      stagedFallbackUsed: false,
+      stagedTelemetry: null,
+      chunkCount: null,
+      chunkTimeoutCount: 0
+    },
+    claude: {
+      stagedFallbackUsed: false,
+      stagedTelemetry: null,
+      chunkCount: null,
+      chunkTimeoutCount: 0
+    },
+    codex: {
+      stagedFallbackUsed: false,
+      stagedTelemetry: null,
+      chunkCount: null,
+      chunkTimeoutCount: 0
+    }
+  };
   const tAgy0 = Date.now();
   const executeAgyReview = async () => {
     const providerRunId = `${runId}-agy`;
@@ -1074,13 +1091,15 @@ export async function runDogfoodReview(userOptions = {}) {
         contextGaps: effectiveContextGaps,
         cwd: targetRepo
       });
-      stagedChunkCount = Array.isArray(res?.receipts) ? res.receipts.length : null;
-      stagedTimeoutCount = Array.isArray(res?.receipts)
-        ? res.receipts.filter(r => r?.status === "timeout").length
-        : 0;
-      if (!stagedTelemetry && res?.telemetry) {
-        stagedTelemetry = res.telemetry;
-      }
+      const receipts = Array.isArray(res?.receipts) ? res.receipts : [];
+      const chunkCount = receipts.length > 0 ? receipts.length : (res?.telemetry?.chunkCount ?? null);
+      const timeoutCount = receipts.filter(r => r?.status === "timeout").length || (res?.telemetry?.chunkTimeoutCount ?? 0);
+      stagedReviewMetrics.agy = {
+        stagedFallbackUsed: true,
+        stagedTelemetry: res?.telemetry || null,
+        chunkCount,
+        chunkTimeoutCount: timeoutCount
+      };
     }
     return res;
   };
@@ -1118,15 +1137,15 @@ export async function runDogfoodReview(userOptions = {}) {
         contextGaps: effectiveContextGaps,
         cwd: targetRepo
       });
-      if (stagedChunkCount === null) {
-        stagedChunkCount = Array.isArray(res?.receipts) ? res.receipts.length : null;
-      }
-      stagedTimeoutCount += Array.isArray(res?.receipts)
-        ? res.receipts.filter(r => r?.status === "timeout").length
-        : 0;
-      if (!stagedTelemetry && res?.telemetry) {
-        stagedTelemetry = res.telemetry;
-      }
+      const receipts = Array.isArray(res?.receipts) ? res.receipts : [];
+      const chunkCount = receipts.length > 0 ? receipts.length : (res?.telemetry?.chunkCount ?? null);
+      const timeoutCount = receipts.filter(r => r?.status === "timeout").length || (res?.telemetry?.chunkTimeoutCount ?? 0);
+      stagedReviewMetrics.claude = {
+        stagedFallbackUsed: true,
+        stagedTelemetry: res?.telemetry || null,
+        chunkCount,
+        chunkTimeoutCount: timeoutCount
+      };
     }
     return res;
   };
@@ -1164,15 +1183,15 @@ export async function runDogfoodReview(userOptions = {}) {
         contextGaps: effectiveContextGaps,
         cwd: targetRepo
       });
-      if (stagedChunkCount === null) {
-        stagedChunkCount = Array.isArray(res?.receipts) ? res.receipts.length : null;
-      }
-      stagedTimeoutCount += Array.isArray(res?.receipts)
-        ? res.receipts.filter(r => r?.status === "timeout").length
-        : 0;
-      if (!stagedTelemetry && res?.telemetry) {
-        stagedTelemetry = res.telemetry;
-      }
+      const receipts = Array.isArray(res?.receipts) ? res.receipts : [];
+      const chunkCount = receipts.length > 0 ? receipts.length : (res?.telemetry?.chunkCount ?? null);
+      const timeoutCount = receipts.filter(r => r?.status === "timeout").length || (res?.telemetry?.chunkTimeoutCount ?? 0);
+      stagedReviewMetrics.codex = {
+        stagedFallbackUsed: true,
+        stagedTelemetry: res?.telemetry || null,
+        chunkCount,
+        chunkTimeoutCount: timeoutCount
+      };
     }
     return res;
   };
@@ -1180,6 +1199,16 @@ export async function runDogfoodReview(userOptions = {}) {
 
   const [agyOut, claudeOut, codexOut] = await Promise.all([pAgy, pClaude, pCodex]);
   const stagedFallbackUsed = Boolean(agyStagedFallbackUsed || claudeStagedFallbackUsed || codexStagedFallbackUsed);
+  const stagedProviders = [
+    ...(agyStagedFallbackUsed ? [{ provider: "agy", ...stagedReviewMetrics.agy }] : []),
+    ...(claudeStagedFallbackUsed ? [{ provider: "claude", ...stagedReviewMetrics.claude }] : []),
+    ...(codexStagedFallbackUsed ? [{ provider: "codex", ...stagedReviewMetrics.codex }] : [])
+  ];
+  const stagedTimeoutCount = stagedProviders.reduce((sum, p) => sum + (p.chunkTimeoutCount || 0), 0);
+  const totalStagedChunks = stagedProviders.reduce((sum, p) => sum + (p.chunkCount || 0), 0);
+  const stagedChunkCount = stagedProviders.length > 0
+    ? (stagedProviders.length === 1 ? stagedProviders[0].chunkCount : totalStagedChunks)
+    : null;
   const reviewerPhaseDurationMs = Date.now() - t0;
 
   const rawReports = {
@@ -1400,9 +1429,27 @@ export async function runDogfoodReview(userOptions = {}) {
       excludedFiles: changeSet.excludedFiles || []
     },
     providerTelemetry: {
-      agy: { ...buildProviderTelemetry(agyOut, rawReports.agy), stagedFallbackUsed: agyStagedFallbackUsed },
-      claude: { ...buildProviderTelemetry(claudeOut, rawReports.claude), stagedFallbackUsed: claudeStagedFallbackUsed },
-      codex: { ...buildProviderTelemetry(codexOut, rawReports.codex), stagedFallbackUsed: codexStagedFallbackUsed }
+      agy: {
+        ...buildProviderTelemetry(agyOut, rawReports.agy),
+        stagedFallbackUsed: agyStagedFallbackUsed,
+        ...(stagedReviewMetrics.agy.chunkCount !== null ? { stagedChunkCount: stagedReviewMetrics.agy.chunkCount } : {}),
+        stagedTimeoutCount: stagedReviewMetrics.agy.chunkTimeoutCount,
+        ...(stagedReviewMetrics.agy.stagedTelemetry ? { stagedTelemetry: stagedReviewMetrics.agy.stagedTelemetry } : {})
+      },
+      claude: {
+        ...buildProviderTelemetry(claudeOut, rawReports.claude),
+        stagedFallbackUsed: claudeStagedFallbackUsed,
+        ...(stagedReviewMetrics.claude.chunkCount !== null ? { stagedChunkCount: stagedReviewMetrics.claude.chunkCount } : {}),
+        stagedTimeoutCount: stagedReviewMetrics.claude.chunkTimeoutCount,
+        ...(stagedReviewMetrics.claude.stagedTelemetry ? { stagedTelemetry: stagedReviewMetrics.claude.stagedTelemetry } : {})
+      },
+      codex: {
+        ...buildProviderTelemetry(codexOut, rawReports.codex),
+        stagedFallbackUsed: codexStagedFallbackUsed,
+        ...(stagedReviewMetrics.codex.chunkCount !== null ? { stagedChunkCount: stagedReviewMetrics.codex.chunkCount } : {}),
+        stagedTimeoutCount: stagedReviewMetrics.codex.chunkTimeoutCount,
+        ...(stagedReviewMetrics.codex.stagedTelemetry ? { stagedTelemetry: stagedReviewMetrics.codex.stagedTelemetry } : {})
+      }
     },
     consensus: {
       verdict: consensus.verdict,
@@ -1444,15 +1491,28 @@ export async function runDogfoodReview(userOptions = {}) {
       otherFailureCount,
       stagedFallbackUsed,
       chunkCount: stagedFallbackUsed ? stagedChunkCount : null,
-      phaseMetrics: stagedFallbackUsed && stagedTelemetry ? {
+      phaseMetrics: stagedFallbackUsed ? {
         platform: process.platform,
         transport: userOptions.agyStreamJson ? "stream-json" : "argv",
-        budgetAllocatedMs: stagedTelemetry.budgetAllocatedMs,
-        globalDeadlineRemainingMs: stagedTelemetry.globalDeadlineRemainingMs,
+        budgetAllocatedMs: stagedProviders.length === 1
+          ? (stagedProviders[0].stagedTelemetry?.budgetAllocatedMs ?? timeoutMs)
+          : (stagedProviders.reduce((sum, p) => sum + (p.stagedTelemetry?.budgetAllocatedMs || 0), 0) || timeoutMs),
+        globalDeadlineRemainingMs: Math.min(...stagedProviders.map(p => p.stagedTelemetry?.globalDeadlineRemainingMs ?? timeoutMs)),
         stagedFallbackUsed: true,
-        chunkCount: stagedTelemetry.chunkCount,
-        maxConcurrency: stagedTelemetry.maxConcurrency,
-        feasibility: stagedTelemetry.feasibility
+        chunkCount: stagedChunkCount,
+        chunkTimeoutCount: stagedTimeoutCount,
+        maxConcurrency: Math.max(...stagedProviders.map(p => p.stagedTelemetry?.maxConcurrency ?? (userOptions.stagedConcurrency || 2))),
+        feasibility: stagedProviders.length === 1
+          ? (stagedProviders[0].stagedTelemetry?.feasibility || { isFeasible: true, reason: "Staged review feasible" })
+          : {
+            isFeasible: stagedProviders.every(p => p.stagedTelemetry?.feasibility?.isFeasible !== false),
+            reason: stagedProviders.map(p => `${p.provider}: ${p.stagedTelemetry?.feasibility?.reason || "feasible"}`).join("; ")
+          },
+        byProvider: {
+          ...(agyStagedFallbackUsed ? { agy: stagedReviewMetrics.agy.stagedTelemetry } : {}),
+          ...(claudeStagedFallbackUsed ? { claude: stagedReviewMetrics.claude.stagedTelemetry } : {}),
+          ...(codexStagedFallbackUsed ? { codex: stagedReviewMetrics.codex.stagedTelemetry } : {})
+        }
       } : {
         platform: process.platform,
         transport: userOptions.agyStreamJson ? "stream-json" : "argv",

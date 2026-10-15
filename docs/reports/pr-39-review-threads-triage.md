@@ -2,7 +2,7 @@
 
 > **Governance Notice & Execution Boundaries**
 > - **Target PR**: [#39 (fix/remediation-007-clean-challenge)](https://github.com/arcobaleno64/triad-flow/pull/39)
-> - **Extraction Timestamp**: `2026-10-14T11:41:22Z`
+> - **Extraction Timestamp**: `2026-10-15T00:35:10Z`
 > - **Baseline Extraction Head SHA**: `bd9bc9001ee4cfee34671d6563d97deb793ff1ae`
 > - **Mutation Policy**: Zero GitHub mutations performed. `THREAD_BATCH_RESOLUTION = NOT_AUTHORIZED`; `GITHUB_RULESET_BYPASS = NOT_AUTHORIZED`; `SQUASH_MERGE = NOT_AUTHORIZED`.
 > - **Adjudication State**: All candidate records marked `PENDING_ADJUDICATION` under Default-Deny.
@@ -22,8 +22,8 @@
 
 ## Summary of Candidate Classifications
 
-- **Total Outdated Threads**: 38
-- **FIXED**: 36
+- **Total Outdated Threads**: 40
+- **FIXED**: 38
 - **FIX_REQUIRED_DUAL_VISIBILITY**: 1 *(Thread 22 / `PRRT_kwDOUWarIc6ra7ki`: ACCEPTED_RISK rejected; spec baseline §3.3.4 Dual Visibility enforced)*
 - **DUPLICATE**: 1 *(Thread 34 duplicate of Thread 22; disposition subordinate to Thread 22)*
 - **ACCEPTED_RISK**: 0 *(0 formally approved; rejected by governance ruling)*
@@ -63,6 +63,27 @@
 > - **Issue**: `dogfood-review.mjs` 將全域 `stagedFallbackUsed` 寫給 agy，並將 claude、codex 固定為 false，導致單一 Provider (如 Claude 或 Codex) 觸發 Staged Fallback 時遙測歸屬錯誤。
 > - **Remediation**: 分別追蹤 `agyStagedFallbackUsed`, `claudeStagedFallbackUsed`, `codexStagedFallbackUsed`，並如實填入 `providerTelemetry[provider].stagedFallbackUsed`。
 > - **Verification Evidence**: `tests/remediation-007-clean-challenge.test.mjs` (`PR39-ROUND7-PROVIDER-TELEMETRY-ATTRIBUTION-01`).
+
+> [!IMPORTANT]
+> **P1-DV-03: executeStagedReview 在部分空白 Context ({ layers: {} } 或無 Head/Digest) 時繞過重新擷取**:
+> - **Severity**: `P1`
+> - **Status**: `REMEDIATED` (Tested & verified)
+> - **Locations**:
+>   - `src/adapters/staged-review.mjs:385-420`
+> - **Issue**: `staged-review.mjs` 原以 `!callerContextPackage.layers` 判斷 contextPackage 是否 vacuous，當傳入 `{ layers: {} }` 或缺少 Head SHA / Digest 時，因 layers 為 truthy 而繞過 `buildContextPackage` 重新擷取，造成無效 Context 進入 Chunk Review。
+> - **Remediation**: 強化 `isCallerContextVacuous` 與 Context 驗證，要求 contextPackage 必須具備非空層級 (substantive layers) 或非空 File Coverage Manifest，且必須包含有效 Head SHA 或 Content Digest；否則視為 vacuous 強制呼叫 `buildContextPackage` 重新擷取，若擷取失敗則 fail-closed 注入 `EXACT_HEAD_CONTEXT_FAILED`。
+> - **Verification Evidence**: `tests/remediation-007-clean-challenge.test.mjs` (`PR39-ROUND8-STAGED-VACUOUS-LAYERS-REEXTRACTION-06`, `PR39-ROUND8-STAGED-VACUOUS-LAYERS-FAIL-CLOSED-07-NEGATIVE`).
+
+> [!IMPORTANT]
+> **P2-TELEMETRY-02: 多 Provider 同時觸發 Staged Fallback 時遙測彙總與 Chunk 統計覆蓋 (dogfood-review.mjs)**:
+> - **Severity**: `P2`
+> - **Status**: `REMEDIATED` (Tested & verified)
+> - **Locations**:
+>   - `scripts/dogfood-review.mjs:1040-1175`
+>   - `scripts/dogfood-review.mjs:1425-1490`
+> - **Issue**: `dogfood-review.mjs` 之 `stagedTelemetry` 與 `stagedChunkCount` 使用共用變數，多 Provider 同時觸發 Staged Fallback 時僅保留單一 Provider 遙測，造成其他 Provider 的 Chunk 數、Timeout 數與預算統計被覆蓋。
+> - **Remediation**: `dogfood-review.mjs` 獨立追蹤各 Provider 之 `stagedTelemetry`、`stagedChunkCount` 與 `stagedTimeoutCount`，於 `providerTelemetry` 中提供各 Provider 細部數據，並在全域 `telemetryMetrics` 與 `phaseMetrics.byProvider` 準確彙總，避免多 Provider 同時 Staged 時數據遺失。
+> - **Verification Evidence**: `tests/remediation-007-clean-challenge.test.mjs` (`PR39-ROUND8-STAGED-MULTI-PROVIDER-TELEMETRY-08`).
 
 ## ⚠️ Governance Status: FIX_REQUIRED_DUAL_VISIBILITY (Spec §3.3.4 Enforced)
 
@@ -116,11 +137,13 @@
 | 35 | `PRRT_kwDOUWarIc6rsajd` | **DUPLICATE** | Duplicate of Thread 22 (PRRT_kwDOUWarIc6ra7ki). Disposition subordinate to Thread 22 (FIX_REQUIRED_DUAL_VISIBILITY under REMEDIATION-007 §3.3.4). GitHub thread remains UNRESOLVED. | `PENDING_ADJUDICATION` | `PENDING_ADJUDICATION` | `bd9bc9001ee4...` |
 | 36 | `PRRT_kwDOUWarIc6rtv6E` | **FIXED** | Commits cc1de22, bd9bc90; locator scripts/dogfood-review.mjs:976-989. Omitted repository or object missing root fails closed to contextExtractionFailed = true with EXACT_HEAD_CONTEXT_FAILED. Negative test: tests/remediation-007-clean-challenge.test.mjs ('PR39-ROUND3-ITEM2-NEGATIVE'). | `PENDING_ADJUDICATION` | `PENDING_ADJUDICATION` | `bd9bc9001ee4...` |
 | 37 | `PRRT_kwDOUWarIc6rtv6M` | **FIXED** | Commits cf6be07, eda22b9, e7f1527; locator scripts/dogfood-review.mjs:1091-1100. Reject manifests where exactHeadAvailable === false or exactHeadUnavailable === true, setting pkgInvalid = true and failing closed. Tested in tests/remediation-007-clean-challenge.test.mjs ('PR39-ROUND2-ITEM2-NEGATIVE'). | `PENDING_ADJUDICATION` | `PENDING_ADJUDICATION` | `bd9bc9001ee4...` |
-| 38 | `PRRT_kwDOUWarIc6sMI7c` | **FIXED** | Commits a71082c, HEAD; locator src/adapters/staged-review.mjs:610-630. Preserves and merges caller-provided contextGaps with chunk-level contextPkg gaps, injecting effectiveChunkContextGaps into buildEvidenceReviewPrompt and adapter.executeReview. Tested in tests/remediation-007-clean-challenge.test.mjs ('PR39-ROUND6-STAGED-DUAL-VISIBILITY-01', 'PR39-ROUND6-STAGED-DUAL-VISIBILITY-02-NEGATIVE'). | `PENDING_ADJUDICATION` | `PENDING_ADJUDICATION` | `a71082c7b2bc...` |
+| 38 | `PRRT_kwDOUWarIc6sMI7c` | **FIXED** | Commits a71082c, HEAD; locator src/adapters/staged-review.mjs:610-630. Preserves and merges caller-provided contextGaps with chunk-level contextPkg gaps, injecting effectiveChunkContextGaps into buildEvidenceReviewPrompt and adapter.executeReview. Tested in tests/remediation-007-clean-challenge.test.mjs ('PR39-ROUND6-STAGED-DUAL-VISIBILITY-01', 'PR39-ROUND6-STAGED-DUAL-VISIBILITY-02-NEGATIVE'). | `PENDING_ADJUDICATION` | `PENDING_ADJUDICATION` | `d621bd99b93e...` |
+| 39 | `PRRT_kwDOUWarIc6sPGEl` | **FIXED** | Commits 187a878, d621bd9, HEAD; locator src/adapters/staged-review.mjs:385-480. When callerContextPackage is null, undefined, or vacuous ({}, { layers: {} }), staged review invokes buildContextPackage with repositoryRoot fallback. If unavailable, fails closed with EXACT_HEAD_CONTEXT_FAILED. Tested in tests/remediation-007-clean-challenge.test.mjs ('PR39-ROUND7-STAGED-NULL-CONTEXT-REEXTRACTION-01', 'PR39-ROUND7-STAGED-NULL-CONTEXT-FAIL-CLOSED-02-NEGATIVE', 'PR39-ROUND7-STAGED-VACUOUS-OBJECT-REEXTRACTION-05', 'PR39-ROUND8-STAGED-VACUOUS-LAYERS-REEXTRACTION-06', 'PR39-ROUND8-STAGED-VACUOUS-LAYERS-FAIL-CLOSED-07-NEGATIVE'). | `PENDING_ADJUDICATION` | `PENDING_ADJUDICATION` | `d621bd99b93e...` |
+| 40 | `PRRT_kwDOUWarIc6sPmwz` | **FIXED** | Commits 187a878, d621bd9, HEAD; locator scripts/dogfood-review.mjs:1040-1175, 1400-1465. Provider telemetry individually tracks agyStagedFallbackUsed, claudeStagedFallbackUsed, and codexStagedFallbackUsed alongside per-provider chunk counts and timeout metrics. Tested in tests/remediation-007-clean-challenge.test.mjs ('PR39-ROUND7-STAGED-PROVIDER-TELEMETRY-ATTRIBUTION-02', 'PR39-ROUND8-STAGED-MULTI-PROVIDER-TELEMETRY-08'). | `PENDING_ADJUDICATION` | `PENDING_ADJUDICATION` | `d621bd99b93e...` |
 
 ## Head SHA Provenance Distinction
 
 - **Triage Baseline Extraction Head**: `bd9bc9001ee4cfee34671d6563d97deb793ff1ae`
-- **Current Verified Head**: `a71082c7b2bc4d29f17cee60c5c0f7abe7fe45d0`
-- **Triage Status**: 125 review threads (38 outdated, 87 current) on PR #39.
-- **Post-Remediation Push Head**: Distinct commit generated on `origin/fix/remediation-007-clean-challenge` incorporating technical boundary remediations P1-DV-01, P1-DV-02, P2-TELEMETRY-01, and evidence ledger artifacts.
+- **Current Verified Head**: `d621bd99b93e46b15e522260a1bcaafb0d53d493`
+- **Triage Status**: 131 review threads (40 outdated, 91 current) on PR #39.
+- **Post-Remediation Push Head**: Distinct commit generated on `origin/fix/remediation-007-clean-challenge` incorporating technical boundary remediations P1-DV-01, P1-DV-02, P1-DV-03, P2-TELEMETRY-01, P2-TELEMETRY-02, and evidence ledger artifacts.

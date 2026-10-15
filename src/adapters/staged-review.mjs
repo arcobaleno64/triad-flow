@@ -396,9 +396,37 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
       m => m && (m.exactHeadAvailable === false || m.exactHeadUnavailable === true || m.contentAvailable === false)
     );
 
-  const isCallerContextVacuous = isCallerContextObject &&
-    !callerContextPackage.layers &&
-    !Array.isArray(callerContextPackage.fileCoverageManifest);
+  const hasSubstantiveLayers = Boolean(
+    isCallerContextObject &&
+    callerContextPackage.layers &&
+    typeof callerContextPackage.layers === "object" &&
+    !Array.isArray(callerContextPackage.layers) &&
+    Object.values(callerContextPackage.layers).some(layer =>
+      layer && typeof layer === "object" && (Array.isArray(layer) ? layer.length > 0 : Object.keys(layer).length > 0)
+    )
+  );
+
+  const hasSubstantiveManifest = Boolean(
+    isCallerContextObject &&
+    Array.isArray(callerContextPackage.fileCoverageManifest) &&
+    callerContextPackage.fileCoverageManifest.length > 0 &&
+    callerContextPackage.fileCoverageManifest.some(entry => entry && typeof entry === "object")
+  );
+
+  const hasHeadOrDigest = Boolean(
+    isCallerContextObject &&
+    (
+      (typeof callerContextPackage.headSha === "string" && callerContextPackage.headSha.trim().length > 0) ||
+      (typeof callerContextPackage.contentDigest === "string" && callerContextPackage.contentDigest.trim().length > 0) ||
+      (typeof callerContextPackage.digest === "string" && callerContextPackage.digest.trim().length > 0)
+    )
+  );
+
+  // Treat contextPackage as vacuous if it lacks substantive layers/manifests OR lacks headSha/digest
+  const isCallerContextVacuous = isCallerContextObject && (
+    (!hasSubstantiveLayers && !hasSubstantiveManifest) ||
+    !hasHeadOrDigest
+  );
 
   const hasValidCallerContext = isCallerContextObject &&
     callerContextPackage.ok !== false &&
@@ -445,12 +473,24 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
             m => m && (m.exactHeadAvailable === false || m.exactHeadUnavailable === true || m.contentAvailable === false)
           );
         }
+        const hasExtractedContent = Boolean(
+          (extracted.layers && typeof extracted.layers === "object" && Object.values(extracted.layers).some(l => l && typeof l === "object" && (Array.isArray(l) ? l.length > 0 : Object.keys(l).length > 0))) ||
+          (Array.isArray(extracted.fileCoverageManifest) && extracted.fileCoverageManifest.length > 0)
+        );
         if (unavailableEntry) {
           resolvedContextPackage = null;
           fallbackExtractionGaps.push({
             code: "EXACT_HEAD_CONTEXT_FAILED",
             symbol: "exact-head-context",
             reason: `Exact-head content unavailable for file: '${unavailableEntry.file || unavailableEntry.path}'.`,
+            targetFiles: Array.isArray(changeSet?.files) ? changeSet.files.map(f => typeof f === "string" ? f : f?.path).filter(Boolean) : []
+          });
+        } else if (!hasExtractedContent) {
+          resolvedContextPackage = null;
+          fallbackExtractionGaps.push({
+            code: "EXACT_HEAD_CONTEXT_FAILED",
+            symbol: "exact-head-context",
+            reason: "Extracted contextPackage contains no substantive coverage or layers",
             targetFiles: Array.isArray(changeSet?.files) ? changeSet.files.map(f => typeof f === "string" ? f : f?.path).filter(Boolean) : []
           });
         } else {
