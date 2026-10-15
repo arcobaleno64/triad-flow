@@ -6598,3 +6598,202 @@ test("PR39-ROUND8-STAGED-THROWING-GETTER-CONTEXT-10-NEGATIVE: executeStagedRevie
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 });
+
+test("PR39-ROUND9-STAGED-UNBOUND-CONTEXT-FAIL-CLOSED-11-NEGATIVE: executeStagedReview rejects ungrounded external contextPackage with missing headSha and mismatched digest (P1-CONTEXT-BINDING-01)", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-round9-unbound-context-failclosed-"));
+  const diffContent = "--- a/src/secret.js\n+++ b/src/secret.js\n@@ -1,1 +1,2 @@\n+const secret = true;\n";
+  const headSha = "6666666666666666666666666666666666666666";
+
+  const capturedChunkInputs = [];
+  const capturingAdapter = new CliReviewAdapter({
+    command: "agy",
+    providerName: "agy",
+    family: "google",
+    modelName: "gemini-3.8-flash",
+    execFn: async (callContext) => {
+      capturedChunkInputs.push(callContext);
+      return {
+        stdout: JSON.stringify({
+          findings: [],
+          coverage: { coveredFiles: ["src/secret.js"], omittedFiles: [] },
+          providerIdentity: { provider: "agy", family: "google", model: "gemini-3.8-flash" }
+        })
+      };
+    }
+  });
+
+  try {
+    const changeSet = {
+      ok: true,
+      schemaVersion: "1.0.0",
+      headSha,
+      repository: {
+        root: tmpDir,
+        headSha
+      },
+      totalFiles: 1,
+      files: [{ path: "src/secret.js", additions: 1, deletions: 0, riskTier: 1 }],
+      diffHunks: diffContent
+    };
+
+    // Case 1: Caller provides external contextPackage with non-empty layers and manifest,
+    // but NO headSha and a mismatched/stale diff contentDigest
+    const ungroundedPkg = {
+      contentDigest: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      layers: {
+        layer1AstEnclosure: {
+          callees: [{ name: "unrelatedFunction", file: "src/secret.js" }]
+        }
+      },
+      fileCoverageManifest: [
+        { file: "src/secret.js", exactHeadAvailable: true }
+      ]
+    };
+
+    const result1 = await executeStagedReview(changeSet, capturingAdapter, {
+      cwd: tmpDir,
+      headSha,
+      contextPackage: ungroundedPkg
+    });
+
+    assert.ok(
+      result1.contextGaps.some(g => g.code === "EXACT_HEAD_CONTEXT_FAILED"),
+      "Must fail closed with EXACT_HEAD_CONTEXT_FAILED when external contextPackage lacks headSha and has mismatched digest"
+    );
+    assert.equal(
+      capturedChunkInputs[0].input.contextPackage,
+      undefined,
+      "Chunk must not receive ungrounded or mismatched external contextPackage"
+    );
+
+    // Case 2: Caller provides matching headSha, but conflicting/mismatched contentDigest
+    capturedChunkInputs.length = 0;
+    const mismatchedDigestPkg = {
+      headSha,
+      contentDigest: "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      layers: {
+        layer1AstEnclosure: {
+          callees: [{ name: "staleCallee", file: "src/secret.js" }]
+        }
+      },
+      fileCoverageManifest: [
+        { file: "src/secret.js", exactHeadAvailable: true }
+      ]
+    };
+
+    const result2 = await executeStagedReview(changeSet, capturingAdapter, {
+      cwd: tmpDir,
+      headSha,
+      contextPackage: mismatchedDigestPkg
+    });
+
+    assert.ok(
+      result2.contextGaps.some(g => g.code === "EXACT_HEAD_CONTEXT_FAILED"),
+      "Must fail closed with EXACT_HEAD_CONTEXT_FAILED when contextPackage diff contentDigest conflicts with changeSet diff"
+    );
+    assert.equal(
+      capturedChunkInputs[0].input.contextPackage,
+      undefined,
+      "Chunk must not receive contextPackage with mismatched contentDigest"
+    );
+
+    // Case 3: Caller provides conflicting repositoryRoot
+    capturedChunkInputs.length = 0;
+    const conflictingRepoPkg = {
+      headSha,
+      repositoryRoot: path.join(tmpDir, "some-other-repo"),
+      layers: {
+        layer1AstEnclosure: {
+          callees: [{ name: "someCallee", file: "src/secret.js" }]
+        }
+      },
+      fileCoverageManifest: [
+        { file: "src/secret.js", exactHeadAvailable: true }
+      ]
+    };
+
+    const result3 = await executeStagedReview(changeSet, capturingAdapter, {
+      cwd: tmpDir,
+      headSha,
+      contextPackage: conflictingRepoPkg
+    });
+
+    assert.ok(
+      result3.contextGaps.some(g => g.code === "EXACT_HEAD_CONTEXT_FAILED"),
+      "Must fail closed with EXACT_HEAD_CONTEXT_FAILED when contextPackage repositoryRoot conflicts with repoRoot"
+    );
+    assert.equal(
+      capturedChunkInputs[0].input.contextPackage,
+      undefined,
+      "Chunk must not receive contextPackage with mismatched repositoryRoot"
+    );
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("PR39-ROUND9-STAGED-MERGE-CALLER-CONTEXT-GAPS-12-NEGATIVE: executeStagedReview merges options.contextGaps and changeSet.contextGaps so options.contextGaps=[] does not clear existing gaps (P1-CONTEXT-GAPS-01)", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-round9-merge-gaps-failclosed-"));
+  const diffContent = "--- a/src/secret.js\n+++ b/src/secret.js\n@@ -1,1 +1,2 @@\n+const secret = true;\n";
+  const headSha = "5555555555555555555555555555555555555555";
+
+  const capturedChunkInputs = [];
+  const capturingAdapter = new CliReviewAdapter({
+    command: "agy",
+    providerName: "agy",
+    family: "google",
+    modelName: "gemini-3.8-flash",
+    execFn: async (callContext) => {
+      capturedChunkInputs.push(callContext);
+      return {
+        stdout: JSON.stringify({
+          findings: [],
+          coverage: { coveredFiles: ["src/secret.js"], omittedFiles: [] },
+          providerIdentity: { provider: "agy", family: "google", model: "gemini-3.8-flash" }
+        })
+      };
+    }
+  });
+
+  try {
+    // ChangeSet already carries an EXACT_HEAD_CONTEXT_FAILED gap
+    const changeSet = {
+      ok: true,
+      schemaVersion: "1.0.0",
+      headSha,
+      repository: {
+        root: tmpDir,
+        headSha
+      },
+      totalFiles: 1,
+      files: [{ path: "src/secret.js", additions: 1, deletions: 0, riskTier: 1 }],
+      diffHunks: diffContent,
+      contextGaps: [
+        {
+          code: "EXACT_HEAD_CONTEXT_FAILED",
+          symbol: "exact-head-context",
+          reason: "Pre-existing extraction failure recorded on changeSet",
+          targetFiles: ["src/secret.js"]
+        }
+      ]
+    };
+
+    // Caller explicitly passes empty array options.contextGaps: []
+    const result = await executeStagedReview(changeSet, capturingAdapter, {
+      cwd: tmpDir,
+      headSha,
+      contextGaps: []
+    });
+
+    assert.ok(
+      result.contextGaps.some(g => g.code === "EXACT_HEAD_CONTEXT_FAILED"),
+      "Must preserve EXACT_HEAD_CONTEXT_FAILED in result.contextGaps even when options.contextGaps is []"
+    );
+    assert.ok(
+      capturedChunkInputs[0].input.contextGaps.some(g => g.code === "EXACT_HEAD_CONTEXT_FAILED"),
+      "Chunk execution must receive EXACT_HEAD_CONTEXT_FAILED in contextGaps even when options.contextGaps is []"
+    );
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});

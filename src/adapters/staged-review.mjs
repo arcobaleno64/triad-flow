@@ -16,7 +16,8 @@ import { reconcileFindings } from "../core/reconciler.mjs";
 import { classifyFileRisk, RISK_TIERS } from "../core/graph-router.mjs";
 import { normalizeCanonicalPath } from "../core/scoring.mjs";
 import { normalizeFinding } from "../core/harness.mjs";
-import { mergeContextGaps, normalizeCommitSha } from "../core/independent-verifier.mjs";
+import { mergeContextGaps, normalizeCommitSha, normalizeDigest } from "../core/independent-verifier.mjs";
+import { digestChangeSet } from "../core/canonical-digest.mjs";
 import { EXECUTION_STATUS, COVERAGE_OMISSION_CODES, safeRenderUntrusted, safeGet, safeIsArray, safeArrayLength, safeErrorMessage } from "./provider-contract.mjs";
 
 export { COVERAGE_OMISSION_CODES };
@@ -318,9 +319,10 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
     ? options.contextPackage
     : (changeSet?.contextPackage !== undefined ? changeSet.contextPackage : undefined);
 
-  const callerContextGaps = options.contextGaps !== undefined
-    ? options.contextGaps
-    : (changeSet?.contextGaps !== undefined ? changeSet.contextGaps : undefined);
+  const callerContextGaps = mergeContextGaps(
+    options.contextGaps,
+    changeSet?.contextGaps
+  );
 
   const expectedHeadSha = normalizeCommitSha(
     changeSet?.headSha ||
@@ -405,6 +407,35 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
   const fallbackExtractionGaps = [];
   const hasExtractionFailedGap = Array.isArray(callerContextGaps) && callerContextGaps.some(g => g?.code === "EXACT_HEAD_CONTEXT_FAILED");
 
+  // Recompute candidate diff digests from changeSet for context identity binding (P1-CONTEXT-BINDING-01)
+  const changeSetDigestCandidates = new Set();
+  try {
+    if (typeof changeSet?.diffHunks === "string") {
+      const raw = normalizeDigest(crypto.createHash("sha256").update(changeSet.diffHunks, "utf8").digest("hex"));
+      if (raw) changeSetDigestCandidates.add(raw);
+      const normalized = normalizeDigest(crypto.createHash("sha256").update(changeSet.diffHunks.replace(/\r\n/g, "\n"), "utf8").digest("hex"));
+      if (normalized) changeSetDigestCandidates.add(normalized);
+      const trimmed = normalizeDigest(crypto.createHash("sha256").update(changeSet.diffHunks.trim(), "utf8").digest("hex"));
+      if (trimmed) changeSetDigestCandidates.add(trimmed);
+      const trimmedNorm = normalizeDigest(crypto.createHash("sha256").update(changeSet.diffHunks.replace(/\r\n/g, "\n").trim(), "utf8").digest("hex"));
+      if (trimmedNorm) changeSetDigestCandidates.add(trimmedNorm);
+    }
+    if (changeSet?.contentDigest) {
+      const cd = normalizeDigest(changeSet.contentDigest);
+      if (cd) changeSetDigestCandidates.add(cd);
+    }
+    if (changeSet?.changeSetDigest) {
+      const csd = normalizeDigest(changeSet.changeSetDigest);
+      if (csd) changeSetDigestCandidates.add(csd);
+    }
+    try {
+      const canonicalCs = normalizeDigest(digestChangeSet(changeSet));
+      if (canonicalCs) changeSetDigestCandidates.add(canonicalCs);
+    } catch {}
+  } catch {
+    // Safe fallback for digest computation
+  }
+
   const isCallerContextObject = Boolean(
     callerContextPackage &&
     typeof callerContextPackage === "object" &&
@@ -416,6 +447,8 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
   let hasSubstantiveManifest = false;
   let hasHeadOrDigest = false;
   let isCallerContextPoisoned = false;
+  let isCallerContextBindingMismatch = false;
+  let bindingMismatchReason = "";
 
   if (isCallerContextObject) {
     try {
@@ -442,6 +475,74 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
         (typeof cDigest === "string" && cDigest.trim().length > 0) ||
         (typeof dig === "string" && dig.trim().length > 0)
       );
+
+      // P1-CONTEXT-BINDING-01: ChangeSet identity & content binding verification
+      const pkgHeadSha = normalizeCommitSha(head || "");
+      const pkgContentDigest = normalizeDigest(cDigest || "");
+      const pkgDigest = normalizeDigest(dig || "");
+
+      const hasHeadMatch = Boolean(pkgHeadSha && expectedHeadSha && pkgHeadSha === expectedHeadSha);
+      const hasConflictingHead = Boolean(pkgHeadSha && expectedHeadSha && pkgHeadSha !== expectedHeadSha);
+
+      const hasMatchingDigest = Boolean(
+        (pkgContentDigest && changeSetDigestCandidates.has(pkgContentDigest)) ||
+        (pkgDigest && changeSetDigestCandidates.has(pkgDigest))
+      );
+      const hasConflictingDigest = Boolean(
+        changeSetDigestCandidates.size > 0 &&
+        (
+          (pkgContentDigest && !changeSetDigestCandidates.has(pkgContentDigest)) ||
+          (pkgDigest && !changeSetDigestCandidates.has(pkgDigest))
+        )
+      );
+
+      let isRepoMismatch = false;
+      const declaredRepo = callerContextPackage.repositoryRoot ||
+        (typeof callerContextPackage.repository === "string" ? callerContextPackage.repository : callerContextPackage.repository?.root);
+      if (declaredRepo && typeof declaredRepo === "string" && repoRoot) {
+        if (path.resolve(declaredRepo) !== path.resolve(repoRoot)) {
+          isRepoMismatch = true;
+        }
+      }
+
+      let isScopeMismatch = false;
+      const changeSetFiles = Array.isArray(changeSet?.files)
+        ? changeSet.files.map(f => typeof f === "string" ? f : f?.path).filter(Boolean).map(normalizeCanonicalPath)
+        : [];
+      if (changeSetFiles.length > 0) {
+        if (callerContextPackage.targetFile && typeof callerContextPackage.targetFile === "string" && callerContextPackage.targetFile !== "multi-file") {
+          const normTarget = normalizeCanonicalPath(callerContextPackage.targetFile);
+          if (!changeSetFiles.includes(normTarget)) {
+            isScopeMismatch = true;
+          }
+        }
+        if (Array.isArray(callerContextPackage.fileCoverageManifest) && callerContextPackage.fileCoverageManifest.length > 0) {
+          const manifestFiles = callerContextPackage.fileCoverageManifest
+            .map(m => m && typeof m === "object" ? (m.file || m.path) : null)
+            .filter(Boolean)
+            .map(normalizeCanonicalPath);
+          if (manifestFiles.length > 0 && !manifestFiles.some(f => changeSetFiles.includes(f))) {
+            isScopeMismatch = true;
+          }
+        }
+      }
+
+      if (hasConflictingHead) {
+        isCallerContextBindingMismatch = true;
+        bindingMismatchReason = `Caller contextPackage headSha (${head}) conflicts with changeSet headSha (${expectedHeadSha})`;
+      } else if (hasConflictingDigest) {
+        isCallerContextBindingMismatch = true;
+        bindingMismatchReason = `Caller contextPackage diff digest (${pkgContentDigest || pkgDigest}) does not match changeSet diff contentDigest`;
+      } else if (isRepoMismatch) {
+        isCallerContextBindingMismatch = true;
+        bindingMismatchReason = `Caller contextPackage repositoryRoot (${declaredRepo}) conflicts with repoRoot (${repoRoot})`;
+      } else if (isScopeMismatch) {
+        isCallerContextBindingMismatch = true;
+        bindingMismatchReason = `Caller contextPackage file coverage scope does not match changeSet files`;
+      } else if ((hasSubstantiveLayers || hasSubstantiveManifest) && !hasHeadMatch && !hasMatchingDigest) {
+        isCallerContextBindingMismatch = true;
+        bindingMismatchReason = `Caller contextPackage is ungrounded: lacks matching headSha or matching contentDigest for the reviewed changeSet`;
+      }
     } catch {
       isCallerContextPoisoned = true;
     }
@@ -466,14 +567,15 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
     !isCallerContextPoisoned &&
     callerOk &&
     !callerHasUnavailableManifest &&
-    !isCallerContextVacuous;
+    !isCallerContextVacuous &&
+    !isCallerContextBindingMismatch;
 
   if (hasValidCallerContext) {
     resolvedContextPackage = callerContextPackage;
   } else if (hasExtractionFailedGap) {
     resolvedContextPackage = null;
-  } else if (isCallerContextPoisoned || callerHasUnavailableManifest || (isCallerContextObject && !callerOk)) {
-    // Explicitly invalid/corrupted/unavailable caller contextPackage without extraction gap fails closed
+  } else if (isCallerContextPoisoned || callerHasUnavailableManifest || (isCallerContextObject && !callerOk) || isCallerContextBindingMismatch) {
+    // Explicitly invalid/corrupted/unavailable/unbound caller contextPackage without extraction gap fails closed
     resolvedContextPackage = null;
     let unavailableEntry = null;
     try {
@@ -486,9 +588,11 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
       symbol: "exact-head-context",
       reason: isCallerContextPoisoned
         ? "Caller contextPackage is corrupted or threw an exception during inspection"
-        : (unavailableEntry
-            ? `Exact-head content unavailable for file: '${unavailableEntry.file || unavailableEntry.path}'.`
-            : (callerContextPackage?.error?.message || callerContextPackage?.error || "Caller contextPackage has ok: false or unavailable exact-head content")),
+        : (isCallerContextBindingMismatch
+            ? (bindingMismatchReason || "Caller contextPackage is not bound to the reviewed changeSet (headSha/digest/repository mismatch)")
+            : (unavailableEntry
+                ? `Exact-head content unavailable for file: '${unavailableEntry.file || unavailableEntry.path}'.`
+                : (callerContextPackage?.error?.message || callerContextPackage?.error || "Caller contextPackage has ok: false or unavailable exact-head content"))),
       targetFiles: Array.isArray(changeSet?.files) ? changeSet.files.map(f => typeof f === "string" ? f : f?.path).filter(Boolean) : []
     });
   } else {
