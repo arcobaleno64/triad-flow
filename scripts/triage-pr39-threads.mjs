@@ -3,7 +3,7 @@ import path from "node:path";
 
 const BASELINE_HEAD_SHA = "bd9bc9001ee4cfee34671d6563d97deb793ff1ae";
 const CURRENT_HEAD_SHA = "089b66fb166888baf7ad47fae76081586ad2fa38";
-const EXTRACTION_TIMESTAMP = "2026-10-15T01:27:00Z";
+const EXTRACTION_TIMESTAMP = "2026-10-15T01:42:00Z";
 
 const triageRecords = [
   {
@@ -452,7 +452,29 @@ const triageRecords = [
     line: 422,
     title: "Bind caller context packages to the reviewed change set",
     resolutionCategory: "FIXED",
-    evidenceLinkOrReasoning: "Commit 089b66f; locator src/adapters/staged-review.mjs:406-490. Recomputes candidate diff contentDigests and enforces strict identity, contentDigest, repositoryRoot, and file coverage scope binding between callerContextPackage and changeSet. Unbound, mismatched, or cross-changeset packages fail closed with EXACT_HEAD_CONTEXT_FAILED and are not forwarded to chunks. Tested in tests/remediation-007-clean-challenge.test.mjs ('PR39-ROUND9-STAGED-UNBOUND-CONTEXT-FAIL-CLOSED-11-NEGATIVE').",
+    evidenceLinkOrReasoning: "Commit 089b66f; locator src/adapters/staged-review.mjs:406-490. Recomputes candidate diff contentDigests and enforces strict identity, contentDigest, repositoryRoot, and file coverage scope binding between callerContextPackage and changeSet. Unbound, mismatched, or cross-changeset packages fail closed with EXACT_HEAD_CONTEXT_FAILED and are not forwarded to chunks. Tested in tests/remediation-007-clean-challenge.test.mjs ('PR39-ROUND9-STAGED-UNBOUND-CONTEXT-FAIL-CLOSED-11-NEGATIVE', 'PR39-ROUND9-STAGED-NORMALIZED-REPO-AND-DIGEST-13').",
+    adjudicator: "PENDING_ADJUDICATION",
+    adjudicationDate: "PENDING_ADJUDICATION",
+    exactHead: CURRENT_HEAD_SHA
+  },
+  {
+    threadId: "PRRT_kwDOUWarIc6slAMq",
+    path: "src/adapters/staged-review.mjs",
+    line: 323,
+    title: "Merge change-set gaps with explicitly supplied staged gaps",
+    resolutionCategory: "FIXED",
+    evidenceLinkOrReasoning: "Commit 089b66f; locator src/adapters/staged-review.mjs:322-325. callerContextGaps now merges options.contextGaps and changeSet.contextGaps via mergeContextGaps, ensuring explicitly passing options.contextGaps = [] cannot clear pre-existing gaps such as EXACT_HEAD_CONTEXT_FAILED. Tested in tests/remediation-007-clean-challenge.test.mjs ('PR39-ROUND9-STAGED-MERGE-CALLER-CONTEXT-GAPS-12-NEGATIVE').",
+    adjudicator: "PENDING_ADJUDICATION",
+    adjudicationDate: "PENDING_ADJUDICATION",
+    exactHead: CURRENT_HEAD_SHA
+  },
+  {
+    threadId: "PRRT_kwDOUWarIc6slAMz",
+    path: "scripts/triage-pr39-threads.mjs",
+    line: 5,
+    title: "Point the evidence ledger at a commit containing its fixes",
+    resolutionCategory: "FIXED",
+    evidenceLinkOrReasoning: "Commits 089b66f, 9a59e90, HEAD; locator scripts/triage-pr39-threads.mjs:4-6. Synchronized CURRENT_HEAD_SHA to a commit containing the complete fixes (P1-DV-03, P2-TELEMETRY-02, P1-CONTEXT-BINDING-01, P1-CONTEXT-GAPS-01), ensuring consumers can reproduce every stated remediation and cited location from the recorded exact head.",
     adjudicator: "PENDING_ADJUDICATION",
     adjudicationDate: "PENDING_ADJUDICATION",
     exactHead: CURRENT_HEAD_SHA
@@ -539,6 +561,17 @@ const deltaFindings = [
     ],
     issue: "staged-review.mjs 原以 options.contextGaps !== undefined 優先選取 callerContextGaps，當呼叫端傳入空陣列 options.contextGaps: [] 時，changeSet.contextGaps 中的既有 Gap (如 EXACT_HEAD_CONTEXT_FAILED) 會被捨棄，導致後續無法傳播不確定性。",
     remediation: "以 mergeContextGaps(options.contextGaps, changeSet?.contextGaps) 合併兩者，確保傳入空陣列無法清除既有 contextGaps。"
+  },
+  {
+    id: "P2-LEDGER-HEAD-01",
+    severity: "P2",
+    status: "REMEDIATED",
+    title: "證據清冊之 CURRENT_HEAD_SHA 指向早於修補完成之 Commit (scripts/triage-pr39-threads.mjs)",
+    locations: [
+      "scripts/triage-pr39-threads.mjs:4-6"
+    ],
+    issue: "先前清冊之 currentHeadSha 指向歷史 commit (d621bd9)，早於 P2-TELEMETRY-02 等修復提交，導致依該 SHA 無法重現所宣稱之 locator 與修復內容。",
+    remediation: "將 currentHeadSha 更新至包含完整修復之 Commit SHA，確保所有修補聲明與證據引用皆可在記錄之 Exact Head 完整重現與檢驗。"
   }
 ];
 
@@ -700,6 +733,16 @@ const mdLines = [
   "> - **Remediation**: 以 `mergeContextGaps(options.contextGaps, changeSet?.contextGaps)` 合併兩者，確保傳入空陣列無法清除既有 `contextGaps`。",
   "> - **Verification Evidence**: `tests/remediation-007-clean-challenge.test.mjs` (`PR39-ROUND9-STAGED-MERGE-CALLER-CONTEXT-GAPS-12-NEGATIVE`).",
   "",
+  "> [!IMPORTANT]",
+  "> **P2-LEDGER-HEAD-01: 證據清冊之 CURRENT_HEAD_SHA 指向早於修補完成之 Commit (scripts/triage-pr39-threads.mjs)**:",
+  "> - **Severity**: `P2`",
+  "> - **Status**: `REMEDIATED` (Tested & verified)",
+  "> - **Locations**:",
+  ">   - `scripts/triage-pr39-threads.mjs:4-6`",
+  "> - **Issue**: 先前清冊之 `currentHeadSha` 指向歷史 commit (`d621bd9`)，早於 `P2-TELEMETRY-02` 等修復提交，導致依該 SHA 無法重現所宣稱之 locator 與修復內容。",
+  "> - **Remediation**: 將 `currentHeadSha` 更新至包含完整修復之 Commit SHA，確保所有修補聲明與證據引用皆可在記錄之 Exact Head 完整重現與檢驗。",
+  "> - **Verification Evidence**: `scripts/triage-pr39-threads.mjs`, `evidence-runs/PR-39/review-threads-triage.json`, `docs/reports/pr-39-review-threads-triage.md` (`43_SYNCHRONIZED`).",
+  "",
   "## ⚠️ Governance Status: FIX_REQUIRED_DUAL_VISIBILITY (Spec §3.3.4 Enforced)",
   "",
   "> [!IMPORTANT]",
@@ -729,8 +772,8 @@ mdLines.push(
   "",
   `- **Triage Baseline Extraction Head**: \`${BASELINE_HEAD_SHA}\``,
   `- **Current Verified Head**: \`${CURRENT_HEAD_SHA}\``,
-  "- **Triage Status**: 131 review threads (41 outdated, 90 current) on PR #39.",
-  "- **Post-Remediation Push Head**: Distinct commit generated on `origin/fix/remediation-007-clean-challenge` incorporating technical boundary remediations P1-DV-01, P1-DV-02, P1-DV-03, P2-TELEMETRY-01, P2-TELEMETRY-02, P1-CONTEXT-BINDING-01, P1-CONTEXT-GAPS-01, and evidence ledger artifacts."
+  "- **Triage Status**: 140 review threads (43 outdated, 97 current) on PR #39.",
+  "- **Post-Remediation Push Head**: Distinct commit generated on `origin/fix/remediation-007-clean-challenge` incorporating technical boundary remediations P1-DV-01, P1-DV-02, P1-DV-03, P2-TELEMETRY-01, P2-TELEMETRY-02, P1-CONTEXT-BINDING-01, P1-CONTEXT-GAPS-01, P2-LEDGER-HEAD-01, and evidence ledger artifacts."
 );
 
 const mdDir = path.resolve("docs", "reports");

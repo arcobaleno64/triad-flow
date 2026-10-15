@@ -490,24 +490,24 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
       );
       const hasConflictingDigest = Boolean(
         changeSetDigestCandidates.size > 0 &&
-        (
-          (pkgContentDigest && !changeSetDigestCandidates.has(pkgContentDigest)) ||
-          (pkgDigest && !changeSetDigestCandidates.has(pkgDigest))
-        )
+        !hasMatchingDigest &&
+        (pkgContentDigest || pkgDigest)
       );
 
       let isRepoMismatch = false;
       const declaredRepo = callerContextPackage.repositoryRoot ||
         (typeof callerContextPackage.repository === "string" ? callerContextPackage.repository : callerContextPackage.repository?.root);
       if (declaredRepo && typeof declaredRepo === "string" && repoRoot) {
-        if (path.resolve(declaredRepo) !== path.resolve(repoRoot)) {
+        const normDeclared = normalizeCanonicalPath(path.resolve(declaredRepo));
+        const normRoot = normalizeCanonicalPath(path.resolve(repoRoot));
+        if (normDeclared !== normRoot) {
           isRepoMismatch = true;
         }
       }
 
       let isScopeMismatch = false;
       const changeSetFiles = Array.isArray(changeSet?.files)
-        ? changeSet.files.map(f => typeof f === "string" ? f : f?.path).filter(Boolean).map(normalizeCanonicalPath)
+        ? changeSet.files.map(f => typeof f === "string" ? f : (f?.path || f?.file)).filter(Boolean).map(normalizeCanonicalPath)
         : [];
       if (changeSetFiles.length > 0) {
         if (callerContextPackage.targetFile && typeof callerContextPackage.targetFile === "string" && callerContextPackage.targetFile !== "multi-file") {
@@ -593,7 +593,7 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
             : (unavailableEntry
                 ? `Exact-head content unavailable for file: '${unavailableEntry.file || unavailableEntry.path}'.`
                 : (callerContextPackage?.error?.message || callerContextPackage?.error || "Caller contextPackage has ok: false or unavailable exact-head content"))),
-      targetFiles: Array.isArray(changeSet?.files) ? changeSet.files.map(f => typeof f === "string" ? f : f?.path).filter(Boolean) : []
+      targetFiles: Array.isArray(changeSet?.files) ? changeSet.files.map(f => typeof f === "string" ? f : (f?.path || f?.file)).filter(Boolean) : []
     });
   } else {
     // Explicitly null, undefined, or empty/vacuous contextPackage without extraction gap:

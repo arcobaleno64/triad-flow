@@ -6797,3 +6797,82 @@ test("PR39-ROUND9-STAGED-MERGE-CALLER-CONTEXT-GAPS-12-NEGATIVE: executeStagedRev
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 });
+
+test("PR39-ROUND9-STAGED-NORMALIZED-REPO-AND-DIGEST-13: executeStagedReview normalizes repository roots and accepts matching contentDigest with secondary digest property (P1-CONTEXT-BINDING-01)", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-round9-repo-norm-"));
+  const diffContent = "--- a/src/secret.js\n+++ b/src/secret.js\n@@ -1,1 +1,2 @@\n+const secret = true;\n";
+  const headSha = "7777777777777777777777777777777777777777";
+  const computedDiffDigest = crypto.createHash("sha256").update(diffContent, "utf8").digest("hex");
+
+  const capturedChunkInputs = [];
+  const capturingAdapter = new CliReviewAdapter({
+    command: "agy",
+    providerName: "agy",
+    family: "google",
+    modelName: "gemini-3.8-flash",
+    execFn: async (callContext) => {
+      capturedChunkInputs.push(callContext);
+      return {
+        stdout: JSON.stringify({
+          findings: [],
+          coverage: { coveredFiles: ["src/secret.js"], omittedFiles: [] },
+          providerIdentity: { provider: "agy", family: "google", model: "gemini-3.8-flash" }
+        })
+      };
+    }
+  });
+
+  try {
+    const changeSet = {
+      ok: true,
+      schemaVersion: "1.0.0",
+      headSha,
+      repository: {
+        root: tmpDir,
+        headSha
+      },
+      totalFiles: 1,
+      files: [{ file: "src/secret.js", additions: 1, deletions: 0, riskTier: 1 }],
+      diffHunks: diffContent
+    };
+
+    // Repository root with alternate casing/separators (e.g. forward slashes or lowercase drive letter)
+    let altRepoRoot = tmpDir.replace(/\\/g, "/");
+    if (process.platform === "win32" && /^[a-zA-Z]:/.test(altRepoRoot)) {
+      altRepoRoot = altRepoRoot[0].toLowerCase() + altRepoRoot.slice(1);
+    }
+
+    const validPkg = {
+      headSha,
+      repositoryRoot: altRepoRoot,
+      contentDigest: computedDiffDigest,
+      digest: "secondary-metadata-digest",
+      layers: {
+        layer1AstEnclosure: {
+          callees: [{ name: "validCallee", file: "src/secret.js" }]
+        }
+      },
+      fileCoverageManifest: [
+        { file: "src/secret.js", exactHeadAvailable: true }
+      ]
+    };
+
+    const result = await executeStagedReview(changeSet, capturingAdapter, {
+      cwd: tmpDir,
+      headSha,
+      contextPackage: validPkg
+    });
+
+    assert.equal(
+      result.contextGaps?.some(g => g.code === "EXACT_HEAD_CONTEXT_FAILED"),
+      false,
+      "Must not inject EXACT_HEAD_CONTEXT_FAILED when repositoryRoot matches after normalization and contentDigest matches"
+    );
+    assert.ok(
+      capturedChunkInputs[0]?.input?.contextPackage,
+      "Chunk must receive forwarded contextPackage when repository root and contentDigest match"
+    );
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});

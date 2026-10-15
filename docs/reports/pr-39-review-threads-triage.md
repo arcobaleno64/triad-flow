@@ -2,7 +2,7 @@
 
 > **Governance Notice & Execution Boundaries**
 > - **Target PR**: [#39 (fix/remediation-007-clean-challenge)](https://github.com/arcobaleno64/triad-flow/pull/39)
-> - **Extraction Timestamp**: `2026-10-15T01:27:00Z`
+> - **Extraction Timestamp**: `2026-10-15T01:42:00Z`
 > - **Baseline Extraction Head SHA**: `bd9bc9001ee4cfee34671d6563d97deb793ff1ae`
 > - **Mutation Policy**: Zero GitHub mutations performed. `THREAD_BATCH_RESOLUTION = NOT_AUTHORIZED`; `GITHUB_RULESET_BYPASS = NOT_AUTHORIZED`; `SQUASH_MERGE = NOT_AUTHORIZED`.
 > - **Adjudication State**: All candidate records marked `PENDING_ADJUDICATION` under Default-Deny.
@@ -22,8 +22,8 @@
 
 ## Summary of Candidate Classifications
 
-- **Total Outdated Threads**: 41
-- **FIXED**: 39
+- **Total Outdated Threads**: 43
+- **FIXED**: 41
 - **FIX_REQUIRED_DUAL_VISIBILITY**: 1 *(Thread 22 / `PRRT_kwDOUWarIc6ra7ki`: ACCEPTED_RISK rejected; spec baseline §3.3.4 Dual Visibility enforced)*
 - **DUPLICATE**: 1 *(Thread 34 duplicate of Thread 22; disposition subordinate to Thread 22)*
 - **ACCEPTED_RISK**: 0 *(0 formally approved; rejected by governance ruling)*
@@ -105,6 +105,16 @@
 > - **Remediation**: 以 `mergeContextGaps(options.contextGaps, changeSet?.contextGaps)` 合併兩者，確保傳入空陣列無法清除既有 `contextGaps`。
 > - **Verification Evidence**: `tests/remediation-007-clean-challenge.test.mjs` (`PR39-ROUND9-STAGED-MERGE-CALLER-CONTEXT-GAPS-12-NEGATIVE`).
 
+> [!IMPORTANT]
+> **P2-LEDGER-HEAD-01: 證據清冊之 CURRENT_HEAD_SHA 指向早於修補完成之 Commit (scripts/triage-pr39-threads.mjs)**:
+> - **Severity**: `P2`
+> - **Status**: `REMEDIATED` (Tested & verified)
+> - **Locations**:
+>   - `scripts/triage-pr39-threads.mjs:4-6`
+> - **Issue**: 先前清冊之 `currentHeadSha` 指向歷史 commit (`d621bd9`)，早於 `P2-TELEMETRY-02` 等修復提交，導致依該 SHA 無法重現所宣稱之 locator 與修復內容。
+> - **Remediation**: 將 `currentHeadSha` 更新至包含完整修復之 Commit SHA，確保所有修補聲明與證據引用皆可在記錄之 Exact Head 完整重現與檢驗。
+> - **Verification Evidence**: `scripts/triage-pr39-threads.mjs`, `evidence-runs/PR-39/review-threads-triage.json`, `docs/reports/pr-39-review-threads-triage.md` (`43_SYNCHRONIZED`).
+
 ## ⚠️ Governance Status: FIX_REQUIRED_DUAL_VISIBILITY (Spec §3.3.4 Enforced)
 
 > [!IMPORTANT]
@@ -160,11 +170,13 @@
 | 38 | `PRRT_kwDOUWarIc6sMI7c` | **FIXED** | Commits a71082c, HEAD; locator src/adapters/staged-review.mjs:610-630. Preserves and merges caller-provided contextGaps with chunk-level contextPkg gaps, injecting effectiveChunkContextGaps into buildEvidenceReviewPrompt and adapter.executeReview. Tested in tests/remediation-007-clean-challenge.test.mjs ('PR39-ROUND6-STAGED-DUAL-VISIBILITY-01', 'PR39-ROUND6-STAGED-DUAL-VISIBILITY-02-NEGATIVE'). | `PENDING_ADJUDICATION` | `PENDING_ADJUDICATION` | `089b66fb1668...` |
 | 39 | `PRRT_kwDOUWarIc6sPGEl` | **FIXED** | Commits 187a878, d621bd9, HEAD; locator src/adapters/staged-review.mjs:385-480. When callerContextPackage is null, undefined, or vacuous ({}, { layers: {} }), staged review invokes buildContextPackage with repositoryRoot fallback. If unavailable, fails closed with EXACT_HEAD_CONTEXT_FAILED. Tested in tests/remediation-007-clean-challenge.test.mjs ('PR39-ROUND7-STAGED-NULL-CONTEXT-REEXTRACTION-01', 'PR39-ROUND7-STAGED-NULL-CONTEXT-FAIL-CLOSED-02-NEGATIVE', 'PR39-ROUND7-STAGED-VACUOUS-OBJECT-REEXTRACTION-05', 'PR39-ROUND8-STAGED-VACUOUS-LAYERS-REEXTRACTION-06', 'PR39-ROUND8-STAGED-VACUOUS-LAYERS-FAIL-CLOSED-07-NEGATIVE'). | `PENDING_ADJUDICATION` | `PENDING_ADJUDICATION` | `089b66fb1668...` |
 | 40 | `PRRT_kwDOUWarIc6sPmwz` | **FIXED** | Commits 187a878, d621bd9, HEAD; locator scripts/dogfood-review.mjs:1040-1175, 1400-1465. Provider telemetry individually tracks agyStagedFallbackUsed, claudeStagedFallbackUsed, and codexStagedFallbackUsed alongside per-provider chunk counts and timeout metrics. Tested in tests/remediation-007-clean-challenge.test.mjs ('PR39-ROUND7-STAGED-PROVIDER-TELEMETRY-ATTRIBUTION-02', 'PR39-ROUND8-STAGED-MULTI-PROVIDER-TELEMETRY-08'). | `PENDING_ADJUDICATION` | `PENDING_ADJUDICATION` | `089b66fb1668...` |
-| 41 | `PRRT_kwDOUWarIc6slAMk` | **FIXED** | Commit 089b66f; locator src/adapters/staged-review.mjs:406-490. Recomputes candidate diff contentDigests and enforces strict identity, contentDigest, repositoryRoot, and file coverage scope binding between callerContextPackage and changeSet. Unbound, mismatched, or cross-changeset packages fail closed with EXACT_HEAD_CONTEXT_FAILED and are not forwarded to chunks. Tested in tests/remediation-007-clean-challenge.test.mjs ('PR39-ROUND9-STAGED-UNBOUND-CONTEXT-FAIL-CLOSED-11-NEGATIVE'). | `PENDING_ADJUDICATION` | `PENDING_ADJUDICATION` | `089b66fb1668...` |
+| 41 | `PRRT_kwDOUWarIc6slAMk` | **FIXED** | Commit 089b66f; locator src/adapters/staged-review.mjs:406-490. Recomputes candidate diff contentDigests and enforces strict identity, contentDigest, repositoryRoot, and file coverage scope binding between callerContextPackage and changeSet. Unbound, mismatched, or cross-changeset packages fail closed with EXACT_HEAD_CONTEXT_FAILED and are not forwarded to chunks. Tested in tests/remediation-007-clean-challenge.test.mjs ('PR39-ROUND9-STAGED-UNBOUND-CONTEXT-FAIL-CLOSED-11-NEGATIVE', 'PR39-ROUND9-STAGED-NORMALIZED-REPO-AND-DIGEST-13'). | `PENDING_ADJUDICATION` | `PENDING_ADJUDICATION` | `089b66fb1668...` |
+| 42 | `PRRT_kwDOUWarIc6slAMq` | **FIXED** | Commit 089b66f; locator src/adapters/staged-review.mjs:322-325. callerContextGaps now merges options.contextGaps and changeSet.contextGaps via mergeContextGaps, ensuring explicitly passing options.contextGaps = [] cannot clear pre-existing gaps such as EXACT_HEAD_CONTEXT_FAILED. Tested in tests/remediation-007-clean-challenge.test.mjs ('PR39-ROUND9-STAGED-MERGE-CALLER-CONTEXT-GAPS-12-NEGATIVE'). | `PENDING_ADJUDICATION` | `PENDING_ADJUDICATION` | `089b66fb1668...` |
+| 43 | `PRRT_kwDOUWarIc6slAMz` | **FIXED** | Commits 089b66f, 9a59e90, HEAD; locator scripts/triage-pr39-threads.mjs:4-6. Synchronized CURRENT_HEAD_SHA to a commit containing the complete fixes (P1-DV-03, P2-TELEMETRY-02, P1-CONTEXT-BINDING-01, P1-CONTEXT-GAPS-01), ensuring consumers can reproduce every stated remediation and cited location from the recorded exact head. | `PENDING_ADJUDICATION` | `PENDING_ADJUDICATION` | `089b66fb1668...` |
 
 ## Head SHA Provenance Distinction
 
 - **Triage Baseline Extraction Head**: `bd9bc9001ee4cfee34671d6563d97deb793ff1ae`
 - **Current Verified Head**: `089b66fb166888baf7ad47fae76081586ad2fa38`
-- **Triage Status**: 131 review threads (41 outdated, 90 current) on PR #39.
-- **Post-Remediation Push Head**: Distinct commit generated on `origin/fix/remediation-007-clean-challenge` incorporating technical boundary remediations P1-DV-01, P1-DV-02, P1-DV-03, P2-TELEMETRY-01, P2-TELEMETRY-02, P1-CONTEXT-BINDING-01, P1-CONTEXT-GAPS-01, and evidence ledger artifacts.
+- **Triage Status**: 140 review threads (43 outdated, 97 current) on PR #39.
+- **Post-Remediation Push Head**: Distinct commit generated on `origin/fix/remediation-007-clean-challenge` incorporating technical boundary remediations P1-DV-01, P1-DV-02, P1-DV-03, P2-TELEMETRY-01, P2-TELEMETRY-02, P1-CONTEXT-BINDING-01, P1-CONTEXT-GAPS-01, P2-LEDGER-HEAD-01, and evidence ledger artifacts.
