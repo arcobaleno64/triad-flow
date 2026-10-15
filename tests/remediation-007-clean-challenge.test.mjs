@@ -6876,3 +6876,158 @@ test("PR39-ROUND9-STAGED-NORMALIZED-REPO-AND-DIGEST-13: executeStagedReview norm
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 });
+
+test("PR39-ROUND10-STAGED-UNVERIFIED-DECLARED-DIGEST-FAIL-CLOSED-14-NEGATIVE: executeStagedReview rejects ungrounded external contextPackage matching unverified declared changeSet digests that conflict with physical diff (P1-CONTEXT-BINDING-02)", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-round10-unverified-digest-"));
+  const diffContent = "--- a/src/secret.js\n+++ b/src/secret.js\n@@ -1,1 +1,2 @@\n+const secret = true;\n";
+  const headSha = "8888888888888888888888888888888888888888";
+  const realDiffDigest = crypto.createHash("sha256").update(diffContent, "utf8").digest("hex");
+  const fakeDeclaredDigest = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+  const capturedChunkInputs = [];
+  const capturingAdapter = new CliReviewAdapter({
+    command: "agy",
+    providerName: "agy",
+    family: "google",
+    modelName: "gemini-3.8-flash",
+    execFn: async (callContext) => {
+      capturedChunkInputs.push(callContext);
+      return {
+        stdout: JSON.stringify({
+          findings: [],
+          coverage: { coveredFiles: ["src/secret.js"], omittedFiles: [] },
+          providerIdentity: { provider: "agy", family: "google", model: "gemini-3.8-flash" }
+        })
+      };
+    }
+  });
+
+  try {
+    // Case 1: changeSet carries an unverified declared contentDigest matching contextPackage,
+    // but conflicting with the physical diff hash
+    const changeSetWithFakeContentDigest = {
+      ok: true,
+      schemaVersion: "1.0.0",
+      headSha,
+      repository: {
+        root: tmpDir,
+        headSha
+      },
+      contentDigest: fakeDeclaredDigest,
+      totalFiles: 1,
+      files: [{ file: "src/secret.js", additions: 1, deletions: 0, riskTier: 1 }],
+      diffHunks: diffContent
+    };
+
+    const pkgWithFakeDigest = {
+      headSha,
+      repositoryRoot: tmpDir,
+      contentDigest: fakeDeclaredDigest,
+      layers: {
+        layer1AstEnclosure: {
+          callees: [{ name: "unverifiedCallee", file: "src/secret.js" }]
+        }
+      },
+      fileCoverageManifest: [
+        { file: "src/secret.js", exactHeadAvailable: true }
+      ]
+    };
+
+    const result1 = await executeStagedReview(changeSetWithFakeContentDigest, capturingAdapter, {
+      cwd: tmpDir,
+      headSha,
+      contextPackage: pkgWithFakeDigest
+    });
+
+    assert.ok(
+      result1.contextGaps?.some(g => g.code === "EXACT_HEAD_CONTEXT_FAILED"),
+      "Must fail closed with EXACT_HEAD_CONTEXT_FAILED when contextPackage binds to an unverified declared contentDigest conflicting with physical diff"
+    );
+    assert.equal(
+      capturedChunkInputs[0]?.input?.contextPackage,
+      undefined,
+      "Chunk execution must not receive ungrounded contextPackage when declared contentDigest conflicts with physical diff"
+    );
+
+    // Case 2: changeSet carries an unverified declared changeSetDigest matching contextPackage,
+    // but conflicting with the physical diff / canonical digest
+    capturedChunkInputs.length = 0;
+    const changeSetWithFakeChangeSetDigest = {
+      ok: true,
+      schemaVersion: "1.0.0",
+      headSha,
+      repository: {
+        root: tmpDir,
+        headSha
+      },
+      changeSetDigest: fakeDeclaredDigest,
+      totalFiles: 1,
+      files: [{ file: "src/secret.js", additions: 1, deletions: 0, riskTier: 1 }],
+      diffHunks: diffContent
+    };
+
+    const result2 = await executeStagedReview(changeSetWithFakeChangeSetDigest, capturingAdapter, {
+      cwd: tmpDir,
+      headSha,
+      contextPackage: pkgWithFakeDigest
+    });
+
+    assert.ok(
+      result2.contextGaps?.some(g => g.code === "EXACT_HEAD_CONTEXT_FAILED"),
+      "Must fail closed with EXACT_HEAD_CONTEXT_FAILED when contextPackage binds to an unverified declared changeSetDigest conflicting with physical diff"
+    );
+    assert.equal(
+      capturedChunkInputs[0]?.input?.contextPackage,
+      undefined,
+      "Chunk execution must not receive ungrounded contextPackage when declared changeSetDigest conflicts with physical diff"
+    );
+
+    // Case 3: Positive control - verified physical diff digest succeeds without EXACT_HEAD_CONTEXT_FAILED
+    capturedChunkInputs.length = 0;
+    const changeSetWithRealDigest = {
+      ok: true,
+      schemaVersion: "1.0.0",
+      headSha,
+      repository: {
+        root: tmpDir,
+        headSha
+      },
+      contentDigest: realDiffDigest,
+      totalFiles: 1,
+      files: [{ file: "src/secret.js", additions: 1, deletions: 0, riskTier: 1 }],
+      diffHunks: diffContent
+    };
+
+    const pkgWithRealDigest = {
+      headSha,
+      repositoryRoot: tmpDir,
+      contentDigest: realDiffDigest,
+      layers: {
+        layer1AstEnclosure: {
+          callees: [{ name: "verifiedCallee", file: "src/secret.js" }]
+        }
+      },
+      fileCoverageManifest: [
+        { file: "src/secret.js", exactHeadAvailable: true }
+      ]
+    };
+
+    const result3 = await executeStagedReview(changeSetWithRealDigest, capturingAdapter, {
+      cwd: tmpDir,
+      headSha,
+      contextPackage: pkgWithRealDigest
+    });
+
+    assert.equal(
+      result3.contextGaps?.some(g => g.code === "EXACT_HEAD_CONTEXT_FAILED"),
+      false,
+      "Must not inject EXACT_HEAD_CONTEXT_FAILED when declared digest and contextPackage match verified physical diff hash"
+    );
+    assert.ok(
+      capturedChunkInputs[0]?.input?.contextPackage,
+      "Chunk execution must receive forwarded contextPackage when verified physical diff digest matches"
+    );
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});

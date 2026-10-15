@@ -563,6 +563,17 @@ const deltaFindings = [
     remediation: "以 mergeContextGaps(options.contextGaps, changeSet?.contextGaps) 合併兩者，確保傳入空陣列無法清除既有 contextGaps。"
   },
   {
+    id: "P1-CONTEXT-BINDING-02",
+    severity: "P1",
+    status: "REMEDIATED",
+    title: "未驗證之宣告 Digest 與 Trimmed Diff 雜湊混入候選集合 (staged-review.mjs changeSetDigestCandidates)",
+    locations: [
+      "src/adapters/staged-review.mjs:410-440"
+    ],
+    issue: "在 staged-review.mjs 中，changeSetDigestCandidates 盲目將未驗證之宣告 digest (changeSet.contentDigest 與 changeSet.changeSetDigest) 以及 diffHunks.trim() 加入候選集合。當呼叫端傳入之 contextPackage.contentDigest 與 changeSet.contentDigest 一致、但兩者皆與 physical diffHunks 雜湊衝突時，hasMatchingDigest 仍判定為 true，導致未受真實 diff 錨定之 contextPackage 被錯誤信任。",
+    remediation: "changeSetDigestCandidates 僅能由 physical diffHunks 之原始雜湊、正規化 LF 雜湊及獨立重算之 digestChangeSet 產生，移除 diffHunks.trim()。未驗證之 changeSet.contentDigest 與 changeSet.changeSetDigest 不得直接加入可信集合，且若其與重算之 diff digest 衝突時立即標記衝突並 Fail-Closed 阻斷 Clean Approval。"
+  },
+  {
     id: "P2-LEDGER-HEAD-01",
     severity: "P2",
     status: "REMEDIATED",
@@ -734,6 +745,16 @@ const mdLines = [
   "> - **Verification Evidence**: `tests/remediation-007-clean-challenge.test.mjs` (`PR39-ROUND9-STAGED-MERGE-CALLER-CONTEXT-GAPS-12-NEGATIVE`).",
   "",
   "> [!IMPORTANT]",
+  "> **P1-CONTEXT-BINDING-02: 未驗證之宣告 Digest 與 Trimmed Diff 雜湊混入候選集合 (staged-review.mjs changeSetDigestCandidates)**:",
+  "> - **Severity**: `P1`",
+  "> - **Status**: `REMEDIATED` (Tested & verified)",
+  "> - **Locations**:",
+  ">   - `src/adapters/staged-review.mjs:410-440`",
+  "> - **Issue**: 在 `staged-review.mjs` 中，`changeSetDigestCandidates` 盲目將未驗證之宣告 digest (`changeSet.contentDigest` 與 `changeSet.changeSetDigest`) 以及 `diffHunks.trim()` 加入候選集合。當呼叫端傳入之 `contextPackage.contentDigest` 與 `changeSet.contentDigest` 一致、但兩者皆與 physical `diffHunks` 雜湊衝突時，`hasMatchingDigest` 仍判定為 true，導致未受真實 diff 錨定之 contextPackage 被錯誤信任。",
+  "> - **Remediation**: `changeSetDigestCandidates` 僅能由 physical `diffHunks` 之原始雜湊、正規化 LF 雜湊及獨立重算之 `digestChangeSet` 產生，移除 `diffHunks.trim()`。未驗證之 `changeSet.contentDigest` 與 `changeSet.changeSetDigest` 不得直接加入可信集合，且若其與重算之 diff digest 衝突時立即標記衝突並 Fail-Closed 阻斷 Clean Approval。",
+  "> - **Verification Evidence**: `tests/remediation-007-clean-challenge.test.mjs` (`PR39-ROUND10-STAGED-UNVERIFIED-DECLARED-DIGEST-FAIL-CLOSED-14-NEGATIVE`).",
+  "",
+  "> [!IMPORTANT]",
   "> **P2-LEDGER-HEAD-01: 證據清冊之 CURRENT_HEAD_SHA 指向早於修補完成之 Commit (scripts/triage-pr39-threads.mjs)**:",
   "> - **Severity**: `P2`",
   "> - **Status**: `REMEDIATED` (Tested & verified)",
@@ -773,7 +794,7 @@ mdLines.push(
   `- **Triage Baseline Extraction Head**: \`${BASELINE_HEAD_SHA}\``,
   `- **Current Verified Head**: \`${CURRENT_HEAD_SHA}\``,
   "- **Triage Status**: 140 review threads (43 outdated, 97 current) on PR #39.",
-  "- **Post-Remediation Push Head**: Distinct commit generated on `origin/fix/remediation-007-clean-challenge` incorporating technical boundary remediations P1-DV-01, P1-DV-02, P1-DV-03, P2-TELEMETRY-01, P2-TELEMETRY-02, P1-CONTEXT-BINDING-01, P1-CONTEXT-GAPS-01, P2-LEDGER-HEAD-01, and evidence ledger artifacts."
+  "- **Post-Remediation Push Head**: Distinct commit generated on `origin/fix/remediation-007-clean-challenge` incorporating technical boundary remediations P1-DV-01, P1-DV-02, P1-DV-03, P2-TELEMETRY-01, P2-TELEMETRY-02, P1-CONTEXT-BINDING-01, P1-CONTEXT-GAPS-01, P1-CONTEXT-BINDING-02, P2-LEDGER-HEAD-01, and evidence ledger artifacts."
 );
 
 const mdDir = path.resolve("docs", "reports");

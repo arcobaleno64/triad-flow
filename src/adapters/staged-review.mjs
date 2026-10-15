@@ -407,33 +407,39 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
   const fallbackExtractionGaps = [];
   const hasExtractionFailedGap = Array.isArray(callerContextGaps) && callerContextGaps.some(g => g?.code === "EXACT_HEAD_CONTEXT_FAILED");
 
-  // Recompute candidate diff digests from changeSet for context identity binding (P1-CONTEXT-BINDING-01)
+  // Recompute candidate diff digests strictly from physical changeSet for context identity binding (P1-CONTEXT-BINDING-01, P1-CONTEXT-BINDING-02)
   const changeSetDigestCandidates = new Set();
+  let canonicalCsDigest = "";
   try {
     if (typeof changeSet?.diffHunks === "string") {
       const raw = normalizeDigest(crypto.createHash("sha256").update(changeSet.diffHunks, "utf8").digest("hex"));
       if (raw) changeSetDigestCandidates.add(raw);
       const normalized = normalizeDigest(crypto.createHash("sha256").update(changeSet.diffHunks.replace(/\r\n/g, "\n"), "utf8").digest("hex"));
       if (normalized) changeSetDigestCandidates.add(normalized);
-      const trimmed = normalizeDigest(crypto.createHash("sha256").update(changeSet.diffHunks.trim(), "utf8").digest("hex"));
-      if (trimmed) changeSetDigestCandidates.add(trimmed);
-      const trimmedNorm = normalizeDigest(crypto.createHash("sha256").update(changeSet.diffHunks.replace(/\r\n/g, "\n").trim(), "utf8").digest("hex"));
-      if (trimmedNorm) changeSetDigestCandidates.add(trimmedNorm);
-    }
-    if (changeSet?.contentDigest) {
-      const cd = normalizeDigest(changeSet.contentDigest);
-      if (cd) changeSetDigestCandidates.add(cd);
-    }
-    if (changeSet?.changeSetDigest) {
-      const csd = normalizeDigest(changeSet.changeSetDigest);
-      if (csd) changeSetDigestCandidates.add(csd);
     }
     try {
-      const canonicalCs = normalizeDigest(digestChangeSet(changeSet));
-      if (canonicalCs) changeSetDigestCandidates.add(canonicalCs);
+      canonicalCsDigest = normalizeDigest(digestChangeSet(changeSet));
+      if (canonicalCsDigest) changeSetDigestCandidates.add(canonicalCsDigest);
     } catch {}
   } catch {
     // Safe fallback for digest computation
+  }
+
+  // Declared digests are unverified declarations: do NOT add them directly to changeSetDigestCandidates
+  // unless they match one of the physical/canonical digests derived above.
+  const declaredContentDigest = changeSet?.contentDigest ? normalizeDigest(changeSet.contentDigest) : "";
+  const declaredChangeSetDigest = changeSet?.changeSetDigest ? normalizeDigest(changeSet.changeSetDigest) : "";
+  let isDeclaredChangeSetDigestConflicting = false;
+  let declaredDigestConflictReason = "";
+
+  if (changeSetDigestCandidates.size > 0) {
+    if (declaredContentDigest && !changeSetDigestCandidates.has(declaredContentDigest)) {
+      isDeclaredChangeSetDigestConflicting = true;
+      declaredDigestConflictReason = `Declared changeSet.contentDigest ('${declaredContentDigest}') conflicts with recomputed diff digest`;
+    } else if (declaredChangeSetDigest && !changeSetDigestCandidates.has(declaredChangeSetDigest) && (!canonicalCsDigest || declaredChangeSetDigest !== canonicalCsDigest)) {
+      isDeclaredChangeSetDigestConflicting = true;
+      declaredDigestConflictReason = `Declared changeSet.changeSetDigest ('${declaredChangeSetDigest}') conflicts with recomputed diff digest`;
+    }
   }
 
   const isCallerContextObject = Boolean(
@@ -533,6 +539,9 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
       } else if (hasConflictingDigest) {
         isCallerContextBindingMismatch = true;
         bindingMismatchReason = `Caller contextPackage diff digest (${pkgContentDigest || pkgDigest}) does not match changeSet diff contentDigest`;
+      } else if (isDeclaredChangeSetDigestConflicting) {
+        isCallerContextBindingMismatch = true;
+        bindingMismatchReason = declaredDigestConflictReason;
       } else if (isRepoMismatch) {
         isCallerContextBindingMismatch = true;
         bindingMismatchReason = `Caller contextPackage repositoryRoot (${declaredRepo}) conflicts with repoRoot (${repoRoot})`;
