@@ -245,9 +245,14 @@ test("007-B-01: 0 Findings, Clean Challenge confirms clean -> decision: 'approve
     { verificationMode: "clean_challenge" }
   );
 
+  const runContext = new RunContext({
+    contentDigest: cleanRecord.changeSetDigest
+  });
+
   const gateT2 = evaluateGateDecision(cleanConsensusT2, {
     tier: 2,
-    verificationRecord: cleanRecord
+    verificationRecord: cleanRecord,
+    runContext
   });
 
   assert.equal(gateT2.decision, "approve");
@@ -259,7 +264,8 @@ test("007-B-01: 0 Findings, Clean Challenge confirms clean -> decision: 'approve
   const cleanConsensusT1 = makeTrustedConsensus([], { tier: 1 });
   const gateT1 = evaluateGateDecision(cleanConsensusT1, {
     tier: 1,
-    verificationRecord: cleanRecord
+    verificationRecord: cleanRecord,
+    runContext
   });
   assert.equal(gateT1.decision, "approve");
   assert.ok(gateT1.reason.includes("Clean Challenge passed"));
@@ -1992,7 +1998,10 @@ test("007-AUDIT-THREAD-05: Verifier reporting DEFECTS_FOUND without omissions fa
   );
 
   const gateRes = evaluateGateDecision(consensus, {
-    verificationRecord: vr
+    verificationRecord: vr,
+    runContext: new RunContext({
+      contentDigest: vr.changeSetDigest
+    })
   });
   assert.equal(gateRes.decision, "block");
   assert.match(gateRes.reason, /Clean Challenge failed: Verifier reported DEFECTS_FOUND without omissions/i);
@@ -2259,14 +2268,16 @@ test("007-AUDIT-THREAD-37: Orchestrator enforces canonical RunContext for curren
   assert.match(resultReplayWithRc.gate.reason, /FORGED_OR_STALE_RECORD/i);
 
   // Positive Control: Valid verification record matching ChangeSet B.
+  const runIdB = "run-audit-thread-37";
   const recB = await conductIndependentVerification(
     changeSetB,
     [],
     mockVerifier,
-    { verificationMode: "clean_challenge" }
+    { verificationMode: "clean_challenge", runId: runIdB }
   );
   const resultValid = await orchestrateReview(changeSetB, { macro: cleanAdapter }, {
-    verificationRecord: recB
+    verificationRecord: recB,
+    runId: runIdB
   });
   assert.equal(resultValid.status, "reviewed-clean");
   assert.equal(resultValid.gate.decision, "approve");
@@ -3150,6 +3161,8 @@ test("PR39-GATE-OUT-04-NEGATIVE: Tier 1 omission policy (strict omission blockin
     })
   };
 
+  const runId = "run-gate-out-04";
+
   const trustedRecord = await conductIndependentVerification(
     changeSet,
     [],
@@ -3157,13 +3170,15 @@ test("PR39-GATE-OUT-04-NEGATIVE: Tier 1 omission policy (strict omission blockin
     {
       verificationMode: "clean_challenge",
       headSha: changeSet.headSha,
-      changeSetDigest: changeSet.contentDigest
+      changeSetDigest: changeSet.contentDigest,
+      runId
     }
   );
 
   const runContext = new RunContext({
     headSha: changeSet.headSha,
-    contentDigest: changeSet.contentDigest
+    contentDigest: changeSet.contentDigest,
+    runId
   });
 
   // Direct Gate: Tier 1 strictly blocks Medium omission (decision: "block")
@@ -3188,7 +3203,8 @@ test("PR39-GATE-OUT-04-NEGATIVE: Tier 1 omission policy (strict omission blockin
   const orchestratorT1 = await orchestrateReview(changeSet, { macro: mockAdapter }, {
     tier: 1,
     plan: { mode: "single", highestRisk: 1 },
-    verificationRecord: trustedRecord
+    verificationRecord: trustedRecord,
+    runId
   });
   assert.equal(orchestratorT1.gate.decision, directGateT1.decision, "Orchestrator tier 1 must match direct gate tier 1 decision");
   assert.equal(orchestratorT1.gate.decision, "block");
@@ -3198,7 +3214,8 @@ test("PR39-GATE-OUT-04-NEGATIVE: Tier 1 omission policy (strict omission blockin
   const orchestratorT2 = await orchestrateReview(changeSet, { macro: mockAdapter }, {
     tier: 2,
     plan: { mode: "single", highestRisk: 2 },
-    verificationRecord: trustedRecord
+    verificationRecord: trustedRecord,
+    runId
   });
   assert.equal(orchestratorT2.gate.decision, directGateT2.decision, "Orchestrator tier 2 must match direct gate tier 2 decision");
   assert.equal(orchestratorT2.gate.decision, "human_review_required");
@@ -3217,7 +3234,8 @@ test("PR39-GATE-OUT-04-NEGATIVE: Tier 1 omission policy (strict omission blockin
   const orchestratorIsTier1 = await orchestrateReview(changeSet, { macro: mockAdapter }, {
     isTier1: true,
     plan: { mode: "single", highestRisk: 2 },
-    verificationRecord: trustedRecord
+    verificationRecord: trustedRecord,
+    runId
   });
   assert.equal(orchestratorIsTier1.gate.decision, "block", "Orchestrator isTier1: true must block Medium omission");
   assert.match(orchestratorIsTier1.gate.reason, /Supported Medium Omission \(Tier 1\)/i);

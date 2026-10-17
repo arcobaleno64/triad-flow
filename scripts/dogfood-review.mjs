@@ -33,7 +33,6 @@ import {
   EXECUTION_STATUS,
   convertProviderResultToSentryReport
 } from "../src/adapters/provider-contract.mjs";
-import { executeStagedReview } from "../src/adapters/staged-review.mjs";
 import {
   conductIndependentVerification,
   buildDisagreementLedgerDocument,
@@ -41,10 +40,30 @@ import {
   createMockVerifierAdapter,
   VERIFICATION_SCHEMA_VERSION,
   RunContext,
-  mergeContextGaps
+  mergeContextGaps,
+  registerTrustedContextPackage
 } from "../src/core/independent-verifier.mjs";
 import { TOOL_VERSION } from "../src/core/review-run-report.mjs";
 import { digestChangeSet } from "../src/core/canonical-digest.mjs";
+
+var _internalDogfoodWorkflowMinter = _internalDogfoodWorkflowMinter || null;
+
+/**
+ * Internal capability binder for dogfood-review workflow authority.
+ * Write-once, called by independent-verifier.mjs during internal module wiring (P2-CAP-05).
+ *
+ * @param {Function} minter
+ */
+export function __bindDogfoodReviewWorkflowMinter(minter) {
+  if (typeof minter === "function" && !_internalDogfoodWorkflowMinter) {
+    _internalDogfoodWorkflowMinter = minter;
+  }
+}
+
+async function runStagedReviewFallback(...args) {
+  const { executeStagedReview } = await import("../src/adapters/staged-review.mjs");
+  return executeStagedReview(...args);
+}
 
 export function getCommitShaForRef(ref = "HEAD", cwd = process.cwd()) {
   try {
@@ -985,6 +1004,19 @@ export async function runDogfoodReview(userOptions = {}) {
       if (log) console.warn(`  ⚠️ Failed to bind external contextPackage: ${contextExtractionError}`);
     } else {
       contextPackage = pkg;
+      registerTrustedContextPackage(pkg, {
+        repositoryRoot: targetRepo,
+        headSha: commitSha,
+        diffHunks: changeSet.diffHunks,
+        changeSet,
+        verifiedBy: "dogfood-review",
+        workflowAuthority: typeof _internalDogfoodWorkflowMinter === "function"
+          ? _internalDogfoodWorkflowMinter("dogfood-review", {
+              contentDigest: pkg.contentDigest,
+              headSha: commitSha
+            })
+          : null
+      });
     }
   } else if (!contextPackage && changeSet?.files?.length > 0 && targetRepo && commitSha) {
     try {
@@ -1078,7 +1110,7 @@ export async function runDogfoodReview(userOptions = {}) {
     if (res?.executionStatus === EXECUTION_STATUS.PAYLOAD_TOO_LARGE) {
       if (log) console.log("    ℹ [agy] Prompt exceeds Windows argv limit; delegating to staged chunked review (RFC-027-01)...");
       agyStagedFallbackUsed = true;
-      res = await executeStagedReview(changeSet, reviewAdapters.agy, {
+      res = await runStagedReviewFallback(changeSet, reviewAdapters.agy, {
         runId: providerRunId,
         role: "agy",
         policyId: "TRI_PARTY_HETEROGENEOUS",
@@ -1124,7 +1156,7 @@ export async function runDogfoodReview(userOptions = {}) {
     if (res?.executionStatus === EXECUTION_STATUS.PAYLOAD_TOO_LARGE) {
       if (log) console.log("    ℹ [claude] Prompt exceeds limit; delegating to staged chunked review (RFC-027-01)...");
       claudeStagedFallbackUsed = true;
-      res = await executeStagedReview(changeSet, reviewAdapters.claude, {
+      res = await runStagedReviewFallback(changeSet, reviewAdapters.claude, {
         runId: providerRunId,
         role: "claude",
         policyId: "TRI_PARTY_HETEROGENEOUS",
@@ -1170,7 +1202,7 @@ export async function runDogfoodReview(userOptions = {}) {
     if (res?.executionStatus === EXECUTION_STATUS.PAYLOAD_TOO_LARGE) {
       if (log) console.log("    ℹ [codex] Prompt exceeds limit; delegating to staged chunked review (RFC-027-01)...");
       codexStagedFallbackUsed = true;
-      res = await executeStagedReview(changeSet, reviewAdapters.codex, {
+      res = await runStagedReviewFallback(changeSet, reviewAdapters.codex, {
         runId: providerRunId,
         role: "codex",
         policyId: "TRI_PARTY_HETEROGENEOUS",

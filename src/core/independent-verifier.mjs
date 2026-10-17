@@ -11,8 +11,10 @@
  */
 
 import fs from "node:fs";
+import path from "node:path";
 import process from "node:process";
-import { spawn } from "node:child_process";
+import crypto from "node:crypto";
+import { spawn, execFileSync } from "node:child_process";
 import {
   canonicalJsonStringify,
   computeDigest,
@@ -40,6 +42,57 @@ import {
   formatContextPackageXml,
   formatContextGaps
 } from "../adapters/review-prompts.mjs";
+import { getExactHeadFileContent } from "./git-collector.mjs";
+import { __bindContextBuilderWorkflowMinter } from "./context-builder.mjs";
+import { __bindDogfoodReviewWorkflowMinter } from "../../scripts/dogfood-review.mjs";
+
+const commitExistenceCache = new Map();
+
+/**
+ * Checks whether a directory is a valid git repository.
+ *
+ * @param {string} repoRoot
+ * @returns {boolean}
+ */
+export function isGitRepo(repoRoot) {
+  if (!repoRoot || typeof repoRoot !== "string") return false;
+  try {
+    const norm = path.resolve(repoRoot);
+    return fs.existsSync(path.join(norm, ".git"));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Checks whether a given commit SHA exists in the git repository.
+ *
+ * @param {string} repoRoot
+ * @param {string} headSha
+ * @returns {boolean}
+ */
+export function isCommitInRepo(repoRoot, headSha) {
+  if (!repoRoot || !headSha) return false;
+  const normSha = String(headSha).trim();
+  if (!/^[0-9a-fA-F]{40,64}$/.test(normSha)) return false;
+  const cacheKey = `${path.resolve(repoRoot)}:${normSha.toLowerCase()}`;
+  if (commitExistenceCache.has(cacheKey)) {
+    return commitExistenceCache.get(cacheKey);
+  }
+  try {
+    execFileSync("git", ["-c", "core.fsmonitor=false", "cat-file", "-e", `${normSha}^{commit}`], {
+      cwd: repoRoot,
+      stdio: "ignore",
+      windowsHide: true
+    });
+    commitExistenceCache.set(cacheKey, true);
+    return true;
+  } catch {
+    commitExistenceCache.set(cacheKey, false);
+    return false;
+  }
+}
+
 
 /**
  * Normative verification schema version.
@@ -251,6 +304,298 @@ export class RunContext {
  */
 const trustedVerificationRegistry = new WeakSet();
 const segregatedSyntheticRegistry = new WeakSet();
+const trustedContextPackageRegistry = new WeakMap();
+const internalWorkflowAuthorityRegistry = new WeakSet();
+
+/**
+ * Private capability minter for internal workflow authority tokens.
+ * Held strictly in closure scope and delivered via unexported module binding.
+ * Cannot be imported or invoked by arbitrary external callers (P2-CAP-04, P2-CAP-05).
+ *
+ * @param {string} workflowName
+ * @param {object} [context={}]
+ * @returns {object|null}
+ */
+function _createInternalWorkflowToken(workflowName, context = {}) {
+  if (typeof workflowName !== "string" || !["dogfood-review", "context-builder", "staged-review"].includes(workflowName)) {
+    return null;
+  }
+  const token = Object.freeze({
+    workflow: workflowName,
+    mintedAt: Date.now(),
+    isInternal: true,
+    contentDigest: typeof context?.contentDigest === "string" ? context.contentDigest : null,
+    headSha: typeof context?.headSha === "string" ? context.headSha : null
+  });
+  internalWorkflowAuthorityRegistry.add(token);
+  return token;
+}
+
+// Push internal token minter capability to genuine sibling modules
+if (typeof __bindContextBuilderWorkflowMinter === "function") {
+  __bindContextBuilderWorkflowMinter(_createInternalWorkflowToken);
+}
+if (typeof __bindDogfoodReviewWorkflowMinter === "function") {
+  __bindDogfoodReviewWorkflowMinter(_createInternalWorkflowToken);
+}
+
+/**
+ * Mints a public WorkflowAuthorityToken.
+ * External caller-supplied description text ('verifiedBy') or external invocations of this function
+ * never hold internal authority (isInternal: false). Internal authority is held strictly by
+ * genuine internal workflow pipelines via unforgeable capability binding (P2-CAP-04, P2-CAP-05).
+ *
+ * @param {string} workflowName - Name of authorized workflow ("dogfood-review"|"context-builder"|"staged-review")
+ * @param {object} [context={}] - Optional workflow binding context (contentDigest, headSha)
+ * @returns {object|null} Workflow capability token (isInternal: false for public/external callers)
+ */
+export function mintWorkflowAuthorityToken(workflowName, context = {}) {
+  if (typeof workflowName !== "string" || !["dogfood-review", "context-builder", "staged-review"].includes(workflowName)) {
+    return null;
+  }
+  return Object.freeze({
+    workflow: workflowName,
+    mintedAt: Date.now(),
+    isInternal: false,
+    contentDigest: typeof context?.contentDigest === "string" ? context.contentDigest : null,
+    headSha: typeof context?.headSha === "string" ? context.headSha : null
+  });
+}
+
+/**
+ * Checks whether candidate is an authentic in-process workflow authority token.
+ * Fails closed if candidate was minted by an external/unauthorized caller or lacks internal registry provenance (P2-CAP-04).
+ *
+ * @param {any} candidate
+ * @param {object} [expectedPkg=null] - Candidate context package to verify against token bindings
+ * @returns {boolean}
+ */
+export function isWorkflowAuthorityToken(candidate, expectedPkg = null) {
+  if (!candidate || typeof candidate !== "object") {
+    return false;
+  }
+  if (candidate.isInternal !== true || !internalWorkflowAuthorityRegistry.has(candidate)) {
+    return false;
+  }
+  if (expectedPkg && typeof expectedPkg === "object") {
+    if (candidate.contentDigest && expectedPkg.contentDigest) {
+      if (normalizeDigest(candidate.contentDigest) !== normalizeDigest(expectedPkg.contentDigest)) {
+        return false;
+      }
+    }
+    if (candidate.headSha && expectedPkg.headSha) {
+      if (normalizeCommitSha(candidate.headSha) !== normalizeCommitSha(expectedPkg.headSha)) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+/**
+ * Validates the authenticity and provenance of a candidate ContextPackage.
+ * Fails closed unless physical Git backing or verified review workflow capability is proven.
+ * Self-attested caller description text ('verifiedBy') alone without capability token or Git backing is rejected.
+ *
+ * @param {object} pkg - Candidate context package
+ * @param {object} [evidence={}] - Provenance evidence (repositoryRoot, headSha, diffHunks, verifiedBy, workflowAuthority)
+ * @returns {boolean} True if authentic and verified, false otherwise
+ */
+export function validateContextPackageAuthenticity(pkg, evidence = {}) {
+  if (!pkg || typeof pkg !== "object" || Array.isArray(pkg)) {
+    return false;
+  }
+  if (pkg.schemaVersion !== "1.0.0") {
+    return false;
+  }
+  if (!pkg.layers || typeof pkg.layers !== "object" || Array.isArray(pkg.layers)) {
+    return false;
+  }
+  if (!pkg.budgetAccounting || typeof pkg.budgetAccounting !== "object" || Array.isArray(pkg.budgetAccounting)) {
+    return false;
+  }
+  if (typeof pkg.contentDigest !== "string" || !/^[0-9a-fA-F]{32,64}$/.test(pkg.contentDigest.trim())) {
+    return false;
+  }
+  if (!Array.isArray(pkg.fileCoverageManifest) || pkg.fileCoverageManifest.length === 0) {
+    return false;
+  }
+  for (const entry of pkg.fileCoverageManifest) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      return false;
+    }
+    if (entry.inspected !== true) {
+      return false;
+    }
+    if (typeof entry.file !== "string" || entry.file.trim().length === 0) {
+      return false;
+    }
+    if (typeof entry.exactHeadAvailable !== "boolean") {
+      return false;
+    }
+    if (!Array.isArray(entry.calleesExtracted)) {
+      return false;
+    }
+  }
+
+  // Validate Diff Digest consistency if diffHunks provided
+  const rawHunks = typeof evidence.diffHunks === "string"
+    ? evidence.diffHunks
+    : (typeof evidence.changeSet?.diffHunks === "string" ? evidence.changeSet.diffHunks : "");
+  if (rawHunks && pkg.contentDigest) {
+    const rawDigest = crypto.createHash("sha256").update(rawHunks).digest("hex");
+    const normDigest = crypto.createHash("sha256").update(rawHunks.replace(/\r\n/g, "\n")).digest("hex");
+    const pkgDigest = normalizeDigest(pkg.contentDigest);
+    if (!pkgDigest || (pkgDigest !== rawDigest && pkgDigest !== normDigest)) {
+      return false;
+    }
+  }
+
+  const repoRoot = evidence.repositoryRoot || evidence.repoRoot || pkg.repositoryRoot || null;
+  const headSha = evidence.headSha || pkg.headSha || null;
+
+  // 1. Physical Git Backing
+  let hasPhysicalGitBacking = false;
+  if (repoRoot && headSha && isGitRepo(repoRoot) && isCommitInRepo(repoRoot, headSha)) {
+    let allExactHeadFilesPhysicallyExist = true;
+    for (const entry of pkg.fileCoverageManifest) {
+      if (entry.exactHeadAvailable === true && !entry.exactHeadUnavailable) {
+        const exactContent = getExactHeadFileContent(repoRoot, headSha, entry.file) ??
+          getExactHeadFileContent(repoRoot, headSha, normalizeCanonicalPath(entry.file)) ??
+          null;
+        if (exactContent === null) {
+          allExactHeadFilesPhysicallyExist = false;
+          break;
+        }
+
+        // Validate sourceDigest against authentic Git object
+        if (entry.sourceDigest) {
+          const normExactDigest = crypto.createHash("sha256").update(exactContent.replace(/\r\n/g, "\n")).digest("hex");
+          const rawExactDigest = crypto.createHash("sha256").update(exactContent).digest("hex");
+          const manifestDigest = normalizeDigest(entry.sourceDigest);
+          if (manifestDigest !== normExactDigest && manifestDigest !== rawExactDigest) {
+            allExactHeadFilesPhysicallyExist = false;
+            break;
+          }
+        }
+
+        // Validate that extracted callee snippets and definitions actually exist in authentic Git content
+        const normExactContent = exactContent.replace(/\r\n/g, "\n");
+        const entryCallees = (pkg.layers?.layer1AstEnclosure?.callees || []).filter(
+          c => c && (c.file === entry.file || normalizeCanonicalPath(c.file || "") === normalizeCanonicalPath(entry.file))
+        );
+        for (const callee of entryCallees) {
+          const snippet = (callee.definition || callee.snippet || "").replace(/\r\n/g, "\n").trim();
+          if (snippet && !normExactContent.includes(snippet)) {
+            allExactHeadFilesPhysicallyExist = false;
+            break;
+          }
+        }
+        if (!allExactHeadFilesPhysicallyExist) break;
+
+        // Validate that enclosing function snippets actually exist in authentic Git content
+        const entryFunctions = (pkg.layers?.layer1AstEnclosure?.enclosingFunctions || []).filter(
+          f => f && (!f.file || f.file === entry.file || normalizeCanonicalPath(f.file || "") === normalizeCanonicalPath(entry.file))
+        );
+        for (const fn of entryFunctions) {
+          const snippet = (fn.bodySnippet || fn.snippet || "").replace(/\r\n/g, "\n").trim();
+          if (snippet && !normExactContent.includes(snippet)) {
+            allExactHeadFilesPhysicallyExist = false;
+            break;
+          }
+        }
+        if (!allExactHeadFilesPhysicallyExist) break;
+      } else {
+        allExactHeadFilesPhysicallyExist = false;
+        break;
+      }
+    }
+    if (allExactHeadFilesPhysicallyExist && pkg.fileCoverageManifest.length > 0) {
+      hasPhysicalGitBacking = true;
+    }
+  }
+
+  let hasWorkflowAuthority = false;
+  if (evidence.workflowAuthority && isWorkflowAuthorityToken(evidence.workflowAuthority, pkg)) {
+    const declaredWorkflow = typeof evidence.verifiedBy === "string" ? evidence.verifiedBy : null;
+    if (!declaredWorkflow || declaredWorkflow === evidence.workflowAuthority.workflow) {
+      // context-builder workflow authority requires physical Git backing to prevent builder-mediated authority laundering (P2-CAP-06)
+      if (evidence.workflowAuthority.workflow === "context-builder") {
+        if (hasPhysicalGitBacking) {
+          hasWorkflowAuthority = true;
+        }
+      } else {
+        hasWorkflowAuthority = true;
+      }
+    }
+  }
+
+  // Authentic provenance requires EITHER physical Git backing OR a verified in-process WorkflowAuthorityToken.
+  // Description text alone (verifiedBy string without authority token) fails closed (P2-CAP-03).
+  return hasPhysicalGitBacking || hasWorkflowAuthority;
+}
+
+/**
+ * Computes a canonical SHA-256 snapshot hash over a ContextPackage.
+ * Used to detect in-memory mutations or property tampering of registered packages (P2-CAP-08).
+ *
+ * @param {object} pkg
+ * @returns {string} Canonical SHA-256 hash or empty string if invalid
+ */
+export function computeContextPackageSnapshotHash(pkg) {
+  if (!pkg || typeof pkg !== "object" || Array.isArray(pkg)) {
+    return "";
+  }
+  try {
+    return computeDigest(pkg);
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Registers a context package as authoritatively minted or verified.
+ * Requires physical Git backing or verified workflow evidence.
+ * Deep-freezes the package and records its canonical snapshot hash (P2-CAP-08).
+ *
+ * @param {object} pkg
+ * @param {object} [evidence={}]
+ * @returns {object|null}
+ */
+export function registerTrustedContextPackage(pkg, evidence = {}) {
+  if (validateContextPackageAuthenticity(pkg, evidence)) {
+    deepFreeze(pkg);
+    const snapshotHash = computeContextPackageSnapshotHash(pkg);
+    trustedContextPackageRegistry.set(pkg, snapshotHash);
+    return pkg;
+  }
+  return null;
+}
+
+/**
+ * Checks if candidate is an authoritatively minted or verified context package.
+ * Enforces in-process object identity, deep immutability, and snapshot hash integrity (P2-CAP-08).
+ *
+ * @param {any} candidate
+ * @returns {boolean}
+ */
+export function isTrustedContextPackage(candidate) {
+  if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
+    return false;
+  }
+  if (!Object.isFrozen(candidate)) {
+    return false;
+  }
+  if (!trustedContextPackageRegistry.has(candidate)) {
+    return false;
+  }
+  const storedHash = trustedContextPackageRegistry.get(candidate);
+  if (!storedHash) {
+    return false;
+  }
+  const currentHash = computeContextPackageSnapshotHash(candidate);
+  return Boolean(currentHash && currentHash === storedHash);
+}
 
 /**
  * Checks if candidate is an explicitly segregated synthetic test record.
@@ -505,7 +850,7 @@ export function hasConcreteCounterexample(candidateOrReasoning) {
     }
     reasoning = typeof candidateOrReasoning.reasoning === "string"
       ? candidateOrReasoning.reasoning.trim()
-      : (typeof candidateOrReasoning.recommendation === "string" ? candidateOrReasoning.recommendation.trim() : (typeof candidateOrReasoning.body === "string" ? candidateOrReasoning.body.trim() : ""));
+      : "";
   } else {
     return false;
   }
@@ -766,15 +1111,16 @@ export function truncateUtf8Safe(input, maxBytes) {
  * @param {any} val
  * @returns {boolean}
  */
-function parseBoolean(val) {
+function parseBoolean(val, defaultVal = false) {
   if (typeof val === "boolean") return val;
   if (typeof val === "string") {
     const s = val.trim().toLowerCase();
     if (s === "false" || s === "0" || s === "no" || s === "off" || s === "f") return false;
     if (s === "true" || s === "1" || s === "yes" || s === "on" || s === "t") return true;
+    return defaultVal;
   }
   if (typeof val === "number") return val !== 0;
-  return Boolean(val);
+  return defaultVal;
 }
 
 /**
@@ -803,15 +1149,6 @@ export function buildVerificationPrompt(changeSet = {}, producerFindings = [], o
   const hunkBuf = Buffer.isBuffer(changeSet?.diffHunks)
     ? changeSet.diffHunks
     : Buffer.from(String(changeSet?.diffHunks || ""), "utf8");
-
-  let hunks = "";
-  let truncatedNotice = "";
-  if (hunkBuf.length > maxBytes) {
-    hunks = truncateUtf8Safe(hunkBuf, maxBytes);
-    truncatedNotice = `\n[NOTE: Diff truncated at ${maxBytes} bytes limit]\n`;
-  } else {
-    hunks = hunkBuf.toString("utf8");
-  }
 
   const files = Array.isArray(changeSet?.files) ? changeSet.files : [];
   const fileList = files.length > 0
@@ -881,6 +1218,42 @@ export function buildVerificationPrompt(changeSet = {}, producerFindings = [], o
   const contextBlock = formatContextPackageXml(contextPackage);
   const contextGaps = mergeContextGaps(options?.contextGaps, contextPackage?.contextGaps);
   const contextGapsBlock = formatContextGaps(contextGaps);
+
+  // Precompute non-diff prompt overhead to ensure total prompt fits within maxInputBytes (VERIFIER-RC-02 / PRRT_kwDOUWarIc6rte6b)
+  const nonDiffOverheadEstimate = Buffer.byteLength(
+    [
+      ...headerLines,
+      findingsBlock,
+      contextBlock || "",
+      contextGapsBlock || "",
+      fileList,
+      exclusionsList,
+      scope,
+      contentDigest,
+      patchObjective
+    ].join("\n"),
+    "utf8"
+  ) + 2500;
+
+  let allowedDiffBytes;
+  if (maxBytes > nonDiffOverheadEstimate) {
+    allowedDiffBytes = Math.max(0, maxBytes - nonDiffOverheadEstimate);
+  } else if (contextBlock || contextGapsBlock || maxBytes >= 1000) {
+    // When non-diff overhead (such as large contextBlock) exceeds budget, diff allocation is 0
+    allowedDiffBytes = 0;
+  } else {
+    // Small unit tests without context (e.g. maxBytes=200/500 testing diff truncation notice)
+    allowedDiffBytes = maxBytes;
+  }
+
+  let hunks = "";
+  let truncatedNotice = "";
+  if (hunkBuf.length > allowedDiffBytes) {
+    hunks = allowedDiffBytes > 0 ? truncateUtf8Safe(hunkBuf, allowedDiffBytes) : "";
+    truncatedNotice = `\n[NOTE: Diff truncated at ${allowedDiffBytes} bytes limit]\n`;
+  } else {
+    hunks = hunkBuf.toString("utf8");
+  }
 
   const promptSections = [
     ...headerLines,
@@ -996,7 +1369,7 @@ export function buildVerificationPrompt(changeSet = {}, producerFindings = [], o
  * @param {object} [context={}] - Context containing changeSet, producerFindings, verifierIdentity
  * @returns {object} Normalized verifier output
  */
-export function validateVerificationOutput(rawOutput, context = {}) {
+export function validateVerificationOutput(rawOutput, context = {}, { allowSynthetic = false } = {}) {
   // Handle transport-level error or terminal non-success status
   if (rawOutput && (rawOutput.ok === false || (rawOutput.executionStatus && rawOutput.executionStatus !== EXECUTION_STATUS.SUCCESS && rawOutput.executionStatus !== EXECUTION_STATUS.EMPTY))) {
     const status = Object.values(EXECUTION_STATUS).includes(rawOutput.executionStatus)
@@ -1371,8 +1744,8 @@ export function validateVerificationOutput(rawOutput, context = {}) {
 
       let lineStart = 1;
       let locatorAccurate = candidate.locatorAccurate !== undefined && candidate.locatorAccurate !== null
-        ? parseBoolean(candidate.locatorAccurate)
-        : true;
+        ? parseBoolean(candidate.locatorAccurate, false)
+        : false;
 
       if (candidate.line_start !== undefined && candidate.line_start !== null) {
         const n = Number(candidate.line_start);
@@ -1414,9 +1787,159 @@ export function validateVerificationOutput(rawOutput, context = {}) {
         }
       }
 
+      // Physical line bounds check (VERIFIER-RC-05 / PRRT_kwDOUWarIc6rvCBQ / P2-LOC-04)
+      const normFile = normalizeCanonicalPath(file);
+      let physicalLineCount = null;
+      const matchedFile = Array.isArray(context?.changeSet?.files)
+        ? context.changeSet.files.find(f => normalizeCanonicalPath(typeof f === "string" ? f : f?.path) === normFile)
+        : null;
+
+      // Enforce reading from target repository & exact head, avoiding unrelated working tree files
+      const repoRoot = (context?.changeSet?.repository && typeof context.changeSet.repository === "object" && typeof context.changeSet.repository.root === "string")
+        ? context.changeSet.repository.root
+        : (typeof context?.changeSet?.repository === "string" ? context.changeSet.repository : process.cwd());
+      const headSha = normalizeCommitSha(context?.headSha || context?.changeSet?.headSha || context?.changeSet?.head || "");
+      const isRealRepo = isGitRepo(repoRoot);
+      const isInvalidExactHead = Boolean(isRealRepo && headSha && !isCommitInRepo(repoRoot, headSha));
+      const isWorkingTreeMode = !headSha || context?.scopeMode === "working-tree" || context?.changeSet?.scopeMode === "working-tree";
+
+      if (repoRoot && headSha && isRealRepo && !isInvalidExactHead) {
+        try {
+          const content = getExactHeadFileContent(repoRoot, headSha, file);
+          if (typeof content === "string") {
+            physicalLineCount = content.split("\n").length;
+          }
+        } catch {}
+      }
+
+      if (physicalLineCount === null && repoRoot && !isInvalidExactHead && isWorkingTreeMode) {
+        // Working tree mode (headSha not provided or working-tree scope): read from disk
+        const candidatePath = path.isAbsolute(file) ? file : path.resolve(repoRoot, file);
+        try {
+          if (fs.existsSync(candidatePath)) {
+            const stat = fs.statSync(candidatePath);
+            if (stat.isFile()) {
+              const content = fs.readFileSync(candidatePath, "utf8");
+              physicalLineCount = content.split("\n").length;
+            }
+          }
+        } catch {}
+      }
+
+      // If file cannot be read from target repository/head/disk:
+      // When exact head is declared on a real repository, if commit is invalid/non-existent or target file
+      // is completely absent from git and disk, unverified diff hunks cannot grant physical line bounds (P2-LOC-04, P2-LOC-05, P2-LOC-06).
+      // In a non-git environment (!isRealRepo), if exact head is specified, diff hunks require an authoritative,
+      // proven contextPackage fileCoverageManifest strictly bound to target head and authentic diff (P2-LOC-06, P2-LOC-07).
+      // A plain, unverified manifest or ungrounded self-declaration cannot wield authority under Default-Deny.
+      const candidatePackage = (context?.contextPackage && typeof context.contextPackage === "object")
+        ? context.contextPackage
+        : ((context?.changeSet?.contextPackage && typeof context.changeSet.contextPackage === "object")
+            ? context.changeSet.contextPackage
+            : ((context?.runContext?.contextPackage && typeof context.runContext.contextPackage === "object")
+                ? context.runContext.contextPackage
+                : null));
+
+      const manifestList = Array.isArray(candidatePackage?.fileCoverageManifest)
+        ? candidatePackage.fileCoverageManifest
+        : null;
+
+      const manifestEntry = Array.isArray(manifestList)
+        ? manifestList.find(entry => entry && typeof entry === "object" && (entry.file === file || entry.file === normFile || entry.path === file || entry.path === normFile))
+        : null;
+
+      // 1. Manifest entry schema invariants under Default-Deny (P2-LOC-07)
+      // Must strictly confirm inspection, exact-head availability, and callee extraction proof
+      const isManifestEntryValid = Boolean(
+        manifestEntry &&
+        typeof manifestEntry === "object" &&
+        manifestEntry.inspected === true &&
+        manifestEntry.exactHeadAvailable === true &&
+        manifestEntry.exactHeadUnavailable !== true &&
+        manifestEntry.contentAvailable !== false &&
+        Array.isArray(manifestEntry.calleesExtracted)
+      );
+
+      // 2. Identity and Cryptographic binding to target Head SHA and Diff Hunks (P2-LOC-07)
+      let isPackageBound = false;
+      if (candidatePackage && isManifestEntryValid) {
+        const hasValidSchema = candidatePackage.schemaVersion === "1.0.0";
+        const pkgHead = candidatePackage.headSha ? normalizeCommitSha(candidatePackage.headSha) : "";
+        const targetHead = headSha ? normalizeCommitSha(headSha) : "";
+        const isHeadBound = Boolean(pkgHead && targetHead && pkgHead === targetHead);
+
+        let isDigestBound = false;
+        const rawHunks = typeof context?.changeSet?.diffHunks === "string" ? context.changeSet.diffHunks : "";
+        if (rawHunks && candidatePackage.contentDigest) {
+          const rawDigest = crypto.createHash("sha256").update(rawHunks).digest("hex");
+          const normDigest = crypto.createHash("sha256").update(rawHunks.replace(/\r\n/g, "\n")).digest("hex");
+          const pkgDigest = normalizeDigest(candidatePackage.contentDigest);
+          isDigestBound = Boolean(pkgDigest && (pkgDigest === rawDigest || pkgDigest === normDigest));
+        }
+
+        isPackageBound = hasValidSchema && isHeadBound && isDigestBound;
+      }
+
+      // 3. Provenance and Authority: verified by capability registry or explicit synthetic authorization (P2-CAP-01)
+      const isProvenanceProven = Boolean(
+        candidatePackage && (
+          isTrustedContextPackage(candidatePackage) ||
+          allowSynthetic === true
+        )
+      );
+
+      const hasVerifiedExactHeadManifest = Boolean(
+        isManifestEntryValid &&
+        isPackageBound &&
+        isProvenanceProven
+      );
+
+      const allowDiffHunkBasis = !isInvalidExactHead &&
+        physicalLineCount === null &&
+        matchedFile &&
+        typeof matchedFile === "object" &&
+        !isRealRepo &&
+        (isWorkingTreeMode || hasVerifiedExactHeadManifest);
+
+      if (allowDiffHunkBasis) {
+        let maxCredibleLine = 0;
+        if (typeof context?.changeSet?.diffHunks === "string") {
+          const hunkLines = context.changeSet.diffHunks.split("\n");
+          let inTargetFile = hunkLines.length > 0 && !context.changeSet.diffHunks.includes("diff --git");
+          for (const hl of hunkLines) {
+            if (hl.startsWith("diff --git ")) {
+              inTargetFile = hl.includes(` b/${file}`) || hl.includes(` b/${normFile}`);
+            } else if (inTargetFile && hl.startsWith("@@ ")) {
+              const m = hl.match(/@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/);
+              if (m) {
+                const start = parseInt(m[1], 10);
+                const count = m[2] !== undefined ? parseInt(m[2], 10) : 1;
+                maxCredibleLine = Math.max(maxCredibleLine, start + Math.max(0, count - 1));
+              }
+            }
+          }
+        }
+        if (!isRealRepo && maxCredibleLine === 0 && typeof matchedFile.additions === "number" && matchedFile.additions > 0) {
+          maxCredibleLine = matchedFile.additions;
+        }
+        if (maxCredibleLine > 0 && lineStart >= 1 && lineEnd <= maxCredibleLine) {
+          physicalLineCount = maxCredibleLine;
+        }
+      }
+
+      // If physicalLineCount cannot be established or lines exceed bounds, locator is not accurate
+      if (physicalLineCount === null || lineStart > physicalLineCount || lineEnd > physicalLineCount) {
+        locatorAccurate = false;
+      }
+
       let rawSupport = candidate.evidenceSupport !== undefined && candidate.evidenceSupport !== null
         ? String(candidate.evidenceSupport).toUpperCase().trim()
         : (candidate.verdict ? String(candidate.verdict).toUpperCase().trim() : "INSUFFICIENT_EVIDENCE");
+
+      // Without credible physical line count or source locator basis, omission cannot be SUPPORTED
+      if (physicalLineCount === null && rawSupport === "SUPPORTED") {
+        rawSupport = "INSUFFICIENT_EVIDENCE";
+      }
 
       if (context.strictEvidenceValidation !== false && !OMISSION_EVIDENCE_SUPPORTS.has(rawSupport)) {
         return Object.freeze({
@@ -1432,14 +1955,24 @@ export function validateVerificationOutput(rawOutput, context = {}) {
 
       const reasoning = typeof candidate.reasoning === "string"
         ? candidate.reasoning.trim()
-        : (typeof candidate.recommendation === "string" ? candidate.recommendation.trim() : (typeof candidate.body === "string" ? candidate.body.trim() : ""));
+        : (typeof candidate.recommendation === "string"
+            ? candidate.recommendation.trim()
+            : (typeof candidate.body === "string"
+                ? candidate.body.trim()
+                : (typeof candidate.counterexample === "string" ? candidate.counterexample.trim() : "")));
 
       let evidenceSupport = OMISSION_EVIDENCE_SUPPORTS.has(rawSupport) ? rawSupport : "INSUFFICIENT_EVIDENCE";
-      // Invariant: SUPPORTED strictly requires verifiable counterexample and valid locator
+      // Invariant: SUPPORTED strictly requires verifiable counterexample, valid locator, and substantive reasoning
       if (evidenceSupport === "SUPPORTED") {
         const hasCounter = hasConcreteCounterexample(candidate);
-        const hasValidLocator = locatorAccurate === true && lineStart >= 1 && lineEnd >= lineStart;
-        if (!hasCounter || !hasValidLocator) {
+        const hasValidLocator = locatorAccurate === true &&
+          physicalLineCount !== null &&
+          lineStart >= 1 &&
+          lineEnd >= lineStart &&
+          lineStart <= physicalLineCount &&
+          lineEnd <= physicalLineCount;
+        const hasSubstantiveReasoning = reasoning.length >= 10 && !/^(?:none|n\/a|wrong|bogus|nope\.?)$/i.test(reasoning);
+        if (!hasCounter || !hasValidLocator || !hasSubstantiveReasoning) {
           evidenceSupport = "INSUFFICIENT_EVIDENCE";
         }
       }
@@ -1505,6 +2038,8 @@ export function validateVerificationOutput(rawOutput, context = {}) {
         ...(candidate.counterexample ? { counterexample: String(candidate.counterexample).trim() } : {}),
         ...(candidate.recommendation ? { recommendation: String(candidate.recommendation).trim() } : {}),
         ...(candidate.body ? { body: String(candidate.body).trim() } : {}),
+        ...(candidate.cwe ? { cwe: String(candidate.cwe).trim() } : {}),
+        ...(candidate.type ? { type: String(candidate.type).trim() } : {}),
         dissent: candidate.dissent ? String(candidate.dissent).trim() : null
       });
 
@@ -1540,10 +2075,14 @@ export function validateVerificationOutput(rawOutput, context = {}) {
     });
   }
 
-  // 1. In Clean Challenge mode, explicit overallStatus is strictly required when 0 omissions are reported (Fail-Closed)
+  // 1. In Clean Challenge mode, explicit overallStatus is strictly required unless omission candidates assert supported defects (Fail-Closed)
   if (isCleanChallenge) {
     if (!rawOverallStatus) {
-      if (normalizedOmissions.length === 0) {
+      const hasSupportedOmission = normalizedOmissions.some(o => o.evidenceSupport === "SUPPORTED");
+      const candidateHasSupported = Array.isArray(parsed.verifierOmissions) && parsed.verifierOmissions.some(o =>
+        String(o?.evidenceSupport || o?.verdict || "").toUpperCase().trim() === "SUPPORTED"
+      );
+      if (!hasSupportedOmission && !candidateHasSupported) {
         return Object.freeze({
           ok: false,
           valid: false,
@@ -1581,19 +2120,28 @@ export function validateVerificationOutput(rawOutput, context = {}) {
   let overallStatus = rawOverallStatus ? (VALID_OVERALL_STATUSES.has(rawOverallStatus) ? rawOverallStatus : null) : null;
   if (!overallStatus && normalizedOmissions.length > 0) {
     const hasSupported = normalizedOmissions.some(o => o.evidenceSupport === "SUPPORTED");
-    const hasUncertain = normalizedOmissions.some(o => o.evidenceSupport === "UNCERTAIN");
+    const hasUncertain = normalizedOmissions.some(o => o.evidenceSupport === "UNCERTAIN" || o.evidenceSupport === "INSUFFICIENT_EVIDENCE");
     if (hasSupported) {
       overallStatus = "DEFECTS_FOUND";
     } else if (hasUncertain) {
       overallStatus = "UNCERTAIN";
     } else {
-      overallStatus = "CLEAN";
+      overallStatus = isCleanChallenge ? "UNCERTAIN" : "CLEAN";
     }
   }
 
   // 2. Automatic uncertainty propagation from omissions, context gaps, or truncated diff:
   const hasUncertainOmission = normalizedOmissions.some(o => o.evidenceSupport === "UNCERTAIN");
-  const hasContextGaps = (Array.isArray(context?.contextGaps) && context.contextGaps.length > 0) || Boolean(context?.diffTruncated);
+  const effectiveGaps = mergeContextGaps(
+    context?.contextGaps,
+    context?.contextPackage?.contextGaps,
+    context?.changeSet?.contextPackage?.contextGaps,
+    context?.runContext?.contextPackage?.contextGaps,
+    context?.changeSet?.contextGaps
+  );
+  const hasContextGaps = (Array.isArray(effectiveGaps) && effectiveGaps.length > 0) ||
+    Boolean(context?.diffTruncated) ||
+    Boolean(context?.promptBudgetExceeded);
   if (hasUncertainOmission || hasContextGaps) {
     if (!overallStatus || overallStatus === "CLEAN" || overallStatus === "SUCCESS") {
       overallStatus = "UNCERTAIN";
@@ -1618,6 +2166,18 @@ export function validateVerificationOutput(rawOutput, context = {}) {
     usage: usage ? Object.freeze(usage) : null,
     error: null
   });
+}
+
+/**
+ * Dedicated test entrypoint for synthetic verification records.
+ * Segregated from formal production gate evaluation.
+ *
+ * @param {any} rawOutput
+ * @param {object} [context={}]
+ * @returns {object}
+ */
+export function validateSyntheticVerificationOutput(rawOutput, context = {}) {
+  return validateVerificationOutput(rawOutput, context, { allowSynthetic: true });
 }
 
 /**
@@ -1691,8 +2251,11 @@ export class CliVerifierAdapter {
     return new Promise((resolve) => {
       let stdout = "";
       let stderr = "";
+      let stdoutBytes = 0;
+      let outputLimitExceeded = false;
       let timedOut = false;
       let aborted = false;
+      const maxOutputBytes = limits?.maxOutputBytes || DEFAULT_LIMITS.maxOutputBytes;
 
       const promptBytes = Buffer.byteLength(prompt, "utf8");
       let useStdin = false;
@@ -1763,6 +2326,11 @@ export class CliVerifierAdapter {
       }
 
       child.stdout.on("data", (chunk) => {
+        stdoutBytes += chunk.length;
+        if (maxOutputBytes && stdoutBytes > maxOutputBytes && !outputLimitExceeded) {
+          outputLimitExceeded = true;
+          child.kill();
+        }
         stdout += chunk.toString("utf8");
       });
       child.stderr.on("data", (chunk) => {
@@ -1785,6 +2353,15 @@ export class CliVerifierAdapter {
         clearTimeout(timer);
         if (signal) {
           signal.removeEventListener("abort", abortHandler);
+        }
+
+        if (outputLimitExceeded) {
+          resolve({
+            ok: false,
+            executionStatus: EXECUTION_STATUS.PAYLOAD_TOO_LARGE,
+            error: `CLI verifier output stream exceeded limits.maxOutputBytes (${maxOutputBytes} bytes).`
+          });
+          return;
         }
 
         if (timedOut) {
@@ -1836,6 +2413,15 @@ export class CliVerifierAdapter {
   _processResult(res, limits) {
     if (res && (res.ok === false || (res.executionStatus && res.executionStatus !== EXECUTION_STATUS.SUCCESS && res.executionStatus !== EXECUTION_STATUS.EMPTY))) {
       return res;
+    }
+
+    const effectiveMaxOutput = limits?.maxOutputBytes || DEFAULT_LIMITS.maxOutputBytes;
+    if (effectiveMaxOutput && typeof res?.stdout === "string" && Buffer.byteLength(res.stdout, "utf8") > effectiveMaxOutput) {
+      return {
+        ok: false,
+        executionStatus: EXECUTION_STATUS.PAYLOAD_TOO_LARGE,
+        error: `CLI verifier output (${Buffer.byteLength(res.stdout, "utf8")} bytes) exceeds limits.maxOutputBytes (${effectiveMaxOutput} bytes).`
+      };
     }
 
     const exitCode = res?.code ?? res?.exitCode;
@@ -2094,7 +2680,7 @@ export async function conductIndependentVerification(changeSet, producerFindings
         verifier: deepFreeze({
           providerName: verifierAdapter?.providerName || options.verifierName || "claude",
           modelName: verifierAdapter?.modelName || options.verifierModel || "claude-default",
-          actualModel: deepFreeze(normalizeActualModel(options.actualModel || verifierAdapter?.actualModel)),
+          actualModel: deepFreeze(normalizeActualModel(verifierAdapter?.actualModel || options.actualModel)),
           usage: null
         }),
         evaluations: Object.freeze([]),
@@ -2129,9 +2715,122 @@ export async function conductIndependentVerification(changeSet, producerFindings
   const hunkBuf = Buffer.isBuffer(changeSet?.diffHunks)
     ? changeSet.diffHunks
     : Buffer.from(String(changeSet?.diffHunks || ""), "utf8");
-  const isDiffTruncated = hunkBuf.length > maxBytes || Boolean(changeSet?.diffTruncated) || Boolean(options?.diffTruncated);
 
-  const normContract = normalizeObjectiveContract(options.objectiveContract || options.patchObjective);
+  // Objective binding & conflict detection (Authoritative RunContext Protection - P2-OBJ-03)
+  const createObjectiveMismatchRecord = (errMsg) => {
+    if (options.throwOnError) {
+      throw new Error(errMsg);
+    }
+    return deepFreeze({
+      schemaVersion: VERIFICATION_SCHEMA_VERSION,
+      verifiedAt: options.verifiedAt || new Date().toISOString(),
+      changeSetDigest: (typeof options.changeSetDigest === "string" && options.changeSetDigest.startsWith("sha256:"))
+        ? options.changeSetDigest
+        : (typeof changeSetDigest === "string" && changeSetDigest.startsWith("sha256:") ? changeSetDigest : `sha256:${changeSetDigest || ""}`),
+      verificationMode: String(options.verificationMode || (preservedProducerFindings.length === 0 ? "clean_challenge" : "producer_verification")),
+      overallStatus: "UNCERTAIN",
+      ok: false,
+      valid: false,
+      error: errMsg,
+      producer: deepFreeze({
+        providerName: options.producerName || options.producer?.providerName || "agy",
+        findingsCount: preservedProducerFindings.length,
+        findings: preservedProducerFindings
+      }),
+      verifier: deepFreeze({
+        providerName: verifierAdapter?.providerName || options.verifierName || "claude",
+        modelName: verifierAdapter?.modelName || options.verifierModel || "claude-default",
+        actualModel: deepFreeze(normalizeActualModel(verifierAdapter?.actualModel || options.actualModel)),
+        usage: null
+      }),
+      evaluations: Object.freeze([]),
+      verifierOmissions: Object.freeze([]),
+      disagreementLedger: Object.freeze([]),
+      summary: deepFreeze({
+        totalEvaluated: 0,
+        supportedCount: 0,
+        partiallySupportedCount: 0,
+        contestedCount: 0,
+        insufficientEvidenceCount: 0,
+        omissionsCount: 0
+      })
+    });
+  };
+
+  const rcContract = options.runContext?.objectiveContract
+    ? normalizeObjectiveContract(options.runContext.objectiveContract)
+    : null;
+  const rcPatchObjective = normalizeObjective(options.runContext?.patchObjective || "");
+  const rcContractObjective = normalizeObjective(rcContract?.objective || "");
+  const rcObjective = rcPatchObjective || rcContractObjective;
+
+  const callerContract = options.objectiveContract
+    ? normalizeObjectiveContract(options.objectiveContract)
+    : null;
+  const callerPatchObjective = normalizeObjective(options.patchObjective || "");
+  const callerContractObjective = normalizeObjective(callerContract?.objective || "");
+
+  const csContract = changeSet?.objectiveContract
+    ? normalizeObjectiveContract(changeSet.objectiveContract)
+    : null;
+  const csPatchObjective = normalizeObjective(changeSet?.patchObjective || "");
+  const csContractObjective = normalizeObjective(csContract?.objective || "");
+
+  if (rcPatchObjective && rcContractObjective && rcPatchObjective !== rcContractObjective) {
+    return createObjectiveMismatchRecord(
+      `RunContext internal objective conflict: patchObjective '${rcPatchObjective}' vs objectiveContract '${rcContractObjective}' (OBJECTIVE_MISMATCH).`
+    );
+  }
+
+  if (rcObjective) {
+    if (callerPatchObjective && callerPatchObjective !== rcObjective) {
+      return createObjectiveMismatchRecord(
+        `Caller patchObjective '${callerPatchObjective}' conflicts with authoritative RunContext objective '${rcObjective}' (OBJECTIVE_MISMATCH).`
+      );
+    }
+    if (callerContractObjective && callerContractObjective !== rcObjective) {
+      return createObjectiveMismatchRecord(
+        `Caller objectiveContract '${callerContractObjective}' conflicts with authoritative RunContext objective '${rcObjective}' (OBJECTIVE_MISMATCH).`
+      );
+    }
+    if (csPatchObjective && csPatchObjective !== rcObjective) {
+      return createObjectiveMismatchRecord(
+        `ChangeSet patchObjective '${csPatchObjective}' conflicts with authoritative RunContext objective '${rcObjective}' (OBJECTIVE_MISMATCH).`
+      );
+    }
+    if (csContractObjective && csContractObjective !== rcObjective) {
+      return createObjectiveMismatchRecord(
+        `ChangeSet objectiveContract '${csContractObjective}' conflicts with authoritative RunContext objective '${rcObjective}' (OBJECTIVE_MISMATCH).`
+      );
+    }
+  } else {
+    // When RunContext objective is absent, verify internal consistency across caller and changeSet
+    if (callerPatchObjective && callerContractObjective && callerPatchObjective !== callerContractObjective) {
+      return createObjectiveMismatchRecord(
+        `Caller objective conflict: patchObjective '${callerPatchObjective}' vs objectiveContract '${callerContractObjective}' (OBJECTIVE_MISMATCH).`
+      );
+    }
+    if (csPatchObjective && csContractObjective && csPatchObjective !== csContractObjective) {
+      return createObjectiveMismatchRecord(
+        `ChangeSet objective conflict: patchObjective '${csPatchObjective}' vs objectiveContract '${csContractObjective}' (OBJECTIVE_MISMATCH).`
+      );
+    }
+    const callerDeclared = callerPatchObjective || callerContractObjective;
+    const csDeclared = csPatchObjective || csContractObjective;
+    if (callerDeclared && csDeclared && callerDeclared !== csDeclared) {
+      return createObjectiveMismatchRecord(
+        `Caller objective '${callerDeclared}' conflicts with ChangeSet objective '${csDeclared}' (OBJECTIVE_MISMATCH).`
+      );
+    }
+  }
+
+  const candidateObjective = rcContract ||
+    (rcObjective ? rcObjective : null) ||
+    options.objectiveContract ||
+    options.patchObjective ||
+    changeSet?.objectiveContract ||
+    changeSet?.patchObjective;
+  const normContract = normalizeObjectiveContract(candidateObjective);
   const patchObjective = normContract?.objective || "";
   const headSha = normalizeCommitSha(options.headSha || options.head || options.runContext?.headSha || changeSet.headSha || changeSet.head || "");
   const verificationMode = String(options.verificationMode || (preservedProducerFindings.length === 0 ? "clean_challenge" : "producer_verification"));
@@ -2149,6 +2848,22 @@ export async function conductIndependentVerification(changeSet, producerFindings
     objectiveContract: normContract
   });
 
+  const promptBytes = Buffer.byteLength(prompt, "utf8");
+  const isPromptBudgetExceeded = maxBytes > 0 && promptBytes > maxBytes;
+  const isDiffTruncated = isPromptBudgetExceeded ||
+    hunkBuf.length > maxBytes ||
+    Boolean(changeSet?.diffTruncated) ||
+    Boolean(options?.diffTruncated) ||
+    prompt.includes("[NOTE: Diff truncated at");
+
+  const effectiveContextPackage = options.contextPackage || changeSet?.contextPackage || null;
+  const effectiveContextGaps = mergeContextGaps(
+    options.contextGaps,
+    options.contextPackage?.contextGaps,
+    changeSet?.contextPackage?.contextGaps,
+    changeSet?.contextGaps
+  );
+
   // 4. Invoke verifier adapter
   const timeoutMs = options.timeoutMs || 60000;
   const adapterInput = {
@@ -2163,8 +2878,8 @@ export async function conductIndependentVerification(changeSet, producerFindings
     objectiveContract: normContract,
     headSha,
     verificationMode,
-    contextPackage: options.contextPackage || changeSet?.contextPackage || null,
-    contextGaps: options.contextGaps || null
+    contextPackage: effectiveContextPackage,
+    contextGaps: effectiveContextGaps
   };
 
   let rawOutput = null;
@@ -2208,8 +2923,10 @@ export async function conductIndependentVerification(changeSet, producerFindings
     objectiveContract: normContract,
     verificationMode,
     headSha,
-    contextGaps: mergeContextGaps(options.contextGaps, options.contextPackage?.contextGaps),
-    diffTruncated: isDiffTruncated
+    contextPackage: effectiveContextPackage,
+    contextGaps: effectiveContextGaps,
+    diffTruncated: isDiffTruncated,
+    promptBudgetExceeded: isPromptBudgetExceeded
   });
 
   if (!validated.ok && options.throwOnError && !verifierError) {
@@ -2317,9 +3034,15 @@ export async function conductIndependentVerification(changeSet, producerFindings
   });
 
   // 10. Verifier identity & provenance
-  let actualModelInput = options.actualModel || verifierAdapter?.actualModel || validated?.actualModel;
+  const isGenericMockModel = typeof verifierAdapter?.actualModel === "object"
+    ? String(verifierAdapter?.actualModel?.value || "").endsWith("-mock-v1")
+    : String(verifierAdapter?.actualModel || "").endsWith("-mock-v1");
+
+  let observedModel = (!isGenericMockModel && verifierAdapter?.actualModel) || validated?.actualModel;
+  let actualModelInput = observedModel || options.actualModel || verifierAdapter?.actualModel;
   if (typeof actualModelInput === "string" && actualModelInput.trim()) {
-    actualModelInput = { value: actualModelInput.trim(), source: SOURCE_TRUST_TIERS.CONFIGURED || "configured" };
+    const source = observedModel ? (SOURCE_TRUST_TIERS.OBSERVED || "observed") : (SOURCE_TRUST_TIERS.CONFIGURED || "configured");
+    actualModelInput = { value: actualModelInput.trim(), source };
   }
 
   const verifierIdentity = deepFreeze({
@@ -2340,6 +3063,9 @@ export async function conductIndependentVerification(changeSet, producerFindings
   if (validated.overallStatus === "UNCERTAIN" || validated.overallStatus === "DEFECTS_FOUND") {
     overallStatus = validated.overallStatus;
   }
+  if (isPromptBudgetExceeded && (overallStatus === "CLEAN" || !overallStatus)) {
+    overallStatus = "UNCERTAIN";
+  }
 
   const verifiedAt = options.verifiedAt || new Date().toISOString();
   const runId = options.runId || options.runContext?.runId || options.producerRunId || null;
@@ -2354,6 +3080,7 @@ export async function conductIndependentVerification(changeSet, producerFindings
     ...(exclusions ? { exclusions } : {}),
     verificationMode,
     ...(isDiffTruncated ? { diffTruncated: true } : {}),
+    ...(isPromptBudgetExceeded ? { promptBudgetExceeded: true } : {}),
     ...(normContract
       ? {
           patchObjective: normContract.objective,

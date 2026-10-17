@@ -17,7 +17,7 @@ import {
   normalizeCommitSha,
   normalizeObjective
 } from "../core/harness.mjs";
-import { digestChangeSet } from "../core/canonical-digest.mjs";
+import { digestChangeSet, normalizeLineEndings } from "../core/canonical-digest.mjs";
 import { convertProviderResultToSentryReport } from "./provider-contract.mjs";
 import { evaluateCoverageContract, COVERAGE_OMISSION_CODES } from "./staged-review.mjs";
 
@@ -48,8 +48,36 @@ function isCoverageComplete(changeSet, providerResult) {
   return !hasIncompleteOmission;
 }
 
-function buildCanonicalRunContext(changeSet, options, runId) {
-  // 1. Compute valid authoritative digests from current ChangeSet
+export function buildCanonicalRunContext(changeSet, options = {}, runId) {
+  if (!changeSet || typeof changeSet !== "object") {
+    return null;
+  }
+
+  const callerRunId = typeof options.runId === "string" ? options.runId.trim() : "";
+  const paramRunId = typeof runId === "string" ? runId.trim() : "";
+  const activeRunId = callerRunId || paramRunId || null;
+
+  // R3 Replay Check: If verificationRecord is supplied:
+  if (options.verificationRecord) {
+    const vrRunId = typeof options.verificationRecord.runId === "string" ? options.verificationRecord.runId.trim() : "";
+    // Any supplied verification record MUST possess a valid non-empty runId matching activeRunId
+    if (!vrRunId) {
+      return null;
+    }
+    if (activeRunId && vrRunId !== activeRunId) {
+      return null;
+    }
+  }
+
+  // R3 RunContext Check: If options.runContext has a runId, it must match activeRunId
+  if (options.runContext && typeof options.runContext.runId === "string" && options.runContext.runId.trim()) {
+    const rcRunId = options.runContext.runId.trim();
+    if (activeRunId && rcRunId !== activeRunId) {
+      return null;
+    }
+  }
+
+  // 1. Compute valid authoritative digests from current ChangeSet (R1 Canonical Diff Digest)
   const computedDigests = new Set();
   try {
     const computed = digestChangeSet(changeSet);
@@ -61,16 +89,17 @@ function buildCanonicalRunContext(changeSet, options, runId) {
     // If digest computation fails, computedDigests remains empty
   }
 
-  if (typeof changeSet.diffHunks === "string") {
-    const rawDiffDigest = normalizeDigest(crypto.createHash("sha256").update(changeSet.diffHunks, "utf8").digest("hex"));
+  if (typeof changeSet.diffHunks === "string" || Buffer.isBuffer(changeSet.diffHunks)) {
+    // R1: Strictly bind to physical diff content (raw bytes and LF-normalized); NO .trim() variants
+    const rawDiffDigest = normalizeDigest(
+      crypto.createHash("sha256").update(changeSet.diffHunks).digest("hex")
+    );
     if (rawDiffDigest) computedDigests.add(rawDiffDigest);
-    const normalizedDiff = changeSet.diffHunks.replace(/\r\n/g, "\n");
-    const normDiffDigest = normalizeDigest(crypto.createHash("sha256").update(normalizedDiff, "utf8").digest("hex"));
+    const normalizedDiff = normalizeLineEndings(changeSet.diffHunks);
+    const normDiffDigest = normalizeDigest(
+      crypto.createHash("sha256").update(normalizedDiff, "utf8").digest("hex")
+    );
     if (normDiffDigest) computedDigests.add(normDiffDigest);
-    const trimmedDiffDigest = normalizeDigest(crypto.createHash("sha256").update(changeSet.diffHunks.trim(), "utf8").digest("hex"));
-    if (trimmedDiffDigest) computedDigests.add(trimmedDiffDigest);
-    const trimmedNormDiffDigest = normalizeDigest(crypto.createHash("sha256").update(normalizedDiff.trim(), "utf8").digest("hex"));
-    if (trimmedNormDiffDigest) computedDigests.add(trimmedNormDiffDigest);
   }
 
   if (computedDigests.size === 0) {
@@ -171,14 +200,32 @@ function buildCanonicalRunContext(changeSet, options, runId) {
     }
   }
 
-  const patchObjective = normalizeObjective(
-    options.patchObjective ||
-    options.objectiveContract?.objective ||
-    options.runContext?.patchObjective ||
-    changeSet.patchObjective ||
-    changeSet.objectiveContract?.objective ||
-    ""
-  );
+  // R2: Deterministic Objective Conflict Fail-Closed across all 6 sources
+  const extractObjectiveText = (val) => {
+    if (!val) return "";
+    if (typeof val === "string") return normalizeObjective(val);
+    if (typeof val === "object" && typeof val.objective === "string") {
+      return normalizeObjective(val.objective);
+    }
+    return "";
+  };
+
+  const rawCandidates = [
+    normalizeObjective(options.patchObjective),
+    extractObjectiveText(options.objectiveContract),
+    normalizeObjective(options.runContext?.patchObjective),
+    extractObjectiveText(options.runContext?.objectiveContract),
+    normalizeObjective(changeSet.patchObjective),
+    extractObjectiveText(changeSet.objectiveContract)
+  ].filter(Boolean);
+
+  const distinctNormalized = new Set(rawCandidates.map(c => c.toLowerCase()));
+  if (distinctNormalized.size > 1) {
+    // Deterministic objective conflict detected: fail closed immediately
+    return null;
+  }
+
+  const patchObjective = rawCandidates.length > 0 ? rawCandidates[0] : "";
 
   const objectiveContract = options.objectiveContract ||
     options.runContext?.objectiveContract ||
@@ -195,14 +242,20 @@ function buildCanonicalRunContext(changeSet, options, runId) {
                 ? changeSet.excludedFiles
                 : (Array.isArray(changeSet.exclusions) ? changeSet.exclusions : []))));
 
-  return new RunContext({
-    runId: options.runId || options.runContext?.runId || options.verificationRecord?.runId || null,
-    headSha,
-    contentDigest: selectedDigest,
-    patchObjective,
-    objectiveContract,
-    exclusions: rawExcl
-  });
+  const boundRunId = activeRunId || (options.runContext?.runId ? String(options.runContext.runId).trim() : null);
+
+  try {
+    return new RunContext({
+      runId: boundRunId,
+      headSha,
+      contentDigest: selectedDigest,
+      patchObjective,
+      objectiveContract,
+      exclusions: rawExcl
+    });
+  } catch {
+    return null;
+  }
 }
 
 export async function orchestrateReview(changeSet, adapters = {}, options = {}) {
@@ -235,11 +288,56 @@ export async function orchestrateReview(changeSet, adapters = {}, options = {}) 
   const plan = options.plan || evaluateDiffScale(changeSet.files);
   const evaluatedScale = (!plan || plan.highestRisk === undefined) ? evaluateDiffScale(changeSet?.files || []) : null;
   const computedHighestRisk = plan?.highestRisk ?? evaluatedScale?.highestRisk;
+  // R4: Validate risk tier and prevent illegal tiers or downgrades
+  let isIllegalTier = false;
+  let parsedTier = undefined;
+
+  if (options.tier !== undefined) {
+    if (
+      options.tier === null ||
+      typeof options.tier === "symbol" ||
+      (typeof options.tier !== "number" && typeof options.tier !== "string") ||
+      (typeof options.tier === "string" && options.tier.trim() === "")
+    ) {
+      isIllegalTier = true;
+    } else {
+      parsedTier = Number(options.tier);
+      if (
+        Number.isNaN(parsedTier) ||
+        !Number.isInteger(parsedTier) ||
+        parsedTier <= 0 ||
+        parsedTier > 4
+      ) {
+        isIllegalTier = true;
+      }
+    }
+  }
+
+  // Downgrade check: if diff is Tier 1, cannot downgrade to > 1 or override isTier1: false
+  const isDowngraded = computedHighestRisk === 1 && (
+    (parsedTier !== undefined && parsedTier > 1) ||
+    options.isTier1 === false
+  );
+
+  if (isIllegalTier || isDowngraded) {
+    return {
+      runId,
+      status: "incomplete",
+      plan,
+      consensus: null,
+      gate: {
+        decision: "block",
+        reason: "Gate Fail-Closed: Invalid or downgraded risk tier (INVALID_OR_DOWNGRADED_TIER)."
+      },
+      reports: {}
+    };
+  }
+
   const isTier1Opt = options.tier === 1 || options.isTier1 === true;
   const diffTier = isTier1Opt
     ? 1
-    : (options.tier !== undefined
-        ? Number(options.tier)
+    : (parsedTier !== undefined
+        ? parsedTier
         : (computedHighestRisk !== undefined ? Number(computedHighestRisk) : undefined));
   const hasMacro = Boolean(adapters.macro && typeof adapters.macro.executeReview === "function");
   const hasMicro = Boolean(adapters.micro && typeof adapters.micro.executeReview === "function");
@@ -344,7 +442,7 @@ export async function orchestrateReview(changeSet, adapters = {}, options = {}) 
     const isPreliminaryOpt = options.preliminary === true;
     let canonicalRunContext = options.runContext;
     let runContextMismatched = false;
-    if (options.verificationRecord) {
+    if (options.verificationRecord || options.runContext) {
       canonicalRunContext = buildCanonicalRunContext(changeSet, options, runId);
       if (!canonicalRunContext) {
         runContextMismatched = true;
@@ -365,7 +463,7 @@ export async function orchestrateReview(changeSet, adapters = {}, options = {}) 
     const hasFindings = consensus.findings && consensus.findings.length > 0;
 
     let status = "incomplete";
-    if (consensus.quorumReached) {
+    if (consensus.quorumReached && !runContextMismatched) {
       if (isApprove) {
         if (hasFindings) {
           status = "reviewed-with-findings";
@@ -421,7 +519,7 @@ export async function orchestrateReview(changeSet, adapters = {}, options = {}) 
   const isPreliminaryOpt = options.preliminary === true;
   let canonicalRunContext = options.runContext;
   let runContextMismatched = false;
-  if (options.verificationRecord) {
+  if (options.verificationRecord || options.runContext) {
     canonicalRunContext = buildCanonicalRunContext(changeSet, options, runId);
     if (!canonicalRunContext) {
       runContextMismatched = true;
@@ -442,7 +540,7 @@ export async function orchestrateReview(changeSet, adapters = {}, options = {}) 
   const hasFindings = consensus.findings && consensus.findings.length > 0;
 
   let status = "incomplete";
-  if (consensus.quorumReached) {
+  if (consensus.quorumReached && !runContextMismatched) {
     if (isApprove) {
       if (hasFindings) {
         status = "reviewed-with-findings";

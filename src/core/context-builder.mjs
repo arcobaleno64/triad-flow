@@ -5,12 +5,27 @@
  * and Windows ARG_MAX safe transport planning.
  */
 
+import fs from "node:fs";
 import crypto from "node:crypto";
 import path from "node:path";
 import { normalizeCanonicalPath } from "./scoring.mjs";
 import { getExactHeadFileContent } from "./git-collector.mjs";
 import { splitDiffByFiles } from "./chunk-manager.mjs";
-import { truncateUtf8Safe } from "./independent-verifier.mjs";
+import { truncateUtf8Safe, registerTrustedContextPackage, isGitRepo, isCommitInRepo, deepFreeze } from "./independent-verifier.mjs";
+
+var _internalContextBuilderWorkflowMinter = _internalContextBuilderWorkflowMinter || null;
+
+/**
+ * Internal capability binder for context-builder workflow authority.
+ * Write-once, called by independent-verifier.mjs during internal module wiring (P2-CAP-05).
+ *
+ * @param {Function} minter
+ */
+export function __bindContextBuilderWorkflowMinter(minter) {
+  if (typeof minter === "function" && !_internalContextBuilderWorkflowMinter) {
+    _internalContextBuilderWorkflowMinter = minter;
+  }
+}
 
 export const SAFE_ARGV_THRESHOLD_BYTES = 8192;
 export const GLOBAL_AST_CONTEXT_CEILING_BYTES = 8000;
@@ -1313,6 +1328,9 @@ export function buildContextPackage(changeSet, targetFile, options = {}) {
     const repoRoot = options.repositoryRoot || changeSet?.repository?.root || options.cwd || null;
     const fullDiffHunks = changeSet?.diffHunks || "";
 
+    const isRealRepo = Boolean(repoRoot && isGitRepo(repoRoot));
+    const isHeadInRepo = Boolean(isRealRepo && headSha && isCommitInRepo(repoRoot, headSha));
+
     const rawFilesList = Array.isArray(targetFile)
       ? targetFile
       : (Array.isArray(changeSet?.files) ? changeSet.files : []);
@@ -1350,25 +1368,58 @@ export function buildContextPackage(changeSet, targetFile, options = {}) {
         actualFilePath.startsWith("tests/") ||
         actualFilePath.startsWith("test/");
 
-      let fileContent = options.fileContents?.[actualFilePath] ??
+      let callerSuppliedContent = options.fileContents?.[actualFilePath] ??
         options.fileContents?.[normPath] ??
         null;
+      let fileContent = callerSuppliedContent;
       let exactHeadUnavailable = false;
+      let exactHeadMismatch = false;
 
-      if (!isNonCodeOrTest && fileContent === null && repoRoot && headSha) {
-        fileContent = getExactHeadFileContent(repoRoot, headSha, actualFilePath) ??
-          getExactHeadFileContent(repoRoot, headSha, normPath) ??
-          null;
-        if (fileContent === null) {
+      if (headSha) {
+        if (!isHeadInRepo) {
           exactHeadUnavailable = true;
+        } else {
+          const exactHeadContent = getExactHeadFileContent(repoRoot, headSha, actualFilePath) ??
+            getExactHeadFileContent(repoRoot, headSha, normPath) ??
+            null;
+          if (exactHeadContent === null) {
+            exactHeadUnavailable = true;
+          } else if (callerSuppliedContent !== null) {
+            const normCaller = callerSuppliedContent.replace(/\r\n/g, "\n");
+            const normGit = exactHeadContent.replace(/\r\n/g, "\n");
+            if (normCaller !== normGit) {
+              exactHeadUnavailable = true;
+              exactHeadMismatch = true;
+              fileContent = callerSuppliedContent;
+            } else {
+              fileContent = exactHeadContent;
+            }
+          } else {
+            fileContent = exactHeadContent;
+          }
         }
+      } else if (fileContent === null && repoRoot) {
+        try {
+          const diskPath = path.isAbsolute(actualFilePath) ? actualFilePath : path.resolve(repoRoot, actualFilePath);
+          if (fs.existsSync(diskPath) && fs.statSync(diskPath).isFile()) {
+            fileContent = fs.readFileSync(diskPath, "utf8");
+          }
+        } catch {}
       }
       if (fileContent === null) {
         fileContent = "";
       }
 
       const fileGaps = [];
-      if (exactHeadUnavailable) {
+      if (exactHeadMismatch) {
+        fileGaps.push({
+          symbol: normPath,
+          file: actualFilePath || normPath,
+          reason: "EXACT_HEAD_CONTENT_MISMATCH",
+          category: "exact_head_source",
+          impact: `Caller-supplied fileContents differs from committed Git object at head ${headSha}; exact-head authority revoked.`
+        });
+      } else if (exactHeadUnavailable) {
         fileGaps.push({
           symbol: normPath,
           file: actualFilePath || normPath,
@@ -1378,9 +1429,19 @@ export function buildContextPackage(changeSet, targetFile, options = {}) {
         });
       }
 
+      const sourceDigest = fileContent
+        ? crypto.createHash("sha256").update(fileContent.replace(/\r\n/g, "\n")).digest("hex")
+        : null;
+
       const astEnc = isNonCodeOrTest
         ? { enclosingFunctions: [], enclosingClasses: [] }
         : extractAstEnclosures(fileContent, changedSpans);
+      for (const fn of astEnc.enclosingFunctions) {
+        if (!fn.file) fn.file = actualFilePath;
+      }
+      for (const cls of astEnc.enclosingClasses) {
+        if (!cls.file) cls.file = actualFilePath;
+      }
       enclosingFunctions.push(...astEnc.enclosingFunctions);
       enclosingClasses.push(...astEnc.enclosingClasses);
 
@@ -1401,7 +1462,8 @@ export function buildContextPackage(changeSet, targetFile, options = {}) {
         exactHeadUnavailable,
         callees,
         unresolvedCallees,
-        fileGaps
+        fileGaps,
+        sourceDigest
       });
     }
 
@@ -1451,7 +1513,9 @@ export function buildContextPackage(changeSet, targetFile, options = {}) {
       fileCoverageManifest.push({
         file: item.actualFilePath,
         inspected: true,
-        exactHeadAvailable: item.isNonCodeOrTest ? true : !item.exactHeadUnavailable,
+        exactHeadAvailable: !item.exactHeadUnavailable,
+        ...(item.exactHeadUnavailable ? { exactHeadUnavailable: true } : {}),
+        ...(item.sourceDigest ? { sourceDigest: item.sourceDigest } : {}),
         calleesExtracted: fileAccepted.map(c => c.symbol || c.name),
         unresolvedCallees: item.unresolvedCallees,
         contextGaps: fileGaps
@@ -1519,7 +1583,7 @@ export function buildContextPackage(changeSet, targetFile, options = {}) {
     const isWindows = process.platform === "win32";
     const requiresStdin = isWindows && (budgeted.budgetAccounting.consumedBytes > SAFE_ARGV_THRESHOLD_BYTES);
 
-    return {
+    const resultPackage = {
       schemaVersion: "1.0.0",
       runId,
       targetFile: filePaths.length === 1 ? normalizeCanonicalPath(filePaths[0]) : "multi-file",
@@ -1537,6 +1601,28 @@ export function buildContextPackage(changeSet, targetFile, options = {}) {
         safeArgvThresholdBytes: SAFE_ARGV_THRESHOLD_BYTES
       }
     };
+    const hasPhysicalGit = Boolean(
+      isHeadInRepo &&
+      fileCoverageManifest.length > 0 &&
+      fileCoverageManifest.every(m => m && m.exactHeadAvailable === true && !m.exactHeadUnavailable)
+    );
+
+    if (hasPhysicalGit) {
+      registerTrustedContextPackage(resultPackage, {
+        repositoryRoot: repoRoot,
+        headSha,
+        diffHunks: fullDiffHunks,
+        changeSet,
+        verifiedBy: "context-builder",
+        workflowAuthority: typeof _internalContextBuilderWorkflowMinter === "function"
+          ? _internalContextBuilderWorkflowMinter("context-builder", {
+              contentDigest,
+              headSha
+            })
+          : null
+      });
+    }
+    return deepFreeze(resultPackage);
   }
 
   // Single-file mode
@@ -1563,21 +1649,50 @@ export function buildContextPackage(changeSet, targetFile, options = {}) {
     actualFilePath.startsWith("tests/") ||
     actualFilePath.startsWith("test/");
 
-  let fileContent = options.fileContents?.[actualFilePath] ??
+  let callerSuppliedContent = options.fileContents?.[actualFilePath] ??
     options.fileContents?.[normTarget] ??
     options.fileContents?.[targetFile] ??
     null;
+  let fileContent = callerSuppliedContent;
   const headSha = options.headSha || changeSet?.headSha || changeSet?.repository?.headSha || null;
-  const repoRoot = options.repositoryRoot || changeSet?.repository?.root || null;
-  let exactHeadUnavailable = false;
+  const repoRoot = options.repositoryRoot || changeSet?.repository?.root || options.cwd || null;
 
-  if (!isNonCodeOrTest && fileContent === null && repoRoot && headSha) {
-    fileContent = getExactHeadFileContent(repoRoot, headSha, actualFilePath) ??
-      getExactHeadFileContent(repoRoot, headSha, normTarget) ??
-      null;
-    if (fileContent === null) {
+  const isRealRepo = Boolean(repoRoot && isGitRepo(repoRoot));
+  const isHeadInRepo = Boolean(isRealRepo && headSha && isCommitInRepo(repoRoot, headSha));
+
+  let exactHeadUnavailable = false;
+  let exactHeadMismatch = false;
+
+  if (headSha) {
+    if (!isHeadInRepo) {
       exactHeadUnavailable = true;
+    } else {
+      const exactHeadContent = getExactHeadFileContent(repoRoot, headSha, actualFilePath) ??
+        getExactHeadFileContent(repoRoot, headSha, normTarget) ??
+        null;
+      if (exactHeadContent === null) {
+        exactHeadUnavailable = true;
+      } else if (callerSuppliedContent !== null) {
+        const normCaller = callerSuppliedContent.replace(/\r\n/g, "\n");
+        const normGit = exactHeadContent.replace(/\r\n/g, "\n");
+        if (normCaller !== normGit) {
+          exactHeadUnavailable = true;
+          exactHeadMismatch = true;
+          fileContent = callerSuppliedContent;
+        } else {
+          fileContent = exactHeadContent;
+        }
+      } else {
+        fileContent = exactHeadContent;
+      }
     }
+  } else if (fileContent === null && repoRoot) {
+    try {
+      const diskPath = path.isAbsolute(actualFilePath) ? actualFilePath : path.resolve(repoRoot, actualFilePath);
+      if (fs.existsSync(diskPath) && fs.statSync(diskPath).isFile()) {
+        fileContent = fs.readFileSync(diskPath, "utf8");
+      }
+    } catch {}
   }
   if (fileContent === null) {
     fileContent = "";
@@ -1593,6 +1708,16 @@ export function buildContextPackage(changeSet, targetFile, options = {}) {
   const rawLayer1 = isNonCodeOrTest
     ? { adapterName: "builtin-semantic", enclosingFunctions: [], enclosingClasses: [], callees: [], unresolvedCallees: [] }
     : extractAstEnclosures(fileContent, changedSpans);
+  if (rawLayer1?.enclosingFunctions) {
+    for (const fn of rawLayer1.enclosingFunctions) {
+      if (!fn.file) fn.file = actualFilePath;
+    }
+  }
+  if (rawLayer1?.enclosingClasses) {
+    for (const cls of rawLayer1.enclosingClasses) {
+      if (!cls.file) cls.file = actualFilePath;
+    }
+  }
   const { callees, unresolvedCallees, contextGaps } = extractLocalCalleeContext(
     fileContent,
     diffHunks,
@@ -1600,7 +1725,15 @@ export function buildContextPackage(changeSet, targetFile, options = {}) {
     options
   );
 
-  if (exactHeadUnavailable) {
+  if (exactHeadMismatch) {
+    contextGaps.push({
+      symbol: normTarget,
+      file: actualFilePath || normTarget,
+      reason: "EXACT_HEAD_CONTENT_MISMATCH",
+      category: "exact_head_source",
+      impact: `Caller-supplied fileContents differs from committed Git object at head ${headSha}; exact-head authority revoked.`
+    });
+  } else if (exactHeadUnavailable) {
     contextGaps.push({
       symbol: normTarget,
       file: actualFilePath || normTarget,
@@ -1642,10 +1775,13 @@ export function buildContextPackage(changeSet, targetFile, options = {}) {
   );
 
   const contentDigest = crypto.createHash("sha256").update(diffHunks).digest("hex");
+  const sourceDigest = fileContent
+    ? crypto.createHash("sha256").update(fileContent.replace(/\r\n/g, "\n")).digest("hex")
+    : null;
   const isWindows = process.platform === "win32";
   const requiresStdin = isWindows && (budgeted.budgetAccounting.consumedBytes > SAFE_ARGV_THRESHOLD_BYTES);
 
-  return {
+  const resultPackage = {
     schemaVersion: "1.0.0",
     runId,
     targetFile: normTarget,
@@ -1659,7 +1795,9 @@ export function buildContextPackage(changeSet, targetFile, options = {}) {
       {
         file: actualFilePath,
         inspected: true,
-        exactHeadAvailable: isNonCodeOrTest ? true : !exactHeadUnavailable,
+        exactHeadAvailable: !exactHeadUnavailable,
+        ...(exactHeadUnavailable ? { exactHeadUnavailable: true } : {}),
+        ...(sourceDigest ? { sourceDigest } : {}),
         calleesExtracted: callees.map(c => c.name || c.symbol).filter(s => retainedSymbols.has(s)),
         unresolvedCallees,
         contextGaps
@@ -1672,4 +1810,25 @@ export function buildContextPackage(changeSet, targetFile, options = {}) {
       safeArgvThresholdBytes: SAFE_ARGV_THRESHOLD_BYTES
     }
   };
+  const hasPhysicalGit = Boolean(
+    isHeadInRepo &&
+    !exactHeadUnavailable
+  );
+
+  if (hasPhysicalGit) {
+    registerTrustedContextPackage(resultPackage, {
+      repositoryRoot: repoRoot,
+      headSha,
+      diffHunks,
+      changeSet,
+      verifiedBy: "context-builder",
+      workflowAuthority: typeof _internalContextBuilderWorkflowMinter === "function"
+        ? _internalContextBuilderWorkflowMinter("context-builder", {
+            contentDigest: resultPackage.contentDigest,
+            headSha
+          })
+        : null
+    });
+  }
+  return deepFreeze(resultPackage);
 }

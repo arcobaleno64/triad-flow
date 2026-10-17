@@ -66,6 +66,11 @@ export function stripExtendedPrefix(p) {
   return p;
 }
 
+export function normalizeExclusionPath(s, { platform = process.platform } = {}) {
+  const norm = String(s || "").trim().replace(/\\/g, "/");
+  return platform === "win32" ? norm.toLowerCase() : norm;
+}
+
 const WINDOWS_RESERVED_DEVICE_REGEX = /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(\..*)?$/i;
 
 /**
@@ -183,7 +188,7 @@ export const VALID_SEVERITIES = VALID_SEVERITY_SET;
  * Invariant (P1-03): Preserves filename whitespace in 'file'/'path' while trimming human prose.
  * Rejects illegal NUL bytes with Fail-Closed.
  */
-export function normalizeFinding(raw) {
+export function normalizeFinding(raw, options = {}) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
     return { valid: false, reason: "Finding must be a non-null plain object." };
   }
@@ -231,12 +236,28 @@ export function normalizeFinding(raw) {
   }
   const file = rawFile;
 
+  const prefix = typeof options === "string"
+    ? options.trim()
+    : String(options?.prefix || options?.sentry || options?.provider || raw.sentry || raw.provider || raw.source || "").trim();
+
+  const rawId = raw.id !== undefined && raw.id !== null && String(raw.id).trim().length > 0
+    ? String(raw.id).trim()
+    : (raw.findingId !== undefined && raw.findingId !== null && String(raw.findingId).trim().length > 0 ? String(raw.findingId).trim() : undefined);
+
+  let id = rawId;
+  const isLocalId = !rawId || /^(?:finding|vuln|issue|item|f)[-_]?\d+$/i.test(rawId) || /^\d+$/.test(rawId);
+  if (prefix.length > 0 && id !== undefined && !id.startsWith(`${prefix}:`)) {
+    if (isLocalId || options?.forceNamespace === true) {
+      id = `${prefix}:${id}`;
+    }
+  }
+
   return {
     valid: true,
     finding: {
-      id: raw.id !== undefined && raw.id !== null && String(raw.id).trim().length > 0
-        ? String(raw.id).trim()
-        : (raw.findingId !== undefined && raw.findingId !== null && String(raw.findingId).trim().length > 0 ? String(raw.findingId).trim() : undefined),
+      id,
+      providerFindingId: rawId,
+      provider: prefix || (typeof raw.provider === "string" ? raw.provider.trim() : undefined),
       title,
       severity: rawSev,
       file,
@@ -253,7 +274,7 @@ export function normalizeFinding(raw) {
 /**
  * Validates a single Sentry Report object.
  */
-export function validateSentryReport(report) {
+export function validateSentryReport(report, options = {}) {
   if (!report || typeof report !== "object" || Array.isArray(report)) {
     return { valid: false, reason: "Sentry report must be a non-null object." };
   }
@@ -264,9 +285,25 @@ export function validateSentryReport(report) {
     return { valid: false, reason: "Sentry report.findings must be an array." };
   }
 
+  const reportPrefix = String(
+    report.sentry ||
+    options?.sentry ||
+    options?.prefix ||
+    report.provider ||
+    report.providerIdentity?.provider ||
+    report.name ||
+    report.source ||
+    report.role ||
+    options?.provider ||
+    ""
+  ).trim();
+
   const normalizedFindings = [];
   for (let i = 0; i < report.findings.length; i++) {
-    const norm = normalizeFinding(report.findings[i]);
+    const norm = normalizeFinding(report.findings[i], {
+      prefix: reportPrefix,
+      sentry: report.sentry || options?.sentry
+    });
     if (!norm.valid) {
       return { valid: false, reason: `Malformed finding at index ${i}: ${norm.reason}` };
     }
@@ -317,139 +354,8 @@ function _evaluateGateDecisionCore(consensus, options = {}, { allowSynthetic = f
     };
   }
 
-  // 3. Verification Record Capability & RunContext Integrity Check (evaluated BEFORE zero-finding check)
+  // 3. Verification Record Capability & Authority (delegated to post-verification core)
   if (options?.verificationRecord) {
-    const vr = options.verificationRecord;
-    if (allowSynthetic) {
-      if (!isTrustedVerificationRecord(vr) && !isSegregatedSyntheticRecord(vr)) {
-        return {
-          decision: "block",
-          reason: "Gate Fail-Closed: Untrusted verification record capability (UNTRUSTED_VERIFICATION_RECORD).",
-          criticals: [],
-          advisoryFindings: []
-        };
-      }
-    } else {
-      if (!isTrustedVerificationRecord(vr) || isSegregatedSyntheticRecord(vr)) {
-        return {
-          decision: "block",
-          reason: "Gate Fail-Closed: Untrusted verification record capability (UNTRUSTED_VERIFICATION_RECORD).",
-          criticals: [],
-          advisoryFindings: []
-        };
-      }
-    }
-
-    if (vr.ok === false) {
-      return _evaluatePostVerificationGateCore(consensus, vr, options, { allowSynthetic });
-    }
-
-    if (options?.runContext) {
-      const rc = options.runContext instanceof RunContext
-        ? options.runContext
-        : new RunContext(options.runContext);
-      const vr = options.verificationRecord;
-
-      // 1. Content Digest Binding (Mandatory if rc has contentDigest)
-      if (rc.contentDigest) {
-        const vrDigest = vr.changeSetDigest || vr.contentDigest;
-        if (!vrDigest || normalizeDigest(vrDigest) !== normalizeDigest(rc.contentDigest)) {
-          return {
-            decision: "block",
-            reason: "Gate Fail-Closed: Verification record binding mismatch (FORGED_OR_STALE_RECORD).",
-            criticals: [],
-            advisoryFindings: []
-          };
-        }
-      }
-
-      // 2. Patch Objective Binding (Mandatory if rc has patchObjective)
-      if (rc.patchObjective) {
-        if (!vr.patchObjective || normalizeObjective(vr.patchObjective) !== normalizeObjective(rc.patchObjective)) {
-          return {
-            decision: "block",
-            reason: "Gate Fail-Closed: Verification record binding mismatch (FORGED_OR_STALE_RECORD).",
-            criticals: [],
-            advisoryFindings: []
-          };
-        }
-      }
-
-      // 3. Head SHA Binding (Mandatory if rc has headSha)
-      if (rc.headSha) {
-        if (!vr.headSha || normalizeCommitSha(vr.headSha) !== normalizeCommitSha(rc.headSha)) {
-          return {
-            decision: "block",
-            reason: "Gate Fail-Closed: Verification record binding mismatch (FORGED_OR_STALE_RECORD).",
-            criticals: [],
-            advisoryFindings: []
-          };
-        }
-      }
-
-      // 4. Run ID Binding (Mandatory if rc has runId)
-      if (rc.runId) {
-        const vrRunId = vr.runId || vr.producer?.runId;
-        if (!vrRunId || String(vrRunId).trim() !== String(rc.runId).trim()) {
-          return {
-            decision: "block",
-            reason: "Gate Fail-Closed: Verification record binding mismatch (FORGED_OR_STALE_RECORD).",
-            criticals: [],
-            advisoryFindings: []
-          };
-        }
-      }
-
-      // 5. Exclusions Binding (Mandatory bidirectional check: rc and vr must strictly match)
-      const rcExcl = Array.isArray(rc.exclusions) ? rc.exclusions : [];
-      const vrExcl = Array.isArray(vr.exclusions)
-        ? vr.exclusions
-        : (Array.isArray(vr.objectiveContract?.exclusions) ? vr.objectiveContract.exclusions : []);
-
-      if (rcExcl.length > 0 || (Array.isArray(vrExcl) && vrExcl.length > 0)) {
-        if (!Array.isArray(vrExcl)) {
-          return {
-            decision: "block",
-            reason: "Gate Fail-Closed: Verification record binding mismatch (FORGED_OR_STALE_RECORD).",
-            criticals: [],
-            advisoryFindings: []
-          };
-        }
-        const normRcExcl = rcExcl.map(s => String(s).trim().toLowerCase()).sort();
-        const normVrExcl = vrExcl.map(s => String(s).trim().toLowerCase()).sort();
-        if (normRcExcl.length !== normVrExcl.length || !normRcExcl.every((v, i) => v === normVrExcl[i])) {
-          return {
-            decision: "block",
-            reason: "Gate Fail-Closed: Verification record binding mismatch (FORGED_OR_STALE_RECORD).",
-            criticals: [],
-            advisoryFindings: []
-          };
-        }
-      }
-    }
-
-    const findings = Array.isArray(consensus?.findings) ? consensus.findings : [];
-    if (findings.length === 0) {
-      if (vr.verificationMode !== "clean_challenge") {
-        return {
-          decision: "block",
-          reason: `Verification mode mismatch: zero-finding consensus requires 'clean_challenge' mode (got: '${vr.verificationMode || "none"}').`,
-          criticals: [],
-          advisoryFindings: []
-        };
-      }
-    } else {
-      if (vr.verificationMode === "clean_challenge") {
-        return {
-          decision: "block",
-          reason: `Verification mode mismatch: nonempty consensus requires 'producer_verification' mode (got: 'clean_challenge').`,
-          criticals: [],
-          advisoryFindings: []
-        };
-      }
-    }
-
-    // Reordered: execute post-verification gate authority
     return _evaluatePostVerificationGateCore(consensus, options.verificationRecord, options, { allowSynthetic });
   }
 
@@ -556,10 +462,88 @@ export function getFindingSignature(f) {
   const cwe = String(f.cwe || "").trim();
   const type = String(f.type || "").trim().toLowerCase();
   const recommendation = String(f.recommendation || f.body || "").replace(/\r\n/g, "\n").trim();
-  return `${id}|${ruleId}|${title}|${file}|${lineStart}|${lineEnd}|${severity}|${cwe}|${type}|${recommendation}`;
+  return JSON.stringify([id, ruleId, title, file, lineStart, lineEnd, severity, cwe, type, recommendation]);
+}
+
+function findEvaluationIndexForFinding(evaluations, finding, findingIndex, usedIndices) {
+  const fId = getFindingId(finding, findingIndex);
+  const lowerFId = fId.toLowerCase();
+
+  // Pass 1: exact match on findingId or id
+  let matchIdx = evaluations.findIndex((e, idx) => !usedIndices.has(idx) && (
+    String(e?.findingId).trim() === fId || String(e?.id).trim() === fId
+  ));
+  if (matchIdx !== -1) return matchIdx;
+
+  // Pass 2: case-insensitive exact match
+  matchIdx = evaluations.findIndex((e, idx) => !usedIndices.has(idx) && (
+    String(e?.findingId).trim().toLowerCase() === lowerFId || String(e?.id).trim().toLowerCase() === lowerFId
+  ));
+  if (matchIdx !== -1) return matchIdx;
+
+  // Pass 3: match on providerFindingId or raw id
+  if (finding?.providerFindingId) {
+    const rawId = String(finding.providerFindingId).trim();
+    const lowerRawId = rawId.toLowerCase();
+    matchIdx = evaluations.findIndex((e, idx) => !usedIndices.has(idx) && (
+      String(e?.findingId).trim() === rawId ||
+      String(e?.id).trim() === rawId ||
+      String(e?.findingId).trim().toLowerCase() === lowerRawId ||
+      String(e?.id).trim().toLowerCase() === lowerRawId
+    ));
+    if (matchIdx !== -1) return matchIdx;
+  }
+
+  // Pass 4: prefix strip match (e.g. fId is 'agy:finding-1', eval is 'finding-1')
+  const colonIdx = fId.indexOf(':');
+  if (colonIdx !== -1) {
+    const suffix = fId.slice(colonIdx + 1);
+    const lowerSuffix = suffix.toLowerCase();
+    matchIdx = evaluations.findIndex((e, idx) => !usedIndices.has(idx) && (
+      String(e?.findingId).trim() === suffix ||
+      String(e?.id).trim() === suffix ||
+      String(e?.findingId).trim().toLowerCase() === lowerSuffix ||
+      String(e?.id).trim().toLowerCase() === lowerSuffix
+    ));
+    if (matchIdx !== -1) return matchIdx;
+  }
+
+  // Pass 5: eval prefix strip match (e.g. fId is 'finding-1', eval is 'agy:finding-1')
+  matchIdx = evaluations.findIndex((e, idx) => {
+    if (usedIndices.has(idx)) return false;
+    const evId = String(e?.findingId || e?.id || "").trim();
+    const evColon = evId.indexOf(':');
+    if (evColon === -1) return false;
+    const evSuffix = evId.slice(evColon + 1);
+    return evSuffix === fId || evSuffix.toLowerCase() === lowerFId;
+  });
+
+  return matchIdx;
 }
 
 function _evaluatePostVerificationGateCore(consensus, verificationRecord, options = {}, { allowSynthetic = false } = {}) {
+  // Defect 6: Post-Verification Consensus Integrity (PRRT_kwDOUWarIc6sPmw9)
+  const isUncertain = verificationRecord?.overallStatus === "UNCERTAIN" || verificationRecord?.status === "UNCERTAIN";
+  if (!allowSynthetic && !isUncertain) {
+    if (!consensus || !isTrustedConsensus(consensus)) {
+      return {
+        decision: "block",
+        reason: "Gate Fail-Closed: Untrusted or missing consensus capability (UNTRUSTED_OR_MISSING_CONSENSUS).",
+        criticals: [],
+        advisoryFindings: []
+      };
+    }
+
+    if (!consensus.quorumReached || consensus.verdict === "error") {
+      return {
+        decision: "block",
+        reason: consensus.consensusProof || "Gate Fail-Closed: Quorum failure or error verdict.",
+        criticals: [],
+        advisoryFindings: []
+      };
+    }
+  }
+
   // Row 13: Execution Failure / Timeout / Malformed
   if (!verificationRecord || verificationRecord.ok === false) {
     return {
@@ -590,90 +574,6 @@ function _evaluatePostVerificationGateCore(consensus, verificationRecord, option
     }
   }
 
-  if (options?.runContext) {
-    const rc = options.runContext instanceof RunContext
-      ? options.runContext
-      : new RunContext(options.runContext);
-    const vr = verificationRecord;
-
-    // 1. Content Digest Binding (Mandatory if rc has contentDigest)
-    if (rc.contentDigest) {
-      const vrDigest = vr.changeSetDigest || vr.contentDigest;
-      if (!vrDigest || normalizeDigest(vrDigest) !== normalizeDigest(rc.contentDigest)) {
-        return {
-          decision: "block",
-          reason: "Gate Fail-Closed: Verification record binding mismatch (FORGED_OR_STALE_RECORD).",
-          criticals: [],
-          advisoryFindings: []
-        };
-      }
-    }
-
-    // 2. Patch Objective Binding (Mandatory if rc has patchObjective)
-    if (rc.patchObjective) {
-      if (!vr.patchObjective || normalizeObjective(vr.patchObjective) !== normalizeObjective(rc.patchObjective)) {
-        return {
-          decision: "block",
-          reason: "Gate Fail-Closed: Verification record binding mismatch (FORGED_OR_STALE_RECORD).",
-          criticals: [],
-          advisoryFindings: []
-        };
-      }
-    }
-
-    // 3. Head SHA Binding (Mandatory if rc has headSha)
-    if (rc.headSha) {
-      if (!vr.headSha || normalizeCommitSha(vr.headSha) !== normalizeCommitSha(rc.headSha)) {
-        return {
-          decision: "block",
-          reason: "Gate Fail-Closed: Verification record binding mismatch (FORGED_OR_STALE_RECORD).",
-          criticals: [],
-          advisoryFindings: []
-        };
-      }
-    }
-
-    // 4. Run ID Binding (Mandatory if rc has runId)
-    if (rc.runId) {
-      const vrRunId = vr.runId || vr.producer?.runId;
-      if (!vrRunId || String(vrRunId).trim() !== String(rc.runId).trim()) {
-        return {
-          decision: "block",
-          reason: "Gate Fail-Closed: Verification record binding mismatch (FORGED_OR_STALE_RECORD).",
-          criticals: [],
-          advisoryFindings: []
-        };
-      }
-    }
-
-    // 5. Exclusions Binding (Mandatory bidirectional check: rc and vr must strictly match)
-    const rcExcl = Array.isArray(rc.exclusions) ? rc.exclusions : [];
-    const vrExcl = Array.isArray(vr.exclusions)
-      ? vr.exclusions
-      : (Array.isArray(vr.objectiveContract?.exclusions) ? vr.objectiveContract.exclusions : []);
-
-    if (rcExcl.length > 0 || (Array.isArray(vrExcl) && vrExcl.length > 0)) {
-      if (!Array.isArray(vrExcl)) {
-        return {
-          decision: "block",
-          reason: "Gate Fail-Closed: Verification record binding mismatch (FORGED_OR_STALE_RECORD).",
-          criticals: [],
-          advisoryFindings: []
-        };
-      }
-      const normRcExcl = rcExcl.map(s => String(s).trim().toLowerCase()).sort();
-      const normVrExcl = vrExcl.map(s => String(s).trim().toLowerCase()).sort();
-      if (normRcExcl.length !== normVrExcl.length || !normRcExcl.every((v, i) => v === normVrExcl[i])) {
-        return {
-          decision: "block",
-          reason: "Gate Fail-Closed: Verification record binding mismatch (FORGED_OR_STALE_RECORD).",
-          criticals: [],
-          advisoryFindings: []
-        };
-      }
-    }
-  }
-
   const findings = Array.isArray(consensus?.findings) ? consensus.findings : [];
   const evaluations = Array.isArray(verificationRecord.evaluations) ? verificationRecord.evaluations : [];
   const omissions = Array.isArray(verificationRecord.verifierOmissions) ? verificationRecord.verifierOmissions : [];
@@ -696,10 +596,11 @@ function _evaluatePostVerificationGateCore(consensus, verificationRecord, option
       };
     }
   } else {
-    if (verificationRecord.verificationMode === "clean_challenge") {
+    // Defect 7: Strict Verification Mode Validation for Non-Empty Consensus (PRRT_kwDOUWarIc6sPGEP, PRRT_kwDOUWarIc6ra7kY)
+    if (verificationRecord.verificationMode !== "producer_verification") {
       return {
         decision: "block",
-        reason: `Verification mode mismatch: nonempty consensus requires 'producer_verification' mode (got: 'clean_challenge').`,
+        reason: `Verification mode mismatch: nonempty consensus requires 'producer_verification' mode (got: '${verificationRecord.verificationMode || "none"}').`,
         criticals: [],
         advisoryFindings: []
       };
@@ -790,7 +691,21 @@ function _evaluatePostVerificationGateCore(consensus, verificationRecord, option
       for (let i = 0; i < findings.length; i++) {
         const curId = getFindingId(findings[i], i);
         const boundId = getFindingId(boundProducerFindings[i], i);
-        if (curId !== boundId || getFindingSignature(findings[i]) !== getFindingSignature(boundProducerFindings[i])) {
+        const idsMatch = curId === boundId ||
+          curId.toLowerCase() === boundId.toLowerCase() ||
+          (findings[i]?.providerFindingId && String(findings[i].providerFindingId).trim() === boundId) ||
+          (boundProducerFindings[i]?.providerFindingId && String(boundProducerFindings[i].providerFindingId).trim() === curId) ||
+          (curId.includes(':') && curId.slice(curId.indexOf(':') + 1) === boundId) ||
+          (boundId.includes(':') && boundId.slice(boundId.indexOf(':') + 1) === curId);
+
+        let sigsMatch = getFindingSignature(findings[i]) === getFindingSignature(boundProducerFindings[i]);
+        if (!sigsMatch && idsMatch) {
+          const sigA = getFindingSignature({ ...findings[i], id: "MATCH_ID" });
+          const sigB = getFindingSignature({ ...boundProducerFindings[i], id: "MATCH_ID" });
+          sigsMatch = sigA === sigB;
+        }
+
+        if (!idsMatch || !sigsMatch) {
           return {
             decision: "block",
             reason: `Gate Fail-Closed: Verification record finding set mismatch (FINDING_SET_BINDING_MISMATCH: finding at index ${i} does not match bound producer finding).`,
@@ -804,10 +719,7 @@ function _evaluatePostVerificationGateCore(consensus, verificationRecord, option
       const matchedEvalIndices = new Set();
       for (let i = 0; i < findings.length; i++) {
         const curId = getFindingId(findings[i], i);
-        let matchIdx = evaluations.findIndex((e, idx) => !matchedEvalIndices.has(idx) && String(e?.findingId).trim() === curId);
-        if (matchIdx === -1) {
-          matchIdx = evaluations.findIndex((e, idx) => !matchedEvalIndices.has(idx) && (String(e?.findingId).trim().toLowerCase() === curId.toLowerCase() || String(e?.id).trim() === curId));
-        }
+        const matchIdx = findEvaluationIndexForFinding(evaluations, findings[i], i, matchedEvalIndices);
         if (matchIdx === -1) {
           return {
             decision: "block",
@@ -817,6 +729,146 @@ function _evaluatePostVerificationGateCore(consensus, verificationRecord, option
           };
         }
         matchedEvalIndices.add(matchIdx);
+      }
+    }
+  }
+
+  // Defect 1: Mandatory RunContext Binding (PRRT_kwDOUWarIc6sU7ZN)
+  if (!allowSynthetic && !isUncertain) {
+    if (!options?.runContext || typeof options.runContext !== "object") {
+      return {
+        decision: "block",
+        reason: "Gate Fail-Closed: Mandatory RunContext missing for verification record authority (UNTRUSTED_OR_MISSING_RUN_CONTEXT).",
+        criticals: [],
+        advisoryFindings: []
+      };
+    }
+  }
+
+  if (options?.runContext) {
+    // Defect 4: RunContext Construction Error Containment (PRRT_kwDOUWarIc6riPTv)
+    let rc;
+    try {
+      rc = options.runContext instanceof RunContext
+        ? options.runContext
+        : new RunContext(options.runContext);
+    } catch (err) {
+      return {
+        decision: "block",
+        reason: `Gate Fail-Closed: Malformed RunContext conversion failed (MALFORMED_RUN_CONTEXT_CONVERSION_FAILED): ${err.message}`,
+        criticals: [],
+        advisoryFindings: []
+      };
+    }
+
+    const vr = verificationRecord;
+
+    // Defect 5: Malformed Non-Empty Head & Digest Field Handling (PRRT_kwDOUWarIc6rvCBG)
+    const rawHead = options.runContext instanceof RunContext
+      ? options.runContext.headSha
+      : (options.runContext?.headSha ?? options.runContext?.head);
+    const rawDigest = options.runContext instanceof RunContext
+      ? options.runContext.contentDigest
+      : (options.runContext?.contentDigest ?? options.runContext?.changeSetDigest);
+
+    if (rawDigest !== undefined && rawDigest !== null && String(rawDigest).trim().length > 0) {
+      if (!normalizeDigest(String(rawDigest))) {
+        return {
+          decision: "block",
+          reason: "Gate Fail-Closed: Malformed RunContext binding (MALFORMED_RUN_CONTEXT_BINDING: invalid contentDigest hex string).",
+          criticals: [],
+          advisoryFindings: []
+        };
+      }
+    }
+
+    if (rawHead !== undefined && rawHead !== null && String(rawHead).trim().length > 0) {
+      if (!normalizeCommitSha(String(rawHead))) {
+        return {
+          decision: "block",
+          reason: "Gate Fail-Closed: Malformed RunContext binding (MALFORMED_RUN_CONTEXT_BINDING: invalid headSha hex string).",
+          criticals: [],
+          advisoryFindings: []
+        };
+      }
+    }
+
+    // 1. Content Digest Binding (Mandatory if rc has contentDigest)
+    if (rc.contentDigest) {
+      const vrDigest = vr.changeSetDigest || vr.contentDigest;
+      if (!vrDigest || normalizeDigest(vrDigest) !== normalizeDigest(rc.contentDigest)) {
+        return {
+          decision: "block",
+          reason: "Gate Fail-Closed: Verification record binding mismatch (FORGED_OR_STALE_RECORD).",
+          criticals: [],
+          advisoryFindings: []
+        };
+      }
+    }
+
+    // 2. Patch Objective Binding (Mandatory if rc has patchObjective)
+    if (rc.patchObjective) {
+      if (!vr.patchObjective || normalizeObjective(vr.patchObjective) !== normalizeObjective(rc.patchObjective)) {
+        return {
+          decision: "block",
+          reason: "Gate Fail-Closed: Verification record binding mismatch (FORGED_OR_STALE_RECORD).",
+          criticals: [],
+          advisoryFindings: []
+        };
+      }
+    }
+
+    // 3. Head SHA Binding (Mandatory if rc has headSha)
+    if (rc.headSha) {
+      if (!vr.headSha || normalizeCommitSha(vr.headSha) !== normalizeCommitSha(rc.headSha)) {
+        return {
+          decision: "block",
+          reason: "Gate Fail-Closed: Verification record binding mismatch (FORGED_OR_STALE_RECORD).",
+          criticals: [],
+          advisoryFindings: []
+        };
+      }
+    }
+
+    // 4. Run ID Binding (Mandatory if rc has runId)
+    if (rc.runId) {
+      const vrRunId = vr.runId || vr.producer?.runId;
+      if (!vrRunId || String(vrRunId).trim() !== String(rc.runId).trim()) {
+        return {
+          decision: "block",
+          reason: "Gate Fail-Closed: Verification record binding mismatch (FORGED_OR_STALE_RECORD).",
+          criticals: [],
+          advisoryFindings: []
+        };
+      }
+    }
+
+    // 5. Exclusions Binding (Mandatory bidirectional check: rc and vr must strictly match)
+    // Defect 3: Platform-Aware Case-Sensitive Exclusions (PRRT_kwDOUWarIc6rsKB_)
+    const rcExcl = Array.isArray(rc.exclusions) ? rc.exclusions : [];
+    const vrExcl = Array.isArray(vr.exclusions)
+      ? vr.exclusions
+      : (Array.isArray(vr.objectiveContract?.exclusions) ? vr.objectiveContract.exclusions : []);
+
+    if (rcExcl.length > 0 || (Array.isArray(vrExcl) && vrExcl.length > 0)) {
+      if (!Array.isArray(vrExcl)) {
+        return {
+          decision: "block",
+          reason: "Gate Fail-Closed: Verification record binding mismatch (FORGED_OR_STALE_RECORD).",
+          criticals: [],
+          advisoryFindings: []
+        };
+      }
+      const targetPlatform = allowSynthetic && options?.platform ? options.platform : process.platform;
+      const normRcExcl = rcExcl.map(s => normalizeExclusionPath(s, { platform: targetPlatform })).sort();
+      const normVrExcl = vrExcl.map(s => normalizeExclusionPath(s, { platform: targetPlatform })).sort();
+      if (normRcExcl.length !== normVrExcl.length || !normRcExcl.every((v, i) => v === normVrExcl[i])) {
+        return {
+          decision: "block",
+          reason: "Gate Fail-Closed: Verification record binding mismatch (FORGED_OR_STALE_RECORD: Exclusion path mismatch).",
+          criticals: [],
+          advisoryFindings: []
+        };
       }
     }
   }
@@ -882,10 +934,7 @@ function _evaluatePostVerificationGateCore(consensus, verificationRecord, option
     if (!f) continue;
 
     const fId = getFindingId(f, i);
-    let evalMatchIdx = evaluations.findIndex((e, idx) => !usedEvaluationIndices.has(idx) && String(e?.findingId).trim() === fId);
-    if (evalMatchIdx === -1) {
-      evalMatchIdx = evaluations.findIndex((e, idx) => !usedEvaluationIndices.has(idx) && (String(e?.findingId).trim().toLowerCase() === fId.toLowerCase() || String(e?.id).trim() === fId));
-    }
+    const evalMatchIdx = findEvaluationIndexForFinding(evaluations, f, i, usedEvaluationIndices);
     if (evalMatchIdx === -1) {
       return {
         decision: "block",
