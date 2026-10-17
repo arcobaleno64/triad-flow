@@ -1812,18 +1812,47 @@ export function validateVerificationOutput(rawOutput, context = {}, { allowSynth
         } catch {}
       }
 
-      if (physicalLineCount === null && repoRoot && !isInvalidExactHead && isWorkingTreeMode) {
+      const isPathAbsolute = path.isAbsolute(file) || /^[a-zA-Z]:[/\\]/.test(file);
+      const relPath = path.normalize(file);
+      const isTraversal = relPath.startsWith("..") || path.isAbsolute(relPath) || /^[a-zA-Z]:[/\\]/.test(relPath);
+
+      if (isPathAbsolute || isTraversal || !matchedFile) {
+        locatorAccurate = false;
+      }
+
+      if (physicalLineCount === null && repoRoot && !isInvalidExactHead && isWorkingTreeMode && matchedFile && !isPathAbsolute && !isTraversal) {
         // Working tree mode (headSha not provided or working-tree scope): read from disk
-        const candidatePath = path.isAbsolute(file) ? file : path.resolve(repoRoot, file);
-        try {
-          if (fs.existsSync(candidatePath)) {
-            const stat = fs.statSync(candidatePath);
-            if (stat.isFile()) {
-              const content = fs.readFileSync(candidatePath, "utf8");
-              physicalLineCount = content.split("\n").length;
+        const candidatePath = path.resolve(repoRoot, relPath);
+        const relToRepo = path.relative(repoRoot, candidatePath);
+        if (!relToRepo.startsWith("..") && !path.isAbsolute(relToRepo)) {
+          try {
+            if (fs.existsSync(candidatePath)) {
+              // Resolve real physical paths to enforce repository boundary against symlink escapes (tdsmV)
+              const realRepo = fs.realpathSync(repoRoot);
+              const realCandidate = fs.realpathSync(candidatePath);
+              const relToRealRepo = path.relative(realRepo, realCandidate);
+              const isSymlinkEscapingRepo = relToRealRepo.startsWith("..") ||
+                path.isAbsolute(relToRealRepo) ||
+                /^[a-zA-Z]:[/\\]/.test(relToRealRepo);
+
+              if (isSymlinkEscapingRepo) {
+                locatorAccurate = false;
+              } else {
+                const stat = fs.statSync(realCandidate);
+                if (stat.isFile() && stat.size <= 1048576) {
+                  const content = fs.readFileSync(realCandidate, "utf8");
+                  physicalLineCount = content.split("\n").length;
+                }
+              }
+            } else if (isRealRepo) {
+              locatorAccurate = false;
+            }
+          } catch {
+            if (isRealRepo) {
+              locatorAccurate = false;
             }
           }
-        } catch {}
+        }
       }
 
       // If file cannot be read from target repository/head/disk:

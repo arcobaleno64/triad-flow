@@ -513,12 +513,12 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
 
       let isScopeMismatch = false;
       const changeSetFiles = Array.isArray(changeSet?.files)
-        ? changeSet.files.map(f => typeof f === "string" ? f : (f?.path || f?.file)).filter(Boolean).map(normalizeCanonicalPath)
+        ? changeSet.files.map(f => typeof f === "string" ? f : (f?.path || f?.file)).filter(Boolean).map(f => normalizeCanonicalPath(f))
         : [];
       if (changeSetFiles.length > 0) {
         if (callerContextPackage.targetFile && typeof callerContextPackage.targetFile === "string" && callerContextPackage.targetFile !== "multi-file") {
           const normTarget = normalizeCanonicalPath(callerContextPackage.targetFile);
-          if (!changeSetFiles.includes(normTarget)) {
+          if (!changeSetFiles.includes(normTarget) || changeSetFiles.length > 1) {
             isScopeMismatch = true;
           }
         }
@@ -526,8 +526,9 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
           const manifestFiles = callerContextPackage.fileCoverageManifest
             .map(m => m && typeof m === "object" ? (m.file || m.path) : null)
             .filter(Boolean)
-            .map(normalizeCanonicalPath);
-          if (manifestFiles.length > 0 && !manifestFiles.some(f => changeSetFiles.includes(f))) {
+            .map(f => normalizeCanonicalPath(f));
+          const manifestSet = new Set(manifestFiles);
+          if (manifestFiles.length === 0 || !changeSetFiles.every(f => manifestSet.has(f))) {
             isScopeMismatch = true;
           }
         }
@@ -536,6 +537,9 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
       if (hasConflictingHead) {
         isCallerContextBindingMismatch = true;
         bindingMismatchReason = `Caller contextPackage headSha (${head}) conflicts with changeSet headSha (${expectedHeadSha})`;
+      } else if (isScopeMismatch) {
+        isCallerContextBindingMismatch = true;
+        bindingMismatchReason = `Caller contextPackage file coverage scope does not match changeSet files (manifest coverage incomplete)`;
       } else if (hasConflictingDigest) {
         isCallerContextBindingMismatch = true;
         bindingMismatchReason = `Caller contextPackage diff digest (${pkgContentDigest || pkgDigest}) does not match changeSet diff contentDigest`;
@@ -545,9 +549,6 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
       } else if (isRepoMismatch) {
         isCallerContextBindingMismatch = true;
         bindingMismatchReason = `Caller contextPackage repositoryRoot (${declaredRepo}) conflicts with repoRoot (${repoRoot})`;
-      } else if (isScopeMismatch) {
-        isCallerContextBindingMismatch = true;
-        bindingMismatchReason = `Caller contextPackage file coverage scope does not match changeSet files`;
       } else if ((hasSubstantiveLayers || hasSubstantiveManifest) && !hasHeadMatch && !hasMatchingDigest) {
         isCallerContextBindingMismatch = true;
         bindingMismatchReason = `Caller contextPackage is ungrounded: lacks matching headSha or matching contentDigest for the reviewed changeSet`;

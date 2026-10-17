@@ -385,13 +385,16 @@ export function collectGitWorkingState(cwd = process.cwd(), options = {}) {
       }
     }
 
+    const isUncommittedScope = !options.base;
+    const computedScopeMode = options.scopeMode || (options.stagedOnly ? "staged" : "working-tree");
     return {
       ok: true,
-      scopeMode: "working-tree",
+      scopeMode: computedScopeMode,
       repository: {
         root: repoRoot,
         hasHead,
-        ...(headSha ? { headSha } : {})
+        ...(hasHead && headSha ? { baseCommitSha: headSha } : {}),
+        ...(!isUncommittedScope && headSha ? { headSha } : {})
       },
       files: Array.from(fileMap.values())
     };
@@ -483,12 +486,16 @@ export function buildChangeSet(cwd = process.cwd(), options = {}) {
   const totalAdditions = files.reduce((sum, f) => sum + f.additions, 0);
   const totalDeletions = files.reduce((sum, f) => sum + f.deletions, 0);
 
+  const isUncommitted = scopeMode === "working-tree" || scopeMode === "staged";
   return {
     ok: true,
     schemaVersion: "1.0.0",
     scopeMode,
     repository: state.repository,
-    ...(state.repository?.headSha ? { headSha: state.repository.headSha } : {}),
+    ...(isUncommitted
+      ? (state.repository?.baseCommitSha ? { baseCommitSha: state.repository.baseCommitSha } : {})
+      : (state.repository?.headSha ? { headSha: state.repository.headSha } : {})),
+    ...(isUncommitted ? { contentIdentity: `${scopeMode}:${contentDigest}` } : {}),
     contentDigest,
     totalFiles: files.length,
     totalAdditions,

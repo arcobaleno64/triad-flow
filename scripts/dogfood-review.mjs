@@ -19,7 +19,7 @@ import crypto from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-import { buildChangeSet } from "../src/core/git-collector.mjs";
+import { buildChangeSet, getExactHeadFileContent } from "../src/core/git-collector.mjs";
 import { decodeGitCStyleString } from "../src/core/git-numstat.mjs";
 import { buildContextPackage } from "../src/core/context-builder.mjs";
 import {
@@ -906,8 +906,14 @@ export async function runDogfoodReview(userOptions = {}) {
           pkgInvalid = true;
           pkgInvalidReason = `ContextPackage missing required repositoryRoot (expected '${targetRepo}').`;
         } else {
-          const normPkgRepo = normalizeCanonicalPath(path.resolve(String(pkgRepo)));
-          const normTargetRepo = normalizeCanonicalPath(path.resolve(String(targetRepo)));
+          let normPkgRepo = normalizeCanonicalPath(path.resolve(String(pkgRepo)));
+          let normTargetRepo = normalizeCanonicalPath(path.resolve(String(targetRepo)));
+          try {
+            normPkgRepo = normalizeCanonicalPath(fs.realpathSync(normPkgRepo));
+          } catch {}
+          try {
+            normTargetRepo = normalizeCanonicalPath(fs.realpathSync(normTargetRepo));
+          } catch {}
           if (normPkgRepo !== normTargetRepo) {
             pkgInvalid = true;
             pkgInvalidReason = `ContextPackage repositoryRoot mismatch ('${normPkgRepo}' vs '${normTargetRepo}').`;
@@ -994,8 +1000,100 @@ export async function runDogfoodReview(userOptions = {}) {
             }
           }
         }
+      // Physically verify contained code snippets and source digests against exact-head Git commit objects (tdsmT)
+      if (!pkgInvalid && commitSha && targetRepo) {
+        const fileContentCache = new Map();
+        const getGitFile = (relFile) => {
+          if (!fileContentCache.has(relFile)) {
+            try {
+              const content = getExactHeadFileContent(targetRepo, commitSha, relFile);
+              fileContentCache.set(relFile, content);
+            } catch {
+              fileContentCache.set(relFile, null);
+            }
+          }
+          return fileContentCache.get(relFile);
+        };
+
+        // 1. Verify file sourceDigest if manifest provides it
+        if (Array.isArray(pkg.fileCoverageManifest)) {
+          for (const m of pkg.fileCoverageManifest) {
+            if (!m || typeof m !== "object") {
+              pkgInvalid = true;
+              pkgInvalidReason = "Manifest contains non-object entry.";
+              break;
+            }
+            const relFile = String(m.file || m.path || "").trim();
+            if (!relFile || !m.sourceDigest) continue;
+            const gitContent = getGitFile(relFile);
+            if (gitContent === null) {
+              pkgInvalid = true;
+              pkgInvalidReason = `Manifest references file not physically present in exact-head git commit: '${relFile}'.`;
+              break;
+            }
+            const expectedDigest = crypto.createHash("sha256").update(gitContent.replace(/\r\n/g, "\n"), "utf8").digest("hex");
+            if (normalizeDigest(m.sourceDigest) !== expectedDigest) {
+              pkgInvalid = true;
+              pkgInvalidReason = `Manifest sourceDigest for '${relFile}' does not match physical exact-head content.`;
+              break;
+            }
+          }
+        }
+
+        // 2. Verify callee definitions and snippets exist in exact-head git commit content (tdsmT)
+        const callees = pkg.layers?.layer1AstEnclosure?.callees;
+        if (!pkgInvalid && Array.isArray(callees) && callees.length > 0) {
+          for (const callee of callees) {
+            if (!callee || typeof callee !== "object") {
+              pkgInvalid = true;
+              pkgInvalidReason = "ContextPackage callees array contains non-object entry.";
+              break;
+            }
+            const cFile = String(callee.file || callee.path || "").trim();
+            if (!cFile) {
+              pkgInvalid = true;
+              pkgInvalidReason = `Callee '${callee.symbol || "unknown"}' missing required file property.`;
+              break;
+            }
+            const gitContent = getGitFile(cFile);
+            if (gitContent === null) {
+              pkgInvalid = true;
+              pkgInvalidReason = `Callee references file not physically present in exact-head commit: '${cFile}'.`;
+              break;
+            }
+            const normGit = gitContent.replace(/\r\n/g, "\n");
+
+            const cDef = typeof callee.definition === "string" ? callee.definition.trim() : "";
+            const cSnippet = typeof callee.snippet === "string" ? callee.snippet.trim() : "";
+
+            if (!cDef && !cSnippet) {
+              pkgInvalid = true;
+              pkgInvalidReason = `Callee '${callee.symbol || "unknown"}' in '${cFile}' missing required definition or snippet content.`;
+              break;
+            }
+
+            if (cDef) {
+              const normDef = cDef.replace(/\r\n/g, "\n").trim();
+              if (normDef && !normGit.includes(normDef)) {
+                pkgInvalid = true;
+                pkgInvalidReason = `Callee definition '${callee.symbol || "unknown"}' in '${cFile}' does not physically exist in exact-head commit.`;
+                break;
+              }
+            }
+
+            if (cSnippet) {
+              const normSnippet = cSnippet.replace(/\r\n/g, "\n").trim();
+              if (normSnippet && !normGit.includes(normSnippet)) {
+                pkgInvalid = true;
+                pkgInvalidReason = `Callee snippet '${callee.symbol || "unknown"}' in '${cFile}' does not physically exist in exact-head commit.`;
+                break;
+              }
+            }
+          }
+        }
       }
     }
+  }
 
     if (pkgInvalid) {
       contextExtractionFailed = true;

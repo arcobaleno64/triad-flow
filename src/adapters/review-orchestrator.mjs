@@ -232,15 +232,36 @@ export function buildCanonicalRunContext(changeSet, options = {}, runId) {
     changeSet.objectiveContract ||
     null;
 
-  const rawExcl = Array.isArray(options.exclusions)
-    ? options.exclusions
-    : (Array.isArray(options.patchExclusions)
-        ? options.patchExclusions
-        : (Array.isArray(options.runContext?.exclusions)
-            ? options.runContext.exclusions
-            : (Array.isArray(changeSet.excludedFiles)
-                ? changeSet.excludedFiles
-                : (Array.isArray(changeSet.exclusions) ? changeSet.exclusions : []))));
+  const rawExclCandidates = [
+    { name: "options.exclusions", list: options.exclusions },
+    { name: "options.patchExclusions", list: options.patchExclusions },
+    { name: "options.runContext.exclusions", list: options.runContext?.exclusions },
+    { name: "changeSet.excludedFiles", list: changeSet.excludedFiles },
+    { name: "changeSet.exclusions", list: changeSet.exclusions }
+  ].filter(c => Array.isArray(c.list));
+
+  let rawExcl = [];
+  if (rawExclCandidates.length > 0) {
+    const normSets = rawExclCandidates.map(c => ({
+      name: c.name,
+      raw: c.list,
+      set: new Set(c.list.map(x => String(x).trim().replace(/\\/g, "/")).filter(Boolean))
+    }));
+
+    const first = normSets[0];
+    for (let i = 1; i < normSets.length; i++) {
+      const other = normSets[i];
+      if (first.set.size !== other.set.size) {
+        return null;
+      }
+      for (const item of first.set) {
+        if (!other.set.has(item)) {
+          return null;
+        }
+      }
+    }
+    rawExcl = first.raw;
+  }
 
   const boundRunId = activeRunId || (options.runContext?.runId ? String(options.runContext.runId).trim() : null);
 
@@ -380,7 +401,9 @@ export async function orchestrateReview(changeSet, adapters = {}, options = {}) 
         policyId: "STRICT_HETEROGENEOUS",
         timeoutMs,
         signal,
-        ...(limits ? { limits } : {})
+        ...(limits ? { limits } : {}),
+        ...(options.contextPackage ? { contextPackage: options.contextPackage } : {}),
+        ...(options.contextGaps ? { contextGaps: options.contextGaps } : {})
       });
 
       const rawReports = {
@@ -397,7 +420,9 @@ export async function orchestrateReview(changeSet, adapters = {}, options = {}) 
       const gate = evaluateGateDecision(consensus, {
         strict,
         ...(diffTier !== undefined ? { tier: diffTier, isTier1: diffTier === 1 } : {}),
-        ...(options.preliminary === true ? { preliminary: true } : {})
+        ...(options.preliminary === true ? { preliminary: true } : {}),
+        ...(options.contextPackage ? { contextPackage: options.contextPackage } : {}),
+        ...(options.contextGaps ? { contextGaps: options.contextGaps } : {})
       });
 
       return {
@@ -407,6 +432,8 @@ export async function orchestrateReview(changeSet, adapters = {}, options = {}) 
         consensus,
         gate,
         reports: rawReports,
+        ...(options.contextPackage ? { contextPackage: options.contextPackage } : {}),
+        ...(options.contextGaps ? { contextGaps: options.contextGaps } : {}),
         activeResult
       };
     }
@@ -420,7 +447,9 @@ export async function orchestrateReview(changeSet, adapters = {}, options = {}) 
         policyId: "STRICT_HETEROGENEOUS",
         timeoutMs,
         signal,
-        ...(limits ? { limits } : {})
+        ...(limits ? { limits } : {}),
+        ...(options.contextPackage ? { contextPackage: options.contextPackage } : {}),
+        ...(options.contextGaps ? { contextGaps: options.contextGaps } : {})
       }),
       adapters.micro.executeReview({
         runId,
@@ -429,7 +458,9 @@ export async function orchestrateReview(changeSet, adapters = {}, options = {}) 
         policyId: "STRICT_HETEROGENEOUS",
         timeoutMs,
         signal,
-        ...(limits ? { limits } : {})
+        ...(limits ? { limits } : {}),
+        ...(options.contextPackage ? { contextPackage: options.contextPackage } : {}),
+        ...(options.contextGaps ? { contextGaps: options.contextGaps } : {})
       })
     ]);
 
@@ -450,13 +481,15 @@ export async function orchestrateReview(changeSet, adapters = {}, options = {}) 
     }
 
     let gate = runContextMismatched
-      ? { decision: "block", reason: "Gate Fail-Closed: Verification record binding mismatch (FORGED_OR_STALE_RECORD)." }
+      ? { decision: "block", reason: "Gate Fail-Closed: Verification record, exclusions, or objective mismatch (FORGED_OR_STALE_RECORD / EXCLUSION_OR_OBJECTIVE_MISMATCH)." }
       : evaluateGateDecision(consensus, {
           strict,
           ...(diffTier !== undefined ? { tier: diffTier, isTier1: diffTier === 1 } : {}),
           ...(isPreliminaryOpt ? { preliminary: true } : {}),
           ...(options.verificationRecord ? { verificationRecord: options.verificationRecord } : {}),
-          ...(canonicalRunContext ? { runContext: canonicalRunContext } : {})
+          ...(canonicalRunContext ? { runContext: canonicalRunContext } : {}),
+          ...(options.contextPackage ? { contextPackage: options.contextPackage } : {}),
+          ...(options.contextGaps ? { contextGaps: options.contextGaps } : {})
         });
 
     const isApprove = gate.decision === "approve";
@@ -477,11 +510,13 @@ export async function orchestrateReview(changeSet, adapters = {}, options = {}) 
       }
     }
 
-    const macroCoverageOk = isCoverageComplete(changeSet, macroResult);
-    const microCoverageOk = isCoverageComplete(changeSet, microResult);
-    if (!macroCoverageOk || !microCoverageOk) {
-      status = "incomplete";
-      gate = { decision: "block", reason: "Coverage Incomplete: Sentry omitted file(s) from review." };
+    if (!runContextMismatched) {
+      const macroCoverageOk = isCoverageComplete(changeSet, macroResult);
+      const microCoverageOk = isCoverageComplete(changeSet, microResult);
+      if (!macroCoverageOk || !microCoverageOk) {
+        status = "incomplete";
+        gate = { decision: "block", reason: "Coverage Incomplete: Sentry omitted file(s) from review." };
+      }
     }
 
     return {
@@ -491,6 +526,8 @@ export async function orchestrateReview(changeSet, adapters = {}, options = {}) 
       consensus,
       gate,
       reports: rawReports,
+      ...(options.contextPackage ? { contextPackage: options.contextPackage } : {}),
+      ...(options.contextGaps ? { contextGaps: options.contextGaps } : {}),
       results: { macro: macroResult, micro: microResult }
     };
   }
@@ -506,7 +543,9 @@ export async function orchestrateReview(changeSet, adapters = {}, options = {}) 
     policyId: "SINGLE_SENTRY",
     timeoutMs,
     signal,
-    ...(limits ? { limits } : {})
+    ...(limits ? { limits } : {}),
+    ...(options.contextPackage ? { contextPackage: options.contextPackage } : {}),
+    ...(options.contextGaps ? { contextGaps: options.contextGaps } : {})
   });
 
   const singleReport = convertProviderResultToSentryReport(singleResult, singleRole);
@@ -527,13 +566,15 @@ export async function orchestrateReview(changeSet, adapters = {}, options = {}) 
   }
 
   let gate = runContextMismatched
-    ? { decision: "block", reason: "Gate Fail-Closed: Verification record binding mismatch (FORGED_OR_STALE_RECORD)." }
+    ? { decision: "block", reason: "Gate Fail-Closed: Verification record, exclusions, or objective mismatch (FORGED_OR_STALE_RECORD / EXCLUSION_OR_OBJECTIVE_MISMATCH)." }
     : evaluateGateDecision(consensus, {
         strict,
         ...(diffTier !== undefined ? { tier: diffTier, isTier1: diffTier === 1 } : {}),
         ...(isPreliminaryOpt ? { preliminary: true } : {}),
         ...(options.verificationRecord ? { verificationRecord: options.verificationRecord } : {}),
-        ...(canonicalRunContext ? { runContext: canonicalRunContext } : {})
+        ...(canonicalRunContext ? { runContext: canonicalRunContext } : {}),
+        ...(options.contextPackage ? { contextPackage: options.contextPackage } : {}),
+        ...(options.contextGaps ? { contextGaps: options.contextGaps } : {})
       });
 
   const isApprove = gate.decision === "approve";
@@ -554,10 +595,12 @@ export async function orchestrateReview(changeSet, adapters = {}, options = {}) 
     }
   }
 
-  const singleCoverageOk = isCoverageComplete(changeSet, singleResult);
-  if (!singleCoverageOk) {
-    status = "incomplete";
-    gate = { decision: "block", reason: "Coverage Incomplete: Sentry omitted file(s) from review." };
+  if (!runContextMismatched) {
+    const singleCoverageOk = isCoverageComplete(changeSet, singleResult);
+    if (!singleCoverageOk) {
+      status = "incomplete";
+      gate = { decision: "block", reason: "Coverage Incomplete: Sentry omitted file(s) from review." };
+    }
   }
 
   return {
@@ -567,6 +610,8 @@ export async function orchestrateReview(changeSet, adapters = {}, options = {}) 
     consensus,
     gate,
     reports: rawReports,
+    ...(options.contextPackage ? { contextPackage: options.contextPackage } : {}),
+    ...(options.contextGaps ? { contextGaps: options.contextGaps } : {}),
     result: singleResult
   };
 }

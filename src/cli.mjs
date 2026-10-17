@@ -46,8 +46,10 @@ import {
   RunContext,
   normalizeCommitSha,
   normalizeDigest,
-  normalizeObjective
+  normalizeObjective,
+  mergeContextGaps
 } from "./core/independent-verifier.mjs";
+import { buildContextPackage } from "./core/context-builder.mjs";
 import { digestChangeSet } from "./core/canonical-digest.mjs";
 
 export const EXIT_CODES = {
@@ -144,7 +146,8 @@ export function extractFindingsFromReport(reportData) {
   return [];
 }
 
-export async function runCli(argv = process.argv.slice(2), io = { stdout: process.stdout, stderr: process.stderr }, options = {}) {
+export async function runCli(argv = process.argv.slice(2), io = { stdout: process.stdout, stderr: process.stderr }, rawOptions = {}) {
+  const options = { ...io, ...rawOptions };
   const strictArg = argv.includes("--strict") || Boolean(options.strict);
   const stagedArg = argv.includes("--staged") || Boolean(options.staged);
 
@@ -533,11 +536,26 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
     sandboxArg = options.sandbox || "worktree";
   }
 
+  let tierArg = null;
+  const tierExplicit = argv.find(a => a.startsWith("--tier="));
+  if (tierExplicit) {
+    const rawVal = tierExplicit.slice("--tier=".length).trim();
+    tierArg = Number(rawVal);
+  } else {
+    const tierIdx = argv.indexOf("--tier");
+    if (tierIdx !== -1 && argv[tierIdx + 1] && !argv[tierIdx + 1].startsWith("--")) {
+      tierArg = Number(argv[tierIdx + 1].trim());
+    }
+  }
+  const effectiveTier = options.tier !== undefined ? options.tier : (tierArg !== null && !Number.isNaN(tierArg) ? tierArg : undefined);
+  const effectiveIsTier1 = options.isTier1 !== undefined ? options.isTier1 : (effectiveTier !== undefined ? effectiveTier === 1 : undefined);
+
   const planOnlyArg = argv.includes("--plan-only") || Boolean(options.planOnly);
 
   const isRecognizedArg = (arg) => {
     if (arg.startsWith("--format=") || arg === "--format") return true;
     if (arg === "--strict" || arg === "--staged" || arg === "--plan-only" || arg === "--batch") return true;
+    if (arg.startsWith("--tier=") || arg === "--tier") return true;
     if (arg.startsWith("--base=") || arg === "--base") return true;
     if (arg.startsWith("--head=") || arg === "--head") return true;
     if (arg.startsWith("--report=") || arg === "--report") return true;
@@ -840,6 +858,79 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
         }
       }
 
+      // Establish authoritative contextPackage and contextGaps prior to preliminary review (tdsmP)
+      const repoRootCandidate = options.repoRoot ||
+        (typeof changeSet?.repository === "object" ? changeSet?.repository?.root : (typeof changeSet?.repository === "string" ? changeSet.repository : null)) ||
+        (typeof options.cwd === "string" ? options.cwd : (typeof opts.cwd === "string" ? opts.cwd : null));
+      const targetRepo = (typeof repoRootCandidate === "string" && repoRootCandidate.trim().length > 0)
+        ? repoRootCandidate.trim()
+        : null;
+
+      const activeRunId = options.runId || crypto.randomUUID();
+      const headSha = normalizeCommitSha(
+        changeSet.headSha ||
+        changeSet.commitSha ||
+        changeSet.head ||
+        options.headSha ||
+        options.head ||
+        ""
+      );
+
+      let effectiveContextPackage = options.contextPackage || changeSet?.contextPackage || null;
+      let contextExtractionFailed = false;
+      let contextExtractionError = null;
+
+      if (!effectiveContextPackage && Array.isArray(files) && files.length > 0 && targetRepo) {
+        try {
+          effectiveContextPackage = buildContextPackage(
+            changeSet,
+            null,
+            {
+              headSha: headSha || null,
+              repositoryRoot: targetRepo,
+              cwd: targetRepo,
+              runId: activeRunId
+            }
+          );
+          if (!effectiveContextPackage || effectiveContextPackage.ok === false) {
+            contextExtractionFailed = true;
+            contextExtractionError = effectiveContextPackage?.error?.message || "buildContextPackage returned invalid or non-ok contextPackage";
+          } else if (Array.isArray(effectiveContextPackage.fileCoverageManifest)) {
+            const unavailableEntry = effectiveContextPackage.fileCoverageManifest.find(
+              m => m && (m.exactHeadAvailable === false || m.exactHeadUnavailable === true || m.contentAvailable === false)
+            );
+            if (unavailableEntry) {
+              contextExtractionFailed = true;
+              contextExtractionError = `Exact-head content unavailable for file: '${unavailableEntry.file || unavailableEntry.path}'.`;
+            }
+          }
+        } catch (err) {
+          contextExtractionFailed = true;
+          contextExtractionError = err?.message || String(err);
+        }
+      }
+
+      const effectiveContextGaps = mergeContextGaps(
+        contextExtractionFailed ? [
+          {
+            code: "EXACT_HEAD_CONTEXT_FAILED",
+            symbol: "exact-head-context",
+            reason: contextExtractionError,
+            targetFiles: files.map(f => typeof f === "string" ? f : (f?.path || f?.file || ""))
+          }
+        ] : null,
+        options.contextGaps,
+        changeSet?.contextGaps,
+        effectiveContextPackage?.contextGaps
+      );
+
+      if (effectiveContextPackage && !changeSet.contextPackage) {
+        changeSet.contextPackage = effectiveContextPackage;
+      }
+      if (Array.isArray(effectiveContextGaps) && effectiveContextGaps.length > 0 && !changeSet.contextGaps) {
+        changeSet.contextGaps = effectiveContextGaps;
+      }
+
       const reviewAdapters = opts.reviewAdapters || opts.adapters || cliAdapters || null;
       let consensus;
       let gate;
@@ -856,9 +947,11 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
           timeoutMs: options.timeoutMs,
           signal: options.signal,
           limits: options.limits,
-          tier: options.tier,
-          isTier1: options.isTier1,
+          ...(effectiveTier !== undefined ? { tier: effectiveTier } : {}),
+          ...(effectiveIsTier1 !== undefined ? { isTier1: effectiveIsTier1 } : {}),
           plan: options.plan,
+          ...(effectiveContextPackage ? { contextPackage: effectiveContextPackage } : {}),
+          ...(effectiveContextGaps && effectiveContextGaps.length > 0 ? { contextGaps: effectiveContextGaps } : {}),
           ...(options.runId ? { runId: options.runId } : {}),
           ...(options.verificationRecord ? { verificationRecord: options.verificationRecord } : {}),
           ...(options.runContext ? { runContext: options.runContext } : {}),
@@ -882,10 +975,12 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
             if (options.preliminary !== true) {
               gate = evaluateGateDecision(consensus, {
                 strict: strictArg,
-                tier: options.tier,
-                isTier1: options.isTier1,
+                ...(effectiveTier !== undefined ? { tier: effectiveTier } : {}),
+                ...(effectiveIsTier1 !== undefined ? { isTier1: effectiveIsTier1 } : {}),
                 ...(options.verificationRecord ? { verificationRecord: options.verificationRecord } : {}),
-                ...(options.runContext ? { runContext: options.runContext } : {})
+                ...(options.runContext ? { runContext: options.runContext } : {}),
+                ...(effectiveContextPackage ? { contextPackage: effectiveContextPackage } : {}),
+                ...(effectiveContextGaps && effectiveContextGaps.length > 0 ? { contextGaps: effectiveContextGaps } : {})
               });
             }
             runStatus = REVIEW_RUN_STATUS.REVIEWED_WITH_FINDINGS;
@@ -928,8 +1023,7 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
               }
 
               // Build authentic RunContext anchored to active invocation runId
-              const activeRunId = orchResult.runId || crypto.randomUUID();
-              const headSha = normalizeCommitSha(changeSet.headSha || changeSet.commitSha || changeSet.head || "");
+              const invocationRunId = orchResult?.runId || activeRunId;
               let contentDigest = normalizeDigest(changeSet.contentDigest || "");
               if (!contentDigest) {
                 try {
@@ -943,7 +1037,7 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
               const patchObjective = normalizeObjective(options.patchObjective || changeSet.patchObjective || "");
 
               const runContext = new RunContext({
-                runId: activeRunId,
+                runId: invocationRunId,
                 headSha,
                 contentDigest,
                 patchObjective,
@@ -960,12 +1054,14 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
                   verifierAdapter,
                   {
                     verificationMode: "clean_challenge",
-                    runId: activeRunId,
+                    runId: invocationRunId,
                     headSha,
                     changeSetDigest: contentDigest,
                     patchObjective,
                     objectiveContract: runContext.objectiveContract,
                     runContext,
+                    contextPackage: effectiveContextPackage,
+                    contextGaps: effectiveContextGaps,
                     timeoutMs: options.timeoutMs || 60000,
                     signal: options.signal || null
                   }
@@ -978,10 +1074,12 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
               // Evaluate formal gate integrating verificationRecord and authentic RunContext
               gate = evaluateGateDecision(consensus, {
                 strict: strictArg,
-                tier: options.tier,
-                isTier1: options.isTier1,
+                ...(effectiveTier !== undefined ? { tier: effectiveTier } : {}),
+                ...(effectiveIsTier1 !== undefined ? { isTier1: effectiveIsTier1 } : {}),
                 verificationRecord,
-                runContext
+                runContext,
+                contextPackage: effectiveContextPackage,
+                contextGaps: effectiveContextGaps
               });
 
               if (gate.decision === "approve") {
