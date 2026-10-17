@@ -2281,6 +2281,7 @@ export class CliVerifierAdapter {
       let stdout = "";
       let stderr = "";
       let stdoutBytes = 0;
+      let stderrBytes = 0;
       let outputLimitExceeded = false;
       let timedOut = false;
       let aborted = false;
@@ -2356,14 +2357,23 @@ export class CliVerifierAdapter {
 
       child.stdout.on("data", (chunk) => {
         stdoutBytes += chunk.length;
-        if (maxOutputBytes && stdoutBytes > maxOutputBytes && !outputLimitExceeded) {
+        if (maxOutputBytes && (stdoutBytes + stderrBytes) > maxOutputBytes && !outputLimitExceeded) {
           outputLimitExceeded = true;
           child.kill();
         }
-        stdout += chunk.toString("utf8");
+        if (!outputLimitExceeded) {
+          stdout += chunk.toString("utf8");
+        }
       });
       child.stderr.on("data", (chunk) => {
-        stderr += chunk.toString("utf8");
+        stderrBytes += chunk.length;
+        if (maxOutputBytes && (stdoutBytes + stderrBytes) > maxOutputBytes && !outputLimitExceeded) {
+          outputLimitExceeded = true;
+          child.kill();
+        }
+        if (!outputLimitExceeded) {
+          stderr += chunk.toString("utf8");
+        }
       });
 
       child.on("error", (err) => {
@@ -2445,11 +2455,18 @@ export class CliVerifierAdapter {
     }
 
     const effectiveMaxOutput = limits?.maxOutputBytes || DEFAULT_LIMITS.maxOutputBytes;
-    if (effectiveMaxOutput && typeof res?.stdout === "string" && Buffer.byteLength(res.stdout, "utf8") > effectiveMaxOutput) {
+    const stdoutLen = Buffer.isBuffer(res?.stdout)
+      ? res.stdout.length
+      : (typeof res?.stdout === "string" ? Buffer.byteLength(res.stdout, "utf8") : 0);
+    const stderrLen = Buffer.isBuffer(res?.stderr)
+      ? res.stderr.length
+      : (typeof res?.stderr === "string" ? Buffer.byteLength(res.stderr, "utf8") : 0);
+    const totalBytes = stdoutLen + stderrLen;
+    if (effectiveMaxOutput && totalBytes > effectiveMaxOutput) {
       return {
         ok: false,
         executionStatus: EXECUTION_STATUS.PAYLOAD_TOO_LARGE,
-        error: `CLI verifier output (${Buffer.byteLength(res.stdout, "utf8")} bytes) exceeds limits.maxOutputBytes (${effectiveMaxOutput} bytes).`
+        error: `CLI verifier output (${totalBytes} bytes) exceeds limits.maxOutputBytes (${effectiveMaxOutput} bytes).`
       };
     }
 

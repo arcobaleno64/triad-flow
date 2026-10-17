@@ -102,10 +102,11 @@ export function extractAstEnclosures(fileContent, changedLineSpans = []) {
     if (classMatch) {
       const className = classMatch[1];
       const endLine = findBraceScopeEnd(lines, i);
+      const effectiveEndLine = endLine !== -1 ? endLine : lines.length;
       classes.push({
         name: className,
         startLine: lineNum,
-        endLine: endLine
+        endLine: effectiveEndLine
       });
       continue;
     }
@@ -116,14 +117,15 @@ export function extractAstEnclosures(fileContent, changedLineSpans = []) {
       const fnName = fnMatch[1] || `anonymous_L${lineNum}`;
       const params = (fnMatch[2] || "").split(",").map(p => p.trim()).filter(Boolean);
       const endLine = findBraceScopeEnd(lines, i);
+      const effectiveEndLine = endLine !== -1 ? endLine : lines.length;
       functions.push({
         name: fnName,
         kind: "function",
         startLine: lineNum,
-        endLine: endLine,
+        endLine: effectiveEndLine,
         parameters: params,
         headerCode: line.trim(),
-        bodySnippet: lines.slice(i, Math.min(i + 4, endLine)).join("\n").trim()
+        bodySnippet: lines.slice(i, Math.min(i + 4, effectiveEndLine)).join("\n").trim()
       });
       continue;
     }
@@ -134,14 +136,15 @@ export function extractAstEnclosures(fileContent, changedLineSpans = []) {
       const methodName = methodMatch[1];
       const params = (methodMatch[2] || "").split(",").map(p => p.trim()).filter(Boolean);
       const endLine = findBraceScopeEnd(lines, i);
+      const effectiveEndLine = endLine !== -1 ? endLine : lines.length;
       functions.push({
         name: methodName,
         kind: "method",
         startLine: lineNum,
-        endLine: endLine,
+        endLine: effectiveEndLine,
         parameters: params,
         headerCode: line.trim(),
-        bodySnippet: lines.slice(i, Math.min(i + 4, endLine)).join("\n").trim()
+        bodySnippet: lines.slice(i, Math.min(i + 4, effectiveEndLine)).join("\n").trim()
       });
       continue;
     }
@@ -152,14 +155,15 @@ export function extractAstEnclosures(fileContent, changedLineSpans = []) {
       const arrowName = arrowMatch[1];
       const params = (arrowMatch[2] || arrowMatch[3] || "").split(",").map(p => p.trim()).filter(Boolean);
       const endLine = findBraceScopeEnd(lines, i);
+      const effectiveEndLine = endLine !== -1 ? endLine : lines.length;
       functions.push({
         name: arrowName,
         kind: "arrow",
         startLine: lineNum,
-        endLine: endLine,
+        endLine: effectiveEndLine,
         parameters: params,
         headerCode: line.trim(),
-        bodySnippet: lines.slice(i, Math.min(i + 4, endLine)).join("\n").trim()
+        bodySnippet: lines.slice(i, Math.min(i + 4, effectiveEndLine)).join("\n").trim()
       });
     }
   }
@@ -196,20 +200,31 @@ export function extractAstEnclosures(fileContent, changedLineSpans = []) {
 
 /**
  * Finds the line number (1-indexed) where the opening brace on line startIndex closes.
- * Handles single-line comments, multi-line comments, and string literals.
+ * Handles single-line comments, multi-line comments, string literals, multi-line template literals, and regex literals.
+ * Returns -1 if the scope is unclosed or invalid.
  * @param {string[]} lines
  * @param {number} startIndex 0-indexed line index
- * @returns {number} 1-indexed end line
+ * @param {{ failClosed?: boolean }} [options={}]
+ * @returns {number} 1-indexed end line, or -1 if unclosed
  */
-export function findBraceScopeEnd(lines, startIndex) {
+export function findBraceScopeEnd(lines, startIndex, options = {}) {
+  if (!Array.isArray(lines) || startIndex < 0 || startIndex >= lines.length) {
+    return -1;
+  }
+
+  const failClosed = Boolean(options?.failClosed);
+
   let depth = 0;
   let started = false;
   let inBlockComment = false;
+  let inString = false;
+  let stringChar = null;
+  let lastNonWsChar = "";
+  let lastWord = "";
+  let currentWord = "";
 
   for (let i = startIndex; i < lines.length; i++) {
     const line = lines[i];
-    let inString = false;
-    let stringChar = null;
 
     for (let charIdx = 0; charIdx < line.length; charIdx++) {
       const c = line[charIdx];
@@ -229,6 +244,9 @@ export function findBraceScopeEnd(lines, startIndex) {
         } else if (c === stringChar) {
           inString = false;
           stringChar = null;
+          lastNonWsChar = c;
+          lastWord = "";
+          currentWord = "";
         }
         continue;
       }
@@ -248,21 +266,90 @@ export function findBraceScopeEnd(lines, startIndex) {
       if (c === '"' || c === "'" || c === "`") {
         inString = true;
         stringChar = c;
+        lastWord = "";
+        currentWord = "";
         continue;
+      }
+
+      // Check regex literal vs division operator
+      if (c === "/") {
+        const isRegexPrecedingChar = !lastNonWsChar || /^[=([{:;,?!&|+*^%~<>-]$/.test(lastNonWsChar);
+        const isRegexPrecedingWord = /^(?:return|case|typeof|delete|void|throw|yield|await|in|instanceof|new)$/.test(lastWord);
+
+        if (isRegexPrecedingChar || isRegexPrecedingWord) {
+          let j = charIdx + 1;
+          let inCharClass = false;
+          let foundRegexEnd = false;
+          while (j < line.length) {
+            if (line[j] === "\\") {
+              j += 2;
+              continue;
+            }
+            if (line[j] === "[" && !inCharClass) {
+              inCharClass = true;
+              j++;
+              continue;
+            }
+            if (line[j] === "]" && inCharClass) {
+              inCharClass = false;
+              j++;
+              continue;
+            }
+            if (line[j] === "/" && !inCharClass) {
+              foundRegexEnd = true;
+              break;
+            }
+            j++;
+          }
+
+          if (foundRegexEnd) {
+            charIdx = j;
+            while (charIdx + 1 < line.length && /^[gimsuy]$/i.test(line[charIdx + 1])) {
+              charIdx++;
+            }
+            lastNonWsChar = "/";
+            lastWord = "";
+            currentWord = "";
+            continue;
+          }
+        }
       }
 
       if (c === "{") {
         depth++;
         started = true;
+        lastNonWsChar = "{";
+        lastWord = "";
+        currentWord = "";
       } else if (c === "}") {
         depth--;
+        lastNonWsChar = "}";
+        lastWord = "";
+        currentWord = "";
         if (started && depth <= 0) {
           return i + 1;
         }
+      } else if (/\s/.test(c)) {
+        currentWord = "";
+      } else if (/[a-zA-Z0-9_$]/.test(c)) {
+        currentWord += c;
+        lastWord = currentWord;
+        lastNonWsChar = c;
+      } else {
+        lastNonWsChar = c;
+        lastWord = "";
+        currentWord = "";
       }
     }
+
+    if (inString && stringChar !== "`") {
+      inString = false;
+      stringChar = null;
+    }
+    currentWord = "";
   }
-  return lines.length;
+
+  return failClosed ? -1 : lines.length;
 }
 
 /**
@@ -373,7 +460,10 @@ export function findFunctionDefinitions(lines, symbol) {
       continue;
     }
 
-    const endLine = findBraceScopeEnd(lines, braceLineIdx);
+    const endLine = findBraceScopeEnd(lines, braceLineIdx, { failClosed: true });
+    if (endLine === -1 || endLine < i + 1) {
+      continue;
+    }
     matches.push({
       startLine: i + 1,
       endLine: endLine
@@ -413,47 +503,64 @@ export function findQualifiedFunctionDefinitions(lines, qualifier, symbol) {
   );
 
   const CLASS_REGEX = new RegExp(`^\\s*(?:export\\s+)?(?:default\\s+)?class\\s+(?:${escapedQual}|${escapedPascal})\\b`);
-  let insideMatchingClass = false;
-  let classBraceDepth = 0;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
 
     if (QUAL_DEF_REGEX.test(line)) {
-      const braceIdx = line.indexOf("{");
-      if (braceIdx !== -1) {
-        const endLine = findBraceScopeEnd(lines, i);
-        matches.push({ startLine: i + 1, endLine });
-        if (endLine > i + 1) i = endLine - 1;
+      let qualBraceIdx = -1;
+      for (let k = i; k < Math.min(lines.length, i + 5); k++) {
+        if (lines[k].includes("{")) {
+          qualBraceIdx = k;
+          break;
+        }
+        if (lines[k].includes(";")) break;
+      }
+      if (qualBraceIdx !== -1) {
+        const endLine = findBraceScopeEnd(lines, qualBraceIdx, { failClosed: true });
+        if (endLine !== -1 && endLine >= i + 1) {
+          matches.push({ startLine: i + 1, endLine });
+          if (endLine > i + 1) i = endLine - 1;
+        }
         continue;
       }
     }
 
     if (CLASS_REGEX.test(line)) {
-      insideMatchingClass = true;
-      classBraceDepth = 0;
-    }
-
-    if (insideMatchingClass) {
-      for (const ch of line) {
-        if (ch === "{") classBraceDepth++;
-        else if (ch === "}") {
-          classBraceDepth--;
-          if (classBraceDepth <= 0) {
-            insideMatchingClass = false;
-            break;
-          }
+      let classBraceIdx = -1;
+      for (let k = i; k < Math.min(lines.length, i + 5); k++) {
+        if (lines[k].includes("{")) {
+          classBraceIdx = k;
+          break;
         }
+        if (lines[k].includes(";")) break;
       }
-      if (insideMatchingClass && line.includes(symbol)) {
-        const METHOD_REGEX = new RegExp(`^\\s*(?:static\\s+)?(?:async\\s+)?${escapedSym}\\s*\\(`);
-        if (METHOD_REGEX.test(line)) {
-          const braceIdx = line.indexOf("{");
-          if (braceIdx !== -1) {
-            const endLine = findBraceScopeEnd(lines, i);
-            matches.push({ startLine: i + 1, endLine });
-            if (endLine > i + 1) i = endLine - 1;
+      if (classBraceIdx !== -1) {
+        const classEndLine = findBraceScopeEnd(lines, classBraceIdx, { failClosed: true });
+        if (classEndLine !== -1 && classEndLine > classBraceIdx + 1) {
+          const METHOD_REGEX = new RegExp(`^\\s*(?:static\\s+)?(?:async\\s+)?${escapedSym}\\s*\\(`);
+          for (let j = classBraceIdx + 1; j < classEndLine - 1; j++) {
+            const methodLine = lines[j];
+            if (METHOD_REGEX.test(methodLine)) {
+              let methodBraceIdx = -1;
+              for (let m = j; m < Math.min(classEndLine - 1, j + 5); m++) {
+                if (lines[m].includes("{")) {
+                  methodBraceIdx = m;
+                  break;
+                }
+                if (lines[m].includes(";")) break;
+              }
+              if (methodBraceIdx !== -1) {
+                const methodEndLine = findBraceScopeEnd(lines, methodBraceIdx, { failClosed: true });
+                if (methodEndLine !== -1 && methodEndLine >= j + 1 && methodEndLine <= classEndLine) {
+                  matches.push({ startLine: j + 1, endLine: methodEndLine });
+                  if (methodEndLine > j + 1) j = methodEndLine - 1;
+                }
+              }
+            }
           }
+          i = classEndLine - 1;
+          continue;
         }
       }
     }
@@ -821,6 +928,75 @@ export function extractCandidateCallSymbols(diffHunks) {
  * @returns {{ definition: string, lines: number, bytes: number, extractionMode: string }}
  */
 export function extractBoundedFunctionSnippet(lines, startLine, endLine) {
+  if (!Array.isArray(lines) || startLine < 1 || endLine < startLine) {
+    return {
+      definition: "",
+      lines: 0,
+      bytes: 0,
+      extractionMode: "incomplete"
+    };
+  }
+
+  // Verify that the function boundary is confirmed and closed
+  let isClosed = false;
+  let braceLineIdx = -1;
+  let parenClosed = false;
+  let parenDepth = 0;
+  for (let j = startLine - 1; j < Math.min(lines.length, startLine + 15); j++) {
+    const scanLine = lines[j];
+    if (!parenClosed) {
+      for (let k = 0; k < scanLine.length; k++) {
+        const ch = scanLine[k];
+        if (ch === "(") parenDepth++;
+        else if (ch === ")") {
+          parenDepth--;
+          if (parenDepth <= 0) {
+            parenClosed = true;
+            const idx = scanLine.indexOf("{", k);
+            if (idx !== -1) {
+              braceLineIdx = j;
+            }
+            break;
+          }
+        }
+      }
+      if (braceLineIdx !== -1) break;
+    } else {
+      const idx = scanLine.indexOf("{");
+      if (idx !== -1) {
+        braceLineIdx = j;
+        break;
+      }
+    }
+  }
+
+  if (braceLineIdx === -1) {
+    for (let j = startLine - 1; j < Math.min(lines.length, startLine + 15); j++) {
+      if (lines[j].includes("{")) {
+        braceLineIdx = j;
+        break;
+      }
+    }
+  }
+
+  if (braceLineIdx !== -1) {
+    const verifiedEnd = findBraceScopeEnd(lines, braceLineIdx, { failClosed: true });
+    if (verifiedEnd !== -1 && verifiedEnd === endLine) {
+      isClosed = true;
+    }
+  }
+
+  if (!isClosed) {
+    const extractedLines = lines.slice(startLine - 1, Math.min(endLine, lines.length));
+    const truncated = extractedLines.join("\n");
+    return {
+      definition: truncated,
+      lines: extractedLines.length,
+      bytes: Buffer.byteLength(truncated, "utf8"),
+      extractionMode: "incomplete"
+    };
+  }
+
   const lineCount = endLine - startLine + 1;
 
   if (lineCount <= 30) {

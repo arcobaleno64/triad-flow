@@ -462,7 +462,38 @@ export function getFindingSignature(f) {
   const cwe = String(f.cwe || "").trim();
   const type = String(f.type || "").trim().toLowerCase();
   const recommendation = String(f.recommendation || f.body || "").replace(/\r\n/g, "\n").trim();
-  return JSON.stringify([id, ruleId, title, file, lineStart, lineEnd, severity, cwe, type, recommendation]);
+
+  // td7cI: deterministically normalize and bind sources and corroborations
+  let normSources;
+  if (f.sources === undefined) {
+    normSources = null;
+  } else if (Array.isArray(f.sources)) {
+    normSources = [...new Set(f.sources.map(s => String(s || "").trim().toLowerCase()).filter(Boolean))].sort();
+  } else if (typeof f.sources === "string") {
+    const trimmed = f.sources.trim().toLowerCase();
+    normSources = trimmed ? [trimmed] : [];
+  } else {
+    normSources = `INVALID:${String(f.sources)}`;
+  }
+
+  let normCorroborations;
+  if (f.corroborations === undefined) {
+    normCorroborations = Array.isArray(normSources) ? normSources.length : null;
+  } else if (f.corroborations === null) {
+    normCorroborations = null;
+  } else if (typeof f.corroborations === "number") {
+    if (Number.isFinite(f.corroborations) && f.corroborations > 0 && Math.floor(f.corroborations) === f.corroborations) {
+      normCorroborations = f.corroborations;
+    } else {
+      normCorroborations = `ILLEGAL:${f.corroborations}`;
+    }
+  } else if (typeof f.corroborations === "string" && /^[1-9]\d*$/.test(f.corroborations.trim())) {
+    normCorroborations = parseInt(f.corroborations.trim(), 10);
+  } else {
+    normCorroborations = `ILLEGAL:${String(f.corroborations)}`;
+  }
+
+  return JSON.stringify([id, ruleId, title, file, lineStart, lineEnd, severity, cwe, type, recommendation, normSources, normCorroborations]);
 }
 
 function findEvaluationIndexForFinding(evaluations, finding, findingIndex, usedIndices) {
@@ -703,6 +734,18 @@ function _evaluatePostVerificationGateCore(consensus, verificationRecord, option
           const sigA = getFindingSignature({ ...findings[i], id: "MATCH_ID" });
           const sigB = getFindingSignature({ ...boundProducerFindings[i], id: "MATCH_ID" });
           sigsMatch = sigA === sigB;
+          if (!sigsMatch && boundProducerFindings[i]?.sources === undefined && boundProducerFindings[i]?.corroborations === undefined) {
+            const fCorroborations = Number(findings[i]?.corroborations || findings[i]?.sources?.length || 1);
+            if (fCorroborations <= 1) {
+              const sigBWithSolitary = getFindingSignature({
+                ...boundProducerFindings[i],
+                id: "MATCH_ID",
+                sources: findings[i]?.sources,
+                corroborations: findings[i]?.corroborations
+              });
+              sigsMatch = sigA === sigBWithSolitary;
+            }
+          }
         }
 
         if (!idsMatch || !sigsMatch) {
