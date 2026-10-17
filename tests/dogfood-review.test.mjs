@@ -22,7 +22,7 @@ import {
 } from "../scripts/dogfood-review.mjs";
 import { CliReviewAdapter } from "../src/adapters/cli-transport.mjs";
 import { EXECUTION_STATUS } from "../src/adapters/provider-contract.mjs";
-import { CliVerifierAdapter } from "../src/core/independent-verifier.mjs";
+import { CliVerifierAdapter, createMockVerifierAdapter } from "../src/core/independent-verifier.mjs";
 
 test("Dogfood Contract 1: parseArgs correctly parses flags", () => {
   const def = parseArgs([]);
@@ -609,11 +609,11 @@ test("RB1-E: Injected model does not falsely appear as canonical names because o
 const mockChangeSetWithFindings = {
   ok: true,
   schemaVersion: "1.0.0",
-  repository: "test",
+  repository: { name: "test", root: process.cwd() },
   totalFiles: 1,
   totalAdditions: 10,
   totalDeletions: 2,
-  files: [{ path: "src/index.js", additions: 10, deletions: 2, riskTier: 2 }],
+  files: [{ path: "package.json", additions: 10, deletions: 2, riskTier: 2 }],
   diffHunks: "+ const a = 1;"
 };
 
@@ -629,14 +629,14 @@ const makeFindingReviewAdapters = () => {
           {
             title: "Command Injection in ExecHandler",
             severity: "critical",
-            file: "src/index.js",
+            file: "package.json",
             line_start: 1,
             line_end: 1,
             recommendation: "Sanitize arguments",
             evidenceSnippet: "const a = 1;"
           }
         ],
-        coverage: { coveredFiles: ["src/index.js"], omittedFiles: [] }
+        coverage: { coveredFiles: ["package.json"], omittedFiles: [] }
       })
     })
   });
@@ -893,8 +893,87 @@ test("RB2-D: Verifier execution error results in verificationRecord.ok === false
   }
 });
 
-test("RB2-E: Zero consensus findings means verificationRecord === null and preserves previous executionComplete semantics", async () => {
+test("RB2-E: Zero consensus findings triggers Clean Challenge verification and preserves executionComplete semantics", async () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-test-rb2-e-"));
+  const tmpOut = path.join(tmpDir, "dogfood-run.json");
+
+  const cleanReviewAdapters = {
+    agy: new CliReviewAdapter({
+      command: "agy",
+      providerName: "agy",
+      family: "google",
+      modelName: "gemini-3.8-flash",
+      execFn: async () => ({
+        stdout: JSON.stringify({
+          findings: [],
+          coverage: { coveredFiles: ["package.json"], omittedFiles: [] }
+        })
+      })
+    }),
+    claude: new CliReviewAdapter({
+      command: "claude",
+      providerName: "claude",
+      family: "anthropic",
+      modelName: "claude-5.5-sonnet",
+      execFn: async () => ({
+        stdout: JSON.stringify({
+          findings: [],
+          coverage: { coveredFiles: ["package.json"], omittedFiles: [] }
+        })
+      })
+    }),
+    codex: new CliReviewAdapter({
+      command: "codex",
+      providerName: "codex",
+      family: "openai",
+      modelName: "gpt-6.1-sol",
+      execFn: async () => ({
+        stdout: JSON.stringify({
+          findings: [],
+          coverage: { coveredFiles: ["package.json"], omittedFiles: [] }
+        })
+      })
+    })
+  };
+
+  try {
+    const report = await runDogfoodReview({
+      mock: false,
+      changeSet: {
+        ok: true,
+        schemaVersion: "1.0.0",
+        repository: { name: "test", root: process.cwd() },
+        totalFiles: 1,
+        totalAdditions: 2,
+        totalDeletions: 1,
+        files: [{ path: "package.json", additions: 2, deletions: 1, riskTier: 2 }],
+        diffHunks: "+ const a = 1;"
+      },
+      reviewAdapters: cleanReviewAdapters,
+      verifierAdapter: createMockVerifierAdapter("claude", { overallStatus: "CLEAN" }),
+      out: tmpOut,
+      log: false
+    });
+
+    assert.equal(report.consensus.totalFindings, 0);
+    assert.ok(report.verificationRecord !== null, "Clean Challenge verificationRecord must be populated when findings === 0");
+    assert.equal(report.verificationRecord.ok, true);
+    assert.equal(report.verificationRecord.verificationMode, "clean_challenge");
+    assert.equal(report.telemetryMetrics.cleanChallengeAttempted, true);
+    assert.equal(report.telemetryMetrics.cleanChallengeStatus, "SUCCESS");
+    assert.ok(typeof report.telemetryMetrics.cleanChallengeDurationMs === "number");
+    assert.equal(report.advisoryGate.decision, "approve");
+    assert.equal(report.consensus.quorumReached, true);
+    assert.equal(report.telemetryMetrics.executionComplete, true, "Clean review with quorum must complete successfully");
+    assert.ok(report.runContext);
+    assert.equal(typeof report.runContext.contentDigest, "string");
+  } finally {
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+  }
+});
+
+test("RB2-F: Passing cleanChallenge: false explicitly bypasses Clean Challenge verification", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-test-rb2-f-"));
   const tmpOut = path.join(tmpDir, "dogfood-run.json");
 
   const cleanReviewAdapters = {
@@ -939,6 +1018,7 @@ test("RB2-E: Zero consensus findings means verificationRecord === null and prese
   try {
     const report = await runDogfoodReview({
       mock: false,
+      cleanChallenge: false,
       changeSet: {
         ok: true,
         schemaVersion: "1.0.0",
@@ -955,9 +1035,10 @@ test("RB2-E: Zero consensus findings means verificationRecord === null and prese
     });
 
     assert.equal(report.consensus.totalFindings, 0);
-    assert.equal(report.verificationRecord, null, "No verification attempted when findings === 0");
-    assert.equal(report.consensus.quorumReached, true);
-    assert.equal(report.telemetryMetrics.executionComplete, true, "Clean review with quorum must complete successfully");
+    assert.equal(report.verificationRecord, null, "No verification attempted when cleanChallenge: false");
+    assert.equal(report.telemetryMetrics.cleanChallengeAttempted, false);
+    assert.equal(report.telemetryMetrics.cleanChallengeStatus, "SKIPPED");
+    assert.equal(report.telemetryMetrics.cleanChallengeDurationMs, 0);
   } finally {
     try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
   }
@@ -1000,6 +1081,7 @@ test("Observation producer authority: runStartedAt precedes every reviewer invoc
         claude: makeAdapter("claude", "anthropic", "claude-5.5-sonnet"),
         codex: makeAdapter("codex", "openai", "gpt-6.1-sol")
       },
+      verifierAdapter: createMockVerifierAdapter("claude"),
       out: tmpOut,
       log: false
     });
@@ -1065,6 +1147,7 @@ test("Observation producer authority: genuine staged fallback is preserved expli
         claude: clean("claude", "anthropic", "claude-5.5-sonnet"),
         codex: clean("codex", "openai", "gpt-6.1-sol")
       },
+      verifierAdapter: createMockVerifierAdapter("claude"),
       out: tmpOut,
       log: false
     });
@@ -1137,6 +1220,7 @@ test("Observation producer authority: report commit matches the actually reviewe
         claude: clean("claude", "anthropic", "claude-5.5-sonnet"),
         codex: clean("codex", "openai", "gpt-6.1-sol")
       },
+      verifierAdapter: createMockVerifierAdapter("claude"),
       out: tmpOut,
       log: false
     });
@@ -1220,6 +1304,7 @@ test("Observation producer authority: staged chunk timeout contributes to review
         claude: clean("claude", "anthropic", "claude-5.5-sonnet"),
         codex: clean("codex", "openai", "gpt-6.1-sol")
       },
+      verifierAdapter: createMockVerifierAdapter("claude"),
       out: tmpOut,
       log: false
     });

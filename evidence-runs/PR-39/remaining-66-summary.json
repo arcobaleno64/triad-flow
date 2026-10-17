@@ -1,0 +1,662 @@
+[
+  {
+    "index": 1,
+    "id": "PRRT_kwDOUWarIc6qo0uT",
+    "path": "scripts/dogfood-review.mjs",
+    "line": 1330,
+    "title": "Pass exact-head context into the Clean Challenge",
+    "severity": "P1",
+    "createdAt": "2026-10-09T03:46:45Z",
+    "author": "chatgpt-codex-connector"
+  },
+  {
+    "index": 2,
+    "id": "PRRT_kwDOUWarIc6qo0ue",
+    "path": "src/core/context-builder.mjs",
+    "line": 1269,
+    "title": "Enforce the AST ceiling after retaining unresolved callees",
+    "severity": "P2",
+    "createdAt": "2026-10-09T03:46:45Z",
+    "author": "chatgpt-codex-connector"
+  },
+  {
+    "index": 3,
+    "id": "PRRT_kwDOUWarIc6qo0uh",
+    "path": "src/core/context-builder.mjs",
+    "line": 1600,
+    "title": "Isolate target-file hunks before extracting callees",
+    "severity": "P2",
+    "createdAt": "2026-10-09T03:46:45Z",
+    "author": "chatgpt-codex-connector"
+  },
+  {
+    "index": 4,
+    "id": "PRRT_kwDOUWarIc6qwj_y",
+    "path": "src/core/context-builder.mjs",
+    "line": 896,
+    "title": "Emit uncertainty when exact-head content is unavailable",
+    "severity": "P1",
+    "createdAt": "2026-10-09T11:27:10Z",
+    "author": "chatgpt-codex-connector"
+  },
+  {
+    "index": 5,
+    "id": "PRRT_kwDOUWarIc6qwj_9",
+    "path": "scripts/dogfood-review.mjs",
+    "line": 573,
+    "title": "Validate caller-supplied run IDs before using them in checkpoints",
+    "severity": "P2",
+    "createdAt": "2026-10-09T11:27:10Z",
+    "author": "chatgpt-codex-connector"
+  },
+  {
+    "index": 6,
+    "id": "PRRT_kwDOUWarIc6rTXZk",
+    "path": "src/core/context-builder.mjs",
+    "line": 270,
+    "title": "Implement indentation-based extraction for Python definitions",
+    "severity": "P2",
+    "createdAt": "2026-10-12T01:10:42Z",
+    "author": "chatgpt-codex-connector"
+  },
+  {
+    "index": 7,
+    "id": "PRRT_kwDOUWarIc6rTXZl",
+    "path": "src/adapters/staged-review.mjs",
+    "line": 239,
+    "title": "Keep sanitized checkpoint names collision-free",
+    "severity": "P2",
+    "createdAt": "2026-10-12T01:10:42Z",
+    "author": "chatgpt-codex-connector"
+  },
+  {
+    "index": 8,
+    "id": "PRRT_kwDOUWarIc6rTowo",
+    "path": "src/core/context-builder.mjs",
+    "line": 863,
+    "title": "Truncate oversized final lines in bounded snippets",
+    "severity": "P2",
+    "createdAt": "2026-10-12T01:46:08Z",
+    "author": "chatgpt-codex-connector"
+  },
+  {
+    "index": 9,
+    "id": "PRRT_kwDOUWarIc6rTowu",
+    "path": "scripts/dogfood-review.mjs",
+    "line": 1311,
+    "title": "Fail closed when the Clean Challenge truncates the diff",
+    "severity": "P1",
+    "createdAt": "2026-10-12T01:46:08Z",
+    "author": "chatgpt-codex-connector"
+  },
+  {
+    "index": 10,
+    "id": "PRRT_kwDOUWarIc6rVNc5",
+    "path": "src/core/context-builder.mjs",
+    "line": 1323,
+    "title": "Preserve repeated file diff blocks during context extraction",
+    "severity": "P1",
+    "createdAt": "2026-10-12T04:46:19Z",
+    "author": "chatgpt-codex-connector"
+  },
+  {
+    "index": 11,
+    "id": "PRRT_kwDOUWarIc6rVNc6",
+    "path": "src/core/context-builder.mjs",
+    "line": 779,
+    "title": "Merge sensitivity across repeated added call sites",
+    "severity": "P1",
+    "createdAt": "2026-10-12T04:46:19Z",
+    "author": "chatgpt-codex-connector"
+  },
+  {
+    "index": 12,
+    "id": "PRRT_kwDOUWarIc6rY14D",
+    "path": "src/core/git-collector.mjs",
+    "line": 49,
+    "title": "Partition exact-head cache entries by repository",
+    "severity": "P2",
+    "createdAt": "2026-10-12T08:53:23Z",
+    "author": "chatgpt-codex-connector"
+  },
+  {
+    "index": 13,
+    "id": "PRRT_kwDOUWarIc6ra7kM",
+    "path": "src/core/context-builder.mjs",
+    "line": 967,
+    "title": "Preserve gaps for imported sensitive callees",
+    "severity": "P1",
+    "createdAt": "2026-10-12T10:36:31Z",
+    "author": "chatgpt-codex-connector"
+  },
+  {
+    "index": 14,
+    "id": "PRRT_kwDOUWarIc6ra7kS",
+    "path": "src/core/context-builder.mjs",
+    "line": 668,
+    "title": "Reset lexical state at each disjoint diff hunk",
+    "severity": "P2",
+    "createdAt": "2026-10-12T10:36:31Z",
+    "author": "chatgpt-codex-connector"
+  },
+  {
+    "index": 15,
+    "id": "PRRT_kwDOUWarIc6ra7k3",
+    "path": "src/core/real-benchmark-runner.mjs",
+    "line": 94,
+    "title": "Do not score preliminary approvals as final gate passes",
+    "severity": "P1",
+    "createdAt": "2026-10-12T10:36:31Z",
+    "author": "chatgpt-codex-connector"
+  },
+  {
+    "index": 16,
+    "id": "PRRT_kwDOUWarIc6re31E",
+    "path": "src/core/context-builder.mjs",
+    "line": 197,
+    "title": "Preserve string state across lines during brace matching",
+    "severity": "P1",
+    "createdAt": "2026-10-12T13:39:52Z",
+    "author": "chatgpt-codex-connector"
+  },
+  {
+    "index": 17,
+    "id": "PRRT_kwDOUWarIc6rfkYW",
+    "path": "src/core/context-builder.mjs",
+    "line": 1364,
+    "title": "Do not report deleted files as unavailable context",
+    "severity": "P2",
+    "createdAt": "2026-10-12T14:08:35Z",
+    "author": "chatgpt-codex-connector"
+  },
+  {
+    "index": 18,
+    "id": "PRRT_kwDOUWarIc6rfkYi",
+    "path": "src/adapters/review-prompts.mjs",
+    "line": 254,
+    "title": "Bind each extracted callee to its source file",
+    "severity": "P1",
+    "createdAt": "2026-10-12T14:08:35Z",
+    "author": "chatgpt-codex-connector"
+  },
+  {
+    "index": 19,
+    "id": "PRRT_kwDOUWarIc6rhwE0",
+    "path": "src/core/review-run-report.mjs",
+    "line": 130,
+    "title": "Preserve verifier advisories in review reports",
+    "severity": "P2",
+    "createdAt": "2026-10-12T15:41:14Z",
+    "author": "chatgpt-codex-connector"
+  },
+  {
+    "index": 20,
+    "id": "PRRT_kwDOUWarIc6rhwE4",
+    "path": "src/core/context-builder.mjs",
+    "line": 359,
+    "title": "Bound Python definitions by indentation instead of braces",
+    "severity": "P2",
+    "createdAt": "2026-10-12T15:41:14Z",
+    "author": "chatgpt-codex-connector"
+  },
+  {
+    "index": 21,
+    "id": "PRRT_kwDOUWarIc6rrHOW",
+    "path": "src/core/context-builder.mjs",
+    "line": 642,
+    "title": "Recognize optional-call syntax during callee discovery",
+    "severity": "P1",
+    "createdAt": "2026-10-13T01:10:24Z",
+    "author": "chatgpt-codex-connector"
+  },
+  {
+    "index": 22,
+    "id": "PRRT_kwDOUWarIc6rrHOY",
+    "path": "src/core/context-builder.mjs",
+    "line": 1361,
+    "title": "Read renamed files from their HEAD-side path",
+    "severity": "P2",
+    "createdAt": "2026-10-13T01:10:24Z",
+    "author": "chatgpt-codex-connector"
+  },
+  {
+    "index": 23,
+    "id": "PRRT_kwDOUWarIc6rrHOb",
+    "path": "src/adapters/staged-review.mjs",
+    "line": 240,
+    "title": "Keep sanitized checkpoint names collision-resistant",
+    "severity": "P2",
+    "createdAt": "2026-10-13T01:10:24Z",
+    "author": "chatgpt-codex-connector"
+  },
+  {
+    "index": 24,
+    "id": "PRRT_kwDOUWarIc6rrHOc",
+    "path": "src/core/context-builder.mjs",
+    "line": 1600,
+    "title": "Scope single-file callee discovery to the target file's diff",
+    "severity": "P1",
+    "createdAt": "2026-10-13T01:10:24Z",
+    "author": "chatgpt-codex-connector"
+  },
+  {
+    "index": 25,
+    "id": "PRRT_kwDOUWarIc6rrUDl",
+    "path": "src/core/context-builder.mjs",
+    "line": 1012,
+    "title": "Resolve `this` callees only against the owning class",
+    "severity": "P1",
+    "createdAt": "2026-10-13T01:29:18Z",
+    "author": "chatgpt-codex-connector"
+  },
+  {
+    "index": 26,
+    "id": "PRRT_kwDOUWarIc6rrUDs",
+    "path": "src/core/git-collector.mjs",
+    "line": 32,
+    "title": "Bound the exact-head content cache",
+    "severity": "P2",
+    "createdAt": "2026-10-13T01:29:18Z",
+    "author": "chatgpt-codex-connector"
+  },
+  {
+    "index": 27,
+    "id": "PRRT_kwDOUWarIc6rr-I6",
+    "path": "src/core/context-builder.mjs",
+    "line": 704,
+    "title": "Classify sensitive receivers before skipping built-in methods",
+    "severity": "P1",
+    "createdAt": "2026-10-13T02:31:16Z",
+    "author": "chatgpt-codex-connector"
+  },
+  {
+    "index": 28,
+    "id": "PRRT_kwDOUWarIc6rr-I-",
+    "path": "src/core/context-builder.mjs",
+    "line": 549,
+    "title": "Scan executable expressions inside template literals",
+    "severity": "P1",
+    "createdAt": "2026-10-13T02:31:17Z",
+    "author": "chatgpt-codex-connector"
+  },
+  {
+    "index": 29,
+    "id": "PRRT_kwDOUWarIc6rr-JC",
+    "path": "src/core/context-builder.mjs",
+    "line": 959,
+    "title": "Promote unresolved sensitive calls from changed hunks",
+    "severity": "P1",
+    "createdAt": "2026-10-13T02:31:17Z",
+    "author": "chatgpt-codex-connector"
+  },
+  {
+    "index": 30,
+    "id": "PRRT_kwDOUWarIc6rsKB4",
+    "path": "src/core/context-builder.mjs",
+    "line": 642,
+    "title": "Scan calls whose parenthesis starts on the next line",
+    "severity": "P1",
+    "createdAt": "2026-10-13T02:47:52Z",
+    "author": "chatgpt-codex-connector"
+  },
+  {
+    "index": 31,
+    "id": "PRRT_kwDOUWarIc6rsKCC",
+    "path": "src/core/context-builder.mjs",
+    "line": 844,
+    "title": "Mark elided sensitive callee bodies as unresolved",
+    "severity": "P1",
+    "createdAt": "2026-10-13T02:47:52Z",
+    "author": "chatgpt-codex-connector"
+  },
+  {
+    "index": 32,
+    "id": "PRRT_kwDOUWarIc6rsajY",
+    "path": "src/core/context-builder.mjs",
+    "line": 700,
+    "title": "Treat namespace-scoped calls as qualified",
+    "severity": "P1",
+    "createdAt": "2026-10-13T03:10:34Z",
+    "author": "chatgpt-codex-connector"
+  },
+  {
+    "index": 33,
+    "id": "PRRT_kwDOUWarIc6rsajc",
+    "path": "src/core/context-builder.mjs",
+    "line": 920,
+    "title": "Preserve sensitive identity through import aliases",
+    "severity": "P1",
+    "createdAt": "2026-10-13T03:10:34Z",
+    "author": "chatgpt-codex-connector"
+  },
+  {
+    "index": 34,
+    "id": "PRRT_kwDOUWarIc6rte6o",
+    "path": "src/core/context-builder.mjs",
+    "line": 948,
+    "title": "Account for imports introduced by the patch",
+    "severity": "P1",
+    "createdAt": "2026-10-13T04:33:43Z",
+    "author": "chatgpt-codex-connector"
+  },
+  {
+    "index": 35,
+    "id": "PRRT_kwDOUWarIc6rte6t",
+    "path": "src/core/context-builder.mjs",
+    "line": 642,
+    "title": "Recognize computed member calls during discovery",
+    "severity": "P1",
+    "createdAt": "2026-10-13T04:33:43Z",
+    "author": "chatgpt-codex-connector"
+  },
+  {
+    "index": 36,
+    "id": "PRRT_kwDOUWarIc6rte6z",
+    "path": "src/core/context-builder.mjs",
+    "line": 668,
+    "title": "Reset lexical state at diff hunk boundaries",
+    "severity": "P1",
+    "createdAt": "2026-10-13T04:33:43Z",
+    "author": "chatgpt-codex-connector"
+  },
+  {
+    "index": 37,
+    "id": "PRRT_kwDOUWarIc6rtv6N",
+    "path": "src/core/real-benchmark-runner.mjs",
+    "line": 191,
+    "title": "Derive final gate blocking from observed findings",
+    "severity": "P2",
+    "createdAt": "2026-10-13T04:55:45Z",
+    "author": "chatgpt-codex-connector"
+  },
+  {
+    "index": 38,
+    "id": "PRRT_kwDOUWarIc6rvCBT",
+    "path": "src/core/context-builder.mjs",
+    "line": 284,
+    "title": "Exclude comments and strings from definition discovery",
+    "severity": "P1",
+    "createdAt": "2026-10-13T06:26:36Z",
+    "author": "chatgpt-codex-connector"
+  },
+  {
+    "index": 39,
+    "id": "PRRT_kwDOUWarIc6rvCBW",
+    "path": "scripts/dogfood-review.mjs",
+    "line": 1303,
+    "title": "Block Clean Challenge when producer coverage is incomplete",
+    "severity": "P1",
+    "createdAt": "2026-10-13T06:26:36Z",
+    "author": "chatgpt-codex-connector"
+  },
+  {
+    "index": 40,
+    "id": "PRRT_kwDOUWarIc6rvWjN",
+    "path": "src/adapters/staged-review.mjs",
+    "line": 238,
+    "title": "Preserve run-ID uniqueness in checkpoint filenames",
+    "severity": "P2",
+    "createdAt": "2026-10-13T06:45:14Z",
+    "author": "chatgpt-codex-connector"
+  },
+  {
+    "index": 41,
+    "id": "PRRT_kwDOUWarIc6rvWjO",
+    "path": "src/core/context-builder.mjs",
+    "line": 1600,
+    "title": "Scope single-file callee discovery to that file's diff",
+    "severity": "P1",
+    "createdAt": "2026-10-13T06:45:14Z",
+    "author": "chatgpt-codex-connector"
+  },
+  {
+    "index": 42,
+    "id": "PRRT_kwDOUWarIc6rxCha",
+    "path": "scripts/dogfood-review.mjs",
+    "line": 987,
+    "title": "Verify supplied context contents against exact-head Git data",
+    "severity": "P1",
+    "createdAt": "2026-10-13T08:10:21Z",
+    "author": "chatgpt-codex-connector"
+  },
+  {
+    "index": 43,
+    "id": "PRRT_kwDOUWarIc6r0R6i",
+    "path": "src/core/context-builder.mjs",
+    "line": 364,
+    "title": "Parse regex literals before bounding callee bodies",
+    "severity": "P1",
+    "createdAt": "2026-10-13T10:32:50Z",
+    "author": "chatgpt-codex-connector"
+  },
+  {
+    "index": 44,
+    "id": "PRRT_kwDOUWarIc6r0R6m",
+    "path": "src/core/git-collector.mjs",
+    "line": 65,
+    "title": "Do not cache failed exact-head lookups",
+    "severity": "P2",
+    "createdAt": "2026-10-13T10:32:50Z",
+    "author": "chatgpt-codex-connector"
+  },
+  {
+    "index": 45,
+    "id": "PRRT_kwDOUWarIc6r1Bt9",
+    "path": "src/core/context-builder.mjs",
+    "line": 714,
+    "title": "Preserve qualifiers across optional chaining",
+    "severity": "P1",
+    "createdAt": "2026-10-13T11:08:23Z",
+    "author": "chatgpt-codex-connector"
+  },
+  {
+    "index": 46,
+    "id": "PRRT_kwDOUWarIc6r1BuC",
+    "path": "src/core/context-builder.mjs",
+    "line": 704,
+    "title": "Retain built-in-named calls on sensitive receivers",
+    "severity": "P1",
+    "createdAt": "2026-10-13T11:08:23Z",
+    "author": "chatgpt-codex-connector"
+  },
+  {
+    "index": 47,
+    "id": "PRRT_kwDOUWarIc6r1BuI",
+    "path": "src/core/context-builder.mjs",
+    "line": 551,
+    "title": "Distinguish division operators from regex literals",
+    "severity": "P1",
+    "createdAt": "2026-10-13T11:08:23Z",
+    "author": "chatgpt-codex-connector"
+  },
+  {
+    "index": 48,
+    "id": "PRRT_kwDOUWarIc6sMI60",
+    "path": "src/core/context-builder.mjs",
+    "line": 1579,
+    "title": "Mark absent exact-head metadata as unavailable",
+    "severity": "P1",
+    "createdAt": "2026-10-14T06:29:23Z",
+    "author": "chatgpt-codex-connector"
+  },
+  {
+    "index": 49,
+    "id": "PRRT_kwDOUWarIc6sMI66",
+    "path": "src/adapters/review-prompts.mjs",
+    "line": 365,
+    "title": "Budget context before rendering reviewer prompts",
+    "severity": "P2",
+    "createdAt": "2026-10-14T06:29:23Z",
+    "author": "chatgpt-codex-connector"
+  },
+  {
+    "index": 50,
+    "id": "PRRT_kwDOUWarIc6sMI7C",
+    "path": "src/adapters/cli-transport.mjs",
+    "line": 181,
+    "title": "Prevent nested options from overriding the bound objective",
+    "severity": "P1",
+    "createdAt": "2026-10-14T06:29:23Z",
+    "author": "chatgpt-codex-connector"
+  },
+  {
+    "index": 51,
+    "id": "PRRT_kwDOUWarIc6sMI7U",
+    "path": "scripts/triage-pr39-threads.mjs",
+    "line": 605,
+    "title": "Count the dual-visibility category in the JSON ledger",
+    "severity": "P2",
+    "createdAt": "2026-10-14T06:29:23Z",
+    "author": "chatgpt-codex-connector"
+  },
+  {
+    "index": 52,
+    "id": "PRRT_kwDOUWarIc6sPGEb",
+    "path": "src/core/git-collector.mjs",
+    "line": 394,
+    "title": "Do not label the base commit as the working-tree head",
+    "severity": "P1",
+    "createdAt": "2026-10-14T08:55:41Z",
+    "author": "chatgpt-codex-connector"
+  },
+  {
+    "index": 53,
+    "id": "PRRT_kwDOUWarIc6sPmwl",
+    "path": "src/core/context-builder.mjs",
+    "line": 196,
+    "title": "Track multiline template literals while scanning braces",
+    "severity": "P1",
+    "createdAt": "2026-10-14T09:17:27Z",
+    "author": "chatgpt-codex-connector"
+  },
+  {
+    "index": 54,
+    "id": "PRRT_kwDOUWarIc6sPmwt",
+    "path": "src/core/context-builder.mjs",
+    "line": 1363,
+    "title": "Treat deleted files as valid target-head absences",
+    "severity": "P2",
+    "createdAt": "2026-10-14T09:17:28Z",
+    "author": "chatgpt-codex-connector"
+  },
+  {
+    "index": 55,
+    "id": "PRRT_kwDOUWarIc6sUDZJ",
+    "path": "src/core/context-builder.mjs",
+    "line": 322,
+    "title": "Bound Python functions by indentation rather than braces",
+    "severity": "P1",
+    "createdAt": "2026-10-14T12:29:55Z",
+    "author": "chatgpt-codex-connector"
+  },
+  {
+    "index": 56,
+    "id": "PRRT_kwDOUWarIc6sUDZV",
+    "path": "src/core/context-builder.mjs",
+    "line": 1012,
+    "title": "Resolve this/self calls within the enclosing class",
+    "severity": "P1",
+    "createdAt": "2026-10-14T12:29:55Z",
+    "author": "chatgpt-codex-connector"
+  },
+  {
+    "index": 57,
+    "id": "PRRT_kwDOUWarIc6sUDZa",
+    "path": "scripts/dogfood-review.mjs",
+    "line": 1320,
+    "title": "Derive Clean Challenge provenance from the active verifier",
+    "severity": "P2",
+    "createdAt": "2026-10-14T12:29:55Z",
+    "author": "chatgpt-codex-connector"
+  },
+  {
+    "index": 58,
+    "id": "PRRT_kwDOUWarIc6sU7ZB",
+    "path": "src/core/context-builder.mjs",
+    "line": 425,
+    "title": "Make qualified class scope scanning string-aware",
+    "severity": "P1",
+    "createdAt": "2026-10-14T13:04:00Z",
+    "author": "chatgpt-codex-connector"
+  },
+  {
+    "index": 59,
+    "id": "PRRT_kwDOUWarIc6slAMv",
+    "path": "src/core/context-builder.mjs",
+    "line": 668,
+    "title": "Reconstruct block-comment state at each diff hunk",
+    "severity": "P1",
+    "createdAt": "2026-10-15T00:54:04Z",
+    "author": "chatgpt-codex-connector"
+  },
+  {
+    "index": 60,
+    "id": "PRRT_kwDOUWarIc6slAM6",
+    "path": "src/core/context-builder.mjs",
+    "line": 471,
+    "title": "Recognize access-control vocabulary as security-sensitive",
+    "severity": "P1",
+    "createdAt": "2026-10-15T00:54:04Z",
+    "author": "chatgpt-codex-connector"
+  },
+  {
+    "index": 61,
+    "id": "PRRT_kwDOUWarIc6slANA",
+    "path": "src/core/git-collector.mjs",
+    "line": 32,
+    "title": "Bound the exact-head content cache",
+    "severity": "P2",
+    "createdAt": "2026-10-15T00:54:04Z",
+    "author": "chatgpt-codex-connector"
+  },
+  {
+    "index": 62,
+    "id": "PRRT_kwDOUWarIc6slLWg",
+    "path": "src/core/context-builder.mjs",
+    "line": 549,
+    "title": "Parse template interpolations when extracting sensitive calls",
+    "severity": "P1",
+    "createdAt": "2026-10-15T01:07:53Z",
+    "author": "chatgpt-codex-connector"
+  },
+  {
+    "index": 63,
+    "id": "PRRT_kwDOUWarIc6slLWi",
+    "path": "src/core/context-builder.mjs",
+    "line": 844,
+    "title": "Mark truncated sensitive callees as unresolved",
+    "severity": "P1",
+    "createdAt": "2026-10-15T01:07:53Z",
+    "author": "chatgpt-codex-connector"
+  },
+  {
+    "index": 64,
+    "id": "PRRT_kwDOUWarIc6slqmG",
+    "path": "src/core/real-benchmark-runner.mjs",
+    "line": 193,
+    "title": "Keep all preliminary cases out of final-gate scores",
+    "severity": "P2",
+    "createdAt": "2026-10-15T01:40:39Z",
+    "author": "chatgpt-codex-connector"
+  },
+  {
+    "index": 65,
+    "id": "PRRT_kwDOUWarIc6sl1Rd",
+    "path": "src/adapters/staged-review.mjs",
+    "line": 516,
+    "title": "Wrap the path normalizer passed to Array.map",
+    "severity": "P1",
+    "createdAt": "2026-10-15T01:54:43Z",
+    "author": "chatgpt-codex-connector"
+  },
+  {
+    "index": 66,
+    "id": "PRRT_kwDOUWarIc6sl1Ri",
+    "path": "src/core/context-builder.mjs",
+    "line": 345,
+    "title": "Reject call expressions before accepting a delayed body brace",
+    "severity": "P1",
+    "createdAt": "2026-10-15T01:54:43Z",
+    "author": "chatgpt-codex-connector"
+  }
+]

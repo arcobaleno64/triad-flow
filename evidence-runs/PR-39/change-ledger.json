@@ -1,0 +1,266 @@
+{
+  "metadata": {
+    "targetPr": "https://github.com/arcobaleno64/triad-flow/pull/39",
+    "prNumber": 39,
+    "branch": "fix/remediation-007-clean-challenge",
+    "remoteHeadSha": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+    "workingTreeDiffSha256": "39097ac5e2103cd0344ed468ddd47926f3b9017a300ca501c54bdfad7fa6c728",
+    "workingTreeDiffBytes": 120116,
+    "manifestDigestSha256": "d32257176b054db6762fd86f5a2298678b8f60175a2650c4d08790c16e68ca2f",
+    "timestamp": "2026-10-17T03:07:04.725Z",
+    "summary": {
+      "modifiedSourceFiles": 7,
+      "normalizedConfigFiles": 3,
+      "untrackedVerificationTestFiles": 5,
+      "totalTestCount": 1060,
+      "passingTests": 1056,
+      "skippedTests": 4,
+      "failedTests": 0,
+      "runtimeDependenciesCount": 0,
+      "controlledTextFilesCount": 343,
+      "crlfViolationsCount": 0
+    },
+    "governanceNotice": "Exact Head ebe28be is distinct from uncommitted local modifications. Phase 1-3 fixes reside in the working directory as uncommitted changes subject to LOCAL_COMMIT = NOT_AUTHORIZED."
+  },
+  "modifiedSourceFiles": [
+    {
+      "path": "src/core/harness.mjs",
+      "phase": "Phase 1",
+      "headSha256": "92f62a96d3d1247d03a83de9d5ecd57c9f213f3ec307f81166a5966472e7afe7",
+      "diskSha256": "dce609cfc077cd62d09956a85bc5ddea8fbbfb97708f432baeccc586fd301a85",
+      "headBytes": 52945,
+      "diskBytes": 55008,
+      "closedVectors": [
+        "P1-01~08",
+        "Delimiter Collision in Finding Signatures",
+        "Provider Finding ID Collisions",
+        "Consensus Tampering",
+        "Case Normalization Vulnerabilities"
+      ],
+      "coreProtections": "Strict RunContext binding; multi-pass provider finding ID namespacing (`${prefix}:${id}`); structured finding signature encoding using canonical JSON object serialization rather than delimiter concatenation; strict case and locator normalization.",
+      "verificationSuites": [
+        {
+          "file": "tests/remediation-phase1-harness.test.mjs",
+          "testCount": 10,
+          "status": "10/10 PASS"
+        }
+      ]
+    },
+    {
+      "path": "src/core/independent-verifier.mjs",
+      "phase": "Phase 2",
+      "headSha256": "ce072ae794cdbd93bcc2a86d961a343f6e5f174ae9deb9dfd0e20e169914fe03",
+      "diskSha256": "ac231d3dcaa549d679af2d66682997bf1c0cbd27c6a9adb6226e563e68342d2c",
+      "headBytes": 114813,
+      "diskBytes": 146268,
+      "closedVectors": [
+        "P2-CAP-01~08",
+        "Provenance Forgery",
+        "Token Minter Bypass",
+        "Missing Concrete Counterexample Path",
+        "Caller Override Downgrade"
+      ],
+      "coreProtections": "Private WeakMap capability registry (`trustedVerificationRegistry`); WeakMap snapshot content-hash verification; mandatory concrete reproduction counterexample path validation (`hasConcreteCounterexample`); rejection of self-proclaimed provenance strings; immutability enforcement preventing options overrides from downgrading UNCERTAIN or DEFECTS_FOUND.",
+      "verificationSuites": [
+        {
+          "file": "tests/remediation-phase2-verifier.test.mjs",
+          "testCount": 29,
+          "status": "29/29 PASS"
+        }
+      ]
+    },
+    {
+      "path": "src/core/context-builder.mjs",
+      "phase": "Phase 2",
+      "headSha256": "95fc4637cf0d3d8a94c08e62e9acfe0e034ba891fb539e0f03106d15f9ab6672",
+      "diskSha256": "b56bf26eb88d379b31f6b4861a99ecde340c8949382d67270cac16a7e0b90dd9",
+      "headBytes": 58786,
+      "diskBytes": 64774,
+      "closedVectors": [
+        "P2-CAP-08",
+        "Receiver Deduplication Desync",
+        "AST Budget Exceeded Gaps",
+        "Imported Symbol Gaps",
+        "Indentation vs Brace Mismatch in Python"
+      ],
+      "coreProtections": "Deep freezing of context packages (`deepFreeze(pkg)`); receiver-aware call deduplication key (`${qualifier}.${sym}`); exact-head file content binding; propagation of unextracted sensitive callees to `UNRESOLVED_SYMBOL` and `GLOBAL_AST_CONTEXT_CEILING_EXCEEDED` context gaps; lexical tokenizer filtering comments and template strings.",
+      "verificationSuites": [
+        {
+          "file": "tests/remediation-phase2-verifier.test.mjs",
+          "testCount": 29,
+          "status": "29/29 PASS"
+        },
+        {
+          "file": "tests/remediation-007-clean-challenge.test.mjs",
+          "testCount": 102,
+          "status": "102/102 PASS"
+        }
+      ]
+    },
+    {
+      "path": "src/adapters/review-orchestrator.mjs",
+      "phase": "Phase 3",
+      "headSha256": "ff164c9687c124feae0178acc5185290881810bfe6e31fe4e477b52da18ce7cb",
+      "diskSha256": "287ed622b38c6d97a23dda3ab3ad92cee2f43df295d77c245c01022f5df20ec5",
+      "headBytes": 16655,
+      "diskBytes": 19688,
+      "closedVectors": [
+        "R1 (Loose Diff Hashing / Trimmed Diff Digests)",
+        "R2 (Objective Override Conflict)",
+        "R3 (Run ID Binding & Anti-Replay)",
+        "R4 (Illegal Risk Tier Overrides & Downgrades)"
+      ],
+      "coreProtections": "R1: Removal of `.trim()` diff digest variants; strict binding to physical byte diffs (`rawDiffDigest`, LF-normalized `normDiffDigest`). R2: Deterministic 6-source objective conflict detection failing closed on mismatch. R3: Authoritative `activeRunId` binding preventing replay of stale verification records across runs. R4: Strict validation rejecting NaN, null, negative, and tier 0 values, and failing closed against Tier 1 downgrades.",
+      "verificationSuites": [
+        {
+          "file": "tests/remediation-phase3-orchestrator-cli.test.mjs",
+          "testCount": 27,
+          "status": "27/27 PASS"
+        },
+        {
+          "file": "tests/challenger-phase3-r1-r2-r3.test.mjs",
+          "testCount": 21,
+          "status": "21/21 PASS"
+        }
+      ]
+    },
+    {
+      "path": "src/cli.mjs",
+      "phase": "Phase 3",
+      "headSha256": "93a25a530355f083b033e23c8933887a3babe67c160881f6e9b7781eab47791b",
+      "diskSha256": "39f5c5f0d31a55f4e6663a56d4eb560fa53d2beb3583b3fdba714894305266b0",
+      "headBytes": 71765,
+      "diskBytes": 79287,
+      "closedVectors": [
+        "R5 (CLI Clean Challenge & Verifier Bypass)",
+        "Shell Injection via --verify-with",
+        "Exit Code Inconsistency"
+      ],
+      "coreProtections": "Strict verifier command validation (`validateVerifierCommand`) accepting only canonical provider profiles (`claude`, `agy`, `codex`) with `shell: false`; automatic Clean Challenge execution on zero-finding reviews; exit code contract mapping (0: approved, 1: defects found, 2: uncertain / usage error, 3: blocked).",
+      "verificationSuites": [
+        {
+          "file": "tests/remediation-phase3-orchestrator-cli.test.mjs",
+          "testCount": 27,
+          "status": "27/27 PASS"
+        },
+        {
+          "file": "tests/adversarial-phase3-challenger.test.mjs",
+          "testCount": 79,
+          "status": "79/79 PASS"
+        }
+      ]
+    },
+    {
+      "path": "scripts/dogfood-review.mjs",
+      "phase": "Phase 1~3",
+      "headSha256": "b3f5046c2a95b3391e58cd23b2bf95dda852bd3bc749d79fcc60ed49cc76df38",
+      "diskSha256": "375eb4c3d2e4bc3b86d22decfa5c2f101944b0cf41e6b15620926b888e999391",
+      "headBytes": 65062,
+      "diskBytes": 66145,
+      "closedVectors": [
+        "Context Extraction Bypass",
+        "Dual Visibility Asymmetry (§3.3.4)",
+        "Untrusted Repository Root Escalation"
+      ],
+      "coreProtections": "Pre-extraction of exact-head `contextPackage` with bidirectional injection into both primary sentry reviews and Clean Challenge verifier; fail-closed behavior on missing repository roots (`EXACT_HEAD_CONTEXT_FAILED`).",
+      "verificationSuites": [
+        {
+          "file": "tests/remediation-007-clean-challenge.test.mjs",
+          "testCount": 102,
+          "status": "102/102 PASS"
+        }
+      ]
+    },
+    {
+      "path": "tests/remediation-007-clean-challenge.test.mjs",
+      "phase": "Invariant 6",
+      "headSha256": "53854847f6f5e6e31047a9a55c6f38c1c7256877132f1ec388e862802c7ed97e",
+      "diskSha256": "6bd4154d1c3a76ffb8720846e50f829d3c015f813efdcd0c4cae0da05b6949e0",
+      "headBytes": 270992,
+      "diskBytes": 271364,
+      "closedVectors": [
+        "False Stale Record from Missing Run ID",
+        "Option A Bounded Fix Verification"
+      ],
+      "coreProtections": "Bounded remediation (lines 2268, 3161) binding valid active `runId` into test verification records, aligning legacy tests with Invariant 6 anti-stale protection without weakening test rigor.",
+      "verificationSuites": [
+        {
+          "file": "tests/remediation-007-clean-challenge.test.mjs",
+          "testCount": 102,
+          "status": "102/102 PASS"
+        }
+      ]
+    }
+  ],
+  "normalizedConfigFiles": [
+    {
+      "path": ".gitignore",
+      "phase": "Workspace Hygiene",
+      "headSha256": "eb43ff82502abdb249757b047ec532530b4ce5dacb4723f63a478bb3c12287a5",
+      "diskSha256": "eb43ff82502abdb249757b047ec532530b4ce5dacb4723f63a478bb3c12287a5",
+      "diskBytes": 458,
+      "isBitForBitIdenticalToHead": true,
+      "description": "Normalized 27 CRLF occurrences to LF; verified bit-for-bit identical to Git HEAD."
+    },
+    {
+      "path": ".github/allowed_signers",
+      "phase": "Workspace Hygiene",
+      "headSha256": "2214d608cd7773187fb2050acd96ff2b3fd421ab1a78039648950cae80d1f1ea",
+      "diskSha256": "2214d608cd7773187fb2050acd96ff2b3fd421ab1a78039648950cae80d1f1ea",
+      "diskBytes": 230,
+      "isBitForBitIdenticalToHead": true,
+      "description": "Normalized 3 CRLF occurrences to LF; public keys and semantics 100% intact; verified bit-for-bit identical to Git HEAD."
+    },
+    {
+      "path": ".github/workflows/nightly.yml",
+      "phase": "Workspace Hygiene",
+      "headSha256": "fb9b9b5634cf367f9cbf03143549f91ff7eeca4fd12b5d1c1e7119434bb348ca",
+      "diskSha256": "fb9b9b5634cf367f9cbf03143549f91ff7eeca4fd12b5d1c1e7119434bb348ca",
+      "diskBytes": 723,
+      "isBitForBitIdenticalToHead": true,
+      "description": "Normalized 1 CRLF occurrence to LF; workflow steps and matrix intact; verified bit-for-bit identical to Git HEAD."
+    }
+  ],
+  "untrackedVerificationTestFiles": [
+    {
+      "path": "tests/remediation-phase1-harness.test.mjs",
+      "phase": "Phase 1 Verification",
+      "testCount": 10,
+      "diskSha256": "1b01f07b50dcbcb06b8e23b0115de8dd74e53a74a46920df003269a92497462a",
+      "diskBytes": 32764,
+      "coverage": "Finding signature structured JSON serialization, finding ID namespacing, locator boundary normalization."
+    },
+    {
+      "path": "tests/remediation-phase2-verifier.test.mjs",
+      "phase": "Phase 2 Verification",
+      "testCount": 29,
+      "diskSha256": "a6f6a5ce891c981b12c24502d5785093b9993fdd46542c152f772274aa637033",
+      "diskBytes": 95959,
+      "coverage": "WeakMap registry capability security, WeakMap snapshot hash locking, concrete counterexample enforcement, AST gap propagation."
+    },
+    {
+      "path": "tests/remediation-phase3-orchestrator-cli.test.mjs",
+      "phase": "Phase 3 Verification",
+      "testCount": 27,
+      "diskSha256": "7e9fe9435f6a6e17811fe1e7fe4b31038ca5b1d9cbd08476d8cc2ab5eb59b32a",
+      "diskBytes": 30359,
+      "coverage": "R1 Canonical diff digest, R2 Deterministic objective conflict, R3 Run ID anti-replay, R4 Risk tier validation, R5 CLI Clean Challenge execution."
+    },
+    {
+      "path": "tests/challenger-phase3-r1-r2-r3.test.mjs",
+      "phase": "Phase 3 Adversarial Challenge",
+      "testCount": 21,
+      "diskSha256": "02acedaf810b0c3d84528997e51555558b76c43617ab7f229f639b3ca96155f8",
+      "diskBytes": 19052,
+      "coverage": "Adversarial challenges attacking R1 diff padding, R2 objective desynchronization, R3 replay token hijacking, and R4 tier downgrade bypass."
+    },
+    {
+      "path": "tests/adversarial-phase3-challenger.test.mjs",
+      "phase": "Phase 3 Adversarial Challenge",
+      "testCount": 79,
+      "diskSha256": "63594a2be02e8c74b7d7959caa2728316322ae4302bea58dff741ece4e94c722",
+      "diskBytes": 22453,
+      "coverage": "Comprehensive fuzzing and adversarial inputs against CLI options, shell command injection, exit code mapping, and verifier adapters."
+    }
+  ]
+}
