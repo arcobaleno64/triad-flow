@@ -3,13 +3,13 @@ import path from "node:path";
 import crypto from "node:crypto";
 import cp from "node:child_process";
 
-const REMOTE_HEAD_SHA = "ebe28be8b4db6ef276e6b3dcc1201a860af5231f";
-const EXTRACTION_TIMESTAMP = "2026-10-16T14:56:29Z";
+const REMOTE_HEAD_SHA = "9776b4c1bf2b78f455cd3edb24bdbb20c860863a";
+const EXTRACTION_TIMESTAMP = "2026-10-17T06:37:10Z";
 
-// Read raw GitHub threads (149)
+// Read raw GitHub threads (155)
 const rawThreads = JSON.parse(fs.readFileSync("evidence-runs/PR-39/github-threads-raw.json", "utf8"));
-if (rawThreads.length !== 149) {
-  throw new Error(`Expected 149 raw threads, got ${rawThreads.length}`);
+if (rawThreads.length !== 155) {
+  throw new Error(`Expected 155 raw threads, got ${rawThreads.length}`);
 }
 
 // Read legacy 43 outdated threads
@@ -25,36 +25,70 @@ const existingLedger = fs.existsSync("evidence-runs/PR-39/complete-threads-triag
   : null;
 const existingLedgerMap = new Map((existingLedger?.threads || []).map(t => [t.threadId, t]));
 
-// Working tree diff hash
-const diffBuf = cp.execSync("git diff HEAD");
+// Working tree diff hash (excluding self-referential generated ledger outputs to eliminate circular hash self-invalidation)
+const diffBuf = cp.execSync("git diff HEAD -- :!evidence-runs/PR-39/complete-threads-triage-ledger.json :!docs/reports/pr-39-complete-threads-triage-ledger.md");
 const workingTreeDiffSha256 = crypto.createHash("sha256").update(diffBuf).digest("hex");
+
+// 6 New P1 review threads under independent investigation against Head 9776b4c1
+const newP1Threads = {
+  "PRRT_kwDOUWarIc6tdsmP": {
+    category: "UNRESOLVED",
+    status: "UNRESOLVED",
+    reasoning: "Under investigation (P1 Candidate): in `src/cli.mjs:930-972`, Clean Challenge invocation for zero-finding consensus (`conductIndependentVerification`) forwards neither a contextPackage nor contextGaps from `buildChangeSet`. Consequently, callee extraction failures cannot force verifier `UNCERTAIN` and sensitive callees remain uninspected. Technical status: UNRESOLVED; Adjudication: PENDING_ADJUDICATION pending remediation and verification suite."
+  },
+  "PRRT_kwDOUWarIc6tdsmQ": {
+    category: "UNRESOLVED",
+    status: "UNRESOLVED",
+    reasoning: "Under investigation (P1 Candidate): in `src/adapters/review-orchestrator.mjs:235-244` (`buildCanonicalRunContext`), exclusion resolution cascades through fallback precedence rather than evaluating bidirectional consistency across `options.exclusions`, `options.runContext.exclusions`, and `changeSet.exclusions`. Mismatched exclusions silently override bound RunContext scope instead of failing closed. Technical status: UNRESOLVED; Adjudication: PENDING_ADJUDICATION pending remediation and verification suite."
+  },
+  "PRRT_kwDOUWarIc6tdsmS": {
+    category: "UNRESOLVED",
+    status: "UNRESOLVED",
+    reasoning: "Under investigation (P1 Candidate): in `src/adapters/staged-review.mjs:525-533` (`executeStagedReview`), file coverage manifest scope check requires only `manifestFiles.some(f => changeSetFiles.includes(f))` rather than requiring complete coverage of all changed files. A caller-supplied manifest covering a single file can be accepted for a multi-file changeSet. Technical status: UNRESOLVED; Adjudication: PENDING_ADJUDICATION pending remediation and verification suite."
+  },
+  "PRRT_kwDOUWarIc6tdsmT": {
+    category: "UNRESOLVED",
+    status: "UNRESOLVED",
+    reasoning: "Under investigation (P1 Candidate): in `scripts/dogfood-review.mjs:1006-1020` (`runDogfoodReview`), caller-supplied `userOptions.contextPackage` satisfying metadata checks is registered via `_internalDogfoodWorkflowMinter` without physically verifying contained code snippets against exact-head Git commit data. Technical status: UNRESOLVED; Adjudication: PENDING_ADJUDICATION pending remediation and verification suite."
+  },
+  "PRRT_kwDOUWarIc6tdsmV": {
+    category: "UNRESOLVED",
+    status: "UNRESOLVED",
+    reasoning: "Under investigation (P1 Candidate): in `src/core/independent-verifier.mjs:1815-1827` (`validateVerificationOutput`), working-tree fallback resolves `candidatePath` directly from omission `file` (allowing absolute paths or directory traversal outside `repoRoot`) and performs synchronous unbounded `fs.readFileSync(candidatePath)` even if the file is not part of the changed file set. Technical status: UNRESOLVED; Adjudication: PENDING_ADJUDICATION pending remediation and verification suite."
+  },
+  "PRRT_kwDOUWarIc6tdsmY": {
+    category: "UNRESOLVED",
+    status: "UNRESOLVED",
+    reasoning: "Under investigation (P1 Candidate): in `src/core/git-collector.mjs:486-499` (`buildChangeSet`) and lines 388-397 (`getGitState`), working-tree and staged scopes attach `headSha = state.repository.headSha` (the pre-change base commit). Downstream `buildContextPackage` extracts exact-head content from this base commit instead of current worktree/staged state. Technical status: UNRESOLVED; Adjudication: PENDING_ADJUDICATION pending remediation and verification suite."
+  }
+};
 
 // Detailed 5 Phase 3 defect remediations (all in review-orchestrator and cli)
 const phase3Remediations = {
   "PRRT_kwDOUWarIc6r1Bt0": {
     category: "FIXED",
     status: "FIXED",
-    reasoning: "Remediated in Phase 3 (R1 Canonical Diff Digest): in `src/adapters/review-orchestrator.mjs:92-99` (`buildCanonicalRunContext`), removed all `.trim()` variants (`trimmedDiffDigest`, `trimmedNormDiffDigest`). Verified digest candidate set derives strictly from physical byte diffs (`rawDiffDigest`, LF-normalized `normDiffDigest`, and `digestChangeSet`). Any whitespace padding or altered line endings fails digest verification. Verified by `tests/remediation-phase3-orchestrator-cli.test.mjs` (TEST-R1-01, TEST-R1-02) and `tests/challenger-phase3-r1-r2-r3.test.mjs` (CHALLENGE-R1). [Implemented in uncommitted Phase 3 working tree diff against Exact Head ebe28be]."
+    reasoning: "Remediated in Phase 3 (R1 Canonical Diff Digest): in `src/adapters/review-orchestrator.mjs:92-99` (`buildCanonicalRunContext`), removed all `.trim()` variants (`trimmedDiffDigest`, `trimmedNormDiffDigest`). Verified digest candidate set derives strictly from physical byte diffs (`rawDiffDigest`, LF-normalized `normDiffDigest`, and `digestChangeSet`). Any whitespace padding or altered line endings fails digest verification. Verified by `tests/remediation-phase3-orchestrator-cli.test.mjs` (TEST-R1-01, TEST-R1-02) and `tests/challenger-phase3-r1-r2-r3.test.mjs` (CHALLENGE-R1). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c]."
   },
   "PRRT_kwDOUWarIc6slLWc": {
     category: "FIXED",
     status: "FIXED",
-    reasoning: "Remediated in Phase 3 (R2 Deterministic Objective Conflict): in `src/adapters/review-orchestrator.mjs:199-224` (`buildCanonicalRunContext`), implemented 6-source objective conflict detection across `options.patchObjective`, `options.objectiveContract`, `options.runContext.patchObjective`, `options.runContext.objectiveContract`, `changeSet.patchObjective`, and `changeSet.objectiveContract`. Any multi-source objective mismatch fails closed immediately to `return null`. Verified by `tests/remediation-phase3-orchestrator-cli.test.mjs` (TEST-R2-01, TEST-R2-02) and `tests/challenger-phase3-r1-r2-r3.test.mjs` (CHALLENGE-R2). [Implemented in uncommitted Phase 3 working tree diff against Exact Head ebe28be]."
+    reasoning: "Remediated in Phase 3 (R2 Deterministic Objective Conflict): in `src/adapters/review-orchestrator.mjs:199-224` (`buildCanonicalRunContext`), implemented 6-source objective conflict detection across `options.patchObjective`, `options.objectiveContract`, `options.runContext.patchObjective`, `options.runContext.objectiveContract`, `changeSet.patchObjective`, and `changeSet.objectiveContract`. Any multi-source objective mismatch fails closed immediately to `return null`. Verified by `tests/remediation-phase3-orchestrator-cli.test.mjs` (TEST-R2-01, TEST-R2-02) and `tests/challenger-phase3-r1-r2-r3.test.mjs` (CHALLENGE-R2). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c]."
   },
   "PRRT_kwDOUWarIc6rr-JF": {
     category: "FIXED",
     status: "FIXED",
-    reasoning: "Remediated in Phase 3 (R3 Run ID Binding & Anti-Replay): in `src/adapters/review-orchestrator.mjs:56-78, 241-246` (`buildCanonicalRunContext`), derived `activeRunId = options.runId || runId`. If `verificationRecord` is supplied, its `runId` must be non-empty and strictly equal `activeRunId`. If `options.runContext` contains a `runId`, it must match `activeRunId`. Stale or cross-run verification records fail closed to `return null`. Verified by `tests/remediation-phase3-orchestrator-cli.test.mjs` (TEST-R3-01, TEST-R3-02) and `tests/challenger-phase3-r1-r2-r3.test.mjs` (CHALLENGE-R3). [Implemented in uncommitted Phase 3 working tree diff against Exact Head ebe28be]."
+    reasoning: "Remediated in Phase 3 (R3 Run ID Binding & Anti-Replay): in `src/adapters/review-orchestrator.mjs:56-78, 241-246` (`buildCanonicalRunContext`), derived `activeRunId = options.runId || runId`. If `verificationRecord` is supplied, its `runId` must be non-empty and strictly equal `activeRunId`. If `options.runContext` contains a `runId`, it must match `activeRunId`. Stale or cross-run verification records fail closed to `return null`. Verified by `tests/remediation-phase3-orchestrator-cli.test.mjs` (TEST-R3-01, TEST-R3-02) and `tests/challenger-phase3-r1-r2-r3.test.mjs` (CHALLENGE-R3). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c]."
   },
   "PRRT_kwDOUWarIc6slqmB": {
     category: "FIXED",
     status: "FIXED",
-    reasoning: "Remediated in Phase 3 (R4 Strict Risk Tier Validation): in `src/adapters/review-orchestrator.mjs:287-331` (`orchestrateReview`), non-integer, NaN, null, empty strings, tier 0, negative tiers, and tiers > 4 are rejected as illegal tiers. Furthermore, attempts to downgrade Tier 1 diffs (`computedHighestRisk === 1`) via `tier > 1` or `isTier1: false` fail closed to `{ status: 'incomplete', gate: { decision: 'block', reason: 'Gate Fail-Closed: Invalid or downgraded risk tier (INVALID_OR_DOWNGRADED_TIER).' } }`. Verified by `tests/remediation-phase3-orchestrator-cli.test.mjs` (TEST-R4-01, TEST-R4-02) and `tests/challenger-phase3-r1-r2-r3.test.mjs` (CHALLENGE-R4). [Implemented in uncommitted Phase 3 working tree diff against Exact Head ebe28be]."
+    reasoning: "Remediated in Phase 3 (R4 Strict Risk Tier Validation): in `src/adapters/review-orchestrator.mjs:287-331` (`orchestrateReview`), non-integer, NaN, null, empty strings, tier 0, negative tiers, and tiers > 4 are rejected as illegal tiers. Furthermore, attempts to downgrade Tier 1 diffs (`computedHighestRisk === 1`) via `tier > 1` or `isTier1: false` fail closed to `{ status: 'incomplete', gate: { decision: 'block', reason: 'Gate Fail-Closed: Invalid or downgraded risk tier (INVALID_OR_DOWNGRADED_TIER).' } }`. Verified by `tests/remediation-phase3-orchestrator-cli.test.mjs` (TEST-R4-01, TEST-R4-02) and `tests/challenger-phase3-r1-r2-r3.test.mjs` (CHALLENGE-R4). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c]."
   },
   "PRRT_kwDOUWarIc6sL8VV": {
     category: "FIXED",
     status: "FIXED",
-    reasoning: "Remediated in Phase 3 (R5 CLI Clean Challenge & Shell Hardening): in `src/cli.mjs:53-75, 840-915`, implemented `validateVerifierCommand` (`shell: false`) rejecting metacharacters and arbitrary flags. In zero-finding consensus reviews, CLI review subcommand automatically invokes `conductIndependentVerification(changeSet, [], verifierAdapter, { verificationMode: 'clean_challenge', runContext: canonicalRunContext })` and binds trusted record to gate evaluation, mapping exit codes 0/1/2/3 properly. Verified by `tests/remediation-phase3-orchestrator-cli.test.mjs` (TEST-R5-01, TEST-R5-02) and `tests/adversarial-phase3-challenger.test.mjs` (79 tests). [Implemented in uncommitted Phase 3 working tree diff against Exact Head ebe28be]."
+    reasoning: "Remediated in Phase 3 (R5 CLI Clean Challenge & Shell Hardening): in `src/cli.mjs:53-75, 840-915`, implemented `validateVerifierCommand` (`shell: false`) rejecting metacharacters and arbitrary flags. In zero-finding consensus reviews, CLI review subcommand automatically invokes `conductIndependentVerification(changeSet, [], verifierAdapter, { verificationMode: 'clean_challenge', runContext: canonicalRunContext })` and binds trusted record to gate evaluation, mapping exit codes 0/1/2/3 properly. Verified by `tests/remediation-phase3-orchestrator-cli.test.mjs` (TEST-R5-01, TEST-R5-02) and `tests/adversarial-phase3-challenger.test.mjs` (79 tests). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c]."
   }
 };
 
@@ -62,75 +96,75 @@ const phase3Remediations = {
 const phase2SpecificRemediations = {
   "PRRT_kwDOUWarIc6qo0ur": {
     category: "FIXED",
-    reasoning: "Remediated in Phase 2: In `src/core/independent-verifier.mjs:1393-1396, 1439-1444` (`validateVerificationOutput`), when both `line_start` and `line` are missing, line 1395 explicitly sets `locatorAccurate = false`. Lines 1439-1444 enforce `const hasValidLocator = locatorAccurate === true && lineStart >= 1 && lineEnd >= lineStart; if (!hasCounter || !hasValidLocator) { evidenceSupport = 'INSUFFICIENT_EVIDENCE'; }`. Missing locators fail `hasValidLocator` and downgrade to `INSUFFICIENT_EVIDENCE`. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-03', 'PHASE2-NEG-04'). [Implemented in uncommitted Phase 2 working tree diff against Exact Head ebe28be]."
+    reasoning: "Remediated in Phase 2: In `src/core/independent-verifier.mjs:1393-1396, 1439-1444` (`validateVerificationOutput`), when both `line_start` and `line` are missing, line 1395 explicitly sets `locatorAccurate = false`. Lines 1439-1444 enforce `const hasValidLocator = locatorAccurate === true && lineStart >= 1 && lineEnd >= lineStart; if (!hasCounter || !hasValidLocator) { evidenceSupport = 'INSUFFICIENT_EVIDENCE'; }`. Missing locators fail `hasValidLocator` and downgrade to `INSUFFICIENT_EVIDENCE`. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-03', 'PHASE2-NEG-04'). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c]."
   },
   "PRRT_kwDOUWarIc6qo0u0": {
     category: "FIXED",
-    reasoning: "Remediated in Phase 2: In `src/core/independent-verifier.mjs:2320-2335` (`conductIndependentVerification`), observed runtime `verifierAdapter?.actualModel || validated?.actualModel` takes precedence over caller-configured `options.actualModel`, preventing static caller metadata from overriding the actual observed runtime model identity. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-11'). [Implemented in uncommitted Phase 2 working tree diff against Exact Head ebe28be]."
+    reasoning: "Remediated in Phase 2: In `src/core/independent-verifier.mjs:2320-2335` (`conductIndependentVerification`), observed runtime `verifierAdapter?.actualModel || validated?.actualModel` takes precedence over caller-configured `options.actualModel`, preventing static caller metadata from overriding the actual observed runtime model identity. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-11'). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c]."
   },
   "PRRT_kwDOUWarIc6rY131": {
     category: "FIXED",
-    reasoning: "Remediated in Phase 2: In `src/core/independent-verifier.mjs:1414-1444, 2145-2170` (`validateVerificationOutput`), omission locators and diff hunks are validated against authentic git/manifest provenance; unverified additions outside diff bounds fail locator validation and cannot gain `SUPPORTED` authority. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-17', 'PHASE2-NEG-18'). Duplicate of Thread PRRT_kwDOUWarIc6rvCBQ. [Implemented in uncommitted Phase 2 working tree diff against Exact Head ebe28be]."
+    reasoning: "Remediated in Phase 2: In `src/core/independent-verifier.mjs:1414-1444, 2145-2170` (`validateVerificationOutput`), omission locators and diff hunks are validated against authentic git/manifest provenance; unverified additions outside diff bounds fail locator validation and cannot gain `SUPPORTED` authority. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-17', 'PHASE2-NEG-18'). Duplicate of Thread PRRT_kwDOUWarIc6rvCBQ. [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c]."
   },
   "PRRT_kwDOUWarIc6re31W": {
     category: "FIXED",
-    reasoning: "Remediated in Phase 2: In `src/core/independent-verifier.mjs:506-538` (`hasConcreteCounterexample`), when reasoning is missing or body contains only passive advice (e.g., 'call validate(input) to prevent crash'), heuristic returns `false`, preventing passive advice from masquerading as a counterexample and downgrading omission to `INSUFFICIENT_EVIDENCE`. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-01'). [Implemented in uncommitted Phase 2 working tree diff against Exact Head ebe28be]."
+    reasoning: "Remediated in Phase 2: In `src/core/independent-verifier.mjs:506-538` (`hasConcreteCounterexample`), when reasoning is missing or body contains only passive advice (e.g., 'call validate(input) to prevent crash'), heuristic returns `false`, preventing passive advice from masquerading as a counterexample and downgrading omission to `INSUFFICIENT_EVIDENCE`. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-01'). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c]."
   },
   "PRRT_kwDOUWarIc6rfkYc": {
     category: "FIXED",
-    reasoning: "Remediated in Phase 2: In `src/core/independent-verifier.mjs:1373-1380` (`validateVerificationOutput`), non-boolean string tokens for `locatorAccurate` (e.g. `'unknown'`, `'flase'`, `'yes'`) or missing values default to strict `false`, preventing truthy string coercion from granting valid locator status. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-03'). [Implemented in uncommitted Phase 2 working tree diff against Exact Head ebe28be]."
+    reasoning: "Remediated in Phase 2: In `src/core/independent-verifier.mjs:1373-1380` (`validateVerificationOutput`), non-boolean string tokens for `locatorAccurate` (e.g. `'unknown'`, `'flase'`, `'yes'`) or missing values default to strict `false`, preventing truthy string coercion from granting valid locator status. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-03'). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c]."
   },
   "PRRT_kwDOUWarIc6rrUDp": {
     category: "FIXED",
-    reasoning: "Remediated in Phase 2: In `src/core/independent-verifier.mjs:1765-1785` (`CliVerifierAdapter`), tracks cumulative stdout/stderr byte counts during streaming; if `byteLength > limits.maxOutputBytes`, child process is terminated immediately with `SIGTERM` and fails closed. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-08'). [Implemented in uncommitted Phase 2 working tree diff against Exact Head ebe28be]."
+    reasoning: "Remediated in Phase 2: In `src/core/independent-verifier.mjs:1765-1785` (`CliVerifierAdapter`), tracks cumulative stdout/stderr byte counts during streaming; if `byteLength > limits.maxOutputBytes`, child process is terminated immediately with `SIGTERM` and fails closed. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-08'). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c]."
   },
   "PRRT_kwDOUWarIc6rte6b": {
     category: "FIXED",
-    reasoning: "Remediated in Phase 2: In `src/core/independent-verifier.mjs:809-840, 2132-2140` (`buildVerificationPrompt`), computes overhead reserved for AST context, schema, and gaps before budgeting diff hunks; total rendered prompt exceeding `maxInputBytes` marks `isDiffTruncated = true` and propagates `UNCERTAIN`. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-02', 'PHASE2-NEG-14'). [Implemented in uncommitted Phase 2 working tree diff against Exact Head ebe28be]."
+    reasoning: "Remediated in Phase 2: In `src/core/independent-verifier.mjs:809-840, 2132-2140` (`buildVerificationPrompt`), computes overhead reserved for AST context, schema, and gaps before budgeting diff hunks; total rendered prompt exceeding `maxInputBytes` marks `isDiffTruncated = true` and propagates `UNCERTAIN`. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-02', 'PHASE2-NEG-14'). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c]."
   },
   "PRRT_kwDOUWarIc6rtv6O": {
     category: "FIXED",
-    reasoning: "Remediated in Phase 2: In `src/core/independent-verifier.mjs:1492-1515` (`validateVerificationOutput`), constructed `omissionAssessment` objects explicitly preserve `cwe` and `type` fields provided by the verifier, ensuring defect classification metadata is retained in `verifierOmissions` and gate advisory findings. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-06'). [Implemented in uncommitted Phase 2 working tree diff against Exact Head ebe28be]."
+    reasoning: "Remediated in Phase 2: In `src/core/independent-verifier.mjs:1492-1515` (`validateVerificationOutput`), constructed `omissionAssessment` objects explicitly preserve `cwe` and `type` fields provided by the verifier, ensuring defect classification metadata is retained in `verifierOmissions` and gate advisory findings. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-06'). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c]."
   },
   "PRRT_kwDOUWarIc6rvCBQ": {
     category: "FIXED",
-    reasoning: "Remediated in Phase 2: In `src/core/independent-verifier.mjs:1409-1445` (`validateVerificationOutput`), omission line numbers (`line_start`, `line_end`) are checked against the physical line count of the target file at exact-head; impossible line numbers (e.g. line 999999 in a 50-line file) set `locatorAccurate = false` and downgrade to `INSUFFICIENT_EVIDENCE`. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-04', 'PHASE2-NEG-13'). [Implemented in uncommitted Phase 2 working tree diff against Exact Head ebe28be]."
+    reasoning: "Remediated in Phase 2: In `src/core/independent-verifier.mjs:1409-1445` (`validateVerificationOutput`), omission line numbers (`line_start`, `line_end`) are checked against the physical line count of the target file at exact-head; impossible line numbers (e.g. line 999999 in a 50-line file) set `locatorAccurate = false` and downgrade to `INSUFFICIENT_EVIDENCE`. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-04', 'PHASE2-NEG-13'). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c]."
   },
   "PRRT_kwDOUWarIc6rxChi": {
     category: "FIXED",
-    reasoning: "Remediated in Phase 2: In `src/core/independent-verifier.mjs:1765-1785` (`CliVerifierAdapter`), stdout/stderr stream chunk tracking terminates runaway verifier processes exceeding byte ceilings. Duplicate of Thread PRRT_kwDOUWarIc6rrUDp. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-08'). [Implemented in uncommitted Phase 2 working tree diff against Exact Head ebe28be]."
+    reasoning: "Remediated in Phase 2: In `src/core/independent-verifier.mjs:1765-1785` (`CliVerifierAdapter`), stdout/stderr stream chunk tracking terminates runaway verifier processes exceeding byte ceilings. Duplicate of Thread PRRT_kwDOUWarIc6rrUDp. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-08'). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c]."
   },
   "PRRT_kwDOUWarIc6r1Bt4": {
     category: "FIXED",
-    reasoning: "Remediated in Phase 2: In `src/core/independent-verifier.mjs:1373-1380` (`validateVerificationOutput`), explicit boolean validation prevents truthy/falsy coercion bypass for `locatorAccurate`. Duplicate of Thread PRRT_kwDOUWarIc6rfkYc. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-03', 'PHASE2-POS-01'). [Implemented in uncommitted Phase 2 working tree diff against Exact Head ebe28be]."
+    reasoning: "Remediated in Phase 2: In `src/core/independent-verifier.mjs:1373-1380` (`validateVerificationOutput`), explicit boolean validation prevents truthy/falsy coercion bypass for `locatorAccurate`. Duplicate of Thread PRRT_kwDOUWarIc6rfkYc. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-03', 'PHASE2-POS-01'). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c]."
   },
   "PRRT_kwDOUWarIc6r1BuM": {
     category: "FIXED",
-    reasoning: "Remediated in Phase 2: In `src/core/independent-verifier.mjs:1435-1445` (`validateVerificationOutput`), when omission candidate has counterexample syntax but empty or missing `reasoning`, `hasConcreteCounterexample` fails closed to `false`, requiring observable failure reasoning before granting `SUPPORTED`. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-05'). [Implemented in uncommitted Phase 2 working tree diff against Exact Head ebe28be]."
+    reasoning: "Remediated in Phase 2: In `src/core/independent-verifier.mjs:1435-1445` (`validateVerificationOutput`), when omission candidate has counterexample syntax but empty or missing `reasoning`, `hasConcreteCounterexample` fails closed to `false`, requiring observable failure reasoning before granting `SUPPORTED`. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-05'). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c]."
   },
   "PRRT_kwDOUWarIc6sL8VO": {
     category: "FIXED",
-    reasoning: "Remediated in Phase 2: In `src/core/independent-verifier.mjs:2210-2225` (`conductIndependentVerification`), effective context gaps are extracted from `options.contextPackage || changeSet?.contextPackage` and merged, ensuring unextracted callee gaps propagate to `validateVerificationOutput` and force `UNCERTAIN`. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-10'). [Implemented in uncommitted Phase 2 working tree diff against Exact Head ebe28be]."
+    reasoning: "Remediated in Phase 2: In `src/core/independent-verifier.mjs:2210-2225` (`conductIndependentVerification`), effective context gaps are extracted from `options.contextPackage || changeSet?.contextPackage` and merged, ensuring unextracted callee gaps propagate to `validateVerificationOutput` and force `UNCERTAIN`. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-10'). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c]."
   },
   "PRRT_kwDOUWarIc6sMI7L": {
     category: "FIXED",
-    reasoning: "Remediated in Phase 2: In `src/core/independent-verifier.mjs:1544-1560` (`validateVerificationOutput`), under `clean_challenge` mode, omission presence without an explicit, valid `overallStatus` fails closed with `malformed_output`, preventing implicit inference of `CLEAN`. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-07'). [Implemented in uncommitted Phase 2 working tree diff against Exact Head ebe28be]."
+    reasoning: "Remediated in Phase 2: In `src/core/independent-verifier.mjs:1544-1560` (`validateVerificationOutput`), under `clean_challenge` mode, omission presence without an explicit, valid `overallStatus` fails closed with `malformed_output`, preventing implicit inference of `CLEAN`. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-07'). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c]."
   },
   "PRRT_kwDOUWarIc6sU7ZH": {
     category: "FIXED",
-    reasoning: "Remediated in Phase 2: In `src/core/independent-verifier.mjs:1409-1445` (`validateVerificationOutput`), line locators beyond target file physical line count are rejected as inaccurate (`locatorAccurate = false`). Duplicate of Thread PRRT_kwDOUWarIc6rvCBQ. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-04', 'PHASE2-NEG-13'). [Implemented in uncommitted Phase 2 working tree diff against Exact Head ebe28be]."
+    reasoning: "Remediated in Phase 2: In `src/core/independent-verifier.mjs:1409-1445` (`validateVerificationOutput`), line locators beyond target file physical line count are rejected as inaccurate (`locatorAccurate = false`). Duplicate of Thread PRRT_kwDOUWarIc6rvCBQ. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-04', 'PHASE2-NEG-13'). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c]."
   },
   "PRRT_kwDOUWarIc6slqmD": {
     category: "FIXED",
-    reasoning: "Remediated in Phase 2: In `src/core/independent-verifier.mjs:1373-1380` (`validateVerificationOutput`), non-boolean string accuracy values (such as `'flase'` or typo tokens) coerce to `false` rather than `true`. Duplicate of Thread PRRT_kwDOUWarIc6rfkYc. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-03'). [Implemented in uncommitted Phase 2 working tree diff against Exact Head ebe28be]."
+    reasoning: "Remediated in Phase 2: In `src/core/independent-verifier.mjs:1373-1380` (`validateVerificationOutput`), non-boolean string accuracy values (such as `'flase'` or typo tokens) coerce to `false` rather than `true`. Duplicate of Thread PRRT_kwDOUWarIc6rfkYc. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-03'). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c]."
   },
   "PRRT_kwDOUWarIc6sl1Rc": {
     category: "FIXED",
-    reasoning: "Remediated in Phase 2: In `src/core/independent-verifier.mjs:2210-2225` (`conductIndependentVerification`), gaps present on `changeSet.contextPackage.contextGaps` are explicitly retained and merged into verifier context gaps. Duplicate of Thread PRRT_kwDOUWarIc6sL8VO. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-10'). [Implemented in uncommitted Phase 2 working tree diff against Exact Head ebe28be]."
+    reasoning: "Remediated in Phase 2: In `src/core/independent-verifier.mjs:2210-2225` (`conductIndependentVerification`), gaps present on `changeSet.contextPackage.contextGaps` are explicitly retained and merged into verifier context gaps. Duplicate of Thread PRRT_kwDOUWarIc6sL8VO. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-10'). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c]."
   },
   "PRRT_kwDOUWarIc6sl1Rg": {
     category: "FIXED",
-    reasoning: "Remediated in Phase 2: In `src/core/independent-verifier.mjs:2134-2145` (`conductIndependentVerification`), objective resolution inspects `options.runContext?.patchObjective`, `options.runContext?.objectiveContract`, and `changeSet?.patchObjective`, preventing caller overrides from stripping bound objectives. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-09', 'PHASE2-NEG-12', 'PHASE2-NEG-15'). [Implemented in uncommitted Phase 2 working tree diff against Exact Head ebe28be]."
+    reasoning: "Remediated in Phase 2: In `src/core/independent-verifier.mjs:2134-2145` (`conductIndependentVerification`), objective resolution inspects `options.runContext?.patchObjective`, `options.runContext?.objectiveContract`, and `changeSet?.patchObjective`, preventing caller overrides from stripping bound objectives. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-09', 'PHASE2-NEG-12', 'PHASE2-NEG-15'). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c]."
   }
 };
 
@@ -138,7 +172,7 @@ const phase2SpecificRemediations = {
 const remaining66Triage = {
   "PRRT_kwDOUWarIc6qo0uT": {
     category: "FIXED",
-    reasoning: "Remediated in Phase 1 & dogfood: in `scripts/dogfood-review.mjs:1010-1120`, pre-extracts exact-head `contextPackage` and injects it into both primary sentry prompts and `conductIndependentVerification` (§3.3.4 Dual Visibility). Verified in `tests/remediation-007-clean-challenge.test.mjs` ('PR39-ROUND5-DUAL-VISIBILITY-01'). [Pre-existing in remote HEAD commits 8375c65, 4b2c7d8 & uncommitted working tree]."
+    reasoning: "Remediated in Phase 1 & dogfood: in `scripts/dogfood-review.mjs:1010-1120`, pre-extracts exact-head `contextPackage` and injects it into both primary sentry prompts and `conductIndependentVerification` (§3.3.4 Dual Visibility). Verified in `tests/remediation-007-clean-challenge.test.mjs` ('PR39-ROUND5-DUAL-VISIBILITY-01'). [Historically uncommitted during review; formally committed in 34d5831 and verified green on CI in 9776b4c]."
   },
   "PRRT_kwDOUWarIc6qo0ue": {
     category: "FIXED",
@@ -298,7 +332,7 @@ const remaining66Triage = {
   },
   "PRRT_kwDOUWarIc6sMI7C": {
     category: "FIXED",
-    reasoning: "Remediated in commit c418bb1 & Phase 3 (R2): in `src/adapters/review-orchestrator.mjs:199-224`, 6-source objective conflict detection ensures nested `options.objective` cannot override bound `patchObjective` without failing closed. Verified in `tests/remediation-phase3-orchestrator-cli.test.mjs`. [Implemented in uncommitted Phase 3 working tree diff against Exact Head ebe28be]."
+    reasoning: "Remediated in commit c418bb1 & Phase 3 (R2): in `src/adapters/review-orchestrator.mjs:199-224`, 6-source objective conflict detection ensures nested `options.objective` cannot override bound `patchObjective` without failing closed. Verified in `tests/remediation-phase3-orchestrator-cli.test.mjs`. [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c]."
   },
   "PRRT_kwDOUWarIc6sMI7U": {
     category: "FIXED",
@@ -371,44 +405,44 @@ const duplicateMap = {
   // 9 threads previously marked FIXED but having duplicate reasoning
   "PRRT_kwDOUWarIc6rY131": {
     duplicateOf: "PRRT_kwDOUWarIc6rvCBQ",
-    reasoning: "Duplicate of Thread PRRT_kwDOUWarIc6rvCBQ (Verify omission locators against the reviewed diff). Remediated in Phase 2 in `src/core/independent-verifier.mjs:1414-1444, 2145-2170` (`validateVerificationOutput`), validating omission locators and diff hunks against authentic git/manifest provenance. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-17', 'PHASE2-NEG-18'). [Implemented in uncommitted Phase 2 working tree diff against Exact Head ebe28be]."
+    reasoning: "Duplicate of Thread PRRT_kwDOUWarIc6rvCBQ (Verify omission locators against the reviewed diff). Remediated in Phase 2 in `src/core/independent-verifier.mjs:1414-1444, 2145-2170` (`validateVerificationOutput`), validating omission locators and diff hunks against authentic git/manifest provenance. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-17', 'PHASE2-NEG-18'). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c]."
   },
   "PRRT_kwDOUWarIc6rxChi": {
     duplicateOf: "PRRT_kwDOUWarIc6rrUDp",
-    reasoning: "Duplicate of Thread PRRT_kwDOUWarIc6rrUDp (Enforce the verifier output-size limit while streaming). Remediated in Phase 2 in `src/core/independent-verifier.mjs:1765-1785` (`CliVerifierAdapter`), terminating runaway verifier processes exceeding byte ceilings. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-08'). [Implemented in uncommitted Phase 2 working tree diff against Exact Head ebe28be]."
+    reasoning: "Duplicate of Thread PRRT_kwDOUWarIc6rrUDp (Enforce the verifier output-size limit while streaming). Remediated in Phase 2 in `src/core/independent-verifier.mjs:1765-1785` (`CliVerifierAdapter`), terminating runaway verifier processes exceeding byte ceilings. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-08'). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c]."
   },
   "PRRT_kwDOUWarIc6r1Bt4": {
     duplicateOf: "PRRT_kwDOUWarIc6rfkYc",
-    reasoning: "Duplicate of Thread PRRT_kwDOUWarIc6rfkYc (Require an explicit boolean omission locator flag). Remediated in Phase 2 in `src/core/independent-verifier.mjs:1373-1380` (`validateVerificationOutput`), explicit boolean validation prevents truthy/falsy coercion bypass for `locatorAccurate`. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-03', 'PHASE2-POS-01'). [Implemented in uncommitted Phase 2 working tree diff against Exact Head ebe28be]."
+    reasoning: "Duplicate of Thread PRRT_kwDOUWarIc6rfkYc (Require an explicit boolean omission locator flag). Remediated in Phase 2 in `src/core/independent-verifier.mjs:1373-1380` (`validateVerificationOutput`), explicit boolean validation prevents truthy/falsy coercion bypass for `locatorAccurate`. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-03', 'PHASE2-POS-01'). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c]."
   },
   "PRRT_kwDOUWarIc6sL8VY": {
     duplicateOf: "PRRT_kwDOUWarIc6rsKB_",
-    reasoning: "Duplicate of Thread PRRT_kwDOUWarIc6rsKB_ (Preserve case when binding exclusions). Remediated in Phase 1 in `src/core/harness.mjs` via platform-aware `normalizeExclusionPath`, preserving path casing on POSIX/Linux platforms and rejecting options.platform overrides in formal gates. Verified by `tests/remediation-phase1-harness.test.mjs` (PHASE1-NEG-03, PHASE1-NEG-03-PLATFORM-OVERRIDE). [Implemented in uncommitted Phase 1-2 working tree diff against Exact Head ebe28be]."
+    reasoning: "Duplicate of Thread PRRT_kwDOUWarIc6rsKB_ (Preserve case when binding exclusions). Remediated in Phase 1 in `src/core/harness.mjs` via platform-aware `normalizeExclusionPath`, preserving path casing on POSIX/Linux platforms and rejecting options.platform overrides in formal gates. Verified by `tests/remediation-phase1-harness.test.mjs` (PHASE1-NEG-03, PHASE1-NEG-03-PLATFORM-OVERRIDE). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c]."
   },
   "PRRT_kwDOUWarIc6sPGEP": {
     duplicateOf: "PRRT_kwDOUWarIc6ra7kY",
-    reasoning: "Duplicate of Thread PRRT_kwDOUWarIc6ra7kY (Reject unknown producer verification modes). Remediated in Phase 1 in `src/core/harness.mjs`, nonempty findings strictly require `verificationMode === 'producer_verification'`, rejecting typo or custom mode strings. Verified by `tests/remediation-phase1-harness.test.mjs` (PHASE1-NEG-07). [Implemented in uncommitted Phase 1-2 working tree diff against Exact Head ebe28be]."
+    reasoning: "Duplicate of Thread PRRT_kwDOUWarIc6ra7kY (Reject unknown producer verification modes). Remediated in Phase 1 in `src/core/harness.mjs`, nonempty findings strictly require `verificationMode === 'producer_verification'`, rejecting typo or custom mode strings. Verified by `tests/remediation-phase1-harness.test.mjs` (PHASE1-NEG-07). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c]."
   },
   "PRRT_kwDOUWarIc6sU7ZH": {
     duplicateOf: "PRRT_kwDOUWarIc6rvCBQ",
-    reasoning: "Duplicate of Thread PRRT_kwDOUWarIc6rvCBQ (Reject omission locators beyond the target file). Remediated in Phase 2 in `src/core/independent-verifier.mjs:1409-1445` (`validateVerificationOutput`), line locators beyond target file physical line count are rejected as inaccurate (`locatorAccurate = false`). Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-04', 'PHASE2-NEG-13'). [Implemented in uncommitted Phase 2 working tree diff against Exact Head ebe28be]."
+    reasoning: "Duplicate of Thread PRRT_kwDOUWarIc6rvCBQ (Reject omission locators beyond the target file). Remediated in Phase 2 in `src/core/independent-verifier.mjs:1409-1445` (`validateVerificationOutput`), line locators beyond target file physical line count are rejected as inaccurate (`locatorAccurate = false`). Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-04', 'PHASE2-NEG-13'). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c]."
   },
   "PRRT_kwDOUWarIc6slql7": {
     duplicateOf: "PRRT_kwDOUWarIc6rsKB_",
-    reasoning: "Duplicate of Thread PRRT_kwDOUWarIc6rsKB_ (Preserve case when binding excluded paths). Remediated in Phase 1 in `src/core/harness.mjs` via platform-aware `normalizeExclusionPath`, enforcing case preservation on case-sensitive filesystems and rejecting caller platform overrides in formal gates. Verified by `tests/remediation-phase1-harness.test.mjs` (PHASE1-NEG-03, PHASE1-NEG-03-PLATFORM-OVERRIDE). [Implemented in uncommitted Phase 1-2 working tree diff against Exact Head ebe28be]."
+    reasoning: "Duplicate of Thread PRRT_kwDOUWarIc6rsKB_ (Preserve case when binding excluded paths). Remediated in Phase 1 in `src/core/harness.mjs` via platform-aware `normalizeExclusionPath`, enforcing case preservation on case-sensitive filesystems and rejecting caller platform overrides in formal gates. Verified by `tests/remediation-phase1-harness.test.mjs` (PHASE1-NEG-03, PHASE1-NEG-03-PLATFORM-OVERRIDE). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c]."
   },
   "PRRT_kwDOUWarIc6slqmD": {
     duplicateOf: "PRRT_kwDOUWarIc6rfkYc",
-    reasoning: "Duplicate of Thread PRRT_kwDOUWarIc6rfkYc (Reject non-boolean omission accuracy values). Remediated in Phase 2 in `src/core/independent-verifier.mjs:1373-1380` (`validateVerificationOutput`), non-boolean string accuracy values (such as 'flase' or typo tokens) coerce to false rather than true. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-03'). [Implemented in uncommitted Phase 2 working tree diff against Exact Head ebe28be]."
+    reasoning: "Duplicate of Thread PRRT_kwDOUWarIc6rfkYc (Reject non-boolean omission accuracy values). Remediated in Phase 2 in `src/core/independent-verifier.mjs:1373-1380` (`validateVerificationOutput`), non-boolean string accuracy values (such as 'flase' or typo tokens) coerce to false rather than true. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-03'). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c]."
   },
   "PRRT_kwDOUWarIc6sl1Rc": {
     duplicateOf: "PRRT_kwDOUWarIc6sL8VO",
-    reasoning: "Duplicate of Thread PRRT_kwDOUWarIc6sL8VO (Include ChangeSet package gaps in verifier validation). Remediated in Phase 2 in `src/core/independent-verifier.mjs:2210-2225` (`conductIndependentVerification`), gaps present on `changeSet.contextPackage.contextGaps` are explicitly retained and merged into verifier context gaps. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-10'). [Implemented in uncommitted Phase 2 working tree diff against Exact Head ebe28be]."
+    reasoning: "Duplicate of Thread PRRT_kwDOUWarIc6sL8VO (Include ChangeSet package gaps in verifier validation). Remediated in Phase 2 in `src/core/independent-verifier.mjs:2210-2225` (`conductIndependentVerification`), gaps present on `changeSet.contextPackage.contextGaps` are explicitly retained and merged into verifier context gaps. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-10'). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c]."
   },
   // 20 existing DUPLICATE threads
   "PRRT_kwDOUWarIc6rsajd": {
     duplicateOf: "PRRT_kwDOUWarIc6ra7ki",
-    reasoning: "Duplicate of Thread 22 (PRRT_kwDOUWarIc6ra7ki). Remediated via §3.3.4 Dual Visibility pre-extraction in `scripts/dogfood-review.mjs:1010-1120`, injecting contextPackage symmetrically into both primary sentry reviews and Clean Challenge verifier. Verified in `tests/remediation-007-clean-challenge.test.mjs` ('PR39-ROUND5-DUAL-VISIBILITY-01'). [Implemented in uncommitted Phase 1-2 working tree diff against Exact Head ebe28be]."
+    reasoning: "Duplicate of Thread 22 (PRRT_kwDOUWarIc6ra7ki). Remediated via §3.3.4 Dual Visibility pre-extraction in `scripts/dogfood-review.mjs:1010-1120`, injecting contextPackage symmetrically into both primary sentry reviews and Clean Challenge verifier. Verified in `tests/remediation-007-clean-challenge.test.mjs` ('PR39-ROUND5-DUAL-VISIBILITY-01'). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c]."
   },
   "PRRT_kwDOUWarIc6rTXZl": {
     duplicateOf: "PRRT_kwDOUWarIc6rvWjN",
@@ -444,7 +478,7 @@ const duplicateMap = {
   },
   "PRRT_kwDOUWarIc6sL8VK": {
     duplicateOf: "PRRT_kwDOUWarIc6rr-JF",
-    reasoning: "Duplicate of Thread PRRT_kwDOUWarIc6rr-JF (Run ID binding and replay prevention). Remediated in Phase 3 in `src/adapters/review-orchestrator.mjs:56-78`. [Implemented in uncommitted Phase 3 working tree diff against Exact Head ebe28be]."
+    reasoning: "Duplicate of Thread PRRT_kwDOUWarIc6rr-JF (Run ID binding and replay prevention). Remediated in Phase 3 in `src/adapters/review-orchestrator.mjs:56-78`. [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c]."
   },
   "PRRT_kwDOUWarIc6sPmwl": {
     duplicateOf: "PRRT_kwDOUWarIc6re31E",
@@ -480,7 +514,7 @@ const duplicateMap = {
   },
   "PRRT_kwDOUWarIc6slql5": {
     duplicateOf: "PRRT_kwDOUWarIc6sL8VV",
-    reasoning: "Duplicate of Thread PRRT_kwDOUWarIc6sL8VV (CLI Clean Challenge execution). Remediated in Phase 3 in `src/cli.mjs:53-75`. [Implemented in uncommitted Phase 3 working tree diff against Exact Head ebe28be]."
+    reasoning: "Duplicate of Thread PRRT_kwDOUWarIc6sL8VV (CLI Clean Challenge execution). Remediated in Phase 3 in `src/cli.mjs:53-75`. [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c]."
   },
   "PRRT_kwDOUWarIc6slqmG": {
     duplicateOf: "PRRT_kwDOUWarIc6ra7k3",
@@ -504,7 +538,10 @@ for (const raw of rawThreads) {
   let duplicateOf = null;
   let reasoning = "";
 
-  if (duplicateMap[threadId]) {
+  if (newP1Threads[threadId]) {
+    category = newP1Threads[threadId].category;
+    reasoning = newP1Threads[threadId].reasoning;
+  } else if (duplicateMap[threadId]) {
     category = "DUPLICATE";
     duplicateOf = duplicateMap[threadId].duplicateOf;
     reasoning = duplicateMap[threadId].reasoning;
@@ -516,12 +553,12 @@ for (const raw of rawThreads) {
     reasoning = phase2SpecificRemediations[threadId].reasoning;
   } else if (threadId === "PRRT_kwDOUWarIc6ra7ki") {
     category = "FIXED";
-    reasoning = "Remediated via REMEDIATION-007 §3.3.4 (Dual Visibility): In `scripts/dogfood-review.mjs:1010-1120`, pre-extracts exact-head `contextPackage` and injects it symmetrically into both primary sentry prompts and `conductIndependentVerification`. Reclassified from historical `FIX_REQUIRED_DUAL_VISIBILITY` / candidate `ACCEPTED_RISK` to `FIXED` candidate pending governance adjudication. Verified in `tests/remediation-007-clean-challenge.test.mjs` ('PR39-ROUND5-DUAL-VISIBILITY-01', 'PR39-ROUND5-DUAL-VISIBILITY-02-NEGATIVE'). [Implemented in uncommitted Phase 1-2 working tree diff against Exact Head ebe28be].";
+    reasoning = "Remediated via REMEDIATION-007 §3.3.4 (Dual Visibility): In `scripts/dogfood-review.mjs:1010-1120`, pre-extracts exact-head `contextPackage` and injects it symmetrically into both primary sentry prompts and `conductIndependentVerification`. Reclassified from historical `FIX_REQUIRED_DUAL_VISIBILITY` / candidate `ACCEPTED_RISK` to `FIXED` candidate pending governance adjudication. Verified in `tests/remediation-007-clean-challenge.test.mjs` ('PR39-ROUND5-DUAL-VISIBILITY-01', 'PR39-ROUND5-DUAL-VISIBILITY-02-NEGATIVE'). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c].";
   } else if (legacy40Map.has(threadId)) {
     const r = legacy40Map.get(threadId);
     category = r.status === "REPRODUCIBLE_DEFECT" ? "FIXED" : r.status;
     const res = r.resolutionDetails;
-    reasoning = res ? `${res.resolutionSummary} (Resolved in ${res.resolvedIn}, verified by ${res.verifiedBy}). [Implemented in uncommitted Phase 1-2 working tree diff against Exact Head ebe28be].` : r.technicalAnalysis;
+    reasoning = res ? `${res.resolutionSummary} (Resolved in ${res.resolvedIn}, verified by ${res.verifiedBy}). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c].` : r.technicalAnalysis;
   } else if (legacy43Map.has(threadId)) {
     const t = legacy43Map.get(threadId);
     category = t.resolutionCategory;
@@ -554,8 +591,8 @@ for (const raw of rawThreads) {
   });
 }
 
-if (unifiedRecords.length !== 149) {
-  throw new Error(`Expected exactly 149 unified records, got ${unifiedRecords.length}`);
+if (unifiedRecords.length !== 155) {
+  throw new Error(`Expected exactly 155 unified records, got ${unifiedRecords.length}`);
 }
 
 const verdictCounts = {
@@ -573,18 +610,35 @@ const fullJson = {
     branch: "fix/remediation-007-clean-challenge",
     extractionTimestamp: EXTRACTION_TIMESTAMP,
     remoteHeadSha: REMOTE_HEAD_SHA,
-    workingTreeStatus: "UNCOMMITTED_LOCAL_MODIFICATIONS",
+    ledgerType: "BOUNDED_SNAPSHOT",
+    workingTreeStatus: diffBuf.length === 0 ? "CLEAN" : "UNCOMMITTED_LOCAL_MODIFICATIONS",
     workingTreeDiffSha256: workingTreeDiffSha256,
-    totalThreads: 149,
-    totalOutdatedThreads: 43,
-    totalCurrentThreads: 106,
+    totalThreads: 155,
+    githubCurrentTotalThreads: 158,
+    excludedNewThreads: [
+      "PRRT_kwDOUWarIc6td7cF",
+      "PRRT_kwDOUWarIc6td7cG",
+      "PRRT_kwDOUWarIc6td7cI"
+    ],
+    excludedNewThreadsNote: "Three P1 review threads created at 2026-10-17T06:33:40Z are outside the 155-thread bounded snapshot scope and pending future governance authorization.",
+    totalOutdatedThreads: unifiedRecords.filter(r => r.isOutdated).length,
+    totalCurrentThreads: unifiedRecords.filter(r => !r.isOutdated).length,
     verdictCounts,
     governanceInvariants: {
       RUNTIME_AUTHORITY: "NONE",
       SHADOW_TO_ADVISORY: "STRICT_HOLD",
       CYCLE_0048: "ON_HOLD_NOT_ASSIGNED",
       ISSUE_37: "OPEN",
-      LOCAL_COMMIT: "NOT_AUTHORIZED",
+      LEDGER_SNAPSHOT: "155_THREADS",
+      LEDGER_LOCAL_COMMIT: "AUTHORIZED_BOUNDED",
+      LEDGER_PUSH: "NOT_AUTHORIZED",
+      P1_REMEDIATION_SCOPE: "6_THREADS",
+      LOCAL_CODE_MODIFICATION: "AUTHORIZED_BOUNDED",
+      P1_CODE_COMMIT: "NOT_AUTHORIZED",
+      P1_CODE_PUSH: "NOT_AUTHORIZED",
+      NEW_ADDITIONAL_P1: 3,
+      NEW_ADDITIONAL_P1_REMEDIATION: "NOT_AUTHORIZED",
+      LOCAL_COMMIT: "AUTHORIZED_BOUNDED",
       COMMIT_AND_PUSH: "NOT_AUTHORIZED",
       SQUASH_MERGE: "NOT_AUTHORIZED",
       RULESET_BYPASS: "NOT_AUTHORIZED",
@@ -596,7 +650,7 @@ const fullJson = {
       CHANGE_LEDGER: "AUTHORIZED",
       PRE_MERGE_PACKET: "AUTHORIZED"
     },
-    governanceNotice: "Thread batch resolution on GitHub is NOT AUTHORIZED. This ledger is an offline evidence-only triage record; zero review threads have been mutated on GitHub."
+    governanceNotice: "Thread batch resolution on GitHub is NOT AUTHORIZED. This ledger is an offline evidence-only bounded triage snapshot (155 threads); zero review threads have been mutated on GitHub. Three newer GitHub P1 threads are excluded pending future authorization."
   },
   threads: unifiedRecords
 };
@@ -608,29 +662,37 @@ console.log("Verdict counts:", verdictCounts);
 
 // Generate Markdown
 const mdLines = [
-  "# PR #39 Review Threads 完整終局審查意見處置清冊 (149 筆全覆蓋)",
+  "# PR #39 Review Threads 155 筆有界快照審查意見處置清冊 (保留未含 3 筆最新 P1)",
   "",
-  "> **治理依據與執行授權狀態**",
+  "> **治理依據與執行授權狀態 (有界快照)**",
   "> - **目標 PR**：[#39 (fix/remediation-007-clean-challenge)](https://github.com/arcobaleno64/triad-flow/pull/39)",
   `> - **遠端 Exact Head SHA**：\`${REMOTE_HEAD_SHA}\``,
-  `> - **本機工作區狀態**：\`UNCOMMITTED_LOCAL_MODIFICATIONS\` (Diff SHA-256: \`${workingTreeDiffSha256}\`)`,
-  `> - **擷取時間**：\`${EXTRACTION_TIMESTAMP}\``,
+  `> - **本機工作區狀態**：\`${diffBuf.length === 0 ? "CLEAN" : "UNCOMMITTED_LOCAL_MODIFICATIONS"}\` (Diff SHA-256: \`${workingTreeDiffSha256}\`)`,
+  `> - **快照擷取時間**：\`${EXTRACTION_TIMESTAMP}\``,
+  "> - **清冊邊界性質**：`LEDGER_SNAPSHOT = 155_THREADS`（有界快照。GitHub 於 2026-10-17 06:33:40 UTC 新增之另外 3 筆 P1 評論 `PRRT_kwDOUWarIc6td7cF`、`PRRT_kwDOUWarIc6td7cG`、`PRRT_kwDOUWarIc6td7cI` 超出本次核定之 155 筆封存範圍，保留原始擷取資料，不在此次封存清冊內，避免把歷史快照稱作目前 GitHub 158 筆之終局完整狀態）",
   "> - **審查模式**：`THREAD_AUDIT_MODE = READ_ONLY`；`THREAD_BATCH_RESOLUTION = NOT_AUTHORIZED`；`RULESET_BYPASS = NOT_AUTHORIZED`",
   "> - **裁定政策**：單一權威清冊整合（Q1 整合決策），歷史兩份清冊完整保留作為審查證據",
-  "> - **裁決狀態**：所有 149 筆處置皆標記為 `PENDING_ADJUDICATION`，嚴禁在 GitHub 上執行任何 Mutation",
+  "> - **裁決狀態**：所有 155 筆處置皆標記為 `PENDING_ADJUDICATION`，嚴禁在 GitHub 上執行任何 Mutation",
   "",
   "## 一、治理不變量與授權邊界 (Governance Invariants)",
   "",
   "| 治理不變量 | 當前設定 | 治理邊界與狀態 |",
   "| :--- | :--- | :--- |",
   "| `PR_39_PRE_MERGE_GOVERNANCE_PLAN` | `APPROVED_BOUNDED` | 有界核准執行 |",
+  "| `LEDGER_SNAPSHOT` | `155_THREADS` | 155 筆有界快照，排除 3 筆最新 P1 |",
+  "| `LEDGER_LOCAL_COMMIT` | `AUTHORIZED_BOUNDED` | 僅限治理證據與清冊四檔之本地 Commit |",
+  "| `LEDGER_PUSH` | `NOT_AUTHORIZED` | 嚴禁 Push 至遠端 |",
   "| `THREAD_AUDIT_MODE` | `READ_ONLY` | 唯讀審查，禁止任何 Mutation |",
   "| `THREAD_BATCH_RESOLUTION` | `NOT_AUTHORIZED` | 嚴禁在 GitHub 上呼叫 Resolve Review Thread |",
   "| `WORKSPACE_LF_NORMALIZATION` | `AUTHORIZED_BOUNDED` | 僅限 3 個設定檔純位元組 LF 正規化 |",
-  "| `Q1_UNIFIED_LEDGER` | `APPROVED` | 單一權威 149 筆清冊已建立 |",
+  "| `Q1_UNIFIED_LEDGER` | `APPROVED` | 單一權威 155 筆清冊已建立 |",
   "| `LEGACY_LEDGERS` | `PRESERVE` | 歷史 43 筆與 40 筆清冊完好保留 |",
-  "| `LOCAL_COMMIT` | `NOT_AUTHORIZED` | 嚴禁建立 Commit |",
-  "| `COMMIT_AND_PUSH` | `NOT_AUTHORIZED` | 嚴禁 Push 至遠端 |",
+  "| `P1_REMEDIATION_SCOPE` | `6_THREADS` | tdsmP、tdsmQ、tdsmS、tdsmT、tdsmV、tdsmY |",
+  "| `LOCAL_CODE_MODIFICATION` | `AUTHORIZED_BOUNDED` | 僅限指定 6 個生產程式碼檔案 |",
+  "| `P1_CODE_COMMIT` | `NOT_AUTHORIZED` | P1 修補程式碼嚴禁 Commit |",
+  "| `P1_CODE_PUSH` | `NOT_AUTHORIZED` | P1 修補程式碼嚴禁 Push |",
+  "| `NEW_ADDITIONAL_P1` | `3` | td7cF、td7cG、td7cI 待授權 |",
+  "| `NEW_ADDITIONAL_P1_REMEDIATION` | `NOT_AUTHORIZED` | 最新 3 筆 P1 暫未授權修補 |",
   "| `SQUASH_MERGE` | `NOT_AUTHORIZED` | 合併未獲授權 |",
   "| `RULESET_BYPASS` | `NOT_AUTHORIZED` | 嚴禁繞過規則集 |",
   "| `RUNTIME_AUTHORITY` | `NONE` | 執行期相依性嚴格為 0 |",
@@ -638,21 +700,22 @@ const mdLines = [
   "| `CYCLE_0048` | `ON_HOLD_NOT_ASSIGNED` | 週期維護擱置 |",
   "| `ISSUE_37` | `OPEN` | 治理議題開啟追蹤中 |",
   "",
-  "## 二、149 筆 Review Threads 處置統計摘要 (Triage Summary)",
+  "## 二、155 筆 Review Threads 處置統計摘要 (Triage Summary)",
   "",
-  `- **Review Threads 總數**：149 筆 (GitHub 唯讀核驗：Outdated 43 筆 / Current 106 筆 / Resolved 0 筆)`,
+  `- **Review Threads 快照總數**：155 筆 (GitHub 唯讀核驗：Outdated ${unifiedRecords.filter(r => r.isOutdated).length} 筆 / Current ${unifiedRecords.filter(r => !r.isOutdated).length} 筆 / Resolved 0 筆；GitHub 當前實際總數 158 筆，另有 3 筆新增 P1 待授權未納入本快照)`,
   `- **FIXED (已具體修復並驗證之候選)**：${verdictCounts.FIXED} 筆`,
   `- **DUPLICATE (語意重複評論)**：${verdictCounts.DUPLICATE} 筆`,
   `- **NOT_APPLICABLE (不適用或超出演算法範疇)**：${verdictCounts.NOT_APPLICABLE} 筆`,
   `- **ACCEPTED_RISK (接受風險)**：${verdictCounts.ACCEPTED_RISK} 筆 *(治理裁決：0 筆，未經授權者不得標記)*`,
-  `- **UNRESOLVED (未決事項)**：${verdictCounts.UNRESOLVED} 筆`,
+  `- **UNRESOLVED (未決事項)**：${verdictCounts.UNRESOLVED} 筆 *(新增 6 筆 P1 評論獨立審查中)*`,
   "",
   "> [!IMPORTANT]",
-  "> **四項強制條件遵循說明**：",
-  "> 1. **FIXED 不等於已獲治理核決**：五筆 Phase 3 缺陷（`PRRT_kwDOUWarIc6r1Bt0`、`PRRT_kwDOUWarIc6slLWc`、`PRRT_kwDOUWarIc6rr-JF`、`PRRT_kwDOUWarIc6slqmB`、`PRRT_kwDOUWarIc6sL8VV`）逐筆提供實體程式碼行號、回歸測試套件（`tests/remediation-phase3-orchestrator-cli.test.mjs` 等）及反例論證，裁決欄位維持 `PENDING_ADJUDICATION`。",
-  "> 2. **CRLF 正規化純位元組修正**：`.gitignore`、`.github/allowed_signers`、`.github/workflows/nightly.yml` 三檔去除 `\\r` 後與 Git HEAD 100% 位元組一致，無任何語意變更。",
-  "> 3. **Exact Head 與未提交工作區證據區分**：遠端 HEAD 仍為 `ebe28be8b4db6ef276e6b3dcc1201a860af5231f`，工作區 Phase 1–3 修補明確標示為未提交本地變更（Diff SHA-256: `" + workingTreeDiffSha256 + "`），未將其混為遠端 HEAD 內容。",
-  "> 4. **最終封包不自動宣告 Merge Ready**：雙重並行度測試獨立記錄，CRLF 掃描受控於文字檔案，僅提出放行建議。",
+  "> **五項強制條件遵循說明**：",
+  "> 1. **155 筆有界快照邊界**：本清冊為 `LEDGER_SNAPSHOT = 155_THREADS` 快照，GitHub 於 2026-10-17 06:33:40 UTC 新增之 3 筆評論（`td7cF`、`td7cG`、`td7cI`）不在此次 155 筆封存清冊中，原始資料完整保留，避免將歷史快照誤稱為終局完整清冊。",
+  "> 2. **歷史溯源精確區分**：42 筆歷史修復項之反證描述已全數自「未提交」更新為「[Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c]」，嚴格區分歷史審查狀態與當前已提交驗證狀態。",
+  "> 3. **FIXED 不等於已獲治理核決**：五筆 Phase 3 缺陷（`PRRT_kwDOUWarIc6r1Bt0`、`PRRT_kwDOUWarIc6slLWc`、`PRRT_kwDOUWarIc6rr-JF`、`PRRT_kwDOUWarIc6slqmB`、`PRRT_kwDOUWarIc6sL8VV`）逐筆提供實體程式碼行號、回歸測試套件（`tests/remediation-phase3-orchestrator-cli.test.mjs` 等）及反例論證，裁決欄位維持 `PENDING_ADJUDICATION`。",
+  "> 4. **CRLF 正規化純位元組修正**：`.gitignore`、`.github/allowed_signers`、`.github/workflows/nightly.yml` 三檔去除 `\\r` 後與 Git HEAD 100% 位元組一致，無任何語意變更。",
+  "> 5. **Exact Head 與未提交工作區證據區分**：遠端 HEAD 為 `9776b4c1bf2b78f455cd3edb24bdbb20c860863a`，工作區修補明確標示為未提交本地變更（Diff SHA-256: `" + workingTreeDiffSha256 + "`），未將其混為遠端 HEAD 內容。",
   "",
   "### 2.1 Thread 22 (`PRRT_kwDOUWarIc6ra7ki`) 重新分類依據說明",
   "",
@@ -698,9 +761,29 @@ const mdLines = [
   "  7. `PRRT_kwDOUWarIc6slql7` → `duplicateOf: PRRT_kwDOUWarIc6rsKB_` (排除路徑跨平台大小寫規範化)",
   "  8. `PRRT_kwDOUWarIc6slqmD` → `duplicateOf: PRRT_kwDOUWarIc6rfkYc` (非布林字串準確度值拒絕)",
   "  9. `PRRT_kwDOUWarIc6sl1Rc` → `duplicateOf: PRRT_kwDOUWarIc6sL8VO` (ChangeSet Gaps 納入驗證器比對)",
-  "- **終局分類總計**：**120 筆 FIXED**、**29 筆 DUPLICATE**（總計 149 筆，0 ACCEPTED_RISK，0 UNRESOLVED）。全數 149 筆裁決狀態均維持 `PENDING_ADJUDICATION`。",
+  "- **終局分類總計**：**120 筆 FIXED**、**29 筆 DUPLICATE**、**6 筆 UNRESOLVED**（總計 155 筆，0 ACCEPTED_RISK）。全數 155 筆裁決狀態均維持 `PENDING_ADJUDICATION`。",
   "",
-  "## 三、149 筆 Review Threads 終局審計清冊 (6 欄位標準契約)",
+  "### 2.4 新增六筆 P1 評論獨立審查與技術分類 (UNRESOLVED / PENDING_ADJUDICATION)",
+  "",
+  "針對 HEAD `9776b4c1bf2b78f455cd3edb24bdbb20c860863a` 新增之 6 筆 P1 評論，依 Default-Deny 原則初始技術狀態歸類為 `UNRESOLVED`，治理狀態為 `PENDING_ADJUDICATION`：",
+  "1. `PRRT_kwDOUWarIc6tdsmP`（`src/cli.mjs:970`）：[UNRESOLVED] Clean Challenge 缺少 Exact-Head Context。CLI review 命令呼叫 `conductIndependentVerification` 時未轉發 `contextPackage` 與 `contextGaps`，在 zero-finding consensus 下無法由 callee 缺失觸發 `UNCERTAIN`。",
+  "2. `PRRT_kwDOUWarIc6tdsmQ`（`src/adapters/review-orchestrator.mjs:239`）：[UNRESOLVED] Exclusions 綁定衝突。`buildCanonicalRunContext` 處理 `exclusions` 時採 fallback 級聯而非雙向一致性校驗，若 `options.exclusions` 與 `options.runContext.exclusions` 衝突，前者將覆寫已綁定 scope 而未 Fail-Closed。",
+  "3. `PRRT_kwDOUWarIc6tdsmS`（`src/adapters/staged-review.mjs:530`）：[UNRESOLVED] 多檔案 Manifest 覆蓋不足。`executeStagedReview` 僅要求 `manifestFiles.some(...)`，caller-supplied manifest 僅涵蓋 1 個檔案即可通過多檔案 changeSet 檢查並在後續 chunk 重複使用。",
+  "4. `PRRT_kwDOUWarIc6tdsmT`（`scripts/dogfood-review.mjs:1017`）：[UNRESOLVED] 外部 Package 可能取得工作流程權威。`userOptions.contextPackage` 通過詮釋資料校驗後即獲頒 `_internalDogfoodWorkflowMinter` 憑證，未先自 Git 實體驗證程式碼片段真偽。",
+  "5. `PRRT_kwDOUWarIc6tdsmV`（`src/core/independent-verifier.mjs:1817`）：[UNRESOLVED] Omission Locator 路徑可能越出受審 Repository。在 working-tree 模式下直接 `path.resolve(repoRoot, file)` 且對絕對路徑不限縮，並執行無上限同步 `fs.readFileSync`，存在任意路徑讀取與 DoS 風險。",
+  "6. `PRRT_kwDOUWarIc6tdsmY`（`src/core/git-collector.mjs:491`）：[UNRESOLVED] Working Tree Diff 使用錯誤的 Head 身分。`buildChangeSet` 在 working-tree 與 staged 模式下將 `state.repository.headSha`（變更前的 base commit）標示為 ChangeSet 的 `headSha`，導致 downstream context-builder 自舊 commit 擷取過期 callee 實作。",
+  "",
+  "### 2.5 155 筆有界快照邊界與排除項說明 (Excluded New Threads)",
+  "",
+  "- **快照邊界定義**：本清冊為 `LEDGER_SNAPSHOT = 155_THREADS` 之有界歷史快照，封存自 Head `9776b4c1bf2b78f455cd3edb24bdbb20c860863a`。",
+  "- **GitHub 當前實際狀態**：GitHub Review Threads 實際總數為 158 筆（包含 3 筆最新評論）。",
+  "- **排除之 3 筆最新評論**：於 2026-10-17 06:33:40 UTC 建立之 3 筆新增 P1 評論尚未納入本次 155 筆封存清冊：",
+  "  1. `PRRT_kwDOUWarIc6td7cF`：Context Builder 的 Regex Literal 大括號解析邊界。",
+  "  2. `PRRT_kwDOUWarIc6td7cG`：Verifier stderr 串流輸出上限限制。",
+  "  3. `PRRT_kwDOUWarIc6td7cI`：Finding 簽章未綁定 Corroboration Metadata。",
+  "- **治理處置原則**：依治理裁決，本快照保留原始 155 筆擷取資料，不宣稱是當前 GitHub 的終局完整清冊；上述 3 筆新評論維持 `NEW_ADDITIONAL_P1_REMEDIATION = NOT_AUTHORIZED`，留待後續治理獨立授權。",
+  "",
+  "## 三、155 筆 Review Threads 終局審計清冊 (6 欄位標準契約)",
   "",
   "| Thread ID | 決議分類 | 修復或反證連結 (檔案、行號、測例與技術推理) | 裁決人 | 裁決日期 | Exact Head |",
   "| :--- | :--- | :--- | :--- | :--- | :--- |"

@@ -3,26 +3,43 @@
     "targetPr": "https://github.com/arcobaleno64/triad-flow/pull/39",
     "prNumber": 39,
     "branch": "fix/remediation-007-clean-challenge",
-    "extractionTimestamp": "2026-10-16T14:56:29Z",
-    "remoteHeadSha": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+    "extractionTimestamp": "2026-10-17T06:37:10Z",
+    "remoteHeadSha": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+    "ledgerType": "BOUNDED_SNAPSHOT",
     "workingTreeStatus": "UNCOMMITTED_LOCAL_MODIFICATIONS",
-    "workingTreeDiffSha256": "39097ac5e2103cd0344ed468ddd47926f3b9017a300ca501c54bdfad7fa6c728",
-    "totalThreads": 149,
-    "totalOutdatedThreads": 43,
-    "totalCurrentThreads": 106,
+    "workingTreeDiffSha256": "d2f022c6b649e875fb2d889cd28e85f9992c7b18915847533f2701407378a583",
+    "totalThreads": 155,
+    "githubCurrentTotalThreads": 158,
+    "excludedNewThreads": [
+      "PRRT_kwDOUWarIc6td7cF",
+      "PRRT_kwDOUWarIc6td7cG",
+      "PRRT_kwDOUWarIc6td7cI"
+    ],
+    "excludedNewThreadsNote": "Three P1 review threads created at 2026-10-17T06:33:40Z are outside the 155-thread bounded snapshot scope and pending future governance authorization.",
+    "totalOutdatedThreads": 75,
+    "totalCurrentThreads": 80,
     "verdictCounts": {
       "FIXED": 120,
       "DUPLICATE": 29,
       "NOT_APPLICABLE": 0,
       "ACCEPTED_RISK": 0,
-      "UNRESOLVED": 0
+      "UNRESOLVED": 6
     },
     "governanceInvariants": {
       "RUNTIME_AUTHORITY": "NONE",
       "SHADOW_TO_ADVISORY": "STRICT_HOLD",
       "CYCLE_0048": "ON_HOLD_NOT_ASSIGNED",
       "ISSUE_37": "OPEN",
-      "LOCAL_COMMIT": "NOT_AUTHORIZED",
+      "LEDGER_SNAPSHOT": "155_THREADS",
+      "LEDGER_LOCAL_COMMIT": "AUTHORIZED_BOUNDED",
+      "LEDGER_PUSH": "NOT_AUTHORIZED",
+      "P1_REMEDIATION_SCOPE": "6_THREADS",
+      "LOCAL_CODE_MODIFICATION": "AUTHORIZED_BOUNDED",
+      "P1_CODE_COMMIT": "NOT_AUTHORIZED",
+      "P1_CODE_PUSH": "NOT_AUTHORIZED",
+      "NEW_ADDITIONAL_P1": 3,
+      "NEW_ADDITIONAL_P1_REMEDIATION": "NOT_AUTHORIZED",
+      "LOCAL_COMMIT": "AUTHORIZED_BOUNDED",
       "COMMIT_AND_PUSH": "NOT_AUTHORIZED",
       "SQUASH_MERGE": "NOT_AUTHORIZED",
       "RULESET_BYPASS": "NOT_AUTHORIZED",
@@ -34,7 +51,7 @@
       "CHANGE_LEDGER": "AUTHORIZED",
       "PRE_MERGE_PACKET": "AUTHORIZED"
     },
-    "governanceNotice": "Thread batch resolution on GitHub is NOT AUTHORIZED. This ledger is an offline evidence-only triage record; zero review threads have been mutated on GitHub."
+    "governanceNotice": "Thread batch resolution on GitHub is NOT AUTHORIZED. This ledger is an offline evidence-only bounded triage snapshot (155 threads); zero review threads have been mutated on GitHub. Three newer GitHub P1 threads are excluded pending future authorization."
   },
   "threads": [
     {
@@ -45,12 +62,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/core/harness.mjs:372",
       "title": "Require clean verification in the default gate path",
       "isResolved": false,
       "isOutdated": true,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6qo0uP",
@@ -60,27 +77,27 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/core/independent-verifier.mjs:244",
       "title": "Keep verification capability minting private",
       "isResolved": false,
       "isOutdated": true,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6qo0uT",
       "resolutionCategory": "FIXED",
       "duplicateOf": null,
-      "evidenceLinkOrReasoning": "Remediated in Phase 1 & dogfood: in `scripts/dogfood-review.mjs:1010-1120`, pre-extracts exact-head `contextPackage` and injects it into both primary sentry prompts and `conductIndependentVerification` (§3.3.4 Dual Visibility). Verified in `tests/remediation-007-clean-challenge.test.mjs` ('PR39-ROUND5-DUAL-VISIBILITY-01'). [Pre-existing in remote HEAD commits 8375c65, 4b2c7d8 & uncommitted working tree].",
+      "evidenceLinkOrReasoning": "Remediated in Phase 1 & dogfood: in `scripts/dogfood-review.mjs:1010-1120`, pre-extracts exact-head `contextPackage` and injects it into both primary sentry prompts and `conductIndependentVerification` (§3.3.4 Dual Visibility). Verified in `tests/remediation-007-clean-challenge.test.mjs` ('PR39-ROUND5-DUAL-VISIBILITY-01'). [Historically uncommitted during review; formally committed in 34d5831 and verified green on CI in 9776b4c].",
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "scripts/dogfood-review.mjs:1330",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "scripts/dogfood-review.mjs:1362",
       "title": "Pass exact-head context into the Clean Challenge",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6qo0uZ",
@@ -90,27 +107,27 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/core/independent-verifier.mjs:317",
       "title": "Validate counterexample content before granting support",
       "isResolved": false,
       "isOutdated": true,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6qo0uc",
       "resolutionCategory": "FIXED",
       "duplicateOf": null,
-      "evidenceLinkOrReasoning": "Remediated prior to Phase 1: DEFECTS_FOUND without omissions fails closed with decision: 'block'. (Resolved in src/core/harness.mjs, verified by tests/remediation-007-clean-challenge.test.mjs (007-DELTA-P1-04-NEGATIVE)). [Implemented in uncommitted Phase 1-2 working tree diff against Exact Head ebe28be].",
+      "evidenceLinkOrReasoning": "Remediated prior to Phase 1: DEFECTS_FOUND without omissions fails closed with decision: 'block'. (Resolved in src/core/harness.mjs, verified by tests/remediation-007-clean-challenge.test.mjs (007-DELTA-P1-04-NEGATIVE)). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c].",
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "src/core/harness.mjs:839",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "src/core/harness.mjs:891",
       "title": "Fail closed when the verifier reports defects without omissions",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6qo0ue",
@@ -120,12 +137,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "src/core/context-builder.mjs:1269",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "src/core/context-builder.mjs:1284",
       "title": "Enforce the AST ceiling after retaining unresolved callees",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6qo0uh",
@@ -135,12 +152,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "src/core/context-builder.mjs:1600",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "src/core/context-builder.mjs:1725",
       "title": "Isolate target-file hunks before extracting callees",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6qo0uk",
@@ -150,12 +167,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/core/harness.mjs:345",
       "title": "Bind objective exclusions when validating the run context",
       "isResolved": false,
       "isOutdated": true,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6qo0un",
@@ -165,27 +182,27 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/core/harness.mjs:361",
       "title": "Require clean-challenge mode for zero-finding records",
       "isResolved": false,
       "isOutdated": true,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6qo0ur",
       "resolutionCategory": "FIXED",
       "duplicateOf": null,
-      "evidenceLinkOrReasoning": "Remediated in Phase 2: In `src/core/independent-verifier.mjs:1393-1396, 1439-1444` (`validateVerificationOutput`), when both `line_start` and `line` are missing, line 1395 explicitly sets `locatorAccurate = false`. Lines 1439-1444 enforce `const hasValidLocator = locatorAccurate === true && lineStart >= 1 && lineEnd >= lineStart; if (!hasCounter || !hasValidLocator) { evidenceSupport = 'INSUFFICIENT_EVIDENCE'; }`. Missing locators fail `hasValidLocator` and downgrade to `INSUFFICIENT_EVIDENCE`. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-03', 'PHASE2-NEG-04'). [Implemented in uncommitted Phase 2 working tree diff against Exact Head ebe28be].",
+      "evidenceLinkOrReasoning": "Remediated in Phase 2: In `src/core/independent-verifier.mjs:1393-1396, 1439-1444` (`validateVerificationOutput`), when both `line_start` and `line` are missing, line 1395 explicitly sets `locatorAccurate = false`. Lines 1439-1444 enforce `const hasValidLocator = locatorAccurate === true && lineStart >= 1 && lineEnd >= lineStart; if (!hasCounter || !hasValidLocator) { evidenceSupport = 'INSUFFICIENT_EVIDENCE'; }`. Missing locators fail `hasValidLocator` and downgrade to `INSUFFICIENT_EVIDENCE`. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-03', 'PHASE2-NEG-04'). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c].",
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "src/core/independent-verifier.mjs:1375",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "src/core/independent-verifier.mjs:927",
       "title": "Require explicit omission line locators",
       "isResolved": false,
-      "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "isOutdated": true,
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6qo0uv",
@@ -195,27 +212,27 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/core/context-builder.mjs:343",
       "title": "Detect sensitive terms inside camelCase symbols",
       "isResolved": false,
       "isOutdated": true,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6qo0u0",
       "resolutionCategory": "FIXED",
       "duplicateOf": null,
-      "evidenceLinkOrReasoning": "Remediated in Phase 2: In `src/core/independent-verifier.mjs:2320-2335` (`conductIndependentVerification`), observed runtime `verifierAdapter?.actualModel || validated?.actualModel` takes precedence over caller-configured `options.actualModel`, preventing static caller metadata from overriding the actual observed runtime model identity. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-11'). [Implemented in uncommitted Phase 2 working tree diff against Exact Head ebe28be].",
+      "evidenceLinkOrReasoning": "Remediated in Phase 2: In `src/core/independent-verifier.mjs:2320-2335` (`conductIndependentVerification`), observed runtime `verifierAdapter?.actualModel || validated?.actualModel` takes precedence over caller-configured `options.actualModel`, preventing static caller metadata from overriding the actual observed runtime model identity. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-11'). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c].",
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "src/core/independent-verifier.mjs:2322",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "src/core/independent-verifier.mjs:1616",
       "title": "Prefer observed verifier identity over caller metadata",
       "isResolved": false,
-      "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "isOutdated": true,
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6qwj_j",
@@ -225,12 +242,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/core/context-builder.mjs:560",
       "title": "Preserve sensitive gaps after reaching the callee limit",
       "isResolved": false,
       "isOutdated": true,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6qwj_p",
@@ -240,12 +257,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/core/independent-verifier.mjs:1060",
       "title": "Reject verification responses without a valid overall status",
       "isResolved": false,
       "isOutdated": true,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6qwj_t",
@@ -255,12 +272,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "scripts/dogfood-review.mjs:729",
       "title": "Keep the verifier real when live reviewers are injected",
       "isResolved": false,
       "isOutdated": true,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6qwj_y",
@@ -270,12 +287,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "src/core/context-builder.mjs:896",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "src/core/context-builder.mjs:911",
       "title": "Emit uncertainty when exact-head content is unavailable",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6qwj_0",
@@ -285,12 +302,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/core/context-builder.mjs:412",
       "title": "Exclude comments and string literals from callee discovery",
       "isResolved": false,
       "isOutdated": true,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6qwj_9",
@@ -300,12 +317,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "scripts/dogfood-review.mjs:573",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "scripts/dogfood-review.mjs:592",
       "title": "Validate caller-supplied run IDs before using them in checkpoints",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6rTXZd",
@@ -315,12 +332,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/core/context-builder.mjs:295",
       "title": "Skip parameter braces when locating function bodies",
       "isResolved": false,
       "isOutdated": true,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6rTXZh",
@@ -330,12 +347,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/core/context-builder.mjs:798",
       "title": "Record uncertainty when byte-budget eviction drops callees",
       "isResolved": false,
       "isOutdated": true,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6rTXZk",
@@ -345,12 +362,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "src/core/context-builder.mjs:270",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "src/core/context-builder.mjs:285",
       "title": "Implement indentation-based extraction for Python definitions",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6rTXZl",
@@ -360,12 +377,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/adapters/staged-review.mjs:239",
       "title": "Keep sanitized checkpoint names collision-free",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6rTXZn",
@@ -375,12 +392,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/core/independent-verifier.mjs:991",
       "title": "Reject omissions that lack an evidence-support verdict",
       "isResolved": false,
       "isOutdated": true,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6rTowe",
@@ -390,12 +407,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/core/independent-verifier.mjs:261",
       "title": "Keep the remaining verification issuer private",
       "isResolved": false,
       "isOutdated": true,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6rTowi",
@@ -405,12 +422,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/core/context-builder.mjs:888",
       "title": "Distinguish an empty blob from a failed exact-head lookup",
       "isResolved": false,
       "isOutdated": true,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6rTowl",
@@ -420,12 +437,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/core/independent-verifier.mjs:1853",
       "title": "Preserve verifier uncertainty over caller overrides",
       "isResolved": false,
       "isOutdated": true,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6rTowo",
@@ -435,12 +452,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "src/core/context-builder.mjs:863",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "src/core/context-builder.mjs:878",
       "title": "Truncate oversized final lines in bounded snippets",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6rTowq",
@@ -450,12 +467,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/core/context-builder.mjs:266",
       "title": "Reject call sites when locating callee definitions",
       "isResolved": false,
       "isOutdated": true,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6rTowu",
@@ -465,12 +482,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "scripts/dogfood-review.mjs:1311",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "scripts/dogfood-review.mjs:1343",
       "title": "Fail closed when the Clean Challenge truncates the diff",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6rVNc1",
@@ -480,12 +497,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/core/independent-verifier.mjs:1288",
       "title": "Propagate every sensitive context gap to uncertainty",
       "isResolved": false,
       "isOutdated": true,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6rVNc5",
@@ -495,12 +512,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "src/core/context-builder.mjs:1323",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "src/core/context-builder.mjs:1341",
       "title": "Preserve repeated file diff blocks during context extraction",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6rVNc6",
@@ -510,12 +527,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "src/core/context-builder.mjs:779",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "src/core/context-builder.mjs:794",
       "title": "Merge sensitivity across repeated added call sites",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6rY13u",
@@ -525,27 +542,27 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/core/independent-verifier.mjs:1886",
       "title": "Keep recorded exclusions identical to verifier scope",
       "isResolved": false,
       "isOutdated": true,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6rY131",
       "resolutionCategory": "DUPLICATE",
       "duplicateOf": "PRRT_kwDOUWarIc6rvCBQ",
-      "evidenceLinkOrReasoning": "Duplicate of Thread PRRT_kwDOUWarIc6rvCBQ (Verify omission locators against the reviewed diff). Remediated in Phase 2 in `src/core/independent-verifier.mjs:1414-1444, 2145-2170` (`validateVerificationOutput`), validating omission locators and diff hunks against authentic git/manifest provenance. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-17', 'PHASE2-NEG-18'). [Implemented in uncommitted Phase 2 working tree diff against Exact Head ebe28be].",
+      "evidenceLinkOrReasoning": "Duplicate of Thread PRRT_kwDOUWarIc6rvCBQ (Verify omission locators against the reviewed diff). Remediated in Phase 2 in `src/core/independent-verifier.mjs:1414-1444, 2145-2170` (`validateVerificationOutput`), validating omission locators and diff hunks against authentic git/manifest provenance. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-17', 'PHASE2-NEG-18'). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c].",
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "src/core/independent-verifier.mjs:1443",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "src/core/independent-verifier.mjs:1164",
       "title": "Verify omission locators against the reviewed diff",
       "isResolved": false,
-      "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "isOutdated": true,
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6rY139",
@@ -555,12 +572,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/core/independent-verifier.mjs:1241",
       "title": "Reject Clean Challenge evaluations without producer findings",
       "isResolved": false,
       "isOutdated": true,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6rY14D",
@@ -570,12 +587,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/core/git-collector.mjs:49",
       "title": "Partition exact-head cache entries by repository",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6ra7kH",
@@ -585,12 +602,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/adapters/review-orchestrator.mjs:238",
       "title": "Bind supplied records to the current ChangeSet",
       "isResolved": false,
       "isOutdated": true,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6ra7kM",
@@ -600,12 +617,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "src/core/context-builder.mjs:967",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "src/core/context-builder.mjs:982",
       "title": "Preserve gaps for imported sensitive callees",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6ra7kS",
@@ -615,42 +632,42 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "src/core/context-builder.mjs:668",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "src/core/context-builder.mjs:683",
       "title": "Reset lexical state at each disjoint diff hunk",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6ra7kY",
       "resolutionCategory": "FIXED",
       "duplicateOf": null,
-      "evidenceLinkOrReasoning": "Remediated in Phase 1: in `_evaluateGateDecisionCore` and `_evaluatePostVerificationGateCore`, when findings count is greater than 0, the gate strictly requires `verificationRecord.verificationMode === 'producer_verification'`. Any unknown mode, typo, or missing mode fails closed with decision: 'block'. (Resolved in src/core/harness.mjs, verified by tests/remediation-phase1-harness.test.mjs (PHASE1-NEG-07)). [Implemented in uncommitted Phase 1-2 working tree diff against Exact Head ebe28be].",
+      "evidenceLinkOrReasoning": "Remediated in Phase 1: in `_evaluateGateDecisionCore` and `_evaluatePostVerificationGateCore`, when findings count is greater than 0, the gate strictly requires `verificationRecord.verificationMode === 'producer_verification'`. Any unknown mode, typo, or missing mode fails closed with decision: 'block'. (Resolved in src/core/harness.mjs, verified by tests/remediation-phase1-harness.test.mjs (PHASE1-NEG-07)). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c].",
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "src/core/harness.mjs:690",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "src/core/harness.mjs:590",
       "title": "Require producer verification for nonempty consensus",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6ra7ki",
       "resolutionCategory": "FIXED",
       "duplicateOf": null,
-      "evidenceLinkOrReasoning": "Remediated via REMEDIATION-007 §3.3.4 (Dual Visibility): In `scripts/dogfood-review.mjs:1010-1120`, pre-extracts exact-head `contextPackage` and injects it symmetrically into both primary sentry prompts and `conductIndependentVerification`. Reclassified from historical `FIX_REQUIRED_DUAL_VISIBILITY` / candidate `ACCEPTED_RISK` to `FIXED` candidate pending governance adjudication. Verified in `tests/remediation-007-clean-challenge.test.mjs` ('PR39-ROUND5-DUAL-VISIBILITY-01', 'PR39-ROUND5-DUAL-VISIBILITY-02-NEGATIVE'). [Implemented in uncommitted Phase 1-2 working tree diff against Exact Head ebe28be].",
+      "evidenceLinkOrReasoning": "Remediated via REMEDIATION-007 §3.3.4 (Dual Visibility): In `scripts/dogfood-review.mjs:1010-1120`, pre-extracts exact-head `contextPackage` and injects it symmetrically into both primary sentry prompts and `conductIndependentVerification`. Reclassified from historical `FIX_REQUIRED_DUAL_VISIBILITY` / candidate `ACCEPTED_RISK` to `FIXED` candidate pending governance adjudication. Verified in `tests/remediation-007-clean-challenge.test.mjs` ('PR39-ROUND5-DUAL-VISIBILITY-01', 'PR39-ROUND5-DUAL-VISIBILITY-02-NEGATIVE'). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c].",
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "scripts/dogfood-review.mjs:972",
       "title": "Build callee context before invoking primary reviewers",
       "isResolved": false,
       "isOutdated": true,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6ra7kt",
@@ -660,12 +677,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/adapters/review-prompts.mjs:222",
       "title": "Escape callee source before embedding prompt markup",
       "isResolved": false,
       "isOutdated": true,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6ra7k3",
@@ -675,12 +692,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/core/real-benchmark-runner.mjs:94",
       "title": "Do not score preliminary approvals as final gate passes",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6re305",
@@ -690,12 +707,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/adapters/review-orchestrator.mjs:78",
       "title": "Derive the binding digest from ChangeSet contents",
       "isResolved": false,
       "isOutdated": true,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6re31A",
@@ -705,12 +722,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/core/context-builder.mjs:528",
       "title": "Track qualified sensitive calls during callee discovery",
       "isResolved": false,
       "isOutdated": true,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6re31E",
@@ -720,12 +737,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "src/core/context-builder.mjs:197",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "src/core/context-builder.mjs:212",
       "title": "Preserve string state across lines during brace matching",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6re31K",
@@ -735,12 +752,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "scripts/dogfood-review.mjs:1258",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "scripts/dogfood-review.mjs:1290",
       "title": "Fail closed when context-package extraction throws",
       "isResolved": false,
       "isOutdated": true,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6re31P",
@@ -750,27 +767,27 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/core/harness.mjs:686",
       "title": "Reject unexplained DEFECTS_FOUND statuses",
       "isResolved": false,
       "isOutdated": true,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6re31W",
       "resolutionCategory": "FIXED",
       "duplicateOf": null,
-      "evidenceLinkOrReasoning": "Remediated in Phase 2: In `src/core/independent-verifier.mjs:506-538` (`hasConcreteCounterexample`), when reasoning is missing or body contains only passive advice (e.g., 'call validate(input) to prevent crash'), heuristic returns `false`, preventing passive advice from masquerading as a counterexample and downgrading omission to `INSUFFICIENT_EVIDENCE`. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-01'). [Implemented in uncommitted Phase 2 working tree diff against Exact Head ebe28be].",
+      "evidenceLinkOrReasoning": "Remediated in Phase 2: In `src/core/independent-verifier.mjs:506-538` (`hasConcreteCounterexample`), when reasoning is missing or body contains only passive advice (e.g., 'call validate(input) to prevent crash'), heuristic returns `false`, preventing passive advice from masquerading as a counterexample and downgrading omission to `INSUFFICIENT_EVIDENCE`. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-01'). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c].",
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "src/core/independent-verifier.mjs:508",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "src/core/independent-verifier.mjs:484",
       "title": "Do not accept remediation advice as a counterexample",
       "isResolved": false,
-      "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "isOutdated": true,
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6rfkYK",
@@ -780,12 +797,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "scripts/dogfood-review.mjs:970",
       "title": "Fail closed when supplied changesets lack repository roots",
       "isResolved": false,
       "isOutdated": true,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6rfkYW",
@@ -795,27 +812,27 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "src/core/context-builder.mjs:1364",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "src/core/context-builder.mjs:1173",
       "title": "Do not report deleted files as unavailable context",
       "isResolved": false,
-      "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "isOutdated": true,
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6rfkYc",
       "resolutionCategory": "FIXED",
       "duplicateOf": null,
-      "evidenceLinkOrReasoning": "Remediated in Phase 2: In `src/core/independent-verifier.mjs:1373-1380` (`validateVerificationOutput`), non-boolean string tokens for `locatorAccurate` (e.g. `'unknown'`, `'flase'`, `'yes'`) or missing values default to strict `false`, preventing truthy string coercion from granting valid locator status. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-03'). [Implemented in uncommitted Phase 2 working tree diff against Exact Head ebe28be].",
+      "evidenceLinkOrReasoning": "Remediated in Phase 2: In `src/core/independent-verifier.mjs:1373-1380` (`validateVerificationOutput`), non-boolean string tokens for `locatorAccurate` (e.g. `'unknown'`, `'flase'`, `'yes'`) or missing values default to strict `false`, preventing truthy string coercion from granting valid locator status. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-03'). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c].",
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "src/core/independent-verifier.mjs:1375",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "src/core/independent-verifier.mjs:1122",
       "title": "Reject non-boolean omission locator verdicts",
       "isResolved": false,
-      "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "isOutdated": true,
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6rfkYi",
@@ -825,12 +842,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/adapters/review-prompts.mjs:254",
       "title": "Bind each extracted callee to its source file",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6rhwEt",
@@ -840,12 +857,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "src/adapters/review-orchestrator.mjs:361",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "src/adapters/review-orchestrator.mjs:459",
       "title": "Forward the risk tier into the authoritative gate",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6rhwEx",
@@ -855,12 +872,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/core/context-builder.mjs:866",
       "title": "Resolve newly added local definitions before declaring a gap",
       "isResolved": false,
       "isOutdated": true,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6rhwE0",
@@ -870,12 +887,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/core/review-run-report.mjs:130",
       "title": "Preserve verifier advisories in review reports",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6rhwE4",
@@ -885,27 +902,27 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "src/core/context-builder.mjs:359",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "src/core/context-builder.mjs:374",
       "title": "Bound Python definitions by indentation instead of braces",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6riPTk",
       "resolutionCategory": "FIXED",
       "duplicateOf": null,
-      "evidenceLinkOrReasoning": "Remediated prior to Phase 1: enforces pairwise finding-set signature binding when boundProducerFindings exists. (Resolved in src/core/harness.mjs (commits 0b90fcb, cf6be07), verified by tests/remediation-007-clean-challenge.test.mjs (PR39-GATE-OUT-03-NEGATIVE)). [Implemented in uncommitted Phase 1-2 working tree diff against Exact Head ebe28be].",
+      "evidenceLinkOrReasoning": "Remediated prior to Phase 1: enforces pairwise finding-set signature binding when boundProducerFindings exists. (Resolved in src/core/harness.mjs (commits 0b90fcb, cf6be07), verified by tests/remediation-007-clean-challenge.test.mjs (PR39-GATE-OUT-03-NEGATIVE)). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c].",
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "src/core/harness.mjs:702",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "src/core/harness.mjs:656",
       "title": "Bind verifier records to the current finding set",
       "isResolved": false,
-      "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "isOutdated": true,
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6riPTp",
@@ -915,27 +932,27 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/core/context-builder.mjs:637",
       "title": "Preserve receiver identity when deduplicating callees",
       "isResolved": false,
       "isOutdated": true,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6riPTv",
       "resolutionCategory": "FIXED",
       "duplicateOf": null,
-      "evidenceLinkOrReasoning": "Remediated in Phase 1: in `_evaluateGateDecisionCore` and `_evaluatePostVerificationGateCore`, instantiation of `RunContext` from caller options is enclosed in defensive `try/catch` blocks. Any constructor throw (such as path traversal in runId) returns deterministic fail-closed `{ decision: 'block', reason: 'Gate Fail-Closed: Malformed RunContext conversion failed (MALFORMED_RUN_CONTEXT_CONVERSION_FAILED): ...' }` instead of uncaught exception. (Resolved in src/core/harness.mjs, verified by tests/remediation-phase1-harness.test.mjs (PHASE1-NEG-04)). [Implemented in uncommitted Phase 1-2 working tree diff against Exact Head ebe28be].",
+      "evidenceLinkOrReasoning": "Remediated in Phase 1: in `_evaluateGateDecisionCore` and `_evaluatePostVerificationGateCore`, instantiation of `RunContext` from caller options is enclosed in defensive `try/catch` blocks. Any constructor throw (such as path traversal in runId) returns deterministic fail-closed `{ decision: 'block', reason: 'Gate Fail-Closed: Malformed RunContext conversion failed (MALFORMED_RUN_CONTEXT_CONVERSION_FAILED): ...' }` instead of uncaught exception. (Resolved in src/core/harness.mjs, verified by tests/remediation-phase1-harness.test.mjs (PHASE1-NEG-04)). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c].",
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "src/core/harness.mjs:350",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "src/core/harness.mjs:341",
       "title": "Convert invalid run contexts into fail-closed decisions",
       "isResolved": false,
-      "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "isOutdated": true,
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6riPT0",
@@ -945,12 +962,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "scripts/dogfood-review.mjs:969",
       "title": "Bind supplied context packages to the reviewed ChangeSet",
       "isResolved": false,
       "isOutdated": true,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6rrHOT",
@@ -960,12 +977,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/core/harness.mjs:550",
       "title": "Compare the complete finding when binding records",
       "isResolved": false,
       "isOutdated": true,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6rrHOW",
@@ -975,12 +992,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "src/core/context-builder.mjs:642",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "src/core/context-builder.mjs:657",
       "title": "Recognize optional-call syntax during callee discovery",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6rrHOY",
@@ -990,12 +1007,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "src/core/context-builder.mjs:1361",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "src/core/context-builder.mjs:1252",
       "title": "Read renamed files from their HEAD-side path",
       "isResolved": false,
-      "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "isOutdated": true,
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6rrHOb",
@@ -1005,12 +1022,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/adapters/staged-review.mjs:240",
       "title": "Keep sanitized checkpoint names collision-resistant",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6rrHOc",
@@ -1020,12 +1037,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "src/core/context-builder.mjs:1600",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "src/core/context-builder.mjs:1725",
       "title": "Scope single-file callee discovery to the target file's diff",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6rrUDl",
@@ -1035,27 +1052,27 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "src/core/context-builder.mjs:1012",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "src/core/context-builder.mjs:1027",
       "title": "Resolve `this` callees only against the owning class",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6rrUDp",
       "resolutionCategory": "FIXED",
       "duplicateOf": null,
-      "evidenceLinkOrReasoning": "Remediated in Phase 2: In `src/core/independent-verifier.mjs:1765-1785` (`CliVerifierAdapter`), tracks cumulative stdout/stderr byte counts during streaming; if `byteLength > limits.maxOutputBytes`, child process is terminated immediately with `SIGTERM` and fails closed. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-08'). [Implemented in uncommitted Phase 2 working tree diff against Exact Head ebe28be].",
+      "evidenceLinkOrReasoning": "Remediated in Phase 2: In `src/core/independent-verifier.mjs:1765-1785` (`CliVerifierAdapter`), tracks cumulative stdout/stderr byte counts during streaming; if `byteLength > limits.maxOutputBytes`, child process is terminated immediately with `SIGTERM` and fails closed. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-08'). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c].",
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "src/core/independent-verifier.mjs:1769",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "src/core/independent-verifier.mjs:2337",
       "title": "Enforce verifier output-size limits while streaming",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6rrUDs",
@@ -1065,12 +1082,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/core/git-collector.mjs:32",
       "title": "Bound the exact-head content cache",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6rr-I6",
@@ -1080,12 +1097,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "src/core/context-builder.mjs:704",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "src/core/context-builder.mjs:719",
       "title": "Classify sensitive receivers before skipping built-in methods",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6rr-I-",
@@ -1095,12 +1112,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "src/core/context-builder.mjs:549",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "src/core/context-builder.mjs:564",
       "title": "Scan executable expressions inside template literals",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6rr-JA",
@@ -1110,12 +1127,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/core/independent-verifier.mjs:1932",
       "title": "Preserve package gaps when explicit gaps are empty",
       "isResolved": false,
       "isOutdated": true,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6rr-JC",
@@ -1125,27 +1142,27 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "src/core/context-builder.mjs:959",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "src/core/context-builder.mjs:974",
       "title": "Promote unresolved sensitive calls from changed hunks",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6rr-JF",
       "resolutionCategory": "FIXED",
       "duplicateOf": null,
-      "evidenceLinkOrReasoning": "Remediated in Phase 3 (R3 Run ID Binding & Anti-Replay): in `src/adapters/review-orchestrator.mjs:56-78, 241-246` (`buildCanonicalRunContext`), derived `activeRunId = options.runId || runId`. If `verificationRecord` is supplied, its `runId` must be non-empty and strictly equal `activeRunId`. If `options.runContext` contains a `runId`, it must match `activeRunId`. Stale or cross-run verification records fail closed to `return null`. Verified by `tests/remediation-phase3-orchestrator-cli.test.mjs` (TEST-R3-01, TEST-R3-02) and `tests/challenger-phase3-r1-r2-r3.test.mjs` (CHALLENGE-R3). [Implemented in uncommitted Phase 3 working tree diff against Exact Head ebe28be].",
+      "evidenceLinkOrReasoning": "Remediated in Phase 3 (R3 Run ID Binding & Anti-Replay): in `src/adapters/review-orchestrator.mjs:56-78, 241-246` (`buildCanonicalRunContext`), derived `activeRunId = options.runId || runId`. If `verificationRecord` is supplied, its `runId` must be non-empty and strictly equal `activeRunId`. If `options.runContext` contains a `runId`, it must match `activeRunId`. Stale or cross-run verification records fail closed to `return null`. Verified by `tests/remediation-phase3-orchestrator-cli.test.mjs` (TEST-R3-01, TEST-R3-02) and `tests/challenger-phase3-r1-r2-r3.test.mjs` (CHALLENGE-R3). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c].",
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/adapters/review-orchestrator.mjs:200",
       "title": "Bind canonical context to the current orchestration run",
       "isResolved": false,
-      "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "isOutdated": true,
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6rsKB4",
@@ -1155,12 +1172,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "src/core/context-builder.mjs:642",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "src/core/context-builder.mjs:657",
       "title": "Scan calls whose parenthesis starts on the next line",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6rsKB6",
@@ -1170,42 +1187,42 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "scripts/dogfood-review.mjs:1024",
       "title": "Verify package digests only against recomputed diff hashes",
       "isResolved": false,
       "isOutdated": true,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6rsKB8",
       "resolutionCategory": "FIXED",
       "duplicateOf": null,
-      "evidenceLinkOrReasoning": "Remediated in Phase 1: in `normalizeFinding`, provider-local finding IDs matching generic numeric patterns are automatically namespaced (`${prefix}:${id}`) while preserving semantic IDs. In `_evaluatePostVerificationGateCore`, multi-pass finding resolution (`findEvaluationIndexForFinding`) and semantic content signature matching resolve evaluations without ID collisions. (Resolved in src/core/harness.mjs, verified by tests/remediation-phase1-harness.test.mjs (PHASE1-NEG-08)). [Implemented in uncommitted Phase 1-2 working tree diff against Exact Head ebe28be].",
+      "evidenceLinkOrReasoning": "Remediated in Phase 1: in `normalizeFinding`, provider-local finding IDs matching generic numeric patterns are automatically namespaced (`${prefix}:${id}`) while preserving semantic IDs. In `_evaluatePostVerificationGateCore`, multi-pass finding resolution (`findEvaluationIndexForFinding`) and semantic content signature matching resolve evaluations without ID collisions. (Resolved in src/core/harness.mjs, verified by tests/remediation-phase1-harness.test.mjs (PHASE1-NEG-08)). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c].",
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "src/core/harness.mjs:239",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "src/core/harness.mjs:235",
       "title": "Namespace provider-local finding IDs before verification",
       "isResolved": false,
-      "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "isOutdated": true,
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6rsKB_",
       "resolutionCategory": "FIXED",
       "duplicateOf": null,
-      "evidenceLinkOrReasoning": "Remediated in Phase 1 (including P1-HARNESS-EXCLUSION-PLATFORM-OVERRIDE-01): implemented and exported `normalizeExclusionPath(s, { platform = process.platform })`. On POSIX platforms (`darwin`, `linux`), exact character casing is preserved while normalizing slashes and stripping `./`. On Windows (`win32`), casing is lowercased for filesystem comparison. Formal gate entry points strictly bind targetPlatform to host `process.platform`, ignoring caller `options.platform` override attempts; only isolated synthetic test gates (`allowSynthetic: true`) permit platform simulation. (Resolved in src/core/harness.mjs, verified by tests/remediation-phase1-harness.test.mjs (PHASE1-NEG-03, PHASE1-NEG-03-PLATFORM-OVERRIDE)). [Implemented in uncommitted Phase 1-2 working tree diff against Exact Head ebe28be].",
+      "evidenceLinkOrReasoning": "Remediated in Phase 1 (including P1-HARNESS-EXCLUSION-PLATFORM-OVERRIDE-01): implemented and exported `normalizeExclusionPath(s, { platform = process.platform })`. On POSIX platforms (`darwin`, `linux`), exact character casing is preserved while normalizing slashes and stripping `./`. On Windows (`win32`), casing is lowercased for filesystem comparison. Formal gate entry points strictly bind targetPlatform to host `process.platform`, ignoring caller `options.platform` override attempts; only isolated synthetic test gates (`allowSynthetic: true`) permit platform simulation. (Resolved in src/core/harness.mjs, verified by tests/remediation-phase1-harness.test.mjs (PHASE1-NEG-03, PHASE1-NEG-03-PLATFORM-OVERRIDE)). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c].",
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "src/core/harness.mjs:419",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "src/core/harness.mjs:415",
       "title": "Preserve case when binding excluded paths",
       "isResolved": false,
-      "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "isOutdated": true,
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6rsKCC",
@@ -1215,12 +1232,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "src/core/context-builder.mjs:844",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "src/core/context-builder.mjs:859",
       "title": "Mark elided sensitive callee bodies as unresolved",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6rsajY",
@@ -1230,12 +1247,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "src/core/context-builder.mjs:700",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "src/core/context-builder.mjs:715",
       "title": "Treat namespace-scoped calls as qualified",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6rsajc",
@@ -1245,57 +1262,57 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "src/core/context-builder.mjs:920",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "src/core/context-builder.mjs:935",
       "title": "Preserve sensitive identity through import aliases",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6rsajd",
       "resolutionCategory": "DUPLICATE",
       "duplicateOf": "PRRT_kwDOUWarIc6ra7ki",
-      "evidenceLinkOrReasoning": "Duplicate of Thread 22 (PRRT_kwDOUWarIc6ra7ki). Remediated via §3.3.4 Dual Visibility pre-extraction in `scripts/dogfood-review.mjs:1010-1120`, injecting contextPackage symmetrically into both primary sentry reviews and Clean Challenge verifier. Verified in `tests/remediation-007-clean-challenge.test.mjs` ('PR39-ROUND5-DUAL-VISIBILITY-01'). [Implemented in uncommitted Phase 1-2 working tree diff against Exact Head ebe28be].",
+      "evidenceLinkOrReasoning": "Duplicate of Thread 22 (PRRT_kwDOUWarIc6ra7ki). Remediated via §3.3.4 Dual Visibility pre-extraction in `scripts/dogfood-review.mjs:1010-1120`, injecting contextPackage symmetrically into both primary sentry reviews and Clean Challenge verifier. Verified in `tests/remediation-007-clean-challenge.test.mjs` ('PR39-ROUND5-DUAL-VISIBILITY-01'). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c].",
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "scripts/dogfood-review.mjs:970",
       "title": "Build exact-head context before invoking primary sentries",
       "isResolved": false,
       "isOutdated": true,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6rte6b",
       "resolutionCategory": "FIXED",
       "duplicateOf": null,
-      "evidenceLinkOrReasoning": "Remediated in Phase 2: In `src/core/independent-verifier.mjs:809-840, 2132-2140` (`buildVerificationPrompt`), computes overhead reserved for AST context, schema, and gaps before budgeting diff hunks; total rendered prompt exceeding `maxInputBytes` marks `isDiffTruncated = true` and propagates `UNCERTAIN`. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-02', 'PHASE2-NEG-14'). [Implemented in uncommitted Phase 2 working tree diff against Exact Head ebe28be].",
+      "evidenceLinkOrReasoning": "Remediated in Phase 2: In `src/core/independent-verifier.mjs:809-840, 2132-2140` (`buildVerificationPrompt`), computes overhead reserved for AST context, schema, and gaps before budgeting diff hunks; total rendered prompt exceeding `maxInputBytes` marks `isDiffTruncated = true` and propagates `UNCERTAIN`. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-02', 'PHASE2-NEG-14'). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c].",
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "src/core/independent-verifier.mjs:934",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "src/core/independent-verifier.mjs:1307",
       "title": "Reserve input budget before appending context",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6rte6j",
       "resolutionCategory": "FIXED",
       "duplicateOf": null,
-      "evidenceLinkOrReasoning": "Remediated prior to Phase 1: ungrounded contested omissions without substantive counter-evidence fail closed or escalate to human review. (Resolved in src/core/harness.mjs (commit e7f1527), verified by tests/remediation-007-clean-challenge.test.mjs (PR39-GATE-OUT-07-NEGATIVE, PR39-ROUND2-ITEM4-NEGATIVE)). [Implemented in uncommitted Phase 1-2 working tree diff against Exact Head ebe28be].",
+      "evidenceLinkOrReasoning": "Remediated prior to Phase 1: ungrounded contested omissions without substantive counter-evidence fail closed or escalate to human review. (Resolved in src/core/harness.mjs (commit e7f1527), verified by tests/remediation-007-clean-challenge.test.mjs (PR39-GATE-OUT-07-NEGATIVE, PR39-ROUND2-ITEM4-NEGATIVE)). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c].",
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "src/core/harness.mjs:1104",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "src/core/harness.mjs:1153",
       "title": "Reject ungrounded contested omissions",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6rte6o",
@@ -1305,12 +1322,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "src/core/context-builder.mjs:948",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "src/core/context-builder.mjs:963",
       "title": "Account for imports introduced by the patch",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6rte6t",
@@ -1320,12 +1337,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "src/core/context-builder.mjs:642",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "src/core/context-builder.mjs:657",
       "title": "Recognize computed member calls during discovery",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6rte6z",
@@ -1335,12 +1352,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "src/core/context-builder.mjs:668",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "src/core/context-builder.mjs:683",
       "title": "Reset lexical state at diff hunk boundaries",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6rtv6E",
@@ -1350,12 +1367,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "scripts/dogfood-review.mjs:976",
       "title": "Treat an omitted repository root as extraction failure",
       "isResolved": false,
       "isOutdated": true,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6rtv6M",
@@ -1365,12 +1382,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "scripts/dogfood-review.mjs:1084",
       "title": "Reject manifests that lack exact-head coverage",
       "isResolved": false,
       "isOutdated": true,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6rtv6N",
@@ -1380,72 +1397,72 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/core/real-benchmark-runner.mjs:191",
       "title": "Derive final gate blocking from observed findings",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6rtv6O",
       "resolutionCategory": "FIXED",
       "duplicateOf": null,
-      "evidenceLinkOrReasoning": "Remediated in Phase 2: In `src/core/independent-verifier.mjs:1492-1515` (`validateVerificationOutput`), constructed `omissionAssessment` objects explicitly preserve `cwe` and `type` fields provided by the verifier, ensuring defect classification metadata is retained in `verifierOmissions` and gate advisory findings. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-06'). [Implemented in uncommitted Phase 2 working tree diff against Exact Head ebe28be].",
+      "evidenceLinkOrReasoning": "Remediated in Phase 2: In `src/core/independent-verifier.mjs:1492-1515` (`validateVerificationOutput`), constructed `omissionAssessment` objects explicitly preserve `cwe` and `type` fields provided by the verifier, ensuring defect classification metadata is retained in `verifierOmissions` and gate advisory findings. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-06'). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c].",
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "src/core/independent-verifier.mjs:1508",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "src/core/independent-verifier.mjs:2043",
       "title": "Preserve normalized omission remediation metadata",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6rvCBG",
       "resolutionCategory": "FIXED",
       "duplicateOf": null,
-      "evidenceLinkOrReasoning": "Remediated in Phase 1: in `_evaluateGateDecisionCore` and `_evaluatePostVerificationGateCore`, raw headSha and contentDigest values on `options.runContext` are validated against strict 40/64-char hex normalization. Non-empty invalid hex inputs fail closed with reason containing `MALFORMED_RUN_CONTEXT_BINDING` rather than bypassing verification. (Resolved in src/core/harness.mjs, verified by tests/remediation-phase1-harness.test.mjs (PHASE1-NEG-05)). [Implemented in uncommitted Phase 1-2 working tree diff against Exact Head ebe28be].",
+      "evidenceLinkOrReasoning": "Remediated in Phase 1: in `_evaluateGateDecisionCore` and `_evaluatePostVerificationGateCore`, raw headSha and contentDigest values on `options.runContext` are validated against strict 40/64-char hex normalization. Non-empty invalid hex inputs fail closed with reason containing `MALFORMED_RUN_CONTEXT_BINDING` rather than bypassing verification. (Resolved in src/core/harness.mjs, verified by tests/remediation-phase1-harness.test.mjs (PHASE1-NEG-05)). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c].",
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/core/harness.mjs:355",
       "title": "Reject malformed RunContext bindings instead of dropping them",
       "isResolved": false,
-      "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "isOutdated": true,
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6rvCBL",
       "resolutionCategory": "FIXED",
       "duplicateOf": null,
-      "evidenceLinkOrReasoning": "Remediated in Phase 1: in `src/core/harness.mjs`, `getFindingSignature` serializes finding fields as a canonical JSON array tuple `JSON.stringify([id, ruleId, title, file, lineStart, lineEnd, severity, cwe, type, recommendation])`, providing collision-free, injective finding signatures. (Resolved in src/core/harness.mjs, verified by tests/remediation-phase1-harness.test.mjs (PHASE1-NEG-02)). [Implemented in uncommitted Phase 1-2 working tree diff against Exact Head ebe28be].",
+      "evidenceLinkOrReasoning": "Remediated in Phase 1: in `src/core/harness.mjs`, `getFindingSignature` serializes finding fields as a canonical JSON array tuple `JSON.stringify([id, ruleId, title, file, lineStart, lineEnd, severity, cwe, type, recommendation])`, providing collision-free, injective finding signatures. (Resolved in src/core/harness.mjs, verified by tests/remediation-phase1-harness.test.mjs (PHASE1-NEG-02)). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c].",
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/core/harness.mjs:559",
       "title": "Encode finding signatures without delimiter collisions",
       "isResolved": false,
-      "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "isOutdated": true,
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6rvCBQ",
       "resolutionCategory": "FIXED",
       "duplicateOf": null,
-      "evidenceLinkOrReasoning": "Remediated in Phase 2: In `src/core/independent-verifier.mjs:1409-1445` (`validateVerificationOutput`), omission line numbers (`line_start`, `line_end`) are checked against the physical line count of the target file at exact-head; impossible line numbers (e.g. line 999999 in a 50-line file) set `locatorAccurate = false` and downgrade to `INSUFFICIENT_EVIDENCE`. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-04', 'PHASE2-NEG-13'). [Implemented in uncommitted Phase 2 working tree diff against Exact Head ebe28be].",
+      "evidenceLinkOrReasoning": "Remediated in Phase 2: In `src/core/independent-verifier.mjs:1409-1445` (`validateVerificationOutput`), omission line numbers (`line_start`, `line_end`) are checked against the physical line count of the target file at exact-head; impossible line numbers (e.g. line 999999 in a 50-line file) set `locatorAccurate = false` and downgrade to `INSUFFICIENT_EVIDENCE`. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-04', 'PHASE2-NEG-13'). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c].",
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "src/core/independent-verifier.mjs:1414",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "src/core/independent-verifier.mjs:1787",
       "title": "Verify omission line numbers against the reviewed file",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6rvCBT",
@@ -1455,12 +1472,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "src/core/context-builder.mjs:284",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "src/core/context-builder.mjs:299",
       "title": "Exclude comments and strings from definition discovery",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6rvCBW",
@@ -1470,12 +1487,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "scripts/dogfood-review.mjs:1303",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "scripts/dogfood-review.mjs:1335",
       "title": "Block Clean Challenge when producer coverage is incomplete",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6rvWjN",
@@ -1485,12 +1502,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/adapters/staged-review.mjs:238",
       "title": "Preserve run-ID uniqueness in checkpoint filenames",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6rvWjO",
@@ -1500,12 +1517,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "src/core/context-builder.mjs:1600",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "src/core/context-builder.mjs:1725",
       "title": "Scope single-file callee discovery to that file's diff",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6rxCha",
@@ -1515,27 +1532,27 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "scripts/dogfood-review.mjs:987",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "scripts/dogfood-review.mjs:1006",
       "title": "Verify supplied context contents against exact-head Git data",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6rxChi",
       "resolutionCategory": "DUPLICATE",
       "duplicateOf": "PRRT_kwDOUWarIc6rrUDp",
-      "evidenceLinkOrReasoning": "Duplicate of Thread PRRT_kwDOUWarIc6rrUDp (Enforce the verifier output-size limit while streaming). Remediated in Phase 2 in `src/core/independent-verifier.mjs:1765-1785` (`CliVerifierAdapter`), terminating runaway verifier processes exceeding byte ceilings. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-08'). [Implemented in uncommitted Phase 2 working tree diff against Exact Head ebe28be].",
+      "evidenceLinkOrReasoning": "Duplicate of Thread PRRT_kwDOUWarIc6rrUDp (Enforce the verifier output-size limit while streaming). Remediated in Phase 2 in `src/core/independent-verifier.mjs:1765-1785` (`CliVerifierAdapter`), terminating runaway verifier processes exceeding byte ceilings. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-08'). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c].",
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "src/core/independent-verifier.mjs:1769",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "src/core/independent-verifier.mjs:2337",
       "title": "Enforce the verifier output-size limit while streaming",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6r0R6i",
@@ -1545,12 +1562,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "src/core/context-builder.mjs:364",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "src/core/context-builder.mjs:379",
       "title": "Parse regex literals before bounding callee bodies",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6r0R6m",
@@ -1560,42 +1577,42 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/core/git-collector.mjs:65",
       "title": "Do not cache failed exact-head lookups",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6r1Bt0",
       "resolutionCategory": "FIXED",
       "duplicateOf": null,
-      "evidenceLinkOrReasoning": "Remediated in Phase 3 (R1 Canonical Diff Digest): in `src/adapters/review-orchestrator.mjs:92-99` (`buildCanonicalRunContext`), removed all `.trim()` variants (`trimmedDiffDigest`, `trimmedNormDiffDigest`). Verified digest candidate set derives strictly from physical byte diffs (`rawDiffDigest`, LF-normalized `normDiffDigest`, and `digestChangeSet`). Any whitespace padding or altered line endings fails digest verification. Verified by `tests/remediation-phase3-orchestrator-cli.test.mjs` (TEST-R1-01, TEST-R1-02) and `tests/challenger-phase3-r1-r2-r3.test.mjs` (CHALLENGE-R1). [Implemented in uncommitted Phase 3 working tree diff against Exact Head ebe28be].",
+      "evidenceLinkOrReasoning": "Remediated in Phase 3 (R1 Canonical Diff Digest): in `src/adapters/review-orchestrator.mjs:92-99` (`buildCanonicalRunContext`), removed all `.trim()` variants (`trimmedDiffDigest`, `trimmedNormDiffDigest`). Verified digest candidate set derives strictly from physical byte diffs (`rawDiffDigest`, LF-normalized `normDiffDigest`, and `digestChangeSet`). Any whitespace padding or altered line endings fails digest verification. Verified by `tests/remediation-phase3-orchestrator-cli.test.mjs` (TEST-R1-01, TEST-R1-02) and `tests/challenger-phase3-r1-r2-r3.test.mjs` (CHALLENGE-R1). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c].",
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/adapters/review-orchestrator.mjs:73",
       "title": "Preserve terminal whitespace in diff bindings",
       "isResolved": false,
-      "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "isOutdated": true,
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6r1Bt4",
       "resolutionCategory": "DUPLICATE",
       "duplicateOf": "PRRT_kwDOUWarIc6rfkYc",
-      "evidenceLinkOrReasoning": "Duplicate of Thread PRRT_kwDOUWarIc6rfkYc (Require an explicit boolean omission locator flag). Remediated in Phase 2 in `src/core/independent-verifier.mjs:1373-1380` (`validateVerificationOutput`), explicit boolean validation prevents truthy/falsy coercion bypass for `locatorAccurate`. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-03', 'PHASE2-POS-01'). [Implemented in uncommitted Phase 2 working tree diff against Exact Head ebe28be].",
+      "evidenceLinkOrReasoning": "Duplicate of Thread PRRT_kwDOUWarIc6rfkYc (Require an explicit boolean omission locator flag). Remediated in Phase 2 in `src/core/independent-verifier.mjs:1373-1380` (`validateVerificationOutput`), explicit boolean validation prevents truthy/falsy coercion bypass for `locatorAccurate`. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-03', 'PHASE2-POS-01'). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c].",
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/core/independent-verifier.mjs:1375",
       "title": "Require an explicit boolean omission locator flag",
       "isResolved": false,
-      "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "isOutdated": true,
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6r1Bt9",
@@ -1605,12 +1622,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "src/core/context-builder.mjs:714",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "src/core/context-builder.mjs:729",
       "title": "Preserve qualifiers across optional chaining",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6r1BuC",
@@ -1620,12 +1637,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "src/core/context-builder.mjs:704",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "src/core/context-builder.mjs:719",
       "title": "Retain built-in-named calls on sensitive receivers",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6r1BuI",
@@ -1635,87 +1652,87 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "src/core/context-builder.mjs:551",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "src/core/context-builder.mjs:566",
       "title": "Distinguish division operators from regex literals",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6r1BuM",
       "resolutionCategory": "FIXED",
       "duplicateOf": null,
-      "evidenceLinkOrReasoning": "Remediated in Phase 2: In `src/core/independent-verifier.mjs:1435-1445` (`validateVerificationOutput`), when omission candidate has counterexample syntax but empty or missing `reasoning`, `hasConcreteCounterexample` fails closed to `false`, requiring observable failure reasoning before granting `SUPPORTED`. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-05'). [Implemented in uncommitted Phase 2 working tree diff against Exact Head ebe28be].",
+      "evidenceLinkOrReasoning": "Remediated in Phase 2: In `src/core/independent-verifier.mjs:1435-1445` (`validateVerificationOutput`), when omission candidate has counterexample syntax but empty or missing `reasoning`, `hasConcreteCounterexample` fails closed to `false`, requiring observable failure reasoning before granting `SUPPORTED`. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-05'). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c].",
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "src/core/independent-verifier.mjs:1443",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "src/core/independent-verifier.mjs:1976",
       "title": "Require reasoning before supporting an omission",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6sL8VK",
       "resolutionCategory": "DUPLICATE",
       "duplicateOf": "PRRT_kwDOUWarIc6rr-JF",
-      "evidenceLinkOrReasoning": "Duplicate of Thread PRRT_kwDOUWarIc6rr-JF (Run ID binding and replay prevention). Remediated in Phase 3 in `src/adapters/review-orchestrator.mjs:56-78`. [Implemented in uncommitted Phase 3 working tree diff against Exact Head ebe28be].",
+      "evidenceLinkOrReasoning": "Duplicate of Thread PRRT_kwDOUWarIc6rr-JF (Run ID binding and replay prevention). Remediated in Phase 3 in `src/adapters/review-orchestrator.mjs:56-78`. [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c].",
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/adapters/review-orchestrator.mjs:199",
       "title": "Bind records to the orchestrator's generated run ID",
       "isResolved": false,
-      "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "isOutdated": true,
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6sL8VO",
       "resolutionCategory": "FIXED",
       "duplicateOf": null,
-      "evidenceLinkOrReasoning": "Remediated in Phase 2: In `src/core/independent-verifier.mjs:2210-2225` (`conductIndependentVerification`), effective context gaps are extracted from `options.contextPackage || changeSet?.contextPackage` and merged, ensuring unextracted callee gaps propagate to `validateVerificationOutput` and force `UNCERTAIN`. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-10'). [Implemented in uncommitted Phase 2 working tree diff against Exact Head ebe28be].",
+      "evidenceLinkOrReasoning": "Remediated in Phase 2: In `src/core/independent-verifier.mjs:2210-2225` (`conductIndependentVerification`), effective context gaps are extracted from `options.contextPackage || changeSet?.contextPackage` and merged, ensuring unextracted callee gaps propagate to `validateVerificationOutput` and force `UNCERTAIN`. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-10'). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c].",
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/core/independent-verifier.mjs:2211",
       "title": "Validate gaps from the effective context package",
       "isResolved": false,
-      "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "isOutdated": true,
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6sL8VV",
       "resolutionCategory": "FIXED",
       "duplicateOf": null,
-      "evidenceLinkOrReasoning": "Remediated in Phase 3 (R5 CLI Clean Challenge & Shell Hardening): in `src/cli.mjs:53-75, 840-915`, implemented `validateVerifierCommand` (`shell: false`) rejecting metacharacters and arbitrary flags. In zero-finding consensus reviews, CLI review subcommand automatically invokes `conductIndependentVerification(changeSet, [], verifierAdapter, { verificationMode: 'clean_challenge', runContext: canonicalRunContext })` and binds trusted record to gate evaluation, mapping exit codes 0/1/2/3 properly. Verified by `tests/remediation-phase3-orchestrator-cli.test.mjs` (TEST-R5-01, TEST-R5-02) and `tests/adversarial-phase3-challenger.test.mjs` (79 tests). [Implemented in uncommitted Phase 3 working tree diff against Exact Head ebe28be].",
+      "evidenceLinkOrReasoning": "Remediated in Phase 3 (R5 CLI Clean Challenge & Shell Hardening): in `src/cli.mjs:53-75, 840-915`, implemented `validateVerifierCommand` (`shell: false`) rejecting metacharacters and arbitrary flags. In zero-finding consensus reviews, CLI review subcommand automatically invokes `conductIndependentVerification(changeSet, [], verifierAdapter, { verificationMode: 'clean_challenge', runContext: canonicalRunContext })` and binds trusted record to gate evaluation, mapping exit codes 0/1/2/3 properly. Verified by `tests/remediation-phase3-orchestrator-cli.test.mjs` (TEST-R5-01, TEST-R5-02) and `tests/adversarial-phase3-challenger.test.mjs` (79 tests). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c].",
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/cli.mjs:830",
       "title": "Run the Clean Challenge in the review command",
       "isResolved": false,
-      "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "isOutdated": true,
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6sL8VY",
       "resolutionCategory": "DUPLICATE",
       "duplicateOf": "PRRT_kwDOUWarIc6rsKB_",
-      "evidenceLinkOrReasoning": "Duplicate of Thread PRRT_kwDOUWarIc6rsKB_ (Preserve case when binding exclusions). Remediated in Phase 1 in `src/core/harness.mjs` via platform-aware `normalizeExclusionPath`, preserving path casing on POSIX/Linux platforms and rejecting options.platform overrides in formal gates. Verified by `tests/remediation-phase1-harness.test.mjs` (PHASE1-NEG-03, PHASE1-NEG-03-PLATFORM-OVERRIDE). [Implemented in uncommitted Phase 1-2 working tree diff against Exact Head ebe28be].",
+      "evidenceLinkOrReasoning": "Duplicate of Thread PRRT_kwDOUWarIc6rsKB_ (Preserve case when binding exclusions). Remediated in Phase 1 in `src/core/harness.mjs` via platform-aware `normalizeExclusionPath`, preserving path casing on POSIX/Linux platforms and rejecting options.platform overrides in formal gates. Verified by `tests/remediation-phase1-harness.test.mjs` (PHASE1-NEG-03, PHASE1-NEG-03-PLATFORM-OVERRIDE). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c].",
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/core/harness.mjs:419",
       "title": "Preserve case when binding exclusions",
       "isResolved": false,
-      "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "isOutdated": true,
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6sMI60",
@@ -1725,12 +1742,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/core/context-builder.mjs:1579",
       "title": "Mark absent exact-head metadata as unavailable",
       "isResolved": false,
-      "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "isOutdated": true,
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6sMI66",
@@ -1740,42 +1757,42 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/adapters/review-prompts.mjs:365",
       "title": "Budget context before rendering reviewer prompts",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6sMI7C",
       "resolutionCategory": "FIXED",
       "duplicateOf": null,
-      "evidenceLinkOrReasoning": "Remediated in commit c418bb1 & Phase 3 (R2): in `src/adapters/review-orchestrator.mjs:199-224`, 6-source objective conflict detection ensures nested `options.objective` cannot override bound `patchObjective` without failing closed. Verified in `tests/remediation-phase3-orchestrator-cli.test.mjs`. [Implemented in uncommitted Phase 3 working tree diff against Exact Head ebe28be].",
+      "evidenceLinkOrReasoning": "Remediated in commit c418bb1 & Phase 3 (R2): in `src/adapters/review-orchestrator.mjs:199-224`, 6-source objective conflict detection ensures nested `options.objective` cannot override bound `patchObjective` without failing closed. Verified in `tests/remediation-phase3-orchestrator-cli.test.mjs`. [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c].",
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/adapters/cli-transport.mjs:181",
       "title": "Prevent nested options from overriding the bound objective",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6sMI7L",
       "resolutionCategory": "FIXED",
       "duplicateOf": null,
-      "evidenceLinkOrReasoning": "Remediated in Phase 2: In `src/core/independent-verifier.mjs:1544-1560` (`validateVerificationOutput`), under `clean_challenge` mode, omission presence without an explicit, valid `overallStatus` fails closed with `malformed_output`, preventing implicit inference of `CLEAN`. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-07'). [Implemented in uncommitted Phase 2 working tree diff against Exact Head ebe28be].",
+      "evidenceLinkOrReasoning": "Remediated in Phase 2: In `src/core/independent-verifier.mjs:1544-1560` (`validateVerificationOutput`), under `clean_challenge` mode, omission presence without an explicit, valid `overallStatus` fails closed with `malformed_output`, preventing implicit inference of `CLEAN`. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-07'). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c].",
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/core/independent-verifier.mjs:1546",
       "title": "Require overallStatus even when omissions are present",
       "isResolved": false,
-      "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "isOutdated": true,
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6sMI7U",
@@ -1785,12 +1802,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "scripts/triage-pr39-threads.mjs:605",
       "title": "Count the dual-visibility category in the JSON ledger",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6sMI7c",
@@ -1800,27 +1817,27 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "scripts/dogfood-review.mjs:1072",
       "title": "Preserve context gaps in staged fallback prompts",
       "isResolved": false,
       "isOutdated": true,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6sPGEP",
       "resolutionCategory": "DUPLICATE",
       "duplicateOf": "PRRT_kwDOUWarIc6ra7kY",
-      "evidenceLinkOrReasoning": "Duplicate of Thread PRRT_kwDOUWarIc6ra7kY (Reject unknown producer verification modes). Remediated in Phase 1 in `src/core/harness.mjs`, nonempty findings strictly require `verificationMode === 'producer_verification'`, rejecting typo or custom mode strings. Verified by `tests/remediation-phase1-harness.test.mjs` (PHASE1-NEG-07). [Implemented in uncommitted Phase 1-2 working tree diff against Exact Head ebe28be].",
+      "evidenceLinkOrReasoning": "Duplicate of Thread PRRT_kwDOUWarIc6ra7kY (Reject unknown producer verification modes). Remediated in Phase 1 in `src/core/harness.mjs`, nonempty findings strictly require `verificationMode === 'producer_verification'`, rejecting typo or custom mode strings. Verified by `tests/remediation-phase1-harness.test.mjs` (PHASE1-NEG-07). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c].",
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/core/harness.mjs:699",
       "title": "Reject unknown producer verification modes",
       "isResolved": false,
-      "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "isOutdated": true,
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6sPGEb",
@@ -1830,12 +1847,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/core/git-collector.mjs:394",
       "title": "Do not label the base commit as the working-tree head",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6sPGEl",
@@ -1845,12 +1862,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/adapters/staged-review.mjs:551",
       "title": "Treat null context packages as absent in staged review",
       "isResolved": false,
       "isOutdated": true,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6sPmwl",
@@ -1860,12 +1877,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "src/core/context-builder.mjs:196",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "src/core/context-builder.mjs:211",
       "title": "Track multiline template literals while scanning braces",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6sPmwt",
@@ -1875,12 +1892,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/core/context-builder.mjs:1363",
       "title": "Treat deleted files as valid target-head absences",
       "isResolved": false,
-      "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "isOutdated": true,
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6sPmwz",
@@ -1890,27 +1907,27 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "scripts/dogfood-review.mjs:1105",
       "title": "Track staged fallback separately for each provider",
       "isResolved": false,
       "isOutdated": true,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6sPmw9",
       "resolutionCategory": "FIXED",
       "duplicateOf": null,
-      "evidenceLinkOrReasoning": "Remediated in Phase 1: in `_evaluatePostVerificationGateCore`, consensus capability validation (`isTrustedConsensus(consensus)`) and quorum integrity checks (`!consensus.quorumReached || consensus.verdict === 'error'`) are executed prior to secondary checks. Null, undefined, or untrusted consensus immediately fails closed with `UNTRUSTED_OR_MISSING_CONSENSUS`. (Resolved in src/core/harness.mjs, verified by tests/remediation-phase1-harness.test.mjs (PHASE1-NEG-06)). [Implemented in uncommitted Phase 1-2 working tree diff against Exact Head ebe28be].",
+      "evidenceLinkOrReasoning": "Remediated in Phase 1: in `_evaluatePostVerificationGateCore`, consensus capability validation (`isTrustedConsensus(consensus)`) and quorum integrity checks (`!consensus.quorumReached || consensus.verdict === 'error'`) are executed prior to secondary checks. Null, undefined, or untrusted consensus immediately fails closed with `UNTRUSTED_OR_MISSING_CONSENSUS`. (Resolved in src/core/harness.mjs, verified by tests/remediation-phase1-harness.test.mjs (PHASE1-NEG-06)). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c].",
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "src/core/harness.mjs:677",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "src/core/harness.mjs:577",
       "title": "Reject absent consensus in the post-verification gate",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6sUDZJ",
@@ -1920,12 +1937,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "src/core/context-builder.mjs:322",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "src/core/context-builder.mjs:337",
       "title": "Bound Python functions by indentation rather than braces",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6sUDZV",
@@ -1935,12 +1952,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "src/core/context-builder.mjs:1012",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "src/core/context-builder.mjs:1027",
       "title": "Resolve this/self calls within the enclosing class",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6sUDZa",
@@ -1950,12 +1967,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "scripts/dogfood-review.mjs:1320",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "scripts/dogfood-review.mjs:1352",
       "title": "Derive Clean Challenge provenance from the active verifier",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6sU7ZB",
@@ -1965,42 +1982,42 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "src/core/context-builder.mjs:425",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "src/core/context-builder.mjs:440",
       "title": "Make qualified class scope scanning string-aware",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6sU7ZH",
       "resolutionCategory": "DUPLICATE",
       "duplicateOf": "PRRT_kwDOUWarIc6rvCBQ",
-      "evidenceLinkOrReasoning": "Duplicate of Thread PRRT_kwDOUWarIc6rvCBQ (Reject omission locators beyond the target file). Remediated in Phase 2 in `src/core/independent-verifier.mjs:1409-1445` (`validateVerificationOutput`), line locators beyond target file physical line count are rejected as inaccurate (`locatorAccurate = false`). Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-04', 'PHASE2-NEG-13'). [Implemented in uncommitted Phase 2 working tree diff against Exact Head ebe28be].",
+      "evidenceLinkOrReasoning": "Duplicate of Thread PRRT_kwDOUWarIc6rvCBQ (Reject omission locators beyond the target file). Remediated in Phase 2 in `src/core/independent-verifier.mjs:1409-1445` (`validateVerificationOutput`), line locators beyond target file physical line count are rejected as inaccurate (`locatorAccurate = false`). Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-04', 'PHASE2-NEG-13'). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c].",
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/core/independent-verifier.mjs:1442",
       "title": "Reject omission locators beyond the target file",
       "isResolved": false,
-      "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "isOutdated": true,
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6sU7ZN",
       "resolutionCategory": "FIXED",
       "duplicateOf": null,
-      "evidenceLinkOrReasoning": "Remediated in Phase 1: in `_evaluateGateDecisionCore` and `_evaluatePostVerificationGateCore`, when `verificationRecord` is supplied and synthetic execution is not enabled, `options.runContext` is strictly mandatory. If missing or null, gate fails closed with reason 'Gate Fail-Closed: Mandatory RunContext missing for verification record authority (UNTRUSTED_OR_MISSING_RUN_CONTEXT).' (Resolved in src/core/harness.mjs, verified by tests/remediation-phase1-harness.test.mjs (PHASE1-NEG-01)). [Implemented in uncommitted Phase 1-2 working tree diff against Exact Head ebe28be].",
+      "evidenceLinkOrReasoning": "Remediated in Phase 1: in `_evaluateGateDecisionCore` and `_evaluatePostVerificationGateCore`, when `verificationRecord` is supplied and synthetic execution is not enabled, `options.runContext` is strictly mandatory. If missing or null, gate fails closed with reason 'Gate Fail-Closed: Mandatory RunContext missing for verification record authority (UNTRUSTED_OR_MISSING_RUN_CONTEXT).' (Resolved in src/core/harness.mjs, verified by tests/remediation-phase1-harness.test.mjs (PHASE1-NEG-01)). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c].",
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/core/harness.mjs:347",
       "title": "Require a RunContext for every verification record",
       "isResolved": false,
-      "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "isOutdated": true,
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6slAMk",
@@ -2010,12 +2027,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/adapters/staged-review.mjs:422",
       "title": "Bind caller context packages to the reviewed change set",
       "isResolved": false,
       "isOutdated": true,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6slAMq",
@@ -2025,12 +2042,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/adapters/staged-review.mjs:323",
       "title": "Merge change-set gaps with explicitly supplied staged gaps",
       "isResolved": false,
       "isOutdated": true,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6slAMv",
@@ -2040,12 +2057,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "src/core/context-builder.mjs:668",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "src/core/context-builder.mjs:683",
       "title": "Reconstruct block-comment state at each diff hunk",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6slAMz",
@@ -2055,12 +2072,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "scripts/triage-pr39-threads.mjs:5",
       "title": "Point the evidence ledger at a commit containing its fixes",
       "isResolved": false,
       "isOutdated": true,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6slAM6",
@@ -2070,12 +2087,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "src/core/context-builder.mjs:471",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "src/core/context-builder.mjs:486",
       "title": "Recognize access-control vocabulary as security-sensitive",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6slANA",
@@ -2085,27 +2102,27 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/core/git-collector.mjs:32",
       "title": "Bound the exact-head content cache",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6slLWc",
       "resolutionCategory": "FIXED",
       "duplicateOf": null,
-      "evidenceLinkOrReasoning": "Remediated in Phase 3 (R2 Deterministic Objective Conflict): in `src/adapters/review-orchestrator.mjs:199-224` (`buildCanonicalRunContext`), implemented 6-source objective conflict detection across `options.patchObjective`, `options.objectiveContract`, `options.runContext.patchObjective`, `options.runContext.objectiveContract`, `changeSet.patchObjective`, and `changeSet.objectiveContract`. Any multi-source objective mismatch fails closed immediately to `return null`. Verified by `tests/remediation-phase3-orchestrator-cli.test.mjs` (TEST-R2-01, TEST-R2-02) and `tests/challenger-phase3-r1-r2-r3.test.mjs` (CHALLENGE-R2). [Implemented in uncommitted Phase 3 working tree diff against Exact Head ebe28be].",
+      "evidenceLinkOrReasoning": "Remediated in Phase 3 (R2 Deterministic Objective Conflict): in `src/adapters/review-orchestrator.mjs:199-224` (`buildCanonicalRunContext`), implemented 6-source objective conflict detection across `options.patchObjective`, `options.objectiveContract`, `options.runContext.patchObjective`, `options.runContext.objectiveContract`, `changeSet.patchObjective`, and `changeSet.objectiveContract`. Any multi-source objective mismatch fails closed immediately to `return null`. Verified by `tests/remediation-phase3-orchestrator-cli.test.mjs` (TEST-R2-01, TEST-R2-02) and `tests/challenger-phase3-r1-r2-r3.test.mjs` (CHALLENGE-R2). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c].",
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/adapters/review-orchestrator.mjs:177",
       "title": "Reject objective overrides that conflict with RunContext",
       "isResolved": false,
-      "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "isOutdated": true,
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6slLWg",
@@ -2115,12 +2132,12 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "src/core/context-builder.mjs:549",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "src/core/context-builder.mjs:564",
       "title": "Parse template interpolations when extracting sensitive calls",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6slLWi",
@@ -2130,72 +2147,72 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "src/core/context-builder.mjs:844",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "src/core/context-builder.mjs:859",
       "title": "Mark truncated sensitive callees as unresolved",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6slql5",
       "resolutionCategory": "DUPLICATE",
       "duplicateOf": "PRRT_kwDOUWarIc6sL8VV",
-      "evidenceLinkOrReasoning": "Duplicate of Thread PRRT_kwDOUWarIc6sL8VV (CLI Clean Challenge execution). Remediated in Phase 3 in `src/cli.mjs:53-75`. [Implemented in uncommitted Phase 3 working tree diff against Exact Head ebe28be].",
+      "evidenceLinkOrReasoning": "Duplicate of Thread PRRT_kwDOUWarIc6sL8VV (CLI Clean Challenge execution). Remediated in Phase 3 in `src/cli.mjs:53-75`. [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c].",
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/cli.mjs:830",
       "title": "Execute the clean challenge from the review CLI",
       "isResolved": false,
-      "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "isOutdated": true,
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6slql7",
       "resolutionCategory": "DUPLICATE",
       "duplicateOf": "PRRT_kwDOUWarIc6rsKB_",
-      "evidenceLinkOrReasoning": "Duplicate of Thread PRRT_kwDOUWarIc6rsKB_ (Preserve case when binding excluded paths). Remediated in Phase 1 in `src/core/harness.mjs` via platform-aware `normalizeExclusionPath`, enforcing case preservation on case-sensitive filesystems and rejecting caller platform overrides in formal gates. Verified by `tests/remediation-phase1-harness.test.mjs` (PHASE1-NEG-03, PHASE1-NEG-03-PLATFORM-OVERRIDE). [Implemented in uncommitted Phase 1-2 working tree diff against Exact Head ebe28be].",
+      "evidenceLinkOrReasoning": "Duplicate of Thread PRRT_kwDOUWarIc6rsKB_ (Preserve case when binding excluded paths). Remediated in Phase 1 in `src/core/harness.mjs` via platform-aware `normalizeExclusionPath`, enforcing case preservation on case-sensitive filesystems and rejecting caller platform overrides in formal gates. Verified by `tests/remediation-phase1-harness.test.mjs` (PHASE1-NEG-03, PHASE1-NEG-03-PLATFORM-OVERRIDE). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c].",
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/core/harness.mjs:420",
       "title": "Preserve case when binding excluded paths",
       "isResolved": false,
-      "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "isOutdated": true,
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6slqmB",
       "resolutionCategory": "FIXED",
       "duplicateOf": null,
-      "evidenceLinkOrReasoning": "Remediated in Phase 3 (R4 Strict Risk Tier Validation): in `src/adapters/review-orchestrator.mjs:287-331` (`orchestrateReview`), non-integer, NaN, null, empty strings, tier 0, negative tiers, and tiers > 4 are rejected as illegal tiers. Furthermore, attempts to downgrade Tier 1 diffs (`computedHighestRisk === 1`) via `tier > 1` or `isTier1: false` fail closed to `{ status: 'incomplete', gate: { decision: 'block', reason: 'Gate Fail-Closed: Invalid or downgraded risk tier (INVALID_OR_DOWNGRADED_TIER).' } }`. Verified by `tests/remediation-phase3-orchestrator-cli.test.mjs` (TEST-R4-01, TEST-R4-02) and `tests/challenger-phase3-r1-r2-r3.test.mjs` (CHALLENGE-R4). [Implemented in uncommitted Phase 3 working tree diff against Exact Head ebe28be].",
+      "evidenceLinkOrReasoning": "Remediated in Phase 3 (R4 Strict Risk Tier Validation): in `src/adapters/review-orchestrator.mjs:287-331` (`orchestrateReview`), non-integer, NaN, null, empty strings, tier 0, negative tiers, and tiers > 4 are rejected as illegal tiers. Furthermore, attempts to downgrade Tier 1 diffs (`computedHighestRisk === 1`) via `tier > 1` or `isTier1: false` fail closed to `{ status: 'incomplete', gate: { decision: 'block', reason: 'Gate Fail-Closed: Invalid or downgraded risk tier (INVALID_OR_DOWNGRADED_TIER).' } }`. Verified by `tests/remediation-phase3-orchestrator-cli.test.mjs` (TEST-R4-01, TEST-R4-02) and `tests/challenger-phase3-r1-r2-r3.test.mjs` (CHALLENGE-R4). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c].",
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "src/adapters/review-orchestrator.mjs:243",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "src/adapters/review-orchestrator.mjs:341",
       "title": "Validate tier overrides before replacing detected risk",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6slqmD",
       "resolutionCategory": "DUPLICATE",
       "duplicateOf": "PRRT_kwDOUWarIc6rfkYc",
-      "evidenceLinkOrReasoning": "Duplicate of Thread PRRT_kwDOUWarIc6rfkYc (Reject non-boolean omission accuracy values). Remediated in Phase 2 in `src/core/independent-verifier.mjs:1373-1380` (`validateVerificationOutput`), non-boolean string accuracy values (such as 'flase' or typo tokens) coerce to false rather than true. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-03'). [Implemented in uncommitted Phase 2 working tree diff against Exact Head ebe28be].",
+      "evidenceLinkOrReasoning": "Duplicate of Thread PRRT_kwDOUWarIc6rfkYc (Reject non-boolean omission accuracy values). Remediated in Phase 2 in `src/core/independent-verifier.mjs:1373-1380` (`validateVerificationOutput`), non-boolean string accuracy values (such as 'flase' or typo tokens) coerce to false rather than true. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-03'). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c].",
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/core/independent-verifier.mjs:1375",
       "title": "Reject non-boolean omission accuracy values",
       "isResolved": false,
-      "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "isOutdated": true,
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6slqmG",
@@ -2205,27 +2222,27 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/core/real-benchmark-runner.mjs:193",
       "title": "Keep all preliminary cases out of final-gate scores",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6sl1Rc",
       "resolutionCategory": "DUPLICATE",
       "duplicateOf": "PRRT_kwDOUWarIc6sL8VO",
-      "evidenceLinkOrReasoning": "Duplicate of Thread PRRT_kwDOUWarIc6sL8VO (Include ChangeSet package gaps in verifier validation). Remediated in Phase 2 in `src/core/independent-verifier.mjs:2210-2225` (`conductIndependentVerification`), gaps present on `changeSet.contextPackage.contextGaps` are explicitly retained and merged into verifier context gaps. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-10'). [Implemented in uncommitted Phase 2 working tree diff against Exact Head ebe28be].",
+      "evidenceLinkOrReasoning": "Duplicate of Thread PRRT_kwDOUWarIc6sL8VO (Include ChangeSet package gaps in verifier validation). Remediated in Phase 2 in `src/core/independent-verifier.mjs:2210-2225` (`conductIndependentVerification`), gaps present on `changeSet.contextPackage.contextGaps` are explicitly retained and merged into verifier context gaps. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-10'). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c].",
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/core/independent-verifier.mjs:2211",
       "title": "Include ChangeSet package gaps in verifier validation",
       "isResolved": false,
-      "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "isOutdated": true,
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6sl1Rd",
@@ -2235,27 +2252,27 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/adapters/staged-review.mjs:516",
       "title": "Wrap the path normalizer passed to Array.map",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6sl1Rg",
       "resolutionCategory": "FIXED",
       "duplicateOf": null,
-      "evidenceLinkOrReasoning": "Remediated in Phase 2: In `src/core/independent-verifier.mjs:2134-2145` (`conductIndependentVerification`), objective resolution inspects `options.runContext?.patchObjective`, `options.runContext?.objectiveContract`, and `changeSet?.patchObjective`, preventing caller overrides from stripping bound objectives. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-09', 'PHASE2-NEG-12', 'PHASE2-NEG-15'). [Implemented in uncommitted Phase 2 working tree diff against Exact Head ebe28be].",
+      "evidenceLinkOrReasoning": "Remediated in Phase 2: In `src/core/independent-verifier.mjs:2134-2145` (`conductIndependentVerification`), objective resolution inspects `options.runContext?.patchObjective`, `options.runContext?.objectiveContract`, and `changeSet?.patchObjective`, preventing caller overrides from stripping bound objectives. Verified in `tests/remediation-phase2-verifier.test.mjs` ('PHASE2-NEG-09', 'PHASE2-NEG-12', 'PHASE2-NEG-15'). [Historically uncommitted during review against ebe28be; formally committed in 34d5831 and verified green on CI in 9776b4c].",
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
       "fileLocation": "src/core/independent-verifier.mjs:2134",
       "title": "Honor objectives bound in RunContext and ChangeSet",
       "isResolved": false,
-      "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "isOutdated": true,
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     },
     {
       "threadId": "PRRT_kwDOUWarIc6sl1Ri",
@@ -2265,12 +2282,102 @@
       "adjudicator": "PENDING_ADJUDICATION",
       "adjudicationDate": "PENDING_ADJUDICATION",
       "adjudicationStatus": "PENDING_ADJUDICATION",
-      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
-      "fileLocation": "src/core/context-builder.mjs:345",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "src/core/context-builder.mjs:360",
       "title": "Reject call expressions before accepting a delayed body brace",
       "isResolved": false,
       "isOutdated": false,
-      "extractionTimestamp": "2026-10-16T14:56:29Z"
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
+    },
+    {
+      "threadId": "PRRT_kwDOUWarIc6tdsmP",
+      "resolutionCategory": "UNRESOLVED",
+      "duplicateOf": null,
+      "evidenceLinkOrReasoning": "Under investigation (P1 Candidate): in `src/cli.mjs:930-972`, Clean Challenge invocation for zero-finding consensus (`conductIndependentVerification`) forwards neither a contextPackage nor contextGaps from `buildChangeSet`. Consequently, callee extraction failures cannot force verifier `UNCERTAIN` and sensitive callees remain uninspected. Technical status: UNRESOLVED; Adjudication: PENDING_ADJUDICATION pending remediation and verification suite.",
+      "adjudicator": "PENDING_ADJUDICATION",
+      "adjudicationDate": "PENDING_ADJUDICATION",
+      "adjudicationStatus": "PENDING_ADJUDICATION",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "src/cli.mjs:970",
+      "title": "Build exact-head context for the CLI clean challenge",
+      "isResolved": false,
+      "isOutdated": false,
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
+    },
+    {
+      "threadId": "PRRT_kwDOUWarIc6tdsmQ",
+      "resolutionCategory": "UNRESOLVED",
+      "duplicateOf": null,
+      "evidenceLinkOrReasoning": "Under investigation (P1 Candidate): in `src/adapters/review-orchestrator.mjs:235-244` (`buildCanonicalRunContext`), exclusion resolution cascades through fallback precedence rather than evaluating bidirectional consistency across `options.exclusions`, `options.runContext.exclusions`, and `changeSet.exclusions`. Mismatched exclusions silently override bound RunContext scope instead of failing closed. Technical status: UNRESOLVED; Adjudication: PENDING_ADJUDICATION pending remediation and verification suite.",
+      "adjudicator": "PENDING_ADJUDICATION",
+      "adjudicationDate": "PENDING_ADJUDICATION",
+      "adjudicationStatus": "PENDING_ADJUDICATION",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "src/adapters/review-orchestrator.mjs:239",
+      "title": "Reject conflicting exclusion bindings",
+      "isResolved": false,
+      "isOutdated": false,
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
+    },
+    {
+      "threadId": "PRRT_kwDOUWarIc6tdsmS",
+      "resolutionCategory": "UNRESOLVED",
+      "duplicateOf": null,
+      "evidenceLinkOrReasoning": "Under investigation (P1 Candidate): in `src/adapters/staged-review.mjs:525-533` (`executeStagedReview`), file coverage manifest scope check requires only `manifestFiles.some(f => changeSetFiles.includes(f))` rather than requiring complete coverage of all changed files. A caller-supplied manifest covering a single file can be accepted for a multi-file changeSet. Technical status: UNRESOLVED; Adjudication: PENDING_ADJUDICATION pending remediation and verification suite.",
+      "adjudicator": "PENDING_ADJUDICATION",
+      "adjudicationDate": "PENDING_ADJUDICATION",
+      "adjudicationStatus": "PENDING_ADJUDICATION",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "src/adapters/staged-review.mjs:530",
+      "title": "Require manifests to cover every staged-review file",
+      "isResolved": false,
+      "isOutdated": false,
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
+    },
+    {
+      "threadId": "PRRT_kwDOUWarIc6tdsmT",
+      "resolutionCategory": "UNRESOLVED",
+      "duplicateOf": null,
+      "evidenceLinkOrReasoning": "Under investigation (P1 Candidate): in `scripts/dogfood-review.mjs:1006-1020` (`runDogfoodReview`), caller-supplied `userOptions.contextPackage` satisfying metadata checks is registered via `_internalDogfoodWorkflowMinter` without physically verifying contained code snippets against exact-head Git commit data. Technical status: UNRESOLVED; Adjudication: PENDING_ADJUDICATION pending remediation and verification suite.",
+      "adjudicator": "PENDING_ADJUDICATION",
+      "adjudicationDate": "PENDING_ADJUDICATION",
+      "adjudicationStatus": "PENDING_ADJUDICATION",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "scripts/dogfood-review.mjs:1017",
+      "title": "Verify external packages before minting workflow authority",
+      "isResolved": false,
+      "isOutdated": false,
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
+    },
+    {
+      "threadId": "PRRT_kwDOUWarIc6tdsmV",
+      "resolutionCategory": "UNRESOLVED",
+      "duplicateOf": null,
+      "evidenceLinkOrReasoning": "Under investigation (P1 Candidate): in `src/core/independent-verifier.mjs:1815-1827` (`validateVerificationOutput`), working-tree fallback resolves `candidatePath` directly from omission `file` (allowing absolute paths or directory traversal outside `repoRoot`) and performs synchronous unbounded `fs.readFileSync(candidatePath)` even if the file is not part of the changed file set. Technical status: UNRESOLVED; Adjudication: PENDING_ADJUDICATION pending remediation and verification suite.",
+      "adjudicator": "PENDING_ADJUDICATION",
+      "adjudicationDate": "PENDING_ADJUDICATION",
+      "adjudicationStatus": "PENDING_ADJUDICATION",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "src/core/independent-verifier.mjs:1817",
+      "title": "Confine omission locator reads to the reviewed repository",
+      "isResolved": false,
+      "isOutdated": false,
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
+    },
+    {
+      "threadId": "PRRT_kwDOUWarIc6tdsmY",
+      "resolutionCategory": "UNRESOLVED",
+      "duplicateOf": null,
+      "evidenceLinkOrReasoning": "Under investigation (P1 Candidate): in `src/core/git-collector.mjs:486-499` (`buildChangeSet`) and lines 388-397 (`getGitState`), working-tree and staged scopes attach `headSha = state.repository.headSha` (the pre-change base commit). Downstream `buildContextPackage` extracts exact-head content from this base commit instead of current worktree/staged state. Technical status: UNRESOLVED; Adjudication: PENDING_ADJUDICATION pending remediation and verification suite.",
+      "adjudicator": "PENDING_ADJUDICATION",
+      "adjudicationDate": "PENDING_ADJUDICATION",
+      "adjudicationStatus": "PENDING_ADJUDICATION",
+      "exactHead": "9776b4c1bf2b78f455cd3edb24bdbb20c860863a",
+      "fileLocation": "src/core/git-collector.mjs:491",
+      "title": "Do not label working-tree diffs with the base HEAD",
+      "isResolved": false,
+      "isOutdated": false,
+      "extractionTimestamp": "2026-10-17T06:37:10Z"
     }
   ]
 }
