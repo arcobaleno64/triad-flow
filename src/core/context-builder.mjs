@@ -819,7 +819,7 @@ export function extractCandidateCallSymbols(diffHunks) {
       if (declaredFn && sym === declaredFn) continue;
 
       const prefix = cleanLine.slice(0, match.index);
-      const isQualified = /[.\->]\s*$/.test(prefix);
+      const isQualified = /(?:\.|\->|\?\.)\s*$/.test(prefix);
 
       if (isQualified && BUILTIN_OBJECT_METHODS.has(sym)) {
         continue;
@@ -828,7 +828,7 @@ export function extractCandidateCallSymbols(diffHunks) {
         continue;
       }
 
-      const chainMatch = prefix.match(/(?:(?:[a-zA-Z_][a-zA-Z0-9_]*|this)\s*(?:\.|\->)\s*)+$/);
+      const chainMatch = prefix.match(/(?:(?:[a-zA-Z_][a-zA-Z0-9_]*|this)\s*(?:\.|\->|\?\.)\s*)+$/);
       let qualifier = null;
       let qualifiers = [];
       if (chainMatch) {
@@ -1197,8 +1197,14 @@ export function extractLocalCalleeContext(fileContent, diffHunks, targetFile, op
 
     // 2. Find function definitions in same file
     let defMatches = [];
-    if (candidate.isQualified && candidate.qualifier && candidate.qualifier !== "this" && candidate.qualifier !== "self") {
-      defMatches = findQualifiedFunctionDefinitions(lines, candidate.qualifier, symbol);
+    if (candidate.isQualified) {
+      if (candidate.qualifier && candidate.qualifier !== "this" && candidate.qualifier !== "self") {
+        defMatches = findQualifiedFunctionDefinitions(lines, candidate.qualifier, symbol);
+      } else if (candidate.qualifier === "this" || candidate.qualifier === "self") {
+        defMatches = findFunctionDefinitions(lines, symbol);
+      } else {
+        defMatches = [];
+      }
     } else {
       defMatches = findFunctionDefinitions(lines, symbol);
     }

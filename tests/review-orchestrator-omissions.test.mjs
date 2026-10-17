@@ -141,8 +141,8 @@ test("Orchestrator authorized omissions: Tier-1 critical file omission fails clo
     })
   };
 
-  const result = await orchestrateReview(changeSet, { macro: mockAdapter }, {
-    plan: { mode: "single", role: "macro" }
+  const result = await orchestrateReview(changeSet, { macro: mockAdapter, micro: mockAdapter }, {
+    plan: { mode: "hierarchical", role: "macro" }
   });
 
   assert.equal(result.status, "incomplete");

@@ -3199,10 +3199,22 @@ test("PR39-GATE-OUT-04-NEGATIVE: Tier 1 omission policy (strict omission blockin
   assert.equal(directGateT2.decision, "human_review_required", "Tier 2 direct gate routes Medium omission to human review");
   assert.match(directGateT2.reason, /Supported Medium Omission \(Tier 2\)/i);
 
+  const mockMicroAdapter = {
+    providerName: "mock-micro-sentry",
+    modelName: "test-model-micro",
+    executeReview: async () => ({
+      ok: true,
+      executionStatus: "success",
+      findings: [],
+      coverage: { coveredFiles: ["src/auth.js"], omittedFiles: [] },
+      providerIdentity: { provider: "mock-micro-sentry", family: "google", model: "test-micro" }
+    })
+  };
+
   // Orchestrator with tier: 1: Must forward tier: 1 and block identically
-  const orchestratorT1 = await orchestrateReview(changeSet, { macro: mockAdapter }, {
+  const orchestratorT1 = await orchestrateReview(changeSet, { macro: mockAdapter, micro: mockMicroAdapter }, {
     tier: 1,
-    plan: { mode: "single", highestRisk: 1 },
+    plan: { mode: "hierarchical", highestRisk: 1 },
     verificationRecord: trustedRecord,
     runId
   });
@@ -3210,14 +3222,71 @@ test("PR39-GATE-OUT-04-NEGATIVE: Tier 1 omission policy (strict omission blockin
   assert.equal(orchestratorT1.gate.decision, "block");
   assert.match(orchestratorT1.gate.reason, /Supported Medium Omission \(Tier 1\)/i);
 
-  // Orchestrator with tier: 2: Must forward tier: 2 and route to human review identically
-  const orchestratorT2 = await orchestrateReview(changeSet, { macro: mockAdapter }, {
+  // Orchestrator with tier: 2: Must forward tier: 2 and route to human review identically on Tier 2 diff
+  const hunksT2 = "diff --git a/src/calc.js b/src/calc.js\n@@ -1,1 +1,2 @@\n+const result = 1;";
+  const contentDigestT2 = crypto.createHash("sha256").update(hunksT2).digest("hex");
+  const changeSetT2 = {
+    ...changeSet,
+    contentDigest: contentDigestT2,
+    diffHunks: hunksT2,
+    files: [{ path: "src/calc.js", additions: 1, deletions: 0, riskTier: 2 }]
+  };
+  const mockAdapterT2 = {
+    providerName: "mock-sentry-t2",
+    modelName: "test-model",
+    executeReview: async () => ({
+      ok: true,
+      executionStatus: "success",
+      findings: [],
+      coverage: { coveredFiles: ["src/calc.js"], omittedFiles: [] },
+      providerIdentity: { provider: "mock-sentry", family: "anthropic", model: "test" }
+    })
+  };
+  const mockVerifierT2 = {
+    executeVerification: async () => ({
+      overallStatus: "DEFECTS_FOUND",
+      evaluations: [],
+      verifierOmissions: [
+        {
+          title: "Calculation precision in non-critical module",
+          severity: "medium",
+          evidenceSupport: "SUPPORTED",
+          locatorAccurate: true,
+          file: "src/calc.js",
+          line_start: 1,
+          line_end: 1,
+          counterexample: "calling calc(null) returns null and causes crash"
+        }
+      ]
+    })
+  };
+  const trustedRecordT2 = await conductIndependentVerification(
+    changeSetT2,
+    [],
+    mockVerifierT2,
+    {
+      verificationMode: "clean_challenge",
+      headSha: changeSetT2.headSha,
+      changeSetDigest: changeSetT2.contentDigest,
+      runId: `${runId}-t2`
+    }
+  );
+  const directGateT2Real = evaluateGateDecision(makeTrustedConsensus([], { tier: 2 }), {
+    tier: 2,
+    verificationRecord: trustedRecordT2,
+    runContext: new RunContext({
+      headSha: changeSetT2.headSha,
+      contentDigest: changeSetT2.contentDigest,
+      runId: `${runId}-t2`
+    })
+  });
+  const orchestratorT2 = await orchestrateReview(changeSetT2, { macro: mockAdapterT2 }, {
     tier: 2,
     plan: { mode: "single", highestRisk: 2 },
-    verificationRecord: trustedRecord,
-    runId
+    verificationRecord: trustedRecordT2,
+    runId: `${runId}-t2`
   });
-  assert.equal(orchestratorT2.gate.decision, directGateT2.decision, "Orchestrator tier 2 must match direct gate tier 2 decision");
+  assert.equal(orchestratorT2.gate.decision, directGateT2Real.decision, "Orchestrator tier 2 must match direct gate tier 2 decision");
   assert.equal(orchestratorT2.gate.decision, "human_review_required");
   assert.match(orchestratorT2.gate.reason, /Supported Medium Omission \(Tier 2\)/i);
 
@@ -3231,9 +3300,9 @@ test("PR39-GATE-OUT-04-NEGATIVE: Tier 1 omission policy (strict omission blockin
   assert.match(directGateIsTier1.reason, /Supported Medium Omission \(Tier 1\)/i);
 
   // Orchestrator with isTier1: true: Must forward isTier1: true and block identically
-  const orchestratorIsTier1 = await orchestrateReview(changeSet, { macro: mockAdapter }, {
+  const orchestratorIsTier1 = await orchestrateReview(changeSet, { macro: mockAdapter, micro: mockMicroAdapter }, {
     isTier1: true,
-    plan: { mode: "single", highestRisk: 2 },
+    plan: { mode: "hierarchical", highestRisk: 1 },
     verificationRecord: trustedRecord,
     runId
   });

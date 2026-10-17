@@ -1162,9 +1162,9 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
         io.stdout.write(JSON.stringify(runReport, null, 2) + "\n");
       } else if (formatArg === "sarif") {
         const executionSuccessful = runStatus !== REVIEW_RUN_STATUS.INCOMPLETE && runStatus !== REVIEW_RUN_STATUS.EXECUTION_ERROR;
-        const sarif = formatSarifReport(consensus.findings, {
+        const sarif = formatSarifReport(consensus?.findings || [], {
           executionSuccessful,
-          failureReason: executionSuccessful ? undefined : (consensus.consensusProof || gate.reason || "Review unconfigured or quorum failed")
+          failureReason: executionSuccessful ? undefined : (consensus?.consensusProof || gate?.reason || "Review unconfigured or quorum failed")
         });
         io.stdout.write(JSON.stringify(sarif, null, 2) + "\n");
       }

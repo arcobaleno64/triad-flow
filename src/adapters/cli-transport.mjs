@@ -17,6 +17,7 @@ import {
   validateProviderOutput,
   extractJsonFromText
 } from "./provider-contract.mjs";
+import { normalizeObjective } from "../core/harness.mjs";
 import {
   resolveProviderProfile,
   assembleProviderArgs,
@@ -25,6 +26,19 @@ import {
 
 export { resolveProviderProfile, assembleProviderArgs, SAFE_ARGV_THRESHOLD_BYTES } from "./provider-profiles.mjs";
 export { extractJsonFromText } from "./provider-contract.mjs";
+
+function hasInvalidCalleeDefinition(pkg) {
+  if (!pkg || typeof pkg !== "object") return false;
+  if (Array.isArray(pkg)) {
+    return pkg.some(hasInvalidCalleeDefinition);
+  }
+  if (pkg.contextPackages && typeof pkg.contextPackages === "object") {
+    return Object.values(pkg.contextPackages).some(hasInvalidCalleeDefinition);
+  }
+  const callees = pkg.layers?.layer1AstEnclosure?.callees;
+  if (!Array.isArray(callees)) return false;
+  return callees.some(c => !c || typeof c !== "object" || (c.definition !== undefined && typeof c.definition !== "string"));
+}
 
 /**
  * Extracts final result payload from NDJSON stream-json output.
@@ -122,6 +136,41 @@ export function readBoundedFile(filePath, maxBytes) {
   }
 }
 
+function extractObjectiveText(val) {
+  if (!val) return "";
+  if (typeof val === "string") return normalizeObjective(val);
+  if (typeof val === "object" && typeof val.objective === "string") {
+    return normalizeObjective(val.objective);
+  }
+  return "";
+}
+
+function collectAllObjectivesFromOptions(opts, maxDepth = 10, currentDepth = 0) {
+  if (!opts || typeof opts !== "object" || currentDepth > maxDepth) return [];
+  const results = [];
+  if (opts.patchObjective) {
+    const norm = normalizeObjective(opts.patchObjective);
+    if (norm) results.push(norm);
+  }
+  if (opts.objectiveContract) {
+    const text = extractObjectiveText(opts.objectiveContract);
+    if (text) results.push(text);
+  }
+  if (opts.options && typeof opts.options === "object") {
+    results.push(...collectAllObjectivesFromOptions(opts.options, maxDepth, currentDepth + 1));
+  }
+  return results;
+}
+
+function findNestedObjectiveContract(opts, maxDepth = 10, currentDepth = 0) {
+  if (!opts || typeof opts !== "object" || currentDepth > maxDepth) return null;
+  if (opts.objectiveContract) return opts.objectiveContract;
+  if (opts.options && typeof opts.options === "object") {
+    return findNestedObjectiveContract(opts.options, maxDepth, currentDepth + 1);
+  }
+  return null;
+}
+
 export class CliReviewAdapter {
   constructor(options = {}) {
     this.command = options.command || "agy";
@@ -165,20 +214,58 @@ export class CliReviewAdapter {
     }
 
     const input = inputValidation.input;
-    const objectiveContract = input.objectiveContract || input.changeSet?.objectiveContract || input.options?.objectiveContract;
-    const patchObjective = input.patchObjective || input.changeSet?.patchObjective || input.options?.patchObjective || objectiveContract?.objective;
-    const contextPackage = input.contextPackage || input.options?.contextPackage || input.changeSet?.contextPackage || null;
-    const contextGaps = input.contextGaps || input.options?.contextGaps || contextPackage?.contextGaps || null;
+
+    const rawObjectiveCandidates = [
+      normalizeObjective(input.patchObjective),
+      extractObjectiveText(input.objectiveContract),
+      normalizeObjective(input.runContext?.patchObjective),
+      extractObjectiveText(input.runContext?.objectiveContract),
+      normalizeObjective(input.changeSet?.patchObjective),
+      extractObjectiveText(input.changeSet?.objectiveContract),
+      ...collectAllObjectivesFromOptions(input.options)
+    ].filter(Boolean);
+
+    const distinctObjectives = new Set(rawObjectiveCandidates.map(c => c.toLowerCase()));
+    if (distinctObjectives.size > 1) {
+      return validateProviderOutput({
+        executionStatus: EXECUTION_STATUS.ERROR,
+        error: "Conflicting patchObjective or objectiveContract detected across transport inputs (fail-closed)."
+      }, { runId: rawInput?.runId, providerName: this.providerName, modelName: this.modelName, transport: "cli" });
+    }
+
+    const objectiveContract = input.objectiveContract ||
+      input.changeSet?.objectiveContract ||
+      findNestedObjectiveContract(input.options) ||
+      null;
+    const patchObjective = rawObjectiveCandidates.length > 0
+      ? rawObjectiveCandidates[0]
+      : (input.patchObjective || input.changeSet?.patchObjective || input.options?.patchObjective || objectiveContract?.objective || "");
+    const contextPackage = input.contextPackage || input.changeSet?.contextPackage || input.options?.contextPackage || null;
+    const contextGaps = input.contextGaps || contextPackage?.contextGaps || input.options?.contextGaps || null;
+
+    if (contextPackage && hasInvalidCalleeDefinition(contextPackage)) {
+      return validateProviderOutput({
+        executionStatus: EXECUTION_STATUS.ERROR,
+        error: "Context package contains invalid callee definition: definition must be a string (INVALID_CALLEE_DEFINITION)."
+      }, { runId: rawInput?.runId, providerName: this.providerName, modelName: this.modelName, transport: "cli" });
+    }
+
+    const safeOptions = { ...(input.options || {}) };
+    delete safeOptions.patchObjective;
+    delete safeOptions.objectiveContract;
+    delete safeOptions.contextGaps;
+    delete safeOptions.contextPackage;
+
     const prompt = input.prompt || buildEvidenceReviewPrompt(
       input.changeSet,
       input.role,
       input.limits,
       contextPackage,
       {
+        ...safeOptions,
         patchObjective,
         objectiveContract,
-        contextGaps,
-        ...input.options
+        contextGaps
       }
     );
     const context = {

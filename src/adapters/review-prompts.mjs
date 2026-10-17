@@ -243,6 +243,12 @@ export function formatContextPackageXml(contextPackage) {
       lines.push("  </enclosing_functions>");
     }
     if (layer1AstEnclosure.callees?.length > 0) {
+      for (const c of layer1AstEnclosure.callees) {
+        if (!c || typeof c !== "object" || (c.definition !== undefined && typeof c.definition !== "string")) {
+          return `<context_package targetFile="${targetFileAttr}" status="untrusted" error="INVALID_CALLEE_DEFINITION">\n  <extraction_failure reason="Callee definition must be a string, received ${typeof c?.definition}"/>\n</context_package>`;
+        }
+      }
+
       lines.push("  <callee_definitions>");
       lines.push(`    <local_callees targetFile="${targetFileAttr}">`);
       for (const c of layer1AstEnclosure.callees) {
@@ -252,7 +258,7 @@ export function formatContextPackageXml(contextPackage) {
         const symAttr = escapeXmlAttribute(c.symbol);
         const bytesAttr = escapeXmlAttribute(c.bytes);
         lines.push(`      <callee symbol="${symAttr}"${lineAttr} bytes="${bytesAttr}">`);
-        if (c.definition) {
+        if (typeof c.definition === "string") {
           const escapedDef = escapeXmlText(c.definition.trim()).replace(/\n/g, "\n        ");
           lines.push(`        ${escapedDef}`);
         }

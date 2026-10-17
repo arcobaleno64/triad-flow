@@ -24,13 +24,27 @@ import {
   getOssCaseById,
   listOssCases
 } from "../../tests/fixtures/real-oss-fixtures.mjs";
-import { orchestrateReview } from "../adapters/review-orchestrator.mjs";
+import { orchestrateBenchmarkEvaluation } from "../adapters/review-orchestrator.mjs";
 import { verifyHeldOutBaseline } from "./scoring.mjs";
 import { deduplicateBenchmarkFindings } from "./benchmark-pilot.mjs";
 import { evaluateDiffScale } from "./graph-router.mjs";
 import { buildAuditReceipt, normalizeActualModel } from "./audit-receipt.mjs";
 import { createCorpusIdentity } from "./canonical-digest.mjs";
 import { TOOL_VERSION } from "./review-run-report.mjs";
+
+var _mintBenchmarkRunnerCapability = _mintBenchmarkRunnerCapability || null;
+
+/**
+ * Capability binder for genuine internal benchmark runner execution.
+ * Write-once capability binding from review-orchestrator.mjs (Thread tfxJh).
+ *
+ * @param {Function} minter
+ */
+export function __bindBenchmarkRunnerCapability(minter) {
+  if (typeof minter === "function" && !_mintBenchmarkRunnerCapability) {
+    _mintBenchmarkRunnerCapability = minter;
+  }
+}
 
 export const BENCHMARK_FRAMEWORK_NAME = "Triad-Flow Real Benchmark Corpus v0 (TF-RBC-v0)";
 export const OSS_BENCHMARK_FRAMEWORK_NAME = "Triad-Flow Real-World OSS Corpus v1 (TF-OSS-v1)";
@@ -85,12 +99,17 @@ export async function evaluateCorpusCase(caseDef, adapters = {}, options = {}) {
     }
 
     // 4. Time the execution
+    const benchmarkCapability = typeof _mintBenchmarkRunnerCapability === "function"
+      ? _mintBenchmarkRunnerCapability()
+      : null;
+
     const startTime = Date.now();
-    const orchResult = await orchestrateReview(workspace.changeSet, adapters, {
+    const orchResult = await orchestrateBenchmarkEvaluation(workspace.changeSet, adapters, {
       plan,
       strict,
       timeoutMs,
-      preliminary: true
+      preliminary: true,
+      __internalBenchmarkCapability: benchmarkCapability
     });
     const latencyMs = Date.now() - startTime;
 

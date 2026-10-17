@@ -20,6 +20,7 @@ import {
 import { digestChangeSet, normalizeLineEndings } from "../core/canonical-digest.mjs";
 import { convertProviderResultToSentryReport } from "./provider-contract.mjs";
 import { evaluateCoverageContract, COVERAGE_OMISSION_CODES } from "./staged-review.mjs";
+import { __bindBenchmarkRunnerCapability } from "../core/real-benchmark-runner.mjs";
 
 function isCoverageComplete(changeSet, providerResult) {
   if (!providerResult || !providerResult.ok) return false;
@@ -46,6 +47,54 @@ function isCoverageComplete(changeSet, providerResult) {
   });
 
   return !hasIncompleteOmission;
+}
+
+function hasInvalidCalleeDefinition(pkg) {
+  if (!pkg || typeof pkg !== "object") return false;
+  if (Array.isArray(pkg)) {
+    return pkg.some(hasInvalidCalleeDefinition);
+  }
+  if (pkg.contextPackages && typeof pkg.contextPackages === "object") {
+    return Object.values(pkg.contextPackages).some(hasInvalidCalleeDefinition);
+  }
+  const callees = pkg.layers?.layer1AstEnclosure?.callees;
+  if (!Array.isArray(callees)) return false;
+  return callees.some(c => !c || typeof c !== "object" || (c.definition !== undefined && typeof c.definition !== "string"));
+}
+
+function extractObjectiveText(val) {
+  if (!val) return "";
+  if (typeof val === "string") return normalizeObjective(val);
+  if (typeof val === "object" && typeof val.objective === "string") {
+    return normalizeObjective(val.objective);
+  }
+  return "";
+}
+
+function collectAllObjectivesFromOptions(opts, maxDepth = 10, currentDepth = 0) {
+  if (!opts || typeof opts !== "object" || currentDepth > maxDepth) return [];
+  const results = [];
+  if (opts.patchObjective) {
+    const norm = normalizeObjective(opts.patchObjective);
+    if (norm) results.push(norm);
+  }
+  if (opts.objectiveContract) {
+    const text = extractObjectiveText(opts.objectiveContract);
+    if (text) results.push(text);
+  }
+  if (opts.options && typeof opts.options === "object") {
+    results.push(...collectAllObjectivesFromOptions(opts.options, maxDepth, currentDepth + 1));
+  }
+  return results;
+}
+
+function findNestedObjectiveContract(opts, maxDepth = 10, currentDepth = 0) {
+  if (!opts || typeof opts !== "object" || currentDepth > maxDepth) return null;
+  if (opts.objectiveContract) return opts.objectiveContract;
+  if (opts.options && typeof opts.options === "object") {
+    return findNestedObjectiveContract(opts.options, maxDepth, currentDepth + 1);
+  }
+  return null;
 }
 
 export function buildCanonicalRunContext(changeSet, options = {}, runId) {
@@ -200,23 +249,15 @@ export function buildCanonicalRunContext(changeSet, options = {}, runId) {
     }
   }
 
-  // R2: Deterministic Objective Conflict Fail-Closed across all 6 sources
-  const extractObjectiveText = (val) => {
-    if (!val) return "";
-    if (typeof val === "string") return normalizeObjective(val);
-    if (typeof val === "object" && typeof val.objective === "string") {
-      return normalizeObjective(val.objective);
-    }
-    return "";
-  };
-
+  // R2: Deterministic Objective Conflict Fail-Closed across all sources
   const rawCandidates = [
     normalizeObjective(options.patchObjective),
     extractObjectiveText(options.objectiveContract),
     normalizeObjective(options.runContext?.patchObjective),
     extractObjectiveText(options.runContext?.objectiveContract),
     normalizeObjective(changeSet.patchObjective),
-    extractObjectiveText(changeSet.objectiveContract)
+    extractObjectiveText(changeSet.objectiveContract),
+    ...collectAllObjectivesFromOptions(options.options)
   ].filter(Boolean);
 
   const distinctNormalized = new Set(rawCandidates.map(c => c.toLowerCase()));
@@ -230,6 +271,7 @@ export function buildCanonicalRunContext(changeSet, options = {}, runId) {
   const objectiveContract = options.objectiveContract ||
     options.runContext?.objectiveContract ||
     changeSet.objectiveContract ||
+    findNestedObjectiveContract(options.options) ||
     null;
 
   const rawExclCandidates = [
@@ -279,7 +321,22 @@ export function buildCanonicalRunContext(changeSet, options = {}, runId) {
   }
 }
 
-export async function orchestrateReview(changeSet, adapters = {}, options = {}) {
+const internalBenchmarkAuthorityRegistry = new WeakSet();
+
+function _createInternalBenchmarkCapability() {
+  const token = Object.freeze({
+    type: "INTERNAL_BENCHMARK_CAPABILITY",
+    mintedAt: Date.now()
+  });
+  internalBenchmarkAuthorityRegistry.add(token);
+  return token;
+}
+
+if (typeof __bindBenchmarkRunnerCapability === "function") {
+  __bindBenchmarkRunnerCapability(_createInternalBenchmarkCapability);
+}
+
+async function _executeOrchestratedReview(changeSet, adapters = {}, options = {}, internalContext = {}) {
   const runId = options.runId || crypto.randomUUID();
   const strict = Boolean(options.strict);
   const timeoutMs = options.timeoutMs || 60000;
@@ -306,9 +363,57 @@ export async function orchestrateReview(changeSet, adapters = {}, options = {}) 
     };
   }
 
-  const plan = options.plan || evaluateDiffScale(changeSet.files);
-  const evaluatedScale = (!plan || plan.highestRisk === undefined) ? evaluateDiffScale(changeSet?.files || []) : null;
-  const computedHighestRisk = plan?.highestRisk ?? evaluatedScale?.highestRisk;
+  if (hasInvalidCalleeDefinition(options.contextPackage) || hasInvalidCalleeDefinition(changeSet?.contextPackage)) {
+    return {
+      runId,
+      status: "incomplete",
+      plan: options.plan || evaluateDiffScale(changeSet?.files || []),
+      consensus: null,
+      gate: {
+        decision: "block",
+        reason: "Gate Fail-Closed: Context package contains invalid callee definition (INVALID_CALLEE_DEFINITION)."
+      },
+      reports: {}
+    };
+  }
+
+  // R2 / tfxJn: Deterministic Objective Conflict Fail-Closed across all sources
+  const rawObjectiveCandidates = [
+    normalizeObjective(options.patchObjective),
+    extractObjectiveText(options.objectiveContract),
+    normalizeObjective(options.runContext?.patchObjective),
+    extractObjectiveText(options.runContext?.objectiveContract),
+    normalizeObjective(changeSet.patchObjective),
+    extractObjectiveText(changeSet.objectiveContract),
+    ...collectAllObjectivesFromOptions(options.options)
+  ].filter(Boolean);
+
+  const distinctObjectives = new Set(rawObjectiveCandidates.map(c => c.toLowerCase()));
+  if (distinctObjectives.size > 1) {
+    return {
+      runId,
+      status: "incomplete",
+      plan: options.plan || evaluateDiffScale(changeSet?.files || []),
+      consensus: null,
+      gate: {
+        decision: "block",
+        reason: "Gate Fail-Closed: Verification record, exclusions, or objective mismatch (FORGED_OR_STALE_RECORD / EXCLUSION_OR_OBJECTIVE_MISMATCH)."
+      },
+      reports: {}
+    };
+  }
+
+  const effectivePatchObjective = rawObjectiveCandidates.length > 0 ? rawObjectiveCandidates[0] : "";
+  const effectiveObjectiveContract = options.objectiveContract ||
+    options.runContext?.objectiveContract ||
+    changeSet.objectiveContract ||
+    findNestedObjectiveContract(options.options) ||
+    null;
+
+  const authoritativeScale = evaluateDiffScale(changeSet.files);
+  const plan = options.plan || authoritativeScale;
+  const computedHighestRisk = authoritativeScale.highestRisk;
+
   // R4: Validate risk tier and prevent illegal tiers or downgrades
   let isIllegalTier = false;
   let parsedTier = undefined;
@@ -334,11 +439,39 @@ export async function orchestrateReview(changeSet, adapters = {}, options = {}) 
     }
   }
 
+  // Benchmark evaluation exemption strictly confined to verified internal benchmark execution
+  const isInternalBenchmark = Boolean(internalContext.isInternalBenchmark);
+
+  let isPlanConflict = false;
+  if (options.plan) {
+    if (options.plan.highestRisk !== undefined) {
+      const planRisk = Number(options.plan.highestRisk);
+      if (Number.isNaN(planRisk) || !Number.isInteger(planRisk) || planRisk <= 0 || planRisk > 4) {
+        isIllegalTier = true;
+      } else if (planRisk > authoritativeScale.highestRisk && !isInternalBenchmark) {
+        isPlanConflict = true;
+      }
+    }
+    if (options.plan.mode !== undefined && options.plan.mode !== "hierarchical" && options.plan.mode !== "single") {
+      isIllegalTier = true;
+    }
+    if (authoritativeScale.highestRisk === 1) {
+      const isRiskDowngraded = options.plan.highestRisk !== undefined && Number(options.plan.highestRisk) > 1;
+      const isModeDowngraded = options.plan.mode === "single";
+      if ((isRiskDowngraded || isModeDowngraded) && !isInternalBenchmark) {
+        isPlanConflict = true;
+      }
+    }
+    if (authoritativeScale.mode === "hierarchical" && options.plan.mode === "single" && !isInternalBenchmark) {
+      isPlanConflict = true;
+    }
+  }
+
   // Downgrade check: if diff is Tier 1, cannot downgrade to > 1 or override isTier1: false
-  const isDowngraded = computedHighestRisk === 1 && (
+  const isDowngraded = (authoritativeScale.highestRisk === 1 && (
     (parsedTier !== undefined && parsedTier > 1) ||
     options.isTier1 === false
-  );
+  )) || isPlanConflict;
 
   if (isIllegalTier || isDowngraded) {
     return {
@@ -354,7 +487,7 @@ export async function orchestrateReview(changeSet, adapters = {}, options = {}) 
     };
   }
 
-  const isTier1Opt = options.tier === 1 || options.isTier1 === true;
+  const isTier1Opt = options.tier === 1 || options.isTier1 === true || computedHighestRisk === 1;
   const diffTier = isTier1Opt
     ? 1
     : (parsedTier !== undefined
@@ -372,7 +505,9 @@ export async function orchestrateReview(changeSet, adapters = {}, options = {}) 
     const consensus = aggregateConsensus(rawReports);
     const gate = evaluateGateDecision(consensus, {
       strict,
-      ...(diffTier !== undefined ? { tier: diffTier, isTier1: diffTier === 1 } : {})
+      ...(diffTier !== undefined ? { tier: diffTier, isTier1: diffTier === 1 } : {}),
+      ...(effectivePatchObjective ? { patchObjective: effectivePatchObjective } : {}),
+      ...(effectiveObjectiveContract ? { objectiveContract: effectiveObjectiveContract } : {})
     });
 
     return {
@@ -385,6 +520,18 @@ export async function orchestrateReview(changeSet, adapters = {}, options = {}) 
     };
   }
 
+  const baseExecutionParams = {
+    runId,
+    changeSet,
+    timeoutMs,
+    signal,
+    ...(limits ? { limits } : {}),
+    ...(options.contextPackage ? { contextPackage: options.contextPackage } : {}),
+    ...(options.contextGaps ? { contextGaps: options.contextGaps } : {}),
+    ...(effectivePatchObjective ? { patchObjective: effectivePatchObjective } : {}),
+    ...(effectiveObjectiveContract ? { objectiveContract: effectiveObjectiveContract } : {})
+  };
+
   // Case 2: Hierarchical mode (High-risk or large diff)
   if (plan.mode === "hierarchical") {
     // High-risk changes REQUIRE strict heterogeneous dual sentries (Macro + Micro).
@@ -395,15 +542,9 @@ export async function orchestrateReview(changeSet, adapters = {}, options = {}) 
       const activeAdapter = hasMacro ? adapters.macro : adapters.micro;
 
       const activeResult = await activeAdapter.executeReview({
-        runId,
+        ...baseExecutionParams,
         role: activeRole,
-        changeSet,
-        policyId: "STRICT_HETEROGENEOUS",
-        timeoutMs,
-        signal,
-        ...(limits ? { limits } : {}),
-        ...(options.contextPackage ? { contextPackage: options.contextPackage } : {}),
-        ...(options.contextGaps ? { contextGaps: options.contextGaps } : {})
+        policyId: "STRICT_HETEROGENEOUS"
       });
 
       const rawReports = {
@@ -422,7 +563,9 @@ export async function orchestrateReview(changeSet, adapters = {}, options = {}) 
         ...(diffTier !== undefined ? { tier: diffTier, isTier1: diffTier === 1 } : {}),
         ...(options.preliminary === true ? { preliminary: true } : {}),
         ...(options.contextPackage ? { contextPackage: options.contextPackage } : {}),
-        ...(options.contextGaps ? { contextGaps: options.contextGaps } : {})
+        ...(options.contextGaps ? { contextGaps: options.contextGaps } : {}),
+        ...(effectivePatchObjective ? { patchObjective: effectivePatchObjective } : {}),
+        ...(effectiveObjectiveContract ? { objectiveContract: effectiveObjectiveContract } : {})
       });
 
       return {
@@ -441,26 +584,14 @@ export async function orchestrateReview(changeSet, adapters = {}, options = {}) 
     // Both Macro and Micro adapters configured: execute concurrently
     const [macroResult, microResult] = await Promise.all([
       adapters.macro.executeReview({
-        runId,
+        ...baseExecutionParams,
         role: "macro",
-        changeSet,
-        policyId: "STRICT_HETEROGENEOUS",
-        timeoutMs,
-        signal,
-        ...(limits ? { limits } : {}),
-        ...(options.contextPackage ? { contextPackage: options.contextPackage } : {}),
-        ...(options.contextGaps ? { contextGaps: options.contextGaps } : {})
+        policyId: "STRICT_HETEROGENEOUS"
       }),
       adapters.micro.executeReview({
-        runId,
+        ...baseExecutionParams,
         role: "micro",
-        changeSet,
-        policyId: "STRICT_HETEROGENEOUS",
-        timeoutMs,
-        signal,
-        ...(limits ? { limits } : {}),
-        ...(options.contextPackage ? { contextPackage: options.contextPackage } : {}),
-        ...(options.contextGaps ? { contextGaps: options.contextGaps } : {})
+        policyId: "STRICT_HETEROGENEOUS"
       })
     ]);
 
@@ -489,7 +620,9 @@ export async function orchestrateReview(changeSet, adapters = {}, options = {}) 
           ...(options.verificationRecord ? { verificationRecord: options.verificationRecord } : {}),
           ...(canonicalRunContext ? { runContext: canonicalRunContext } : {}),
           ...(options.contextPackage ? { contextPackage: options.contextPackage } : {}),
-          ...(options.contextGaps ? { contextGaps: options.contextGaps } : {})
+          ...(options.contextGaps ? { contextGaps: options.contextGaps } : {}),
+          ...(effectivePatchObjective ? { patchObjective: effectivePatchObjective } : {}),
+          ...(effectiveObjectiveContract ? { objectiveContract: effectiveObjectiveContract } : {})
         });
 
     const isApprove = gate.decision === "approve";
@@ -519,6 +652,17 @@ export async function orchestrateReview(changeSet, adapters = {}, options = {}) 
       }
     }
 
+    if (isInternalBenchmark && gate) {
+      gate.governanceAuthority = false;
+      gate.experimental = true;
+    }
+
+    const benchmarkMetadata = isInternalBenchmark ? {
+      governanceAuthority: false,
+      isExperimental: true,
+      experimentalBenchmark: true
+    } : {};
+
     return {
       runId,
       status,
@@ -526,6 +670,7 @@ export async function orchestrateReview(changeSet, adapters = {}, options = {}) 
       consensus,
       gate,
       reports: rawReports,
+      ...benchmarkMetadata,
       ...(options.contextPackage ? { contextPackage: options.contextPackage } : {}),
       ...(options.contextGaps ? { contextGaps: options.contextGaps } : {}),
       results: { macro: macroResult, micro: microResult }
@@ -537,15 +682,9 @@ export async function orchestrateReview(changeSet, adapters = {}, options = {}) 
   const singleRole = adapters.macro ? "macro" : "micro";
 
   const singleResult = await singleAdapter.executeReview({
-    runId,
+    ...baseExecutionParams,
     role: singleRole,
-    changeSet,
-    policyId: "SINGLE_SENTRY",
-    timeoutMs,
-    signal,
-    ...(limits ? { limits } : {}),
-    ...(options.contextPackage ? { contextPackage: options.contextPackage } : {}),
-    ...(options.contextGaps ? { contextGaps: options.contextGaps } : {})
+    policyId: "SINGLE_SENTRY"
   });
 
   const singleReport = convertProviderResultToSentryReport(singleResult, singleRole);
@@ -574,7 +713,9 @@ export async function orchestrateReview(changeSet, adapters = {}, options = {}) 
         ...(options.verificationRecord ? { verificationRecord: options.verificationRecord } : {}),
         ...(canonicalRunContext ? { runContext: canonicalRunContext } : {}),
         ...(options.contextPackage ? { contextPackage: options.contextPackage } : {}),
-        ...(options.contextGaps ? { contextGaps: options.contextGaps } : {})
+        ...(options.contextGaps ? { contextGaps: options.contextGaps } : {}),
+        ...(effectivePatchObjective ? { patchObjective: effectivePatchObjective } : {}),
+        ...(effectiveObjectiveContract ? { objectiveContract: effectiveObjectiveContract } : {})
       });
 
   const isApprove = gate.decision === "approve";
@@ -603,6 +744,17 @@ export async function orchestrateReview(changeSet, adapters = {}, options = {}) 
     }
   }
 
+  if (isInternalBenchmark && gate) {
+    gate.governanceAuthority = false;
+    gate.experimental = true;
+  }
+
+  const benchmarkMetadata = isInternalBenchmark ? {
+    governanceAuthority: false,
+    isExperimental: true,
+    experimentalBenchmark: true
+  } : {};
+
   return {
     runId,
     status,
@@ -610,8 +762,48 @@ export async function orchestrateReview(changeSet, adapters = {}, options = {}) 
     consensus,
     gate,
     reports: rawReports,
+    ...benchmarkMetadata,
     ...(options.contextPackage ? { contextPackage: options.contextPackage } : {}),
     ...(options.contextGaps ? { contextGaps: options.contextGaps } : {}),
     result: singleResult
   };
+}
+
+/**
+ * Public Governance Review Orchestrator.
+ * Strictly enforces all governance invariants: Tier 1 diffs unconditionally require
+ * dual heterogeneous sentries (hierarchical mode) and cannot be downgraded by any caller.
+ * Fails closed without exception (Thread tfxJh).
+ */
+export async function orchestrateReview(changeSet, adapters = {}, options = {}) {
+  return _executeOrchestratedReview(changeSet, adapters, options, { isInternalBenchmark: false });
+}
+
+/**
+ * Dedicated Experimental Benchmark Review Orchestrator.
+ * Restricted strictly to genuine internal benchmark runs authenticated via unforgeable
+ * capability token minted by _createInternalBenchmarkCapability (Thread tfxJh).
+ * External callers cannot obtain the capability token and fail closed immediately.
+ * All return values are explicitly marked as experimental non-governance authority.
+ */
+export async function orchestrateBenchmarkEvaluation(changeSet, adapters = {}, options = {}) {
+  const token = options?.__internalBenchmarkCapability;
+  if (!token || typeof token !== "object" || !internalBenchmarkAuthorityRegistry.has(token)) {
+    const runId = options?.runId || crypto.randomUUID();
+    return {
+      runId,
+      status: "incomplete",
+      plan: options?.plan || evaluateDiffScale(changeSet?.files || []),
+      consensus: null,
+      gate: {
+        decision: "block",
+        reason: "Gate Fail-Closed: Unauthorized benchmark evaluation request (UNAUTHORIZED_BENCHMARK_EXECUTION)."
+      },
+      reports: {},
+      governanceAuthority: false,
+      isExperimental: true
+    };
+  }
+
+  return _executeOrchestratedReview(changeSet, adapters, options, { isInternalBenchmark: true });
 }

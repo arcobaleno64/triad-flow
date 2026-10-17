@@ -96,11 +96,12 @@ test("Path 2 (Vulnerability Catch & Gate Block): Real agy catches OWASP defects 
       plan: { mode: "single", reason: "vuln-owasp-pilot" }
     });
     const durationMs = Date.now() - start;
-    console.log(`[Pilot Metric] Path 2 (Vulnerability Catch): duration=${durationMs}ms, findings=${orchResult.result?.findings?.length ?? 0}, usage=`, orchResult.result?.usage ?? "n/a");
+    const findings = orchResult.result?.findings ?? orchResult.consensus?.findings ?? [];
+    console.log(`[Pilot Metric] Path 2 (Vulnerability Catch): duration=${durationMs}ms, findings=${findings.length}, usage=`, orchResult.result?.usage ?? "n/a");
 
     assert.equal(orchResult.status, "reviewed-with-findings");
     assert.equal(orchResult.gate.decision, "block");
-    assert.ok(orchResult.result.findings.length > 0, "Expected provider to discover vulnerabilities");
+    assert.ok(findings.length > 0, "Expected provider to discover vulnerabilities");
     assertRepoImmutability(repo.dir, repo.headSha);
   } finally {
     repo.cleanup();
@@ -175,7 +176,7 @@ test("Path 4 (Auth Failure Graceful Degradation): Invalid credentials identify A
 });
 
 test("Path 5 (Coverage Incompleteness): Multi-file changeset with omitted files triggers Gate BLOCK", async () => {
-  const repo = createDisposableRepo("vulnerable"); // contains src/auth.js and src/db.js
+  const repo = createDisposableRepo("vulnerable"); // contains src/user.js and src/db.js
   try {
     assertRepoImmutability(repo.dir, repo.headSha);
     // Reviewer only covers one of the two files
@@ -185,7 +186,7 @@ test("Path 5 (Coverage Incompleteness): Multi-file changeset with omitted files 
         stdout: JSON.stringify({
           findings: [],
           coverage: {
-            coveredFiles: ["src/auth.js"],
+            coveredFiles: ["src/user.js"],
             omittedFiles: [{ path: "src/db.js", code: "OMIT_SIZE_LIMIT", reason: "Truncated or omitted by reviewer" }]
           }
         })
