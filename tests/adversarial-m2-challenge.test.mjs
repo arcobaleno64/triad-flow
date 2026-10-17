@@ -1064,6 +1064,8 @@ test("M2 CLI Invariant: node scripts/dogfood-review.mjs --mock --out outputs exa
     const execResult = childProcess.execFileSync(process.execPath, [
       path.resolve("scripts/dogfood-review.mjs"),
       "--mock",
+      "--base",
+      "HEAD",
       "--out",
       tmpOut
     ], { encoding: "utf8" });

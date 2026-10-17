@@ -54,9 +54,22 @@ import { EXECUTION_STATUS } from "../src/adapters/provider-contract.mjs";
 import { buildContextPackage } from "../src/core/context-builder.mjs";
 
 // Helper: minimal valid changeset referencing an existing repo file
+const currentRepoHeadSha = execFileSync(
+  "git",
+  ["-c", "core.fsmonitor=false", "rev-parse", "HEAD"],
+  {
+    cwd: process.cwd(),
+    encoding: "utf8"
+  }
+).trim();
+
+if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i.test(currentRepoHeadSha)) {
+  throw new Error("PHASE2 tests require a valid checked-out Git HEAD");
+}
+
 function createTestChangeSet(overrides = {}) {
   return {
-    headSha: "93a63e30a039239212d54db501ce2b0655f3bd49",
+    headSha: currentRepoHeadSha,
     contentDigest: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
     totalFiles: 1,
     files: [
@@ -814,7 +827,7 @@ index 1111111..2222222 100644
 test("PHASE2-NEG-18: Diff hunk provenance strictly verified against authentic Git/disk/manifest backing", () => {
   // Scenario 1: Valid Commit SHA on real repo, but target file does not exist in commit or on disk.
   // External changeSet declares fabricated diff hunk targeting line 5000 -> must NOT allow locator to become accurate or omission to become SUPPORTED.
-  const validHeadSha = "ebe28be8b4db6ef276e6b3dcc1201a860af5231f";
+  const validHeadSha = currentRepoHeadSha;
   const changeSetFabricatedFileOnRealRepo = createTestChangeSet({
     repository: { root: process.cwd() },
     headSha: validHeadSha,
@@ -1213,7 +1226,7 @@ index 1111111..2222222 100644
 
     // 4. Positive Control: Authentic package backed by real Git repository and committed files
     const realRepoRoot = process.cwd();
-    const realHeadSha = "ebe28be8b4db6ef276e6b3dcc1201a860af5231f";
+    const realHeadSha = currentRepoHeadSha;
     const realFile = "src/core/independent-verifier.mjs";
     const validGitPkg = {
       schemaVersion: "1.0.0",
@@ -1698,7 +1711,7 @@ index 1111111..2222222 100644
 
     // 2. Positive Control: Authentic review context with genuine Git backing retains Registry trust and accurate locator
     const realRepoRoot = process.cwd();
-    const realHeadSha = "ebe28be8b4db6ef276e6b3dcc1201a860af5231f";
+    const realHeadSha = currentRepoHeadSha;
     const realFile = "src/core/independent-verifier.mjs";
     const authenticChangeSet = {
       repository: { root: realRepoRoot },
