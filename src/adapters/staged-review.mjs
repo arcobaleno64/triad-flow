@@ -16,7 +16,7 @@ import { reconcileFindings } from "../core/reconciler.mjs";
 import { classifyFileRisk, RISK_TIERS } from "../core/graph-router.mjs";
 import { normalizeCanonicalPath } from "../core/scoring.mjs";
 import { normalizeFinding } from "../core/harness.mjs";
-import { mergeContextGaps, normalizeCommitSha, normalizeDigest } from "../core/independent-verifier.mjs";
+import { mergeContextGaps, normalizeCommitSha, normalizeDigest, isTrustedContextPackage, registerTrustedContextPackage } from "../core/independent-verifier.mjs";
 import { digestChangeSet } from "../core/canonical-digest.mjs";
 import { EXECUTION_STATUS, COVERAGE_OMISSION_CODES, safeRenderUntrusted, safeGet, safeIsArray, safeArrayLength, safeErrorMessage } from "./provider-contract.mjs";
 
@@ -573,12 +573,28 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
     }
   }
 
+  let isCallerContextTrusted = isCallerContextObject && isTrustedContextPackage(callerContextPackage);
+  if (!isCallerContextTrusted && isCallerContextObject && !isCallerContextPoisoned && !isCallerContextBindingMismatch) {
+    try {
+      const verified = registerTrustedContextPackage(callerContextPackage, {
+        repositoryRoot: repoRoot,
+        headSha: expectedHeadSha,
+        diffHunks: changeSet?.diffHunks,
+        changeSet
+      });
+      if (verified) {
+        isCallerContextTrusted = true;
+      }
+    } catch {}
+  }
+
   const hasValidCallerContext = isCallerContextObject &&
     !isCallerContextPoisoned &&
     callerOk &&
     !callerHasUnavailableManifest &&
     !isCallerContextVacuous &&
-    !isCallerContextBindingMismatch;
+    !isCallerContextBindingMismatch &&
+    isCallerContextTrusted;
 
   if (hasValidCallerContext) {
     resolvedContextPackage = callerContextPackage;
@@ -606,7 +622,7 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
       targetFiles: Array.isArray(changeSet?.files) ? changeSet.files.map(f => typeof f === "string" ? f : (f?.path || f?.file)).filter(Boolean) : []
     });
   } else {
-    // Explicitly null, undefined, or empty/vacuous contextPackage without extraction gap:
+    // Explicitly null, undefined, empty/vacuous, or untrusted contextPackage without extraction gap:
     // Re-extract valid exact-head contextPackage via buildContextPackage
     try {
       const extracted = buildContextPackage(
@@ -645,6 +661,14 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
             code: "EXACT_HEAD_CONTEXT_FAILED",
             symbol: "exact-head-context",
             reason: "Extracted contextPackage contains no substantive coverage or layers",
+            targetFiles: Array.isArray(changeSet?.files) ? changeSet.files.map(f => typeof f === "string" ? f : f?.path).filter(Boolean) : []
+          });
+        } else if (expectedHeadSha && !isTrustedContextPackage(extracted)) {
+          resolvedContextPackage = null;
+          fallbackExtractionGaps.push({
+            code: "EXACT_HEAD_CONTEXT_FAILED",
+            symbol: "exact-head-context",
+            reason: "Re-extracted exact-head contextPackage could not be authoritatively verified against Git repository",
             targetFiles: Array.isArray(changeSet?.files) ? changeSet.files.map(f => typeof f === "string" ? f : f?.path).filter(Boolean) : []
           });
         } else {

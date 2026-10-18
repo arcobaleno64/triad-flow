@@ -44,6 +44,87 @@ export const DEFAULT_BUDGET_CONFIG = Object.freeze({
   layer3Ratio: 0.10          // 10% for Layer 3 (Call Graph & Flow References)
 });
 
+export const MAX_WORKING_TREE_FILE_BYTES = 2 * 1024 * 1024; // 2 MB ceiling
+
+/**
+ * Safely reads a working-tree file while enforcing repository path containment
+ * (rejecting .. traversal, absolute path escape, and symlinks pointing outside repoRoot)
+ * and file size ceiling (2 MB).
+ *
+ * @param {string} repoRoot - Canonical repository root path
+ * @param {string} filePath - Target file path (relative or absolute)
+ * @param {number} [maxBytes=MAX_WORKING_TREE_FILE_BYTES]
+ * @returns {{ ok: boolean, exists: boolean, content: string|null, reason?: string, error?: string }}
+ */
+export function safeReadWorkingTreeFile(repoRoot, filePath, maxBytes = MAX_WORKING_TREE_FILE_BYTES) {
+  if (!repoRoot || typeof repoRoot !== "string" || !filePath || typeof filePath !== "string") {
+    return { ok: false, exists: false, content: null, reason: "REPOSITORY_PATH_ESCAPE", error: "Missing repository root or file path" };
+  }
+
+  let resolvedRepoRoot;
+  try {
+    resolvedRepoRoot = path.resolve(repoRoot);
+  } catch (err) {
+    return { ok: false, exists: false, content: null, reason: "REPOSITORY_PATH_ESCAPE", error: `Invalid repository root: ${err.message}` };
+  }
+
+  const diskPath = path.isAbsolute(filePath)
+    ? path.resolve(filePath)
+    : path.resolve(resolvedRepoRoot, filePath);
+
+  const rel = path.relative(resolvedRepoRoot, diskPath);
+  if (rel.startsWith("..") || path.isAbsolute(rel)) {
+    return { ok: false, exists: false, content: null, reason: "REPOSITORY_PATH_ESCAPE", error: `File path '${filePath}' escapes repository boundary` };
+  }
+
+  let realRepoRoot;
+  try {
+    realRepoRoot = fs.existsSync(resolvedRepoRoot) ? fs.realpathSync(resolvedRepoRoot) : resolvedRepoRoot;
+  } catch {
+    realRepoRoot = resolvedRepoRoot;
+  }
+
+  if (!fs.existsSync(diskPath)) {
+    return { ok: true, exists: false, content: null };
+  }
+
+  let realDiskPath;
+  try {
+    realDiskPath = fs.realpathSync(diskPath);
+  } catch (err) {
+    return { ok: false, exists: false, content: null, reason: "REPOSITORY_PATH_ESCAPE", error: `Cannot resolve realpath for '${filePath}': ${err.message}` };
+  }
+
+  const relReal = path.relative(realRepoRoot, realDiskPath);
+  if (relReal.startsWith("..") || path.isAbsolute(relReal)) {
+    return { ok: false, exists: false, content: null, reason: "REPOSITORY_PATH_ESCAPE", error: `Symlink '${filePath}' resolves outside repository root to '${realDiskPath}'` };
+  }
+
+  let stat;
+  try {
+    stat = fs.statSync(realDiskPath);
+  } catch (err) {
+    return { ok: false, exists: false, content: null, reason: "REPOSITORY_PATH_ESCAPE", error: `Cannot stat file '${filePath}': ${err.message}` };
+  }
+
+  if (!stat.isFile()) {
+    return { ok: true, exists: false, content: null };
+  }
+
+  if (stat.size > maxBytes) {
+    return { ok: false, exists: true, content: null, reason: "REPOSITORY_PATH_ESCAPE", error: `File size (${stat.size} bytes) exceeds working-tree ceiling (${maxBytes} bytes)` };
+  }
+
+  let content;
+  try {
+    content = fs.readFileSync(realDiskPath, "utf8");
+  } catch (err) {
+    return { ok: false, exists: false, content: null, reason: "REPOSITORY_PATH_ESCAPE", error: `Cannot read file '${filePath}': ${err.message}` };
+  }
+
+  return { ok: true, exists: true, content };
+}
+
 /**
  * Parses unified diff text to identify line ranges of changes for a file.
  * @param {string} diffHunks
@@ -213,6 +294,9 @@ export function findBraceScopeEnd(lines, startIndex, options = {}) {
   }
 
   const failClosed = Boolean(options?.failClosed);
+  const startCharIndex = typeof options?.startCharIndex === "number" && options.startCharIndex >= 0
+    ? options.startCharIndex
+    : 0;
 
   let depth = 0;
   let started = false;
@@ -225,8 +309,9 @@ export function findBraceScopeEnd(lines, startIndex, options = {}) {
 
   for (let i = startIndex; i < lines.length; i++) {
     const line = lines[i];
+    const initialCharIdx = (i === startIndex) ? startCharIndex : 0;
 
-    for (let charIdx = 0; charIdx < line.length; charIdx++) {
+    for (let charIdx = initialCharIdx; charIdx < line.length; charIdx++) {
       const c = line[charIdx];
       const nextC = charIdx + 1 < line.length ? line[charIdx + 1] : "";
 
@@ -395,6 +480,7 @@ export function findFunctionDefinitions(lines, symbol) {
 
     let hasBrace = false;
     let braceLineIdx = -1;
+    let bodyBraceIdx = 0;
     let isDeclarationOnly = false;
     let parenClosed = false;
     let parenDepth = 0;
@@ -417,10 +503,27 @@ export function findFunctionDefinitions(lines, symbol) {
             parenDepth--;
             if (parenDepth <= 0) {
               parenClosed = true;
-              const bodyBraceIdx = scanLine.indexOf("{", k);
-              if (bodyBraceIdx !== -1) {
+              let searchFrom = k + 1;
+              let foundBraceIdx = -1;
+              while (searchFrom < scanLine.length) {
+                const bIdx = scanLine.indexOf("{", searchFrom);
+                if (bIdx === -1) break;
+                const closeIdx = scanLine.indexOf("}", bIdx + 1);
+                const nextOpenIdx = scanLine.indexOf("{", bIdx + 1);
+                if (closeIdx !== -1 && (nextOpenIdx === -1 || closeIdx < nextOpenIdx)) {
+                  const subsequentOpen = scanLine.indexOf("{", closeIdx + 1);
+                  if (subsequentOpen !== -1) {
+                    searchFrom = subsequentOpen;
+                    continue;
+                  }
+                }
+                foundBraceIdx = bIdx;
+                break;
+              }
+              if (foundBraceIdx !== -1) {
                 hasBrace = true;
                 braceLineIdx = j;
+                bodyBraceIdx = foundBraceIdx;
               }
               break;
             }
@@ -444,6 +547,7 @@ export function findFunctionDefinitions(lines, symbol) {
         if (braceIdx !== -1) {
           hasBrace = true;
           braceLineIdx = j;
+          bodyBraceIdx = braceIdx;
           break;
         }
       }
@@ -460,7 +564,7 @@ export function findFunctionDefinitions(lines, symbol) {
       continue;
     }
 
-    const endLine = findBraceScopeEnd(lines, braceLineIdx, { failClosed: true });
+    const endLine = findBraceScopeEnd(lines, braceLineIdx, { failClosed: true, startCharIndex: bodyBraceIdx });
     if (endLine === -1 || endLine < i + 1) {
       continue;
     }
@@ -903,6 +1007,124 @@ export function extractCandidateCallSymbols(diffHunks) {
         }
       }
     }
+
+    // tgXSN: Parse call expressions that span across added lines
+    // Handles cases where a symbol on an added line is followed by '(' on a subsequent added line
+    if (isAdded) {
+      const trimmedEnd = cleanLine.trimEnd();
+      const trailingCallMatch = trimmedEnd.match(/(?:^|[\s=([{:;,?!&|+*^%~<>.-]|(?:\?\.)|(?:\->))(?:((?:(?:[a-zA-Z_][a-zA-Z0-9_]*|this)\s*(?:\.|\->|\?\.)\s*)+))?([a-zA-Z_][a-zA-Z0-9_]*)$/);
+      if (trailingCallMatch) {
+        const qualifierChain = trailingCallMatch[1] || "";
+        const sym = trailingCallMatch[2];
+
+        // Ensure this is not a declaration, keyword, or already matched inline
+        const isKeyword = KEYWORDS.has(sym);
+        const isDecl = cleanLine.match(/^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s+/) ||
+          cleanLine.match(/^\s*def\s+/) ||
+          cleanLine.match(/^\s*class\s+/) ||
+          cleanLine.match(/^\s*(?:type|interface)\s+/);
+
+        if (!isKeyword && !isDecl) {
+          // Look ahead to the next non-empty line (added or context)
+          let nextParenFound = false;
+          for (let next = i + 1; next < lines.length; next++) {
+            const nextRaw = lines[next];
+            if (nextRaw.match(HUNK_HEADER_REGEX) || nextRaw.startsWith("---") || nextRaw.startsWith("+++") || nextRaw.startsWith("diff ") || nextRaw.startsWith("index ")) {
+              break;
+            }
+            if (nextRaw.startsWith("-")) {
+              continue; // deleted line
+            }
+            const isContextOrAdded = nextRaw.startsWith("+") || nextRaw.startsWith(" ");
+            if (!isContextOrAdded) {
+              break; // hunk boundary or file header
+            }
+            const nextLineContent = nextRaw.slice(1);
+            const nextClean = stripCommentsAndStrings(nextLineContent, { val: inBlockCommentRef.val }).trim();
+            if (!nextClean) {
+              continue; // blank or comment-only line
+            }
+            if (nextClean.startsWith("(")) {
+              nextParenFound = true;
+            }
+            break;
+          }
+
+          if (nextParenFound) {
+            const hasLeadingDot = /^\s*(?:\.|\->|\?\.)/.test(cleanLine);
+            const isQualified = Boolean(qualifierChain || hasLeadingDot);
+            let qualifiers = [];
+            let qualifier = null;
+            if (qualifierChain) {
+              qualifiers = qualifierChain.match(/[a-zA-Z_][a-zA-Z0-9_]*|this/g) || [];
+              qualifier = qualifiers.length > 0 ? qualifiers[qualifiers.length - 1] : null;
+            }
+
+            let skip = false;
+            if (isQualified && BUILTIN_OBJECT_METHODS.has(sym)) {
+              skip = true;
+            }
+            if (UTILITY_CALLEE_SYMBOLS.has(sym)) {
+              skip = true;
+            }
+
+            if (!skip) {
+              const symCat = classifySensitiveCategory(sym);
+              let qualCat = null;
+              for (const q of qualifiers) {
+                const cat = classifySensitiveCategory(q);
+                if (cat) {
+                  qualCat = cat;
+                  break;
+                }
+              }
+              const sensitiveCategory = symCat || qualCat;
+
+              if (!isQualified || sensitiveCategory) {
+                const isSensitive = Boolean(sensitiveCategory || isGuardLine);
+                const symCategory = isSensitive ? (sensitiveCategory || lineCategory || "input_validation") : null;
+                const receiverKey = isQualified
+                  ? (qualifiers.length > 0 ? qualifiers.join(".") : (qualifier || "qualified"))
+                  : "";
+                const callKey = receiverKey ? `${receiverKey}.${sym}` : sym;
+
+                if (!seen.has(callKey)) {
+                  seen.add(callKey);
+                  candidates.push({
+                    symbol: sym,
+                    qualifier,
+                    qualifiers,
+                    isQualified,
+                    isAdded: true,
+                    line: lineNum,
+                    lineText: lineText.trim(),
+                    isSensitive,
+                    category: symCategory
+                  });
+                } else {
+                  const existing = candidates.find(c => {
+                    const cReceiverKey = c.isQualified
+                      ? (c.qualifiers?.length > 0 ? c.qualifiers.join(".") : (c.qualifier || "qualified"))
+                      : "";
+                    const cCallKey = cReceiverKey ? `${cReceiverKey}.${c.symbol}` : c.symbol;
+                    return cCallKey === callKey;
+                  });
+                  if (existing) {
+                    existing.isAdded = true;
+                    existing.line = lineNum;
+                    existing.lineText = lineText.trim();
+                    if (isSensitive && !existing.isSensitive) {
+                      existing.isSensitive = true;
+                      existing.category = symCategory;
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
   }
 
   candidates.sort((a, b) => {
@@ -940,6 +1162,7 @@ export function extractBoundedFunctionSnippet(lines, startLine, endLine) {
   // Verify that the function boundary is confirmed and closed
   let isClosed = false;
   let braceLineIdx = -1;
+  let bodyBraceIdx = 0;
   let parenClosed = false;
   let parenDepth = 0;
   for (let j = startLine - 1; j < Math.min(lines.length, startLine + 15); j++) {
@@ -952,9 +1175,26 @@ export function extractBoundedFunctionSnippet(lines, startLine, endLine) {
           parenDepth--;
           if (parenDepth <= 0) {
             parenClosed = true;
-            const idx = scanLine.indexOf("{", k);
-            if (idx !== -1) {
+            let searchFrom = k + 1;
+            let foundBraceIdx = -1;
+            while (searchFrom < scanLine.length) {
+              const bIdx = scanLine.indexOf("{", searchFrom);
+              if (bIdx === -1) break;
+              const closeIdx = scanLine.indexOf("}", bIdx + 1);
+              const nextOpenIdx = scanLine.indexOf("{", bIdx + 1);
+              if (closeIdx !== -1 && (nextOpenIdx === -1 || closeIdx < nextOpenIdx)) {
+                const subsequentOpen = scanLine.indexOf("{", closeIdx + 1);
+                if (subsequentOpen !== -1) {
+                  searchFrom = subsequentOpen;
+                  continue;
+                }
+              }
+              foundBraceIdx = bIdx;
+              break;
+            }
+            if (foundBraceIdx !== -1) {
               braceLineIdx = j;
+              bodyBraceIdx = foundBraceIdx;
             }
             break;
           }
@@ -965,6 +1205,7 @@ export function extractBoundedFunctionSnippet(lines, startLine, endLine) {
       const idx = scanLine.indexOf("{");
       if (idx !== -1) {
         braceLineIdx = j;
+        bodyBraceIdx = idx;
         break;
       }
     }
@@ -972,15 +1213,17 @@ export function extractBoundedFunctionSnippet(lines, startLine, endLine) {
 
   if (braceLineIdx === -1) {
     for (let j = startLine - 1; j < Math.min(lines.length, startLine + 15); j++) {
-      if (lines[j].includes("{")) {
+      const idx = lines[j].indexOf("{");
+      if (idx !== -1) {
         braceLineIdx = j;
+        bodyBraceIdx = idx;
         break;
       }
     }
   }
 
   if (braceLineIdx !== -1) {
-    const verifiedEnd = findBraceScopeEnd(lines, braceLineIdx, { failClosed: true });
+    const verifiedEnd = findBraceScopeEnd(lines, braceLineIdx, { failClosed: true, startCharIndex: bodyBraceIdx });
     if (verifiedEnd !== -1 && verifiedEnd === endLine) {
       isClosed = true;
     }
@@ -1532,6 +1775,8 @@ export function buildContextPackage(changeSet, targetFile, options = {}) {
     let totalAdditions = 0;
     let totalDeletions = 0;
     const perFileData = [];
+    let hasPathEscape = false;
+    let pathEscapeReason = "";
 
     for (const f of rawFilesList) {
       const fileObj = typeof f === "object" ? f : { path: f };
@@ -1556,6 +1801,8 @@ export function buildContextPackage(changeSet, targetFile, options = {}) {
       let fileContent = callerSuppliedContent;
       let exactHeadUnavailable = false;
       let exactHeadMismatch = false;
+      let fileHasPathEscape = false;
+      let fileEscapeReason = "";
 
       if (headSha) {
         if (!isHeadInRepo) {
@@ -1581,19 +1828,33 @@ export function buildContextPackage(changeSet, targetFile, options = {}) {
           }
         }
       } else if (fileContent === null && repoRoot) {
-        try {
-          const diskPath = path.isAbsolute(actualFilePath) ? actualFilePath : path.resolve(repoRoot, actualFilePath);
-          if (fs.existsSync(diskPath) && fs.statSync(diskPath).isFile()) {
-            fileContent = fs.readFileSync(diskPath, "utf8");
-          }
-        } catch {}
+        const readRes = safeReadWorkingTreeFile(repoRoot, actualFilePath);
+        if (!readRes.ok) {
+          hasPathEscape = true;
+          fileHasPathEscape = true;
+          fileEscapeReason = readRes.error || "File path escapes repository boundary or exceeds size limit";
+          pathEscapeReason = pathEscapeReason || fileEscapeReason;
+          exactHeadUnavailable = true;
+          fileContent = "";
+        } else if (readRes.exists && readRes.content !== null) {
+          fileContent = readRes.content;
+        }
       }
       if (fileContent === null) {
         fileContent = "";
       }
 
       const fileGaps = [];
-      if (exactHeadMismatch) {
+      if (fileHasPathEscape) {
+        fileGaps.push({
+          symbol: normPath,
+          code: "REPOSITORY_PATH_ESCAPE",
+          reason: "REPOSITORY_PATH_ESCAPE",
+          category: "security_boundary",
+          file: actualFilePath || normPath,
+          impact: fileEscapeReason || `File path escapes repository root boundary or exceeds size limit; content read blocked (Fail-Closed).`
+        });
+      } else if (exactHeadMismatch) {
         fileGaps.push({
           symbol: normPath,
           file: actualFilePath || normPath,
@@ -1767,6 +2028,13 @@ export function buildContextPackage(changeSet, targetFile, options = {}) {
 
     const resultPackage = {
       schemaVersion: "1.0.0",
+      ok: !hasPathEscape,
+      ...(hasPathEscape ? {
+        error: {
+          code: "REPOSITORY_PATH_ESCAPE",
+          message: pathEscapeReason || "Repository path containment violation: file escapes repository root or exceeds size ceiling"
+        }
+      } : {}),
       runId,
       targetFile: filePaths.length === 1 ? normalizeCanonicalPath(filePaths[0]) : "multi-file",
       ...(headSha ? { headSha } : {}),
@@ -1784,6 +2052,7 @@ export function buildContextPackage(changeSet, targetFile, options = {}) {
       }
     };
     const hasPhysicalGit = Boolean(
+      !hasPathEscape &&
       isHeadInRepo &&
       fileCoverageManifest.length > 0 &&
       fileCoverageManifest.every(m => m && m.exactHeadAvailable === true && !m.exactHeadUnavailable)
@@ -1844,6 +2113,8 @@ export function buildContextPackage(changeSet, targetFile, options = {}) {
 
   let exactHeadUnavailable = false;
   let exactHeadMismatch = false;
+  let hasPathEscape = false;
+  let pathEscapeReason = "";
 
   if (headSha) {
     if (!isHeadInRepo) {
@@ -1869,12 +2140,15 @@ export function buildContextPackage(changeSet, targetFile, options = {}) {
       }
     }
   } else if (fileContent === null && repoRoot) {
-    try {
-      const diskPath = path.isAbsolute(actualFilePath) ? actualFilePath : path.resolve(repoRoot, actualFilePath);
-      if (fs.existsSync(diskPath) && fs.statSync(diskPath).isFile()) {
-        fileContent = fs.readFileSync(diskPath, "utf8");
-      }
-    } catch {}
+    const readRes = safeReadWorkingTreeFile(repoRoot, actualFilePath);
+    if (!readRes.ok) {
+      hasPathEscape = true;
+      pathEscapeReason = readRes.error || "File path escapes repository boundary or exceeds size limit";
+      exactHeadUnavailable = true;
+      fileContent = "";
+    } else if (readRes.exists && readRes.content !== null) {
+      fileContent = readRes.content;
+    }
   }
   if (fileContent === null) {
     fileContent = "";
@@ -1907,7 +2181,16 @@ export function buildContextPackage(changeSet, targetFile, options = {}) {
     options
   );
 
-  if (exactHeadMismatch) {
+  if (hasPathEscape) {
+    contextGaps.push({
+      symbol: normTarget,
+      code: "REPOSITORY_PATH_ESCAPE",
+      reason: "REPOSITORY_PATH_ESCAPE",
+      category: "security_boundary",
+      file: actualFilePath || normTarget,
+      impact: pathEscapeReason || `File path escapes repository root boundary or exceeds size limit; content read blocked (Fail-Closed).`
+    });
+  } else if (exactHeadMismatch) {
     contextGaps.push({
       symbol: normTarget,
       file: actualFilePath || normTarget,
@@ -1965,6 +2248,13 @@ export function buildContextPackage(changeSet, targetFile, options = {}) {
 
   const resultPackage = {
     schemaVersion: "1.0.0",
+    ok: !hasPathEscape,
+    ...(hasPathEscape ? {
+      error: {
+        code: "REPOSITORY_PATH_ESCAPE",
+        message: pathEscapeReason || "Repository path containment violation: file escapes repository root or exceeds size ceiling"
+      }
+    } : {}),
     runId,
     targetFile: normTarget,
     ...(headSha ? { headSha } : {}),
@@ -1977,8 +2267,8 @@ export function buildContextPackage(changeSet, targetFile, options = {}) {
       {
         file: actualFilePath,
         inspected: true,
-        exactHeadAvailable: !exactHeadUnavailable,
-        ...(exactHeadUnavailable ? { exactHeadUnavailable: true } : {}),
+        exactHeadAvailable: !exactHeadUnavailable && !hasPathEscape,
+        ...(exactHeadUnavailable || hasPathEscape ? { exactHeadUnavailable: true } : {}),
         ...(sourceDigest ? { sourceDigest } : {}),
         calleesExtracted: callees.map(c => c.name || c.symbol).filter(s => retainedSymbols.has(s)),
         unresolvedCallees,
@@ -1993,6 +2283,7 @@ export function buildContextPackage(changeSet, targetFile, options = {}) {
     }
   };
   const hasPhysicalGit = Boolean(
+    !hasPathEscape &&
     isHeadInRepo &&
     !exactHeadUnavailable
   );

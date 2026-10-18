@@ -6887,8 +6887,17 @@ test("PR39-ROUND9-STAGED-MERGE-CALLER-CONTEXT-GAPS-12-NEGATIVE: executeStagedRev
 
 test("PR39-ROUND9-STAGED-NORMALIZED-REPO-AND-DIGEST-13: executeStagedReview normalizes repository roots and accepts matching contentDigest with secondary digest property (P1-CONTEXT-BINDING-01)", async () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-round9-repo-norm-"));
-  const diffContent = "--- a/src/secret.js\n+++ b/src/secret.js\n@@ -1,1 +1,2 @@\n+const secret = true;\n";
-  const headSha = "7777777777777777777777777777777777777777";
+  execFileSync("git", ["init", "-b", "main"], { cwd: tmpDir, stdio: "ignore" });
+  execFileSync("git", ["config", "user.name", "Test User"], { cwd: tmpDir, stdio: "ignore" });
+  execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: tmpDir, stdio: "ignore" });
+  const secretFile = path.join(tmpDir, "src", "secret.js");
+  fs.mkdirSync(path.dirname(secretFile), { recursive: true });
+  fs.writeFileSync(secretFile, "export function validCallee() { return true; }\n");
+  execFileSync("git", ["add", "src/secret.js"], { cwd: tmpDir, stdio: "ignore" });
+  execFileSync("git", ["commit", "-m", "Initial commit"], { cwd: tmpDir, stdio: "ignore" });
+  const headSha = execFileSync("git", ["rev-parse", "HEAD"], { cwd: tmpDir, encoding: "utf8" }).trim();
+
+  const diffContent = "--- a/src/secret.js\n+++ b/src/secret.js\n@@ -1,1 +1,2 @@\n export function validCallee() { return true; }\n+const secret = true;\n";
   const computedDiffDigest = crypto.createHash("sha256").update(diffContent, "utf8").digest("hex");
 
   const capturedChunkInputs = [];
@@ -6930,19 +6939,27 @@ test("PR39-ROUND9-STAGED-NORMALIZED-REPO-AND-DIGEST-13: executeStagedReview norm
     }
 
     const validPkg = {
+      schemaVersion: "1.0.0",
       headSha,
       repositoryRoot: altRepoRoot,
       contentDigest: computedDiffDigest,
       digest: "secondary-metadata-digest",
       layers: {
         layer1AstEnclosure: {
-          callees: [{ name: "validCallee", file: "src/secret.js" }]
+          callees: [{ name: "validCallee", file: "src/secret.js", snippet: "export function validCallee() { return true; }" }]
         }
       },
       fileCoverageManifest: [
-        { file: "src/secret.js", exactHeadAvailable: true }
-      ]
+        { file: "src/secret.js", inspected: true, exactHeadAvailable: true, calleesExtracted: ["validCallee"] }
+      ],
+      budgetAccounting: { totalBytes: 500, maxBudget: 8000 }
     };
+
+    verifierModule.registerTrustedContextPackage(validPkg, {
+      repositoryRoot: tmpDir,
+      headSha,
+      diffHunks: diffContent
+    });
 
     const result = await executeStagedReview(changeSet, capturingAdapter, {
       cwd: tmpDir,
@@ -6966,8 +6983,17 @@ test("PR39-ROUND9-STAGED-NORMALIZED-REPO-AND-DIGEST-13: executeStagedReview norm
 
 test("PR39-ROUND10-STAGED-UNVERIFIED-DECLARED-DIGEST-FAIL-CLOSED-14-NEGATIVE: executeStagedReview rejects ungrounded external contextPackage matching unverified declared changeSet digests that conflict with physical diff (P1-CONTEXT-BINDING-02)", async () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-round10-unverified-digest-"));
-  const diffContent = "--- a/src/secret.js\n+++ b/src/secret.js\n@@ -1,1 +1,2 @@\n+const secret = true;\n";
-  const headSha = "8888888888888888888888888888888888888888";
+  execFileSync("git", ["init", "-b", "main"], { cwd: tmpDir, stdio: "ignore" });
+  execFileSync("git", ["config", "user.name", "Test User"], { cwd: tmpDir, stdio: "ignore" });
+  execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: tmpDir, stdio: "ignore" });
+  const secretFile = path.join(tmpDir, "src", "secret.js");
+  fs.mkdirSync(path.dirname(secretFile), { recursive: true });
+  fs.writeFileSync(secretFile, "export function verifiedCallee() { return true; }\n");
+  execFileSync("git", ["add", "src/secret.js"], { cwd: tmpDir, stdio: "ignore" });
+  execFileSync("git", ["commit", "-m", "Initial commit"], { cwd: tmpDir, stdio: "ignore" });
+  const headSha = execFileSync("git", ["rev-parse", "HEAD"], { cwd: tmpDir, encoding: "utf8" }).trim();
+
+  const diffContent = "--- a/src/secret.js\n+++ b/src/secret.js\n@@ -1,1 +1,2 @@\n export function verifiedCallee() { return true; }\n+const secret = true;\n";
   const realDiffDigest = crypto.createHash("sha256").update(diffContent, "utf8").digest("hex");
   const fakeDeclaredDigest = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
@@ -7086,18 +7112,26 @@ test("PR39-ROUND10-STAGED-UNVERIFIED-DECLARED-DIGEST-FAIL-CLOSED-14-NEGATIVE: ex
     };
 
     const pkgWithRealDigest = {
+      schemaVersion: "1.0.0",
       headSha,
       repositoryRoot: tmpDir,
       contentDigest: realDiffDigest,
       layers: {
         layer1AstEnclosure: {
-          callees: [{ name: "verifiedCallee", file: "src/secret.js" }]
+          callees: [{ name: "verifiedCallee", file: "src/secret.js", snippet: "export function verifiedCallee() { return true; }" }]
         }
       },
       fileCoverageManifest: [
-        { file: "src/secret.js", exactHeadAvailable: true }
-      ]
+        { file: "src/secret.js", inspected: true, exactHeadAvailable: true, calleesExtracted: ["verifiedCallee"] }
+      ],
+      budgetAccounting: { totalBytes: 500, maxBudget: 8000 }
     };
+
+    verifierModule.registerTrustedContextPackage(pkgWithRealDigest, {
+      repositoryRoot: tmpDir,
+      headSha,
+      diffHunks: diffContent
+    });
 
     const result3 = await executeStagedReview(changeSetWithRealDigest, capturingAdapter, {
       cwd: tmpDir,

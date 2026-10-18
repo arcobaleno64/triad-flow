@@ -438,6 +438,59 @@ export function validateContextPackageAuthenticity(pkg, evidence = {}) {
     }
   }
 
+  // tgXSI: Manifest Global Coverage Verification
+  // All callees, enclosing functions, and scope fragments in layer1AstEnclosure
+  // must map to a manifest entry that physically exists with exactHeadAvailable === true.
+  const manifestMap = new Map();
+  for (const entry of pkg.fileCoverageManifest) {
+    manifestMap.set(normalizeCanonicalPath(entry.file), entry);
+  }
+
+  const getEnclosureFile = (item) => {
+    if (!item || typeof item !== "object") return null;
+    const raw = (typeof item.file === "string" && item.file.trim()) ||
+      (typeof item.path === "string" && item.path.trim()) ||
+      null;
+    return raw ? normalizeCanonicalPath(raw) : null;
+  };
+
+  const layer1 = pkg.layers?.layer1AstEnclosure;
+  if (layer1 && typeof layer1 === "object" && !Array.isArray(layer1)) {
+    if (Array.isArray(layer1.callees)) {
+      for (const callee of layer1.callees) {
+        if (!callee || typeof callee !== "object") return false;
+        const calleeFile = getEnclosureFile(callee);
+        if (!calleeFile) return false;
+        const manifestEntry = manifestMap.get(calleeFile);
+        if (!manifestEntry || manifestEntry.exactHeadAvailable !== true || manifestEntry.exactHeadUnavailable === true) {
+          return false;
+        }
+      }
+    }
+    if (Array.isArray(layer1.enclosingFunctions)) {
+      for (const fn of layer1.enclosingFunctions) {
+        if (!fn || typeof fn !== "object") return false;
+        const fnFile = getEnclosureFile(fn);
+        if (!fnFile) return false;
+        const manifestEntry = manifestMap.get(fnFile);
+        if (!manifestEntry || manifestEntry.exactHeadAvailable !== true || manifestEntry.exactHeadUnavailable === true) {
+          return false;
+        }
+      }
+    }
+    if (Array.isArray(layer1.enclosingClasses)) {
+      for (const cls of layer1.enclosingClasses) {
+        if (!cls || typeof cls !== "object") return false;
+        const clsFile = getEnclosureFile(cls);
+        if (!clsFile) return false;
+        const manifestEntry = manifestMap.get(clsFile);
+        if (!manifestEntry || manifestEntry.exactHeadAvailable !== true || manifestEntry.exactHeadUnavailable === true) {
+          return false;
+        }
+      }
+    }
+  }
+
   // Validate Diff Digest consistency if diffHunks provided
   const rawHunks = typeof evidence.diffHunks === "string"
     ? evidence.diffHunks
@@ -481,25 +534,501 @@ export function validateContextPackageAuthenticity(pkg, evidence = {}) {
 
         // Validate that extracted callee snippets and definitions actually exist in authentic Git content
         const normExactContent = exactContent.replace(/\r\n/g, "\n");
+        const exactLines = normExactContent.split("\n");
+        const normEntryFile = normalizeCanonicalPath(entry.file);
+
+        // Helper: find the 1-indexed closing line for the block scope starting at 0-indexed startIndex
+        const computeAuthenticBraceScopeEnd = (linesArr, startIndex, startCharIdx = 0) => {
+          let depth = 0;
+          let started = false;
+          let inBlockComment = false;
+          let inString = false;
+          let stringChar = null;
+          let lastNonWsChar = "";
+          let lastWord = "";
+          let currentWord = "";
+
+          for (let i = startIndex; i < linesArr.length; i++) {
+            const line = linesArr[i];
+            const initialCharIdx = (i === startIndex) ? startCharIdx : 0;
+
+            for (let charIdx = initialCharIdx; charIdx < line.length; charIdx++) {
+              const c = line[charIdx];
+              const nextC = charIdx + 1 < line.length ? line[charIdx + 1] : "";
+
+              if (inBlockComment) {
+                if (c === "*" && nextC === "/") {
+                  inBlockComment = false;
+                  charIdx++;
+                }
+                continue;
+              }
+              if (inString) {
+                if (c === "\\" && charIdx + 1 < line.length) {
+                  charIdx++;
+                } else if (c === stringChar) {
+                  inString = false;
+                  stringChar = null;
+                  lastNonWsChar = c;
+                  lastWord = "";
+                  currentWord = "";
+                }
+                continue;
+              }
+              if (c === "/" && nextC === "/") break;
+              if (c === "/" && nextC === "*") {
+                inBlockComment = true;
+                charIdx++;
+                continue;
+              }
+              if (c === '"' || c === "'" || c === "`") {
+                inString = true;
+                stringChar = c;
+                lastWord = "";
+                currentWord = "";
+                continue;
+              }
+              if (c === "/") {
+                const isRegexPrecedingChar = !lastNonWsChar || /^[=([{:;,?!&|+*^%~<>-]$/.test(lastNonWsChar);
+                const isRegexPrecedingWord = /^(?:return|case|typeof|delete|void|throw|yield|await|in|instanceof|new)$/.test(lastWord);
+                if (isRegexPrecedingChar || isRegexPrecedingWord) {
+                  let j = charIdx + 1;
+                  let inCharClass = false;
+                  let foundRegexEnd = false;
+                  while (j < line.length) {
+                    if (line[j] === "\\") {
+                      j += 2;
+                      continue;
+                    }
+                    if (line[j] === "[" && !inCharClass) {
+                      inCharClass = true;
+                      j++;
+                      continue;
+                    }
+                    if (line[j] === "]" && inCharClass) {
+                      inCharClass = false;
+                      j++;
+                      continue;
+                    }
+                    if (line[j] === "/" && !inCharClass) {
+                      foundRegexEnd = true;
+                      break;
+                    }
+                    j++;
+                  }
+                  if (foundRegexEnd) {
+                    charIdx = j;
+                    while (charIdx + 1 < line.length && /^[gimsuy]$/i.test(line[charIdx + 1])) {
+                      charIdx++;
+                    }
+                    lastNonWsChar = "/";
+                    lastWord = "";
+                    currentWord = "";
+                    continue;
+                  }
+                }
+              }
+              if (c === "{") {
+                depth++;
+                started = true;
+                lastNonWsChar = "{";
+                lastWord = "";
+                currentWord = "";
+              } else if (c === "}") {
+                depth--;
+                lastNonWsChar = "}";
+                lastWord = "";
+                currentWord = "";
+                if (started && depth <= 0) {
+                  return i + 1;
+                }
+              } else if (/\s/.test(c)) {
+                currentWord = "";
+              } else if (/[a-zA-Z0-9_$]/.test(c)) {
+                currentWord += c;
+                lastWord = currentWord;
+                lastNonWsChar = c;
+              } else {
+                lastNonWsChar = c;
+                lastWord = "";
+                currentWord = "";
+              }
+            }
+            if (inString && stringChar !== "`") {
+              inString = false;
+              stringChar = null;
+            }
+            currentWord = "";
+          }
+          return linesArr.length;
+        };
+
+        const findHeaderBodyStart = (linesArr, startIndex) => {
+          let parenDepth = 0;
+          let seenOpenParen = false;
+          let inBlockComment = false;
+          let inString = false;
+          let stringChar = null;
+          for (let i = startIndex; i < Math.min(linesArr.length, startIndex + 25); i++) {
+            const line = linesArr[i];
+            for (let j = 0; j < line.length; j++) {
+              const c = line[j];
+              const nextC = j + 1 < line.length ? line[j + 1] : "";
+              if (inBlockComment) {
+                if (c === "*" && nextC === "/") { inBlockComment = false; j++; }
+                continue;
+              }
+              if (inString) {
+                if (c === "\\" && j + 1 < line.length) j++;
+                else if (c === stringChar) { inString = false; stringChar = null; }
+                continue;
+              }
+              if (c === "/" && nextC === "/") break;
+              if (c === "/" && nextC === "*") { inBlockComment = true; j++; continue; }
+              if (c === '"' || c === "'" || c === "`") { inString = true; stringChar = c; continue; }
+              if (c === "(") { parenDepth++; seenOpenParen = true; continue; }
+              if (c === ")") { if (parenDepth > 0) parenDepth--; continue; }
+              if (c === "{" && (!seenOpenParen || parenDepth === 0)) {
+                return { lineIdx: i, charIdx: j };
+              }
+            }
+            if (inString && stringChar !== "`") { inString = false; stringChar = null; }
+          }
+          return { lineIdx: startIndex, charIdx: 0 };
+        };
+
         const entryCallees = (pkg.layers?.layer1AstEnclosure?.callees || []).filter(
-          c => c && (c.file === entry.file || normalizeCanonicalPath(c.file || "") === normalizeCanonicalPath(entry.file))
+          c => c && getEnclosureFile(c) === normEntryFile
         );
         for (const callee of entryCallees) {
+          const sym = (typeof callee.symbol === "string" && callee.symbol.trim()) ||
+            (typeof callee.name === "string" && callee.name.trim()) ||
+            "";
           const snippet = (callee.definition || callee.snippet || "").replace(/\r\n/g, "\n").trim();
-          if (snippet && !normExactContent.includes(snippet)) {
+          if (!sym || !snippet || !snippet.includes(sym)) {
+            allExactHeadFilesPhysicallyExist = false;
+            break;
+          }
+          if (callee.startLine !== undefined || callee.endLine !== undefined) {
+            if (
+              !Number.isInteger(callee.startLine) ||
+              callee.startLine < 1 ||
+              !Number.isInteger(callee.endLine) ||
+              callee.endLine < callee.startLine ||
+              callee.endLine > exactLines.length
+            ) {
+              allExactHeadFilesPhysicallyExist = false;
+              break;
+            }
+            const bodyStart = findHeaderBodyStart(exactLines, callee.startLine - 1);
+            const maxCalleeEnd = computeAuthenticBraceScopeEnd(exactLines, bodyStart.lineIdx, bodyStart.charIdx);
+            if (callee.endLine > maxCalleeEnd) {
+              allExactHeadFilesPhysicallyExist = false;
+              break;
+            }
+            const calleeSliceText = exactLines.slice(callee.startLine - 1, callee.endLine).join("\n");
+            const firstSnippetLine = snippet.split("\n")[0].trim();
+            const isElided = snippet.includes("elided for context bounds") || snippet.includes("... elided ...");
+            if (!calleeSliceText.includes(snippet)) {
+              if (!isElided || !firstSnippetLine || !calleeSliceText.includes(firstSnippetLine)) {
+                allExactHeadFilesPhysicallyExist = false;
+                break;
+              }
+            }
+          } else if (!normExactContent.includes(snippet)) {
+            const firstSnippetLine = snippet.split("\n")[0].trim();
+            const isElided = snippet.includes("elided for context bounds") || snippet.includes("... elided ...");
+            if (!isElided || !firstSnippetLine || !normExactContent.includes(firstSnippetLine)) {
+              allExactHeadFilesPhysicallyExist = false;
+              break;
+            }
+          }
+        }
+        if (!allExactHeadFilesPhysicallyExist) break;
+
+        // Validate that enclosing function declarations, parameters, headers, snippets, and endLine bounds
+        // all bind to the single authentic Git function declaration
+        const entryFunctions = (pkg.layers?.layer1AstEnclosure?.enclosingFunctions || []).filter(
+          f => f && getEnclosureFile(f) === normEntryFile
+        );
+        for (const fn of entryFunctions) {
+          const fnName = typeof fn.name === "string" ? fn.name.trim() : "";
+          const anonMatch = fnName.match(/^anonymous_L(\d+)$/);
+          const isValidIdentifier = /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(fnName);
+          if (!fnName || (!isValidIdentifier && !anonMatch)) {
+            allExactHeadFilesPhysicallyExist = false;
+            break;
+          }
+
+          const fnKind = fn.kind !== undefined
+            ? (typeof fn.kind === "string" ? fn.kind.trim() : "")
+            : "function";
+          if (!["function", "method", "arrow"].includes(fnKind)) {
+            allExactHeadFilesPhysicallyExist = false;
+            break;
+          }
+
+          const hasLineBounds = fn.startLine !== undefined || fn.endLine !== undefined;
+          if (hasLineBounds) {
+            if (
+              !Number.isInteger(fn.startLine) ||
+              fn.startLine < 1 ||
+              !Number.isInteger(fn.endLine) ||
+              fn.endLine < fn.startLine ||
+              fn.endLine > exactLines.length
+            ) {
+              allExactHeadFilesPhysicallyExist = false;
+              break;
+            }
+          }
+
+          if (anonMatch) {
+            const anonLineNum = Number(anonMatch[1]);
+            if (fnKind !== "function" || (hasLineBounds && fn.startLine !== anonLineNum)) {
+              allExactHeadFilesPhysicallyExist = false;
+              break;
+            }
+            if (anonLineNum < 1 || anonLineNum > exactLines.length) {
+              allExactHeadFilesPhysicallyExist = false;
+              break;
+            }
+          }
+
+          const escapedFn = fnName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+          const parseFunctionDeclarationAtLine = (lineStr, lineNum1Indexed) => {
+            if (anonMatch) {
+              const anonLineNum = Number(anonMatch[1]);
+              if (lineNum1Indexed !== anonLineNum) return null;
+              const m = lineStr.match(/^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s*\(([^)]*)\)\s*\{/);
+              if (!m) return null;
+              return {
+                kind: "function",
+                params: (m[1] || "").split(",").map(p => p.trim()).filter(Boolean)
+              };
+            }
+            const fnMatch = lineStr.match(new RegExp(`^\\s*(?:export\\s+)?(?:default\\s+)?(?:async\\s+)?function\\s*\\*?\\s+${escapedFn}\\s*\\(([^)]*)\\)`));
+            const methodMatch = !/^(?:if|for|while|switch|catch|with|function|return)\b/.test(fnName)
+              ? lineStr.match(new RegExp(`^\\s*(?:static\\s+)?(?:async\\s+)?(?:get\\s+|set\\s+)?${escapedFn}\\s*\\(([^)]*)\\)\\s*\\{`))
+              : null;
+            const arrowMatch = lineStr.match(new RegExp(`^\\s*(?:export\\s+)?(?:const|let|var)\\s+${escapedFn}\\s*=\\s*(?:async\\s*)?(?:function\\s*\\(([^)]*)\\)|\\(([^)]*)\\)\\s*=>|([a-zA-Z0-9_$]+)\\s*=>)`));
+
+            if (fnKind === "function" && fn.kind !== undefined) {
+              if (!fnMatch) return null;
+              return { kind: "function", params: (fnMatch[1] || "").split(",").map(p => p.trim()).filter(Boolean) };
+            }
+            if (fnKind === "method") {
+              if (!methodMatch) return null;
+              return { kind: "method", params: (methodMatch[1] || "").split(",").map(p => p.trim()).filter(Boolean) };
+            }
+            if (fnKind === "arrow") {
+              if (!arrowMatch) return null;
+              const rawParams = arrowMatch[1] ?? arrowMatch[2] ?? arrowMatch[3] ?? "";
+              return { kind: "arrow", params: rawParams.split(",").map(p => p.trim()).filter(Boolean) };
+            }
+            if (fnMatch) {
+              return { kind: "function", params: (fnMatch[1] || "").split(",").map(p => p.trim()).filter(Boolean) };
+            }
+            if (methodMatch) {
+              return { kind: "method", params: (methodMatch[1] || "").split(",").map(p => p.trim()).filter(Boolean) };
+            }
+            if (arrowMatch) {
+              const rawParams = arrowMatch[1] ?? arrowMatch[2] ?? arrowMatch[3] ?? "";
+              return { kind: "arrow", params: rawParams.split(",").map(p => p.trim()).filter(Boolean) };
+            }
+            return null;
+          };
+
+          const headerCode = typeof fn.headerCode === "string" ? fn.headerCode.replace(/\r\n/g, "\n").trim() : "";
+          const snippet = (fn.bodySnippet || fn.snippet || fn.definition || "").replace(/\r\n/g, "\n").trim();
+          const isCollapsedBudgetSnippet = snippet === "/* ... body collapsed for budget ... */";
+
+          if (!hasLineBounds && !headerCode && (!snippet || isCollapsedBudgetSnippet)) {
+            allExactHeadFilesPhysicallyExist = false;
+            break;
+          }
+
+          let verifiedStartLine = null;
+          let parsedDecl = null;
+          if (hasLineBounds) {
+            const declLine = exactLines[fn.startLine - 1] || "";
+            parsedDecl = parseFunctionDeclarationAtLine(declLine, fn.startLine);
+            if (!parsedDecl) {
+              allExactHeadFilesPhysicallyExist = false;
+              break;
+            }
+            verifiedStartLine = fn.startLine;
+          } else {
+            for (let idx = 0; idx < exactLines.length; idx++) {
+              const candidateDecl = parseFunctionDeclarationAtLine(exactLines[idx], idx + 1);
+              if (candidateDecl) {
+                verifiedStartLine = idx + 1;
+                parsedDecl = candidateDecl;
+                break;
+              }
+            }
+            if (verifiedStartLine === null || !parsedDecl) {
+              allExactHeadFilesPhysicallyExist = false;
+              break;
+            }
+          }
+
+          // Compute authentic endLine of this function's brace scope and enforce endLine containment
+          const fnBodyStart = findHeaderBodyStart(exactLines, verifiedStartLine - 1);
+          const authenticFnEndLine = computeAuthenticBraceScopeEnd(exactLines, fnBodyStart.lineIdx, fnBodyStart.charIdx);
+          if (hasLineBounds && fn.endLine > authenticFnEndLine) {
+            allExactHeadFilesPhysicallyExist = false;
+            break;
+          }
+
+          // Validate fn.parameters against the authentic Git declaration parameters
+          if (fn.parameters !== undefined) {
+            if (!Array.isArray(fn.parameters)) {
+              allExactHeadFilesPhysicallyExist = false;
+              break;
+            }
+            const normalizedCallerParams = fn.parameters.map(p => (typeof p === "string" ? p.trim() : null));
+            if (normalizedCallerParams.some(p => p === null)) {
+              allExactHeadFilesPhysicallyExist = false;
+              break;
+            }
+            const nonEmptyCallerParams = normalizedCallerParams.filter(Boolean);
+            if (
+              nonEmptyCallerParams.length !== parsedDecl.params.length ||
+              nonEmptyCallerParams.some((p, i) => p !== parsedDecl.params[i])
+            ) {
+              allExactHeadFilesPhysicallyExist = false;
+              break;
+            }
+          }
+
+          const targetDeclLineTrimmed = (exactLines[verifiedStartLine - 1] || "").trim();
+          const effectiveEndLine = hasLineBounds ? fn.endLine : authenticFnEndLine;
+          const targetScopeSlice = exactLines.slice(verifiedStartLine - 1, effectiveEndLine).join("\n");
+
+          if (headerCode) {
+            if (headerCode !== targetDeclLineTrimmed || !parseFunctionDeclarationAtLine(headerCode, verifiedStartLine)) {
+              allExactHeadFilesPhysicallyExist = false;
+              break;
+            }
+          }
+
+          if (snippet && !isCollapsedBudgetSnippet) {
+            if (!targetScopeSlice.includes(snippet)) {
+              allExactHeadFilesPhysicallyExist = false;
+              break;
+            }
+          }
+
+          // Mandatory Canonical Hydration: ensure every trusted function has verified headerCode, parameters, startLine, and endLine.
+          // If the caller pre-froze, pre-sealed, made non-extensible, or defined read-only properties while omitting canonical fields,
+          // hydration cannot complete and we MUST fail closed (never register unhydrated metadata).
+          try {
+            if (!fn.headerCode) {
+              fn.headerCode = targetDeclLineTrimmed;
+            }
+            if (fn.parameters === undefined) {
+              fn.parameters = [...parsedDecl.params];
+            }
+            if (fn.startLine === undefined) {
+              fn.startLine = verifiedStartLine;
+            }
+            if (fn.endLine === undefined) {
+              fn.endLine = authenticFnEndLine;
+            }
+          } catch {
+            allExactHeadFilesPhysicallyExist = false;
+            break;
+          }
+
+          if (
+            typeof fn.headerCode !== "string" ||
+            fn.headerCode.replace(/\r\n/g, "\n").trim() !== targetDeclLineTrimmed ||
+            !Array.isArray(fn.parameters) ||
+            fn.parameters.filter(Boolean).length !== parsedDecl.params.length ||
+            fn.parameters.filter(Boolean).some((p, i) => String(p).trim() !== parsedDecl.params[i]) ||
+            fn.startLine !== verifiedStartLine ||
+            !Number.isInteger(fn.endLine) ||
+            fn.endLine < verifiedStartLine ||
+            fn.endLine > authenticFnEndLine
+          ) {
             allExactHeadFilesPhysicallyExist = false;
             break;
           }
         }
         if (!allExactHeadFilesPhysicallyExist) break;
 
-        // Validate that enclosing function snippets actually exist in authentic Git content
-        const entryFunctions = (pkg.layers?.layer1AstEnclosure?.enclosingFunctions || []).filter(
-          f => f && (!f.file || f.file === entry.file || normalizeCanonicalPath(f.file || "") === normalizeCanonicalPath(entry.file))
+        // Validate that enclosing class declarations, endLine bounds, and snippets actually exist in authentic Git content
+        const entryClasses = (pkg.layers?.layer1AstEnclosure?.enclosingClasses || []).filter(
+          cls => cls && getEnclosureFile(cls) === normEntryFile
         );
-        for (const fn of entryFunctions) {
-          const snippet = (fn.bodySnippet || fn.snippet || "").replace(/\r\n/g, "\n").trim();
-          if (snippet && !normExactContent.includes(snippet)) {
+        for (const cls of entryClasses) {
+          const clsName = typeof cls.name === "string" ? cls.name.trim() : "";
+          if (!clsName || !/^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(clsName)) {
+            allExactHeadFilesPhysicallyExist = false;
+            break;
+          }
+          const snippet = (cls.definition || cls.snippet || cls.bodySnippet || "").replace(/\r\n/g, "\n").trim();
+          const hasLineBounds = cls.startLine !== undefined || cls.endLine !== undefined;
+          if (!hasLineBounds && !snippet) {
+            allExactHeadFilesPhysicallyExist = false;
+            break;
+          }
+          const escapedClsName = clsName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+          const classDeclCheck = new RegExp(`^\\s*(?:export\\s+)?(?:default\\s+)?(?:abstract\\s+)?class\\s+${escapedClsName}\\b`);
+          let verifiedClsStartLine = null;
+          if (hasLineBounds) {
+            if (
+              !Number.isInteger(cls.startLine) ||
+              cls.startLine < 1 ||
+              !Number.isInteger(cls.endLine) ||
+              cls.endLine < cls.startLine ||
+              cls.endLine > exactLines.length
+            ) {
+              allExactHeadFilesPhysicallyExist = false;
+              break;
+            }
+            const declLine = exactLines[cls.startLine - 1] || "";
+            if (!classDeclCheck.test(declLine)) {
+              allExactHeadFilesPhysicallyExist = false;
+              break;
+            }
+            verifiedClsStartLine = cls.startLine;
+          } else {
+            const matchIdx = exactLines.findIndex(l => classDeclCheck.test(l));
+            if (matchIdx === -1) {
+              allExactHeadFilesPhysicallyExist = false;
+              break;
+            }
+            verifiedClsStartLine = matchIdx + 1;
+          }
+          const authenticClsEndLine = computeAuthenticBraceScopeEnd(exactLines, verifiedClsStartLine - 1, 0);
+          if (hasLineBounds && cls.endLine > authenticClsEndLine) {
+            allExactHeadFilesPhysicallyExist = false;
+            break;
+          }
+          const clsEffectiveEnd = hasLineBounds ? cls.endLine : authenticClsEndLine;
+          const clsSliceText = exactLines.slice(verifiedClsStartLine - 1, clsEffectiveEnd).join("\n");
+          if (snippet && !clsSliceText.includes(snippet)) {
+            allExactHeadFilesPhysicallyExist = false;
+            break;
+          }
+          try {
+            if (cls.startLine === undefined) {
+              cls.startLine = verifiedClsStartLine;
+            }
+            if (cls.endLine === undefined) {
+              cls.endLine = authenticClsEndLine;
+            }
+          } catch {
+            allExactHeadFilesPhysicallyExist = false;
+            break;
+          }
+          if (
+            cls.startLine !== verifiedClsStartLine ||
+            !Number.isInteger(cls.endLine) ||
+            cls.endLine < verifiedClsStartLine ||
+            cls.endLine > authenticClsEndLine
+          ) {
             allExactHeadFilesPhysicallyExist = false;
             break;
           }
