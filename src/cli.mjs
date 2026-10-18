@@ -537,17 +537,41 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
   }
 
   let tierArg = null;
+  let hasExplicitTierFlag = false;
+  let rawTierVal = null;
   const tierExplicit = argv.find(a => a.startsWith("--tier="));
   if (tierExplicit) {
-    const rawVal = tierExplicit.slice("--tier=".length).trim();
-    tierArg = Number(rawVal);
+    hasExplicitTierFlag = true;
+    rawTierVal = tierExplicit.slice("--tier=".length).trim();
+    tierArg = Number(rawTierVal);
   } else {
     const tierIdx = argv.indexOf("--tier");
-    if (tierIdx !== -1 && argv[tierIdx + 1] && !argv[tierIdx + 1].startsWith("--")) {
-      tierArg = Number(argv[tierIdx + 1].trim());
+    if (tierIdx !== -1) {
+      hasExplicitTierFlag = true;
+      if (argv[tierIdx + 1] && !argv[tierIdx + 1].startsWith("--")) {
+        rawTierVal = argv[tierIdx + 1].trim();
+        tierArg = Number(rawTierVal);
+        consumedArgsIndices.add(tierIdx + 1);
+      }
     }
   }
-  const effectiveTier = options.tier !== undefined ? options.tier : (tierArg !== null && !Number.isNaN(tierArg) ? tierArg : undefined);
+
+  if (hasExplicitTierFlag) {
+    if (rawTierVal === null || rawTierVal === "" || !Number.isInteger(tierArg) || tierArg < 1 || tierArg > 4) {
+      io.stderr.write(`✖ [USAGE ERROR] Invalid --tier='${rawTierVal ?? ""}'. Must be an integer between 1 and 4 (inclusive).\n`);
+      return EXIT_CODES.USAGE_ERROR;
+    }
+  }
+
+  if (options.tier !== undefined) {
+    const optTierNum = Number(options.tier);
+    if (!Number.isInteger(optTierNum)) {
+      io.stderr.write(`✖ [USAGE ERROR] Invalid tier option '${options.tier}'. Must be a recognized integer tier.\n`);
+      return EXIT_CODES.USAGE_ERROR;
+    }
+  }
+
+  const effectiveTier = options.tier !== undefined ? Number(options.tier) : (tierArg !== null ? tierArg : undefined);
   const effectiveIsTier1 = options.isTier1 !== undefined ? options.isTier1 : (effectiveTier !== undefined ? effectiveTier === 1 : undefined);
 
   const planOnlyArg = argv.includes("--plan-only") || Boolean(options.planOnly);

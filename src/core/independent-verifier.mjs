@@ -393,6 +393,66 @@ export function isWorkflowAuthorityToken(candidate, expectedPkg = null) {
 }
 
 /**
+ * Verifies whether a candidate ContextPackage is cryptographically and structurally bound
+ * to the specified ChangeSet diff hunks, head SHA, and files.
+ *
+ * @param {object} pkg - Context package candidate
+ * @param {object} changeSet - Active ChangeSet under review
+ * @param {string} [expectedHeadSha] - Expected head commit SHA
+ * @returns {boolean} True if strictly bound, false otherwise
+ */
+export function isContextPackageBoundToChangeSet(pkg, changeSet, expectedHeadSha = null) {
+  if (!pkg || typeof pkg !== "object") return false;
+
+  const pkgHead = normalizeCommitSha(pkg.headSha || pkg.head || "");
+  const targetHead = normalizeCommitSha(expectedHeadSha || changeSet?.headSha || changeSet?.head || "");
+  if (targetHead && (!pkgHead || pkgHead !== targetHead)) {
+    return false;
+  }
+  if (pkgHead && targetHead && pkgHead !== targetHead) {
+    return false;
+  }
+
+  const rawHunks = typeof changeSet?.diffHunks === "string" ? changeSet.diffHunks : "";
+  const pkgDigest = normalizeDigest(pkg.contentDigest || pkg.digest || "");
+
+  // Missing or non-SHA-256 digest fails closed under all circumstances
+  if (!pkgDigest) {
+    return false;
+  }
+
+  if (rawHunks) {
+    const rawDigest = crypto.createHash("sha256").update(rawHunks).digest("hex");
+    const normDigest = crypto.createHash("sha256").update(rawHunks.replace(/\r\n/g, "\n")).digest("hex");
+    if (pkgDigest !== rawDigest && pkgDigest !== normDigest) {
+      return false;
+    }
+    if (typeof pkg.layers?.layer0Diff === "string" && pkg.layers.layer0Diff.trim()) {
+      const l0Raw = crypto.createHash("sha256").update(pkg.layers.layer0Diff).digest("hex");
+      const l0Norm = crypto.createHash("sha256").update(pkg.layers.layer0Diff.replace(/\r\n/g, "\n")).digest("hex");
+      if (l0Raw !== rawDigest && l0Norm !== normDigest) {
+        return false;
+      }
+    }
+  } else {
+    // When diffHunks is absent, require declared changeSet digest evidence and match strictly
+    const csDeclaredDigest = normalizeDigest(changeSet?.contentDigest || changeSet?.changeSetDigest || "");
+    if (!csDeclaredDigest || pkgDigest !== csDeclaredDigest) {
+      return false;
+    }
+  }
+
+  if (pkg.targetFile && Array.isArray(changeSet?.files) && changeSet.files.length > 0) {
+    const fileList = changeSet.files.map(f => typeof f === "string" ? f : (f?.path || f?.file || "")).filter(Boolean);
+    if (fileList.length > 0 && !fileList.includes(pkg.targetFile)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+/**
  * Validates the authenticity and provenance of a candidate ContextPackage.
  * Fails closed unless physical Git backing or verified review workflow capability is proven.
  * Self-attested caller description text ('verifiedBy') alone without capability token or Git backing is rejected.
@@ -414,7 +474,7 @@ export function validateContextPackageAuthenticity(pkg, evidence = {}) {
   if (!pkg.budgetAccounting || typeof pkg.budgetAccounting !== "object" || Array.isArray(pkg.budgetAccounting)) {
     return false;
   }
-  if (typeof pkg.contentDigest !== "string" || !/^[0-9a-fA-F]{32,64}$/.test(pkg.contentDigest.trim())) {
+  if (typeof pkg.contentDigest !== "string" || !normalizeDigest(pkg.contentDigest)) {
     return false;
   }
   if (!Array.isArray(pkg.fileCoverageManifest) || pkg.fileCoverageManifest.length === 0) {
@@ -430,7 +490,7 @@ export function validateContextPackageAuthenticity(pkg, evidence = {}) {
     if (typeof entry.file !== "string" || entry.file.trim().length === 0) {
       return false;
     }
-    if (typeof entry.exactHeadAvailable !== "boolean") {
+    if (entry.exactHeadAvailable !== undefined && typeof entry.exactHeadAvailable !== "boolean") {
       return false;
     }
     if (!Array.isArray(entry.calleesExtracted)) {
@@ -1930,6 +1990,19 @@ export function validateVerificationOutput(rawOutput, context = {}, { allowSynth
         error: "Failed to extract valid JSON from verifier output string."
       });
     }
+  } else if (rawOutput && typeof rawOutput === "object" && typeof rawOutput.rawResponse === "string") {
+    parsed = extractJsonFromText(rawOutput.rawResponse);
+    if (!parsed) {
+      return Object.freeze({
+        ok: false,
+        valid: false,
+        executionStatus: EXECUTION_STATUS.MALFORMED_OUTPUT,
+        evaluations: Object.freeze([]),
+        verifierOmissions: Object.freeze([]),
+        usage: null,
+        error: "Failed to extract valid JSON from verifier rawResponse string."
+      });
+    }
   }
 
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
@@ -3417,8 +3490,113 @@ export async function conductIndependentVerification(changeSet, producerFindings
         : (Array.isArray(normContract?.exclusions) ? normContract.exclusions : null));
   const exclusions = rawExclusions ? Object.freeze(rawExclusions.map(String).map(s => s.trim()).filter(Boolean)) : null;
 
+  // Resolve and authenticate Context Package under Default-Deny (§3.3.4, tm8Ko)
+  const callerPkg = options.contextPackage || null;
+  const csPkg = changeSet?.contextPackage || null;
+  let candidateContextPackage = null;
+  let hasContextConflict = false;
+
+  if (callerPkg && csPkg) {
+    if (callerPkg === csPkg) {
+      candidateContextPackage = callerPkg;
+    } else {
+      const callerDigest = normalizeDigest(callerPkg.contentDigest || callerPkg.digest || "");
+      const csDigest = normalizeDigest(csPkg.contentDigest || csPkg.digest || "");
+      const callerHead = normalizeCommitSha(callerPkg.headSha || callerPkg.head || "");
+      const csHead = normalizeCommitSha(csPkg.headSha || csPkg.head || "");
+      const callerFile = callerPkg.targetFile || "";
+      const csFile = csPkg.targetFile || "";
+      if ((callerDigest && csDigest && callerDigest !== csDigest) ||
+          (callerHead && csHead && callerHead !== csHead) ||
+          (callerFile && csFile && callerFile !== csFile)) {
+        hasContextConflict = true;
+      } else {
+        candidateContextPackage = callerPkg;
+      }
+    }
+  } else {
+    candidateContextPackage = callerPkg || csPkg || null;
+  }
+
+  let effectiveContextPackage = null;
+  const contextGapsList = [
+    options.contextGaps,
+    options.contextPackage?.contextGaps,
+    changeSet?.contextPackage?.contextGaps,
+    changeSet?.contextGaps
+  ];
+
+  if (hasContextConflict) {
+    contextGapsList.push([{
+      code: "EXACT_HEAD_CONTEXT_FAILED",
+      symbol: "context-package-conflict",
+      reason: "Conflicting context packages supplied in options and changeSet."
+    }]);
+  } else if (candidateContextPackage) {
+    let trustedContext = null;
+    const isBound = isContextPackageBoundToChangeSet(candidateContextPackage, changeSet, headSha);
+
+    if (!isBound) {
+      effectiveContextPackage = null;
+      contextGapsList.push([{
+        code: "EXACT_HEAD_CONTEXT_FAILED",
+        symbol: "cross-changeset-context-mismatch",
+        reason: "Candidate context package is not cryptographically bound to the current changeSet diff hunks or head SHA."
+      }]);
+    } else if (isTrustedContextPackage(candidateContextPackage)) {
+      trustedContext = candidateContextPackage;
+    } else {
+      const repoRoot = options.repositoryRoot || changeSet?.repository?.root || changeSet?.repositoryRoot || (isGitRepo(process.cwd()) ? process.cwd() : null);
+      const evidence = {
+        repositoryRoot: repoRoot,
+        headSha: headSha || options.headSha || changeSet?.headSha,
+        diffHunks: changeSet?.diffHunks,
+        changeSet
+      };
+      try {
+        const verified = registerTrustedContextPackage(candidateContextPackage, evidence);
+        if (verified && isTrustedContextPackage(verified)) {
+          trustedContext = verified;
+        }
+      } catch {}
+
+      if (!trustedContext && repoRoot && headSha && isGitRepo(repoRoot) && isCommitInRepo(repoRoot, headSha)) {
+        try {
+          const { buildContextPackage } = await import("./context-builder.mjs");
+          if (typeof buildContextPackage === "function") {
+            const reExtracted = buildContextPackage({
+              repoRoot,
+              headSha,
+              changeSet,
+              diffHunks: changeSet?.diffHunks,
+              targetFile: candidateContextPackage.targetFile || changeSet?.files?.[0]?.path
+            });
+            if (reExtracted && isTrustedContextPackage(reExtracted)) {
+              trustedContext = reExtracted;
+            }
+          }
+        } catch {}
+      }
+    }
+
+    if (trustedContext) {
+      effectiveContextPackage = trustedContext;
+    } else if (isBound) {
+      effectiveContextPackage = null;
+      contextGapsList.push([{
+        code: "EXACT_HEAD_CONTEXT_FAILED",
+        symbol: "untrusted-context-package",
+        reason: "Candidate context package failed authenticity verification and could not be verified against exact-head Git repository."
+      }]);
+    }
+  }
+
+  const effectiveContextGaps = mergeContextGaps(...contextGapsList);
+
   const prompt = buildVerificationPrompt(changeSet, preservedProducerFindings, {
     ...options,
+    contextPackage: effectiveContextPackage,
+    contextGaps: effectiveContextGaps,
     exclusions: exclusions || undefined,
     objectiveContract: normContract
   });
@@ -3430,14 +3608,6 @@ export async function conductIndependentVerification(changeSet, producerFindings
     Boolean(changeSet?.diffTruncated) ||
     Boolean(options?.diffTruncated) ||
     prompt.includes("[NOTE: Diff truncated at");
-
-  const effectiveContextPackage = options.contextPackage || changeSet?.contextPackage || null;
-  const effectiveContextGaps = mergeContextGaps(
-    options.contextGaps,
-    options.contextPackage?.contextGaps,
-    changeSet?.contextPackage?.contextGaps,
-    changeSet?.contextGaps
-  );
 
   // 4. Invoke verifier adapter
   const timeoutMs = options.timeoutMs || 60000;
@@ -3641,6 +3811,11 @@ export async function conductIndependentVerification(changeSet, producerFindings
   if (isPromptBudgetExceeded && (overallStatus === "CLEAN" || !overallStatus)) {
     overallStatus = "UNCERTAIN";
   }
+  if (hasContextConflict || effectiveContextGaps.some(g => g?.code === "EXACT_HEAD_CONTEXT_FAILED")) {
+    if (overallStatus === "CLEAN" || !overallStatus) {
+      overallStatus = "UNCERTAIN";
+    }
+  }
 
   const verifiedAt = options.verifiedAt || new Date().toISOString();
   const runId = options.runId || options.runContext?.runId || options.producerRunId || null;
@@ -3663,6 +3838,7 @@ export async function conductIndependentVerification(changeSet, producerFindings
         }
       : {}),
     ...(overallStatus ? { overallStatus } : {}),
+    ...(effectiveContextGaps.length > 0 ? { contextGaps: deepFreeze(effectiveContextGaps) } : {}),
     producer: deepFreeze({
       providerName: options.producerName || options.producer?.providerName || "agy",
       findingsCount: producerFindings.length,
@@ -3678,7 +3854,26 @@ export async function conductIndependentVerification(changeSet, producerFindings
   };
 
   const frozenRecord = deepFreeze(record);
-  trustedVerificationRegistry.add(frozenRecord);
+
+  const isSynthetic = Boolean(
+    options.allowSynthetic === true ||
+    options.mock === true ||
+    changeSet?.scopeMode === "synthetic" ||
+    options.synthetic === true
+  );
+
+  const hasContextFailure = Boolean(
+    hasContextConflict ||
+    effectiveContextGaps.some(g => g?.code === "EXACT_HEAD_CONTEXT_FAILED") ||
+    (candidateContextPackage && !isTrustedContextPackage(effectiveContextPackage))
+  );
+
+  if (isSynthetic) {
+    segregatedSyntheticRegistry.add(frozenRecord);
+  } else if (validated.ok === true) {
+    trustedVerificationRegistry.add(frozenRecord);
+  }
+
   return frozenRecord;
 }
 

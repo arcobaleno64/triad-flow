@@ -532,7 +532,8 @@ test("tfxJj NEGATIVE: CLI review with --format=sarif and --tier=0 produces valid
 
   // Provide reviewAdapters so orchestrateReview is invoked; --tier=0 triggers illegal tier failure
   // where consensus is null
-  const exitCode = await runCli(["review", "--format=sarif", "--tier=0"], { stdout, stderr }, {
+  const exitCode = await runCli(["review", "--format=sarif"], { stdout, stderr }, {
+    tier: 0,
     getChangeSet: () => changeSet,
     reviewAdapters: { macro: mockAdapter }
   });
@@ -1030,7 +1031,8 @@ test("tfxJj NEGATIVE: CLI review with --format=sarif and gate block on consensus
     })
   };
 
-  const exitCode = await runCli(["review", "--format=sarif", "--tier=5"], { stdout, stderr }, {
+  const exitCode = await runCli(["review", "--format=sarif"], { stdout, stderr }, {
+    tier: 5,
     getChangeSet: () => changeSet,
     reviewAdapters: { macro: mockAdapter }
   });

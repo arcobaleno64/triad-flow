@@ -582,43 +582,594 @@ export function findFunctionDefinitions(lines, symbol) {
 }
 
 /**
- * Finds candidate definition line ranges for a qualified symbol (e.g. auth.validateAccess, Class::method).
- * Ensures qualified calls with explicit receivers are not conflated with bare or unrelated methods.
+ * Resolves the bound class name for a qualifier at a specific call line using Route B
+ * minimal flat-scope whitelist and strict default-deny (RFC-027-01).
+ *
+ * Rules:
+ * 1. Minimal whitelist: only verified static calls (PascalCase) or unique unambiguous
+ *    flat-scope instance bindings (const qualifier = new Class()).
+ * 2. Default-deny on closures, arrow functions, destructuring parameters, catch blocks,
+ *    inner block scopes, and reassignments (let/var or mutation).
  *
  * @param {string[]} lines
  * @param {string} qualifier
  * @param {string} symbol
+ * @param {number|null} targetLine
+ * @returns {string|null}
+ */
+function checkVariableBinding(line, qual) {
+  const declMatch = line.match(/\b(let|var|const)\s+([\s\S]+)/);
+  if (!declMatch) return false;
+  const kind = declMatch[1];
+  const rest = declMatch[2];
+  let depth = 0;
+  let inPattern = true;
+  let currentPattern = "";
+  const qualRegex = new RegExp(`(?:^|[^a-zA-Z0-9_$])${qual}(?:$|[^a-zA-Z0-9_$])`);
+  for (let i = 0; i < rest.length; i++) {
+    const ch = rest[i];
+    if (ch === ";" || (ch === ")" && depth === 0)) break;
+    if (ch === "{" || ch === "[" || ch === "(") {
+      depth++;
+      if (inPattern) currentPattern += ch;
+    } else if (ch === "}" || ch === "]" || ch === ")") {
+      depth--;
+      if (inPattern) currentPattern += ch;
+    } else if (ch === "=" && depth === 0) {
+      if (inPattern) {
+        if (qualRegex.test(currentPattern)) return { kind, pattern: currentPattern.trim() };
+        inPattern = false;
+        currentPattern = "";
+      }
+    } else if (ch === "," && depth === 0) {
+      if (inPattern && qualRegex.test(currentPattern)) {
+        return { kind, pattern: currentPattern.trim() };
+      }
+      inPattern = true;
+      currentPattern = "";
+    } else {
+      if (inPattern) currentPattern += ch;
+    }
+  }
+  if (inPattern && qualRegex.test(currentPattern)) {
+    return { kind, pattern: currentPattern.trim() };
+  }
+  return false;
+}
+
+function findFunctionSignature(srcLines, startLineIdx) {
+  let inParams = false;
+  let parenDepth = 0;
+  let paramsText = "";
+  for (let k = startLineIdx; k < Math.min(srcLines.length, startLineIdx + 20); k++) {
+    const line = srcLines[k];
+    for (let c = 0; c < line.length; c++) {
+      const ch = line[c];
+      if (ch === "(") {
+        if (!inParams) {
+          inParams = true;
+          parenDepth = 1;
+          continue;
+        }
+        parenDepth++;
+      } else if (ch === ")") {
+        parenDepth--;
+        if (parenDepth === 0) {
+          for (let m = k; m < Math.min(srcLines.length, k + 10); m++) {
+            const startChar = (m === k) ? c + 1 : 0;
+            const braceIdx = srcLines[m].indexOf("{", startChar);
+            if (braceIdx !== -1) {
+              return {
+                bodyLineIdx: m,
+                bodyCharIdx: braceIdx,
+                paramsText: paramsText.trim()
+              };
+            }
+            if (srcLines[m].slice(startChar).includes(";")) {
+              return null;
+            }
+          }
+          return null;
+        }
+      }
+      if (inParams && parenDepth > 0) {
+        paramsText += ch;
+      }
+    }
+    if (inParams) {
+      paramsText += " ";
+    }
+  }
+  return null;
+}
+
+function collectClasses(cleanLines, lines) {
+  const anyClassRegex = /^\s*(?:export\s+)?(?:default\s+)?class\s+([A-Za-z0-9_$]+)\b/;
+  const classes = [];
+  for (let i = 0; i < cleanLines.length; i++) {
+    const match = cleanLines[i].match(anyClassRegex);
+    if (match) {
+      let braceLineIdx = -1;
+      let braceCharIdx = -1;
+      for (let k = i; k < Math.min(cleanLines.length, i + 5); k++) {
+        const idx = cleanLines[k].indexOf("{");
+        if (idx !== -1) {
+          braceLineIdx = k;
+          braceCharIdx = idx;
+          break;
+        }
+        if (cleanLines[k].includes(";")) break;
+      }
+      if (braceLineIdx !== -1) {
+        const endLine = findBraceScopeEnd(lines, braceLineIdx, { failClosed: true, startCharIndex: braceCharIdx });
+        if (endLine !== -1 && endLine > braceLineIdx + 1) {
+          classes.push({
+            name: match[1],
+            startLine: i + 1,
+            braceLineIdx,
+            braceCharIdx,
+            endLine
+          });
+        }
+      }
+    }
+  }
+  return classes;
+}
+
+function collectFunctions(cleanLines, lines) {
+  const fnPatterns = [
+    /^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?function(?:\s*\*|\s+[a-zA-Z0-9_$]+|\s*\()/i,
+    /^\s*(?:export\s+)?(?:const|let|var)\s+[a-zA-Z0-9_$]+\s*=\s*(?:async\s+)?function(?:\s*\*|\s+[a-zA-Z0-9_$]+|\s*\()/i,
+    /^\s*(?:static\s+)?(?:async\s+)?(?:\*\s*)?(?!(?:if|for|while|switch|catch|with)\b)([a-zA-Z0-9_$]+)\s*\(/
+  ];
+  const functions = [];
+  for (let i = 0; i < cleanLines.length; i++) {
+    if (fnPatterns.some(p => p.test(cleanLines[i]))) {
+      const sig = findFunctionSignature(cleanLines, i);
+      if (sig) {
+        const endLine = findBraceScopeEnd(lines, sig.bodyLineIdx, { failClosed: true, startCharIndex: sig.bodyCharIdx });
+        if (endLine !== -1 && endLine >= i + 1) {
+          functions.push({
+            startLine: i + 1,
+            bodyLineIdx: sig.bodyLineIdx,
+            bodyCharIdx: sig.bodyCharIdx,
+            endLine,
+            paramsText: sig.paramsText
+          });
+        }
+      }
+    }
+  }
+  return functions;
+}
+
+function isMethodDirectInClass(cleanLines, classRecord, methodLineIdx, classes, functions) {
+  if (!classRecord || typeof methodLineIdx !== "number" || !Array.isArray(cleanLines)) {
+    return false;
+  }
+  const lineNum = methodLineIdx + 1;
+  // 1. Must be strictly within classRecord boundaries
+  if (methodLineIdx <= classRecord.braceLineIdx || methodLineIdx >= classRecord.endLine - 1) {
+    return false;
+  }
+
+  // 2. Must not be inside any other class
+  if (Array.isArray(classes) && classes.some(c => c !== classRecord && c.startLine <= lineNum && lineNum <= c.endLine)) {
+    return false;
+  }
+
+  // 3. Must not be inside any enclosing function/method body
+  if (Array.isArray(functions) && functions.some(f => f.startLine < lineNum && lineNum <= f.endLine)) {
+    return false;
+  }
+
+  // 4. Syntactic brace depth inside classRecord body must be exactly 1 at the method declaration
+  let depth = 1;
+  const startLine = classRecord.braceLineIdx;
+  const startChar = (typeof classRecord.braceCharIdx === "number" && classRecord.braceCharIdx >= 0)
+    ? classRecord.braceCharIdx + 1
+    : (cleanLines[startLine] ? cleanLines[startLine].indexOf("{") + 1 : 0);
+
+  for (let l = startLine; l <= methodLineIdx; l++) {
+    const line = cleanLines[l] || "";
+    const initialChar = (l === startLine) ? startChar : 0;
+    let endChar = line.length;
+    if (l === methodLineIdx) {
+      const match = line.match(/\b(?:static\s+)?(?:async\s+)?(?:\*\s*)?[A-Za-z0-9_$]+\s*\(/);
+      endChar = match ? match.index : (line.search(/\S/) !== -1 ? line.search(/\S/) : line.length);
+    }
+
+    for (let c = initialChar; c < endChar; c++) {
+      if (line[c] === "{") {
+        depth++;
+      } else if (line[c] === "}") {
+        depth--;
+        if (depth < 1) return false;
+      }
+    }
+  }
+
+  return depth === 1;
+}
+
+export function resolveReceiverLexicalBinding(lines, qualifier, symbol, targetLine, opts = {}) {
+  if (!qualifier || typeof qualifier !== "string" || !symbol || typeof symbol !== "string" || !Array.isArray(lines)) {
+    return null;
+  }
+  if (!/^[a-zA-Z0-9_$]+$/.test(qualifier) || !/^[a-zA-Z0-9_$]+$/.test(symbol)) {
+    return null;
+  }
+
+  const escapedSym = symbol.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const escapedQual = qualifier.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const isPascal = /^[A-Z]/.test(qualifier);
+
+  const cleanLines = Array.isArray(opts?.cleanLines)
+    ? opts.cleanLines
+    : lines.map(line => stripCommentsAndStrings(line, { val: false, inTemplate: false, templateDepths: [] }));
+
+  const classes = opts?.classes || collectClasses(cleanLines, lines);
+  const functions = opts?.functions || collectFunctions(cleanLines, lines);
+
+  // 1. Whitelist Case A: PascalCase calls (Class.method)
+  // Only match if class <qualifier> exists in cleanLines AND has an explicit `static <symbol>(` method
+  // directly in the class body (not in nested classes or functions).
+  // Must prove that qualifier is NOT shadowed by any function parameter, local variable,
+  // arrow function, catch block, or reassignment.
+  if (isPascal) {
+    const classRecord = classes.find(c => c.name === qualifier);
+    if (!classRecord) return null;
+    if (functions.some(f => f.startLine <= classRecord.startLine && classRecord.startLine <= f.endLine)) {
+      return null;
+    }
+    const staticMethodRegex = new RegExp(`^\\s*static\\s+(?:async\\s+)?(?:\\*\\s*)?${escapedSym}\\s*\\(`);
+    let hasStaticMethod = false;
+    for (let j = classRecord.braceLineIdx + 1; j < classRecord.endLine - 1; j++) {
+      if (staticMethodRegex.test(cleanLines[j])) {
+        if (isMethodDirectInClass(cleanLines, classRecord, j, classes, functions)) {
+          hasStaticMethod = true;
+          break;
+        }
+      }
+    }
+    if (!hasStaticMethod) return null;
+
+    let resolvedCallLine = targetLine;
+    if (!resolvedCallLine) {
+      const callRegex = new RegExp(`(?:^|[^a-zA-Z0-9_$])${escapedQual}\\.${escapedSym}\\s*\\(`);
+      const callLines = [];
+      for (let idx = 0; idx < cleanLines.length; idx++) {
+        if (callRegex.test(cleanLines[idx])) {
+          callLines.push(idx + 1);
+        }
+      }
+      if (callLines.length === 1) {
+        resolvedCallLine = callLines[0];
+      }
+    }
+
+    const qualParamRegex = new RegExp(`(?:^|[^a-zA-Z0-9_$])${escapedQual}(?:$|[^a-zA-Z0-9_$])`);
+    const arrowParamRegex = new RegExp(`(?:\\([^)]*\\b${escapedQual}\\b[^)]*\\)|\\b${escapedQual}\\b)\\s*=>`);
+    const catchParamRegex = new RegExp(`\\bcatch\\s*\\([^)]*\\b${escapedQual}\\b[^)]*\\)`);
+    const reassignmentRegex = new RegExp(`(?:^|[^a-zA-Z0-9_$.])${escapedQual}\\s*(?:=(?!=)|\\+=|-=|\\*=|\\/=|%=|\\+\\+|--)`);
+
+    if (cleanLines.some(l => arrowParamRegex.test(l)) || cleanLines.some(l => catchParamRegex.test(l))) {
+      return null;
+    }
+
+    if (resolvedCallLine) {
+      const enclosingFns = functions.filter(f => f.startLine <= resolvedCallLine && resolvedCallLine <= f.endLine);
+      for (const fn of enclosingFns) {
+        if (qualParamRegex.test(fn.paramsText)) {
+          return null; // 反例 A: review(Auth, user)
+        }
+        for (let k = fn.startLine - 1; k < fn.endLine; k++) {
+          if (k >= classRecord.startLine - 1 && k < classRecord.endLine) continue;
+          if (checkVariableBinding(cleanLines[k], escapedQual)) {
+            return null; // 反例 2: 區域 const Auth
+          }
+          if (reassignmentRegex.test(cleanLines[k])) {
+            return null;
+          }
+        }
+      }
+      if (enclosingFns.length === 0) {
+        for (let k = 0; k < cleanLines.length; k++) {
+          if (k >= classRecord.startLine - 1 && k < classRecord.endLine) continue;
+          if (checkVariableBinding(cleanLines[k], escapedQual) || reassignmentRegex.test(cleanLines[k])) {
+            return null;
+          }
+        }
+      }
+    } else {
+      if (functions.some(f => qualParamRegex.test(f.paramsText))) {
+        return null;
+      }
+      for (let k = 0; k < cleanLines.length; k++) {
+        if (k >= classRecord.startLine - 1 && k < classRecord.endLine) continue;
+        if (checkVariableBinding(cleanLines[k], escapedQual) || reassignmentRegex.test(cleanLines[k])) {
+          return null;
+        }
+      }
+    }
+
+    return qualifier;
+  }
+
+  // 2. Instance Receiver Calls: Strict Flat-Scope Whitelist & Default-Deny
+  // Invariant 1: Reject if any let or var binds qualifier anywhere
+  for (let i = 0; i < cleanLines.length; i++) {
+    const bound = checkVariableBinding(cleanLines[i], escapedQual);
+    if (bound && (bound.kind === "let" || bound.kind === "var")) {
+      return null;
+    }
+  }
+
+  // Invariant 2: Reject if any reassignment or mutation of qualifier exists anywhere
+  const assignRegex = new RegExp(`(?:^|[^a-zA-Z0-9_$.])${escapedQual}\\s*(?:=(?!=)|\\+=|-=|\\*=|\\/=|%=|\\+\\+|--)`);
+  const prefixIncDecRegex = new RegExp(`(?:\\+\\+|--)\\s*${escapedQual}\\b`);
+  const destructuringAssignRegex = new RegExp(`(?:\\{[^}]*\\b${escapedQual}\\b[^}]*\\}|\\[[^\\]]*\\b${escapedQual}\\b[^\\]]*\\])\\s*=(?!=)`);
+  const forLoopAssignRegex = new RegExp(`\\bfor\\s*\\([^)]*\\b${escapedQual}\\b\\s+(?:of|in)\\b`);
+
+  for (let i = 0; i < cleanLines.length; i++) {
+    const cl = cleanLines[i];
+    if (prefixIncDecRegex.test(cl) || destructuringAssignRegex.test(cl) || forLoopAssignRegex.test(cl)) {
+      return null;
+    }
+    if (assignRegex.test(cl)) {
+      // Must strictly be the allowed `const qualifier = new Class(...)`
+      const constMatch = cl.match(new RegExp(`(?:^|[^a-zA-Z0-9_$])const\\s+${escapedQual}\\s*=\\s*new\\s+`));
+      if (!constMatch) {
+        return null;
+      }
+    }
+  }
+
+  // Invariant 3: Must have EXACTLY ONE const declaration binding qualifier, which must be `const qualifier = new ClassName(...)`
+  const constBindings = [];
+  for (let i = 0; i < cleanLines.length; i++) {
+    const bound = checkVariableBinding(cleanLines[i], escapedQual);
+    if (bound && bound.kind === "const") {
+      constBindings.push({ lineIdx: i, pattern: bound.pattern });
+    }
+  }
+  if (constBindings.length !== 1) {
+    return null;
+  }
+  if (constBindings[0].pattern !== qualifier) {
+    return null; // was a destructuring const like { auth } or [auth]
+  }
+
+  const declIdx = constBindings[0].lineIdx;
+  const declLine = declIdx + 1;
+  const instRegex = new RegExp(`(?:^|[^a-zA-Z0-9_$])const\\s+${escapedQual}\\s*=\\s*new\\s+([A-Za-z0-9_$]+)\\s*\\(`);
+  const instMatch = cleanLines[declIdx].match(instRegex);
+  if (!instMatch || !instMatch[1]) {
+    return null;
+  }
+  const boundClass = instMatch[1];
+  const qualPascal = qualifier.charAt(0).toUpperCase() + qualifier.slice(1);
+  if (boundClass !== qualPascal) {
+    return null;
+  }
+
+  const boundClassRecord = classes.find(c => c.name === boundClass);
+  if (!boundClassRecord) {
+    return null;
+  }
+
+  // Verify boundClass has instance method (non-static) matching symbol directly in class body
+  const instMethodRegex = new RegExp(`^\\s*(?:async\\s+)?(?:\\*\\s*)?${escapedSym}\\s*\\(`);
+  let classHasInstanceMethod = false;
+  for (let j = boundClassRecord.braceLineIdx + 1; j < boundClassRecord.endLine - 1; j++) {
+    const cLine = cleanLines[j];
+    if (/^\s*static\b/.test(cLine)) continue;
+    if (instMethodRegex.test(cLine)) {
+      if (isMethodDirectInClass(cleanLines, boundClassRecord, j, classes, functions)) {
+        classHasInstanceMethod = true;
+        break;
+      }
+    }
+  }
+  if (!classHasInstanceMethod) {
+    return null;
+  }
+
+  // Determine callLine
+  let resolvedCallLine = targetLine;
+  if (!resolvedCallLine) {
+    const callRegex = new RegExp(`(?:^|[^a-zA-Z0-9_$])${escapedQual}\\.${escapedSym}\\s*\\(`);
+    for (let idx = 0; idx < cleanLines.length; idx++) {
+      if (callRegex.test(cleanLines[idx])) {
+        resolvedCallLine = idx + 1;
+        break;
+      }
+    }
+  }
+  if (!resolvedCallLine) {
+    return null;
+  }
+  if (declLine >= resolvedCallLine) {
+    return null;
+  }
+
+  // Invariant 4: Arrow function prohibition
+  if (cleanLines[resolvedCallLine - 1].includes("=>")) {
+    return null;
+  }
+  if (resolvedCallLine > 1 && cleanLines[resolvedCallLine - 2].includes("=>") && !cleanLines[resolvedCallLine - 2].includes("{")) {
+    return null;
+  }
+  const arrowParamRegex = new RegExp(`(?:\\([^)]*\\b${escapedQual}\\b[^)]*\\)|\\b${escapedQual}\\b)\\s*=>`);
+  if (cleanLines.some(l => arrowParamRegex.test(l))) {
+    return null;
+  }
+  for (let i = 0; i < cleanLines.length; i++) {
+    if (/=>\s*\{/.test(cleanLines[i])) {
+      const idx = cleanLines[i].indexOf("{");
+      const endLine = findBraceScopeEnd(lines, i, { failClosed: true, startCharIndex: idx >= 0 ? idx : 0 });
+      if (endLine !== -1 && i + 1 <= resolvedCallLine && resolvedCallLine <= endLine) {
+        return null;
+      }
+    }
+  }
+
+  // Invariant 5: Catch block prohibition
+  const catchParamRegex = new RegExp(`\\bcatch\\s*\\([^)]*\\b${escapedQual}\\b[^)]*\\)`);
+  if (cleanLines.some(l => catchParamRegex.test(l))) {
+    return null;
+  }
+  for (let i = 0; i < cleanLines.length; i++) {
+    if (/\bcatch\b/.test(cleanLines[i])) {
+      let braceIdx = -1;
+      for (let k = i; k < Math.min(cleanLines.length, i + 3); k++) {
+        const cIdx = cleanLines[k].indexOf("{");
+        if (cIdx !== -1) {
+          braceIdx = k;
+          const endLine = findBraceScopeEnd(lines, braceIdx, { failClosed: true, startCharIndex: cIdx });
+          if (endLine !== -1 && braceIdx + 1 <= resolvedCallLine && resolvedCallLine <= endLine) {
+            return null;
+          }
+          break;
+        }
+      }
+    }
+  }
+
+  // Helper: check if a line is inside an inner block
+  function isLineInInnerBlock(lineNum) {
+    const currLine = cleanLines[lineNum - 1] || "";
+    if (/^\s*(?:if|for|while|switch|try|catch|else|do)\b/.test(currLine)) {
+      return true;
+    }
+    if (lineNum > 1) {
+      const prevLine = cleanLines[lineNum - 2] || "";
+      if (/^\s*(?:if|for|while|else)\b/.test(prevLine) && !prevLine.includes("{") && !prevLine.includes(";")) {
+        return true;
+      }
+    }
+    for (let k = 0; k < cleanLines.length; k++) {
+      const line = cleanLines[k];
+      for (let c = 0; c < line.length; c++) {
+        if (line[c] === "{") {
+          const isClassBody = classes.some(cls => cls.braceLineIdx === k && cls.braceCharIdx === c);
+          const isFnBody = functions.some(fn => fn.bodyLineIdx === k && fn.bodyCharIdx === c);
+          const isFnParam = functions.some(fn => fn.startLine <= k + 1 && k + 1 <= fn.bodyLineIdx + 1 && (k < fn.bodyLineIdx || c < fn.bodyCharIdx));
+          if (!isClassBody && !isFnBody && !isFnParam) {
+            const endLine = findBraceScopeEnd(lines, k, { failClosed: true, startCharIndex: c });
+            if (endLine !== -1) {
+              if (k + 1 < lineNum && lineNum <= endLine) {
+                return true;
+              }
+              if (k + 1 === lineNum && c < (line.indexOf(qualifier) !== -1 ? line.indexOf(qualifier) : line.length)) {
+                return true;
+              }
+            }
+          }
+        }
+      }
+    }
+    return false;
+  }
+
+  // Invariant 6: Neither declLine nor resolvedCallLine can be inside an inner block
+  if (isLineInInnerBlock(declLine) || isLineInInnerBlock(resolvedCallLine)) {
+    return null;
+  }
+
+  // Invariant 7: Nested closure prohibition
+  const enclosingFns = functions.filter(f => f.startLine <= resolvedCallLine && resolvedCallLine <= f.endLine);
+  if (enclosingFns.length > 1) {
+    return null; // nested closure
+  }
+
+  const callFn = enclosingFns.length === 1 ? enclosingFns[0] : null;
+
+  if (callFn) {
+    // Invariant 8: Parameter shadowing in enclosing function
+    const qualParamRegex = new RegExp(`(?:^|[^a-zA-Z0-9_$])${escapedQual}(?:$|[^a-zA-Z0-9_$])`);
+    if (qualParamRegex.test(callFn.paramsText)) {
+      return null;
+    }
+
+    // Check declLine location relative to callFn
+    const declInCallFn = (callFn.startLine <= declLine && declLine <= callFn.endLine);
+    if (!declInCallFn) {
+      if (functions.some(f => f.startLine <= declLine && declLine <= f.endLine)) {
+        return null; // in another function
+      }
+      if (classes.some(c => c.startLine <= declLine && declLine <= c.endLine)) {
+        return null; // in class
+      }
+    }
+  } else {
+    // resolvedCallLine is at top-level module scope
+    if (classes.some(c => c.startLine <= resolvedCallLine && resolvedCallLine <= c.endLine)) {
+      return null;
+    }
+    if (functions.some(f => f.startLine <= declLine && declLine <= f.endLine)) {
+      return null;
+    }
+    if (classes.some(c => c.startLine <= declLine && declLine <= c.endLine)) {
+      return null;
+    }
+  }
+
+  return boundClass;
+}
+
+/**
+ * Finds candidate definition line ranges for a qualified symbol (e.g. auth.validateAccess, Class::method).
+ * Follows Route B minimal whitelist and strict default-deny (RFC-027-01):
+ * - PascalCase calls only match explicit static class methods without receiver shadowing.
+ * - Explicit C++ scope definitions match Class::symbol.
+ * - Flat-scope instance calls match only unique unambiguous const qualifier = new Class() bindings.
+ * - JavaScript prototype assignments (Class.prototype.method = ...) and direct property assignments
+ *   (auth.authorize = ...) do NOT constitute trusted Receiver identity in security verification mode
+ *   (failing closed to EXTERNAL_CALLEE_UNRESOLVED) to eliminate false cleans caused by Prototype/Static
+ *   confusion (Auth.authorize calling Auth.prototype.authorize), conditional execution (if (false)),
+ *   uncalled closures, or overwritten assignments.
+ *   These are preserved solely for optional candidateSearchOnly mode.
+ * - Anything else rejects fail-closed with [].
+ *
+ * @param {string[]} lines
+ * @param {string} qualifier
+ * @param {string} symbol
+ * @param {object|number} [options]
  * @returns {Array<{ startLine: number, endLine: number }>}
  */
-export function findQualifiedFunctionDefinitions(lines, qualifier, symbol) {
+export function findQualifiedFunctionDefinitions(lines, qualifier, symbol, options = {}) {
   if (!qualifier || !symbol || !Array.isArray(lines)) return [];
   const matches = [];
   const escapedSym = symbol.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const escapedQual = qualifier.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const qualPascal = qualifier.charAt(0).toUpperCase() + qualifier.slice(1);
-  const escapedPascal = qualPascal.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const isPascal = /^[A-Z]/.test(qualifier);
 
-  const QUAL_DEF_REGEX = new RegExp(
-    `(?:` +
-    `^(?:\\s*(?:[a-zA-Z0-9_<>*&]|::)+\\s+)+(?:${escapedQual}|${escapedPascal})::${escapedSym}\\s*\\(|` +
-    `^\\s*(?:export\\s+)?(?:const|let|var)?\\s*(?:${escapedQual}|${escapedPascal})\\.${escapedSym}\\s*=\\s*|` +
-    `^\\s*(?:export\\s+)?(?:const|let|var)?\\s*(?:${escapedQual}|${escapedPascal})\\.prototype\\.${escapedSym}\\s*=\\s*` +
-    `)`
+  const commentRef = { val: false, inTemplate: false, templateDepths: [] };
+  const cleanLines = lines.map(line => stripCommentsAndStrings(line, commentRef));
+
+  const classes = collectClasses(cleanLines, lines);
+  const functions = collectFunctions(cleanLines, lines);
+
+  const targetLine = typeof options === "number" ? options : (options && typeof options.callLine === "number" ? options.callLine : null);
+  const candidateSearchOnly = Boolean(options && options.candidateSearchOnly);
+
+  // 1. Explicit C++ scope definitions: Class::method(...)
+  const CPP_SCOPE_DEF_REGEX = new RegExp(
+    `^(?:\\s*(?:[a-zA-Z0-9_<>*&]|::)+\\s+)+${escapedQual}::${escapedSym}\\s*\\(`
   );
 
-  const CLASS_REGEX = new RegExp(`^\\s*(?:export\\s+)?(?:default\\s+)?class\\s+(?:${escapedQual}|${escapedPascal})\\b`);
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-
-    if (QUAL_DEF_REGEX.test(line)) {
+  for (let i = 0; i < cleanLines.length; i++) {
+    const cleanLine = cleanLines[i];
+    if (CPP_SCOPE_DEF_REGEX.test(cleanLine)) {
       let qualBraceIdx = -1;
-      for (let k = i; k < Math.min(lines.length, i + 5); k++) {
-        if (lines[k].includes("{")) {
+      for (let k = i; k < Math.min(cleanLines.length, i + 5); k++) {
+        if (cleanLines[k].includes("{")) {
           qualBraceIdx = k;
           break;
         }
-        if (lines[k].includes(";")) break;
+        if (cleanLines[k].includes(";")) break;
       }
       if (qualBraceIdx !== -1) {
         const endLine = findBraceScopeEnd(lines, qualBraceIdx, { failClosed: true });
@@ -626,45 +1177,113 @@ export function findQualifiedFunctionDefinitions(lines, qualifier, symbol) {
           matches.push({ startLine: i + 1, endLine });
           if (endLine > i + 1) i = endLine - 1;
         }
-        continue;
       }
     }
+  }
 
-    if (CLASS_REGEX.test(line)) {
-      let classBraceIdx = -1;
-      for (let k = i; k < Math.min(lines.length, i + 5); k++) {
-        if (lines[k].includes("{")) {
-          classBraceIdx = k;
-          break;
+  // 2. JavaScript prototype and direct property assignments:
+  // - Class.prototype.method = ...
+  // - auth.authorize = ...
+  // Preserved for candidate search (e.g. candidateSearchOnly mode).
+  // In security verification mode (default), neither JavaScript prototype assignments nor
+  // ad-hoc direct property assignments provide trusted Receiver identity proof
+  // (failing closed to EXTERNAL_CALLEE_UNRESOLVED) to eliminate false cleans caused by
+  // Prototype/Static confusion (Auth.authorize calling Auth.prototype.authorize),
+  // conditional branches (if (false)), uncalled closures, or overwritten assignments.
+  const JS_PROTO_OR_PROP_DEF_REGEX = new RegExp(
+    `(?:` +
+    `^\\s*(?:export\\s+)?(?:const|let|var)?\\s*${escapedQual}\\.prototype\\.${escapedSym}\\s*=\\s*|` +
+    `^\\s*(?:export\\s+)?(?:const|let|var)?\\s*${escapedQual}\\.${escapedSym}\\s*=\\s*` +
+    `)`
+  );
+
+  if (candidateSearchOnly) {
+    for (let i = 0; i < cleanLines.length; i++) {
+      const cleanLine = cleanLines[i];
+      if (JS_PROTO_OR_PROP_DEF_REGEX.test(cleanLine)) {
+        let qualBraceIdx = -1;
+        for (let k = i; k < Math.min(cleanLines.length, i + 5); k++) {
+          if (cleanLines[k].includes("{")) {
+            qualBraceIdx = k;
+            break;
+          }
+          if (cleanLines[k].includes(";")) break;
         }
-        if (lines[k].includes(";")) break;
+        if (qualBraceIdx !== -1) {
+          const endLine = findBraceScopeEnd(lines, qualBraceIdx, { failClosed: true });
+          if (endLine !== -1 && endLine >= i + 1) {
+            matches.push({ startLine: i + 1, endLine });
+            if (endLine > i + 1) i = endLine - 1;
+          }
+        }
       }
-      if (classBraceIdx !== -1) {
-        const classEndLine = findBraceScopeEnd(lines, classBraceIdx, { failClosed: true });
-        if (classEndLine !== -1 && classEndLine > classBraceIdx + 1) {
-          const METHOD_REGEX = new RegExp(`^\\s*(?:static\\s+)?(?:async\\s+)?${escapedSym}\\s*\\(`);
-          for (let j = classBraceIdx + 1; j < classEndLine - 1; j++) {
-            const methodLine = lines[j];
-            if (METHOD_REGEX.test(methodLine)) {
-              let methodBraceIdx = -1;
-              for (let m = j; m < Math.min(classEndLine - 1, j + 5); m++) {
-                if (lines[m].includes("{")) {
-                  methodBraceIdx = m;
-                  break;
-                }
-                if (lines[m].includes(";")) break;
+    }
+  }
+
+  if (matches.length > 0) {
+    return matches;
+  }
+
+  // 3. Class method matching via resolveReceiverLexicalBinding
+  const boundClassName = resolveReceiverLexicalBinding(lines, qualifier, symbol, targetLine, { cleanLines, classes, functions });
+
+  if (boundClassName) {
+    const escapedBoundClass = boundClassName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const CLASS_REGEX = new RegExp(`^\\s*(?:export\\s+)?(?:default\\s+)?class\\s+${escapedBoundClass}\\b`);
+
+    for (let i = 0; i < cleanLines.length; i++) {
+      const cleanLine = cleanLines[i];
+      if (CLASS_REGEX.test(cleanLine)) {
+        let classBraceIdx = -1;
+        for (let k = i; k < Math.min(cleanLines.length, i + 5); k++) {
+          if (cleanLines[k].includes("{")) {
+            classBraceIdx = k;
+            break;
+          }
+          if (cleanLines[k].includes(";")) break;
+        }
+        if (classBraceIdx !== -1) {
+          const classEndLine = findBraceScopeEnd(lines, classBraceIdx, { failClosed: true });
+          if (classEndLine !== -1 && classEndLine > classBraceIdx + 1) {
+            const classRecord = classes.find(c => c.name === boundClassName && c.braceLineIdx === classBraceIdx) || {
+              name: boundClassName,
+              startLine: i + 1,
+              braceLineIdx: classBraceIdx,
+              braceCharIdx: cleanLines[classBraceIdx].indexOf("{"),
+              endLine: classEndLine
+            };
+            const METHOD_REGEX = isPascal
+              ? new RegExp(`^\\s*static\\s+(?:async\\s+)?(?:\\*\\s*)?${escapedSym}\\s*\\(`)
+              : new RegExp(`^\\s*(?:async\\s+)?(?:\\*\\s*)?${escapedSym}\\s*\\(`);
+            for (let j = classBraceIdx + 1; j < classEndLine - 1; j++) {
+              const methodCleanLine = cleanLines[j];
+              if (!isPascal && /^\s*static\b/.test(methodCleanLine)) {
+                continue; // instance calls do not bind static methods
               }
-              if (methodBraceIdx !== -1) {
-                const methodEndLine = findBraceScopeEnd(lines, methodBraceIdx, { failClosed: true });
-                if (methodEndLine !== -1 && methodEndLine >= j + 1 && methodEndLine <= classEndLine) {
-                  matches.push({ startLine: j + 1, endLine: methodEndLine });
-                  if (methodEndLine > j + 1) j = methodEndLine - 1;
+              if (METHOD_REGEX.test(methodCleanLine)) {
+                if (!isMethodDirectInClass(cleanLines, classRecord, j, classes, functions)) {
+                  continue; // skip methods in nested classes, nested functions, or inner blocks
+                }
+                let methodBraceIdx = -1;
+                for (let m = j; m < Math.min(classEndLine - 1, j + 5); m++) {
+                  if (cleanLines[m].includes("{")) {
+                    methodBraceIdx = m;
+                    break;
+                  }
+                  if (cleanLines[m].includes(";")) break;
+                }
+                if (methodBraceIdx !== -1) {
+                  const methodEndLine = findBraceScopeEnd(lines, methodBraceIdx, { failClosed: true });
+                  if (methodEndLine !== -1 && methodEndLine >= j + 1 && methodEndLine <= classEndLine) {
+                    matches.push({ startLine: j + 1, endLine: methodEndLine });
+                    if (methodEndLine > j + 1) j = methodEndLine - 1;
+                  }
                 }
               }
             }
+            i = classEndLine - 1;
+            continue;
           }
-          i = classEndLine - 1;
-          continue;
         }
       }
     }
@@ -719,27 +1338,37 @@ export function classifySensitiveCategory(text) {
  * @returns {string}
  */
 export function stripCommentsAndStrings(line, inBlockCommentRef = { val: false }) {
-  let inString = false;
-  let quote = null;
+  const tRef = inBlockCommentRef && typeof inBlockCommentRef === "object" ? inBlockCommentRef : null;
+  let inString = Boolean(tRef?.inTemplate);
+  let quote = tRef?.inTemplate ? "`" : null;
+  const templateDepths = Array.isArray(tRef?.templateDepths) ? [...tRef.templateDepths] : [];
   let result = "";
   let i = 0;
 
-  if (inBlockCommentRef.val) {
+  if (inBlockCommentRef?.val) {
     const endIdx = line.indexOf("*/");
     if (endIdx !== -1) {
       inBlockCommentRef.val = false;
       i = endIdx + 2;
     } else {
+      if (tRef) {
+        tRef.inTemplate = Boolean(inString && quote === "`");
+        tRef.templateDepths = templateDepths;
+      }
       return "";
     }
   }
 
   if (/^\s*\*/.test(line)) {
     if (line.includes("*/")) {
-      inBlockCommentRef.val = false;
+      if (inBlockCommentRef) inBlockCommentRef.val = false;
       const endIdx = line.indexOf("*/");
       i = endIdx + 2;
     } else {
+      if (tRef) {
+        tRef.inTemplate = Boolean(inString && quote === "`");
+        tRef.templateDepths = templateDepths;
+      }
       return "";
     }
   }
@@ -752,12 +1381,36 @@ export function stripCommentsAndStrings(line, inBlockCommentRef = { val: false }
         i++;
         continue;
       }
+      if (quote === "`" && ch === "$" && nextCh === "{") {
+        templateDepths.push(1);
+        inString = false;
+        quote = null;
+        i++;
+        result += " ";
+        continue;
+      }
       if (ch === quote) {
         inString = false;
         quote = null;
       }
       continue;
     }
+
+    if (templateDepths.length > 0) {
+      if (ch === "{") {
+        templateDepths[templateDepths.length - 1]++;
+      } else if (ch === "}") {
+        templateDepths[templateDepths.length - 1]--;
+        if (templateDepths[templateDepths.length - 1] === 0) {
+          templateDepths.pop();
+          inString = true;
+          quote = "`";
+          result += " ";
+          continue;
+        }
+      }
+    }
+
     if (ch === "/" && nextCh === "/") break;
     if (ch === "/" && nextCh === "*") {
       const closeIdx = line.indexOf("*/", i + 2);
@@ -765,7 +1418,7 @@ export function stripCommentsAndStrings(line, inBlockCommentRef = { val: false }
         i = closeIdx + 1;
         continue;
       } else {
-        inBlockCommentRef.val = true;
+        if (inBlockCommentRef) inBlockCommentRef.val = true;
         break;
       }
     }
@@ -806,6 +1459,10 @@ export function stripCommentsAndStrings(line, inBlockCommentRef = { val: false }
       }
     }
     result += ch;
+  }
+  if (tRef) {
+    tRef.inTemplate = Boolean(inString && quote === "`");
+    tRef.templateDepths = templateDepths;
   }
   return result;
 }
@@ -883,7 +1540,7 @@ export function extractCandidateCallSymbols(diffHunks) {
 
   let currentTargetLine = 1;
   const HUNK_HEADER_REGEX = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/;
-  const inBlockCommentRef = { val: false };
+  const inBlockCommentRef = { val: false, inTemplate: false, templateDepths: [] };
 
   for (let i = 0; i < lines.length; i++) {
     const rawLine = lines[i];
@@ -891,6 +1548,9 @@ export function extractCandidateCallSymbols(diffHunks) {
     const hunkMatch = rawLine.match(HUNK_HEADER_REGEX);
     if (hunkMatch) {
       currentTargetLine = parseInt(hunkMatch[1], 10);
+      inBlockCommentRef.val = false;
+      inBlockCommentRef.inTemplate = false;
+      inBlockCommentRef.templateDepths = [];
       continue;
     }
 
@@ -1442,7 +2102,7 @@ export function extractLocalCalleeContext(fileContent, diffHunks, targetFile, op
     let defMatches = [];
     if (candidate.isQualified) {
       if (candidate.qualifier && candidate.qualifier !== "this" && candidate.qualifier !== "self") {
-        defMatches = findQualifiedFunctionDefinitions(lines, candidate.qualifier, symbol);
+        defMatches = findQualifiedFunctionDefinitions(lines, candidate.qualifier, symbol, { callLine: line, candidate });
       } else if (candidate.qualifier === "this" || candidate.qualifier === "self") {
         defMatches = findFunctionDefinitions(lines, symbol);
       } else {
