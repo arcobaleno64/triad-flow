@@ -442,10 +442,49 @@ export function isContextPackageBoundToChangeSet(pkg, changeSet, expectedHeadSha
     }
   }
 
-  if (pkg.targetFile && Array.isArray(changeSet?.files) && changeSet.files.length > 0) {
-    const fileList = changeSet.files.map(f => typeof f === "string" ? f : (f?.path || f?.file || "")).filter(Boolean);
-    if (fileList.length > 0 && !fileList.includes(pkg.targetFile)) {
-      return false;
+  if (Array.isArray(changeSet?.files) && changeSet.files.length > 0) {
+    const repoRoot = changeSet?.repository?.root || changeSet?.repositoryRoot || pkg.repositoryRoot || "";
+    const fileList = changeSet.files
+      .map(f => typeof f === "string" ? f : (f?.path || f?.file || ""))
+      .map(p => normalizeCanonicalPath(p, repoRoot))
+      .filter(Boolean);
+
+    if (fileList.length > 0) {
+      if (fileList.length === 1) {
+        const targetPath = pkg.targetFile ? normalizeCanonicalPath(pkg.targetFile, repoRoot) : null;
+        if (targetPath && targetPath !== "multi-file" && targetPath !== fileList[0]) {
+          return false;
+        }
+        if (Array.isArray(pkg.fileCoverageManifest) && pkg.fileCoverageManifest.length > 0) {
+          const manifestFiles = pkg.fileCoverageManifest
+            .filter(m => m && m.inspected !== false)
+            .map(m => normalizeCanonicalPath(m?.file || m?.path || "", repoRoot))
+            .filter(Boolean);
+          if (!manifestFiles.includes(fileList[0])) {
+            return false;
+          }
+        }
+      } else {
+        // Multi-file changeSet: single-file context package must fail closed (tqhHk)
+        if (pkg.targetFile && pkg.targetFile !== "multi-file") {
+          return false;
+        }
+        // Multi-file changeSet requires a complete fileCoverageManifest covering all files
+        if (!Array.isArray(pkg.fileCoverageManifest) || pkg.fileCoverageManifest.length === 0) {
+          return false;
+        }
+        const manifestFiles = new Set(
+          pkg.fileCoverageManifest
+            .filter(m => m && m.inspected !== false)
+            .map(m => normalizeCanonicalPath(m?.file || m?.path || "", repoRoot))
+            .filter(Boolean)
+        );
+        for (const file of fileList) {
+          if (!manifestFiles.has(file)) {
+            return false;
+          }
+        }
+      }
     }
   }
 
@@ -3289,12 +3328,6 @@ export async function conductIndependentVerification(changeSet, producerFindings
     const normHunks = normalizeLineEndings(rawHunks);
     const d2 = normalizeDigest(computeDigest(normHunks));
     if (d2) validChangeSetDigests.add(d2);
-    const trimmedHunks = rawHunks.trim();
-    const d3 = normalizeDigest(computeDigest(trimmedHunks));
-    if (d3) validChangeSetDigests.add(d3);
-    const trimmedNormHunks = normHunks.trim();
-    const d4 = normalizeDigest(computeDigest(trimmedNormHunks));
-    if (d4) validChangeSetDigests.add(d4);
   } else if (Buffer.isBuffer(changeSet?.diffHunks)) {
     const dBuf = normalizeDigest(computeDigest(changeSet.diffHunks));
     if (dBuf) validChangeSetDigests.add(dBuf);
@@ -3480,7 +3513,69 @@ export async function conductIndependentVerification(changeSet, producerFindings
     changeSet?.patchObjective;
   const normContract = normalizeObjectiveContract(candidateObjective);
   const patchObjective = normContract?.objective || "";
-  const headSha = normalizeCommitSha(options.headSha || options.head || options.runContext?.headSha || changeSet.headSha || changeSet.head || "");
+
+  // Explicit HEAD consistency check across caller, runContext, and changeSet (P1-177 tqhHm)
+  const callerDeclaredHead = normalizeCommitSha(options.headSha || options.head || "");
+  const rcDeclaredHead = normalizeCommitSha(options.runContext?.headSha || "");
+  const csDeclaredHead = normalizeCommitSha(changeSet?.headSha || changeSet?.head || "");
+
+  const createHeadMismatchRecord = (errMsg) => {
+    if (options.throwOnError) {
+      throw new Error(errMsg);
+    }
+    return deepFreeze({
+      schemaVersion: VERIFICATION_SCHEMA_VERSION,
+      verifiedAt: options.verifiedAt || new Date().toISOString(),
+      changeSetDigest: (typeof options.changeSetDigest === "string" && options.changeSetDigest.startsWith("sha256:"))
+        ? options.changeSetDigest
+        : (typeof changeSetDigest === "string" && changeSetDigest.startsWith("sha256:") ? changeSetDigest : `sha256:${changeSetDigest || ""}`),
+      verificationMode: String(options.verificationMode || (preservedProducerFindings.length === 0 ? "clean_challenge" : "producer_verification")),
+      overallStatus: "UNCERTAIN",
+      ok: false,
+      valid: false,
+      error: errMsg,
+      producer: deepFreeze({
+        providerName: options.producerName || options.producer?.providerName || "agy",
+        findingsCount: preservedProducerFindings.length,
+        findings: preservedProducerFindings
+      }),
+      verifier: deepFreeze({
+        providerName: verifierAdapter?.providerName || options.verifierName || "claude",
+        modelName: verifierAdapter?.modelName || options.verifierModel || "claude-default",
+        actualModel: deepFreeze(normalizeActualModel(verifierAdapter?.actualModel || options.actualModel)),
+        usage: null
+      }),
+      evaluations: Object.freeze([]),
+      verifierOmissions: Object.freeze([]),
+      disagreementLedger: Object.freeze([]),
+      summary: deepFreeze({
+        totalEvaluated: 0,
+        supportedCount: 0,
+        partiallySupportedCount: 0,
+        contestedCount: 0,
+        insufficientEvidenceCount: 0,
+        omissionsCount: 0
+      })
+    });
+  };
+
+  if (callerDeclaredHead && csDeclaredHead && callerDeclaredHead !== csDeclaredHead) {
+    return createHeadMismatchRecord(
+      `Gate Fail-Closed: Verification record binding mismatch (FORGED_OR_STALE_RECORD: HEAD_SHA_MISMATCH: Caller HEAD SHA '${callerDeclaredHead}' conflicts with ChangeSet HEAD SHA '${csDeclaredHead}').`
+    );
+  }
+  if (rcDeclaredHead && callerDeclaredHead && rcDeclaredHead !== callerDeclaredHead) {
+    return createHeadMismatchRecord(
+      `Gate Fail-Closed: Verification record binding mismatch (FORGED_OR_STALE_RECORD: HEAD_SHA_MISMATCH: Caller HEAD SHA '${callerDeclaredHead}' conflicts with authoritative RunContext HEAD SHA '${rcDeclaredHead}').`
+    );
+  }
+  if (rcDeclaredHead && csDeclaredHead && rcDeclaredHead !== csDeclaredHead) {
+    return createHeadMismatchRecord(
+      `Gate Fail-Closed: Verification record binding mismatch (FORGED_OR_STALE_RECORD: HEAD_SHA_MISMATCH: ChangeSet HEAD SHA '${csDeclaredHead}' conflicts with authoritative RunContext HEAD SHA '${rcDeclaredHead}').`
+    );
+  }
+
+  const headSha = rcDeclaredHead || callerDeclaredHead || csDeclaredHead || "";
   const verificationMode = String(options.verificationMode || (preservedProducerFindings.length === 0 ? "clean_challenge" : "producer_verification"));
 
   const rawExclusions = Array.isArray(options.exclusions)

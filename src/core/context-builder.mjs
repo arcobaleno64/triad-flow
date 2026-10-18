@@ -837,7 +837,7 @@ export function resolveReceiverLexicalBinding(lines, qualifier, symbol, targetLi
 
     let resolvedCallLine = targetLine;
     if (!resolvedCallLine) {
-      const callRegex = new RegExp(`(?:^|[^a-zA-Z0-9_$])${escapedQual}\\.${escapedSym}\\s*\\(`);
+      const callRegex = new RegExp(`(?:^|[^a-zA-Z0-9_$])${escapedQual}(?:\\.|\\?\\.)${escapedSym}\\s*(?:\\?\\.\\s*)?\\(`);
       const callLines = [];
       for (let idx = 0; idx < cleanLines.length; idx++) {
         if (callRegex.test(cleanLines[idx])) {
@@ -979,7 +979,7 @@ export function resolveReceiverLexicalBinding(lines, qualifier, symbol, targetLi
   // Determine callLine
   let resolvedCallLine = targetLine;
   if (!resolvedCallLine) {
-    const callRegex = new RegExp(`(?:^|[^a-zA-Z0-9_$])${escapedQual}\\.${escapedSym}\\s*\\(`);
+    const callRegex = new RegExp(`(?:^|[^a-zA-Z0-9_$])${escapedQual}(?:\\.|\\?\\.)${escapedSym}\\s*(?:\\?\\.\\s*)?\\(`);
     for (let idx = 0; idx < cleanLines.length; idx++) {
       if (callRegex.test(cleanLines[idx])) {
         resolvedCallLine = idx + 1;
@@ -1522,7 +1522,7 @@ export function extractCandidateCallSymbols(diffHunks) {
   const candidates = [];
   const seen = new Set();
 
-  const CALL_REGEX = /\b([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/g;
+  const CALL_REGEX = /\b([a-zA-Z_][a-zA-Z0-9_]*)\s*(?:\?\.\s*)?\(/g;
   const KEYWORDS = new Set([
     "if", "else", "for", "while", "do", "switch", "case", "default", "break", "continue",
     "return", "throw", "try", "catch", "finally", "goto", "function", "async", "await",
@@ -2222,7 +2222,7 @@ export function extractCallGraphContext(fileContent, targetFile = "", workspaceF
   if (!fileContent) return { callers, callees };
 
   // Detect callee calls inside modified content
-  const callRegex = /\b([a-zA-Z0-9_$]+)\s*\(/g;
+  const callRegex = /\b([a-zA-Z0-9_$]+)\s*(?:\?\.\s*)?\(/g;
   const knownKeywords = new Set(["if", "for", "while", "switch", "catch", "with", "function", "return", "typeof", "delete", "require", "import", "super"]);
   const seenCallees = new Set();
 

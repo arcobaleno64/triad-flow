@@ -22,6 +22,7 @@ import {
   extractLocalCalleeContext
 } from "../src/core/context-builder.mjs";
 import { runCli, EXIT_CODES } from "../src/cli.mjs";
+import { computeDigest } from "../src/core/canonical-digest.mjs";
 
 // ============================================================================
 // Thread tm8Ko: Context Authentication in conductIndependentVerification
@@ -1719,4 +1720,247 @@ test("tm8Kl-POSITIVE-DIRECT-STATIC-METHOD-WITH-NESTED-CLASS: direct static metho
   assert.equal(result.callees.length, 1);
   assert.equal(result.unresolvedCallees.length, 0);
   assert.equal(result.contextGaps.length, 0);
+});
+
+// ============================================================================
+// Threads tqhHk, tqhHm, tqhHn, tqhHo: PR #39 Review Delta Remediations
+// ============================================================================
+
+const VALID_HEAD_A = "e5a832dbb6aaad5b609f3c9f14f2c1c156df8717";
+const CONFLICT_HEAD_B = "9e9b0e6d5fe2e0d08a3a097822de09cd2c83ab3e";
+
+// Mock verifier adapter that behaves like an authentic clean challenge verifier
+function createMockVerifierAdapter(decision = "clean") {
+  return {
+    providerName: "claude",
+    modelName: "claude-default",
+    actualModel: "claude-3-5-sonnet",
+    async verify() {
+      return {
+        overallStatus: "CLEAN",
+        decision,
+        evaluations: [],
+        omissions: [],
+        reasoning: "Verified clean by mock verifier"
+      };
+    }
+  };
+}
+
+// ---------------------------------------------------------------------------
+// 1. Thread tqhHk: Multi-File Context Manifest Binding
+// ---------------------------------------------------------------------------
+test("tqhHk: authentic multi-file context package with complete fileCoverageManifest is accepted", () => {
+  const diffHunks = "diff --git a/src/a.mjs b/src/a.mjs\n--- a/src/a.mjs\n+++ b/src/a.mjs\n@@ -1,1 +1,1 @@\n-1\n+2\n" +
+                    "diff --git a/src/b.mjs b/src/b.mjs\n--- a/src/b.mjs\n+++ b/src/b.mjs\n@@ -1,1 +1,1 @@\n-3\n+4\n";
+  const digest = computeDigest(diffHunks);
+
+  const changeSet = {
+    headSha: VALID_HEAD_A,
+    diffHunks,
+    contentDigest: digest,
+    files: ["src/a.mjs", "src/b.mjs"]
+  };
+
+  const authenticMultiPkg = {
+    targetFile: "multi-file",
+    headSha: VALID_HEAD_A,
+    contentDigest: digest,
+    fileCoverageManifest: [
+      { file: "src/a.mjs", inspected: true },
+      { file: "src/b.mjs", inspected: true }
+    ],
+    layers: {
+      layer0Diff: diffHunks
+    }
+  };
+
+  const isBound = isContextPackageBoundToChangeSet(authenticMultiPkg, changeSet, VALID_HEAD_A);
+  assert.strictEqual(isBound, true, "Authentic multi-file context package with complete coverage must be accepted");
+});
+
+test("tqhHk: single-file context package must not bind to multi-file changeSet (fail-closed)", () => {
+  const diffHunks = "diff --git a/src/a.mjs b/src/a.mjs\n--- a/src/a.mjs\n+++ b/src/a.mjs\n@@ -1,1 +1,1 @@\n-1\n+2\n" +
+                    "diff --git a/src/b.mjs b/src/b.mjs\n--- a/src/b.mjs\n+++ b/src/b.mjs\n@@ -1,1 +1,1 @@\n-3\n+4\n";
+  const digest = computeDigest(diffHunks);
+
+  const changeSet = {
+    headSha: VALID_HEAD_A,
+    diffHunks,
+    contentDigest: digest,
+    files: ["src/a.mjs", "src/b.mjs"]
+  };
+
+  // Untrusted single-file package covering only src/a.mjs
+  const forgedSinglePkg = {
+    targetFile: "src/a.mjs",
+    headSha: VALID_HEAD_A,
+    contentDigest: digest,
+    layers: {
+      layer0Diff: diffHunks
+    }
+  };
+
+  const isBound = isContextPackageBoundToChangeSet(forgedSinglePkg, changeSet, VALID_HEAD_A);
+  assert.strictEqual(isBound, false, "Single-file context package must be rejected when changeSet touches multiple files");
+});
+
+test("tqhHk: multi-file context package missing files in manifest must fail-closed", () => {
+  const diffHunks = "diff --git a/src/a.mjs b/src/a.mjs\n--- a/src/a.mjs\n+++ b/src/a.mjs\n@@ -1,1 +1,1 @@\n-1\n+2\n" +
+                    "diff --git a/src/b.mjs b/src/b.mjs\n--- a/src/b.mjs\n+++ b/src/b.mjs\n@@ -1,1 +1,1 @@\n-3\n+4\n";
+  const digest = computeDigest(diffHunks);
+
+  const changeSet = {
+    headSha: VALID_HEAD_A,
+    diffHunks,
+    contentDigest: digest,
+    files: ["src/a.mjs", "src/b.mjs"]
+  };
+
+  // Missing src/b.mjs
+  const incompletePkg = {
+    targetFile: "multi-file",
+    headSha: VALID_HEAD_A,
+    contentDigest: digest,
+    fileCoverageManifest: [
+      { file: "src/a.mjs", inspected: true }
+    ],
+    layers: {
+      layer0Diff: diffHunks
+    }
+  };
+
+  const isBound = isContextPackageBoundToChangeSet(incompletePkg, changeSet, VALID_HEAD_A);
+  assert.strictEqual(isBound, false, "Incomplete multi-file context package must fail closed");
+});
+
+// ---------------------------------------------------------------------------
+// 2. Thread tqhHm: Conflicting HEAD Precedence Check
+// ---------------------------------------------------------------------------
+test("tqhHm: conflicting caller options.headSha and changeSet.headSha fails closed with HEAD_SHA_MISMATCH", async () => {
+  const diffHunks = "@@ -1,1 +1,1 @@\n-false\n+true\n";
+  const changeSet = {
+    headSha: VALID_HEAD_A,
+    diffHunks,
+    files: ["src/index.mjs"]
+  };
+
+  const mockAdapter = createMockVerifierAdapter("clean");
+  const record = await conductIndependentVerification(changeSet, [], mockAdapter, {
+    headSha: CONFLICT_HEAD_B,
+    verificationMode: "clean_challenge"
+  });
+
+  assert.strictEqual(record.ok, false, "Conflicting HEADs must not be marked ok: true");
+  assert.strictEqual(record.overallStatus, "UNCERTAIN", "Conflicting HEADs must yield UNCERTAIN");
+  assert.match(record.error, /HEAD_SHA_MISMATCH/, "Error must identify HEAD_SHA_MISMATCH");
+});
+
+test("tqhHm: matching caller options.headSha and changeSet.headSha succeeds consistently", async () => {
+  const diffHunks = "@@ -1,1 +1,1 @@\n-false\n+true\n";
+  const changeSet = {
+    headSha: VALID_HEAD_A,
+    diffHunks,
+    files: ["src/index.mjs"]
+  };
+
+  const mockAdapter = createMockVerifierAdapter("clean");
+  const record = await conductIndependentVerification(changeSet, [], mockAdapter, {
+    headSha: VALID_HEAD_A,
+    verificationMode: "clean_challenge"
+  });
+
+  assert.strictEqual(record.ok, true, "Matching HEADs must yield valid record");
+  assert.strictEqual(record.headSha, VALID_HEAD_A, "Head SHA must match the consistent HEAD");
+});
+
+// ---------------------------------------------------------------------------
+// 3. Thread tqhHn: Trimmed Diff Digest Acceptance Removal
+// ---------------------------------------------------------------------------
+test("tqhHn: trimmed diff digest is rejected from validChangeSetDigests", async () => {
+  const diffWithTrailingSpace = "@@ -1,1 +1,1 @@\n-false\n+true \n";
+  const trimmedDiff = "@@ -1,1 +1,1 @@\n-false\n+true";
+  const trimmedDigest = computeDigest(trimmedDiff);
+
+  const changeSet = {
+    headSha: VALID_HEAD_A,
+    diffHunks: diffWithTrailingSpace,
+    files: ["src/index.mjs"]
+  };
+
+  const mockAdapter = createMockVerifierAdapter("clean");
+  const record = await conductIndependentVerification(changeSet, [], mockAdapter, {
+    headSha: VALID_HEAD_A,
+    changeSetDigest: trimmedDigest,
+    verificationMode: "clean_challenge"
+  });
+
+  assert.strictEqual(record.ok, false, "Caller passing trimmed digest of different whitespace must be rejected");
+  assert.match(record.error || "", /CROSS_CHANGESET_DIGEST_MISMATCH|digest/i, "Record must flag digest mismatch");
+});
+
+test("tqhHn: exact diff digest succeeds", async () => {
+  const diffHunks = "@@ -1,1 +1,1 @@\n-false\n+true\n";
+  const exactDigest = computeDigest(diffHunks);
+
+  const changeSet = {
+    headSha: VALID_HEAD_A,
+    diffHunks,
+    files: ["src/index.mjs"]
+  };
+
+  const mockAdapter = createMockVerifierAdapter("clean");
+  const record = await conductIndependentVerification(changeSet, [], mockAdapter, {
+    headSha: VALID_HEAD_A,
+    changeSetDigest: exactDigest,
+    verificationMode: "clean_challenge"
+  });
+
+  assert.strictEqual(record.ok, true, "Exact diff digest must be accepted");
+  assert.strictEqual(record.changeSetDigest, exactDigest, "Stampped digest must match exact digest");
+});
+
+// ---------------------------------------------------------------------------
+// 4. Thread tqhHo: Optional Chaining Call Detection (?.()
+// ---------------------------------------------------------------------------
+test("tqhHo: optional call auth.authorize?.(user) extracts candidate and records security context gap", () => {
+  const diffHunks = "@@ -2,2 +2,3 @@\n function handle(user) {\n-  return false;\n+  return auth.authorize?.(user);\n }\n";
+  const fileContent = "import { auth } from './auth.mjs';\nfunction handle(user) {\n  return auth.authorize?.(user);\n}\n";
+
+  const candidates = extractCandidateCallSymbols(diffHunks);
+  assert.strictEqual(candidates.length, 1, "Candidate call must be extracted for auth.authorize?.(user)");
+  assert.strictEqual(candidates[0].symbol, "authorize");
+  assert.strictEqual(candidates[0].qualifier, "auth");
+  assert.strictEqual(candidates[0].isSensitive, true);
+
+  const calleeCtx = extractLocalCalleeContext(fileContent, diffHunks, "src/handler.mjs");
+  assert.strictEqual(calleeCtx.contextGaps.length, 1, "Context gap must be generated for unresolvable external optional call");
+  assert.strictEqual(calleeCtx.contextGaps[0].symbol, "authorize");
+  assert.strictEqual(calleeCtx.contextGaps[0].reason, "EXTERNAL_CALLEE_UNRESOLVED");
+  assert.strictEqual(calleeCtx.contextGaps[0].category, "security");
+});
+
+test("tqhHo: bare optional call authorizeUser?.(user) extracts candidate and records security context gap", () => {
+  const diffHunks = "@@ -2,2 +2,3 @@\n function handle(user) {\n-  return false;\n+  return authorizeUser?.(user);\n }\n";
+  const fileContent = "import { authorizeUser } from './auth.mjs';\nfunction handle(user) {\n  return authorizeUser?.(user);\n}\n";
+
+  const candidates = extractCandidateCallSymbols(diffHunks);
+  assert.strictEqual(candidates.length, 1, "Candidate call must be extracted for authorizeUser?.(user)");
+  assert.strictEqual(candidates[0].symbol, "authorizeUser");
+  assert.strictEqual(candidates[0].isSensitive, true);
+
+  const calleeCtx = extractLocalCalleeContext(fileContent, diffHunks, "src/handler.mjs");
+  assert.strictEqual(calleeCtx.contextGaps.length, 1, "Context gap must be generated for unresolvable external bare optional call");
+  assert.strictEqual(calleeCtx.contextGaps[0].symbol, "authorizeUser");
+  assert.strictEqual(calleeCtx.contextGaps[0].reason, "EXTERNAL_CALLEE_UNRESOLVED");
+});
+
+test("tqhHo: string literals, comments, and templates do NOT emit false optional call candidates", () => {
+  const diffHunks = "@@ -1,1 +1,4 @@\n" +
+                    "+// authorizeUser?.(user)\n" +
+                    "+/* auth.authorize?.(user) */\n" +
+                    "+const str = \"authorizeUser?.(user)\";\n";
+
+  const candidates = extractCandidateCallSymbols(diffHunks);
+  assert.strictEqual(candidates.length, 0, "Comments and strings must not emit candidate calls");
 });
