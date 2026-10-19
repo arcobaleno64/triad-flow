@@ -2448,7 +2448,9 @@ export function validateVerificationOutput(rawOutput, context = {}, { allowSynth
         try {
           const content = getExactHeadFileContent(repoRoot, headSha, file);
           if (typeof content === "string") {
-            physicalLineCount = content.split("\n").length;
+            physicalLineCount = content.length === 0
+              ? 0
+              : content.split(/\r?\n/).length - (content.endsWith("\n") ? 1 : 0);
           }
         } catch {}
       }
@@ -2482,7 +2484,9 @@ export function validateVerificationOutput(rawOutput, context = {}, { allowSynth
                 const stat = fs.statSync(realCandidate);
                 if (stat.isFile() && stat.size <= 1048576) {
                   const content = fs.readFileSync(realCandidate, "utf8");
-                  physicalLineCount = content.split("\n").length;
+                  physicalLineCount = content.length === 0
+                    ? 0
+                    : content.split(/\r?\n/).length - (content.endsWith("\n") ? 1 : 0);
                 }
               }
             } else if (isRealRepo) {
@@ -2569,7 +2573,7 @@ export function validateVerificationOutput(rawOutput, context = {}, { allowSynth
         matchedFile &&
         typeof matchedFile === "object" &&
         !isRealRepo &&
-        (isWorkingTreeMode || hasVerifiedExactHeadManifest);
+        hasVerifiedExactHeadManifest;
 
       if (allowDiffHunkBasis) {
         let maxCredibleLine = 0;

@@ -52,6 +52,7 @@ import {
 } from "../src/core/independent-verifier.mjs";
 import { EXECUTION_STATUS } from "../src/adapters/provider-contract.mjs";
 import { buildContextPackage } from "../src/core/context-builder.mjs";
+import { getExactHeadFileContent } from "../src/core/git-collector.mjs";
 
 // Helper: minimal valid changeset referencing an existing repo file
 const currentRepoHeadSha = execFileSync(
@@ -2173,4 +2174,218 @@ index 1111111..2222222 100644
     fs.rmSync(tempDir, { recursive: true, force: true });
     fs.rmSync(nonGitDir, { recursive: true, force: true });
   }
+});
+
+// ============================================================================
+// PHASE2-NEG-28: (RVCBQ Counterexample A) Non-Git working-tree mode with target file absent from disk cannot use self-declared diff hunks to grant SUPPORTED
+// ============================================================================
+test("PHASE2-NEG-28: Non-Git working-tree mode with target file absent from disk cannot use self-declared diff hunks to grant SUPPORTED", () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "triad-rvcbq-neg28-"));
+  try {
+    const changeSet = {
+      repository: { root: tempDir },
+      files: [{ path: "src/not-on-disk.js" }],
+      diffHunks: "diff --git a/src/not-on-disk.js b/src/not-on-disk.js\n@@ -0,0 +1,999999 @@\n+line"
+    };
+
+    const candidate = {
+      title: "Fabricated omission on non-existent file",
+      file: "src/not-on-disk.js",
+      line_start: 999999,
+      line_end: 999999,
+      locatorAccurate: true,
+      severity: "critical",
+      evidenceSupport: "SUPPORTED",
+      reasoning: "Detailed substantive reasoning explaining why this is vulnerable in execution flow",
+      counterexample: "fn(payload) -> crash"
+    };
+
+    const result = validateVerificationOutput(
+      { overallStatus: "DEFECTS_FOUND", evaluations: [], verifierOmissions: [candidate] },
+      { changeSet }
+    );
+
+    assert.ok(result.ok);
+    assert.equal(result.verifierOmissions[0].locatorAccurate, false, "Absent target file in non-Git working-tree mode must set locatorAccurate to false");
+    assert.equal(result.verifierOmissions[0].evidenceSupport, "INSUFFICIENT_EVIDENCE", "Fabricated diff hunk on absent file must downgrade SUPPORTED to INSUFFICIENT_EVIDENCE");
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+// ============================================================================
+// PHASE2-NEG-29: (RVCBQ Counterexample B) Trailing newline in file must not overcount physical line count and grant SUPPORTED to out-of-bounds line
+// ============================================================================
+test("PHASE2-NEG-29: Trailing newline in file must not overcount physical line count and grant SUPPORTED to out-of-bounds line", () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "triad-rvcbq-neg29-"));
+  try {
+    const filePath = "src/three-lines.js";
+    const fullPath = path.join(tempDir, filePath);
+    fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+    fs.writeFileSync(fullPath, "const a = 1;\nconst b = 2;\nconst c = 3;\n", "utf8");
+
+    const changeSet = {
+      repository: { root: tempDir },
+      files: [{ path: filePath }],
+      diffHunks: ""
+    };
+
+    const candidate = {
+      title: "Omission referencing non-existent line 4 after trailing newline",
+      file: filePath,
+      line_start: 4,
+      line_end: 4,
+      locatorAccurate: true,
+      severity: "high",
+      evidenceSupport: "SUPPORTED",
+      reasoning: "Substantive reasoning explaining crash on trailing empty line",
+      counterexample: "call() -> crash"
+    };
+
+    const result = validateVerificationOutput(
+      { overallStatus: "DEFECTS_FOUND", evaluations: [], verifierOmissions: [candidate] },
+      { changeSet, scopeMode: "working-tree" }
+    );
+
+    assert.ok(result.ok);
+    assert.equal(result.verifierOmissions[0].locatorAccurate, false, "Line beyond last code line must set locatorAccurate to false");
+    assert.equal(result.verifierOmissions[0].evidenceSupport, "INSUFFICIENT_EVIDENCE", "Out-of-bounds line after trailing newline must downgrade to INSUFFICIENT_EVIDENCE");
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+// ============================================================================
+// PHASE2-POS-03: (Boundary Check) Single blank line file ("\n" / "\r\n") accepts line 1 as valid and rejects line 2
+// ============================================================================
+test("PHASE2-POS-03: Single blank line file ('\\n' / '\\r\\n') accepts line 1 as valid and rejects line 2; empty file rejects line 1", () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "triad-rvcbq-pos03-"));
+  try {
+    fs.mkdirSync(path.join(tempDir, "src"), { recursive: true });
+    // 1. Single blank line with LF ("\n") -> 1 physical line
+    const lfFile = "src/blank-lf.js";
+    fs.writeFileSync(path.join(tempDir, lfFile), "\n", "utf8");
+
+    const candidateLine1 = {
+      title: "Legitimate flaw on blank line 1",
+      file: lfFile,
+      line_start: 1,
+      line_end: 1,
+      locatorAccurate: true,
+      severity: "high",
+      evidenceSupport: "SUPPORTED",
+      reasoning: "Substantive reasoning explaining crash on line 1",
+      counterexample: "call(1) -> crash"
+    };
+
+    const resLfLine1 = validateVerificationOutput(
+      { overallStatus: "DEFECTS_FOUND", evaluations: [], verifierOmissions: [candidateLine1] },
+      { changeSet: { repository: { root: tempDir }, files: [{ path: lfFile }] }, scopeMode: "working-tree" }
+    );
+    assert.ok(resLfLine1.ok);
+    assert.equal(resLfLine1.verifierOmissions[0].locatorAccurate, true, "Line 1 of single blank line LF file must remain locatorAccurate true");
+    assert.equal(resLfLine1.verifierOmissions[0].evidenceSupport, "SUPPORTED", "Line 1 of single blank line LF file must remain SUPPORTED (no false rejection)");
+
+    const candidateLine2 = { ...candidateLine1, line_start: 2, line_end: 2 };
+    const resLfLine2 = validateVerificationOutput(
+      { overallStatus: "DEFECTS_FOUND", evaluations: [], verifierOmissions: [candidateLine2] },
+      { changeSet: { repository: { root: tempDir }, files: [{ path: lfFile }] }, scopeMode: "working-tree" }
+    );
+    assert.ok(resLfLine2.ok);
+    assert.equal(resLfLine2.verifierOmissions[0].locatorAccurate, false, "Line 2 of single blank line LF file must be locatorAccurate false");
+    assert.equal(resLfLine2.verifierOmissions[0].evidenceSupport, "INSUFFICIENT_EVIDENCE", "Line 2 of single blank line LF file must downgrade to INSUFFICIENT_EVIDENCE");
+
+    // 2. Single blank line with CRLF ("\r\n") -> 1 physical line
+    const crlfFile = "src/blank-crlf.js";
+    fs.writeFileSync(path.join(tempDir, crlfFile), "\r\n", "utf8");
+
+    const candidateCrlfLine1 = { ...candidateLine1, file: crlfFile };
+    const resCrlfLine1 = validateVerificationOutput(
+      { overallStatus: "DEFECTS_FOUND", evaluations: [], verifierOmissions: [candidateCrlfLine1] },
+      { changeSet: { repository: { root: tempDir }, files: [{ path: crlfFile }] }, scopeMode: "working-tree" }
+    );
+    assert.ok(resCrlfLine1.ok);
+    assert.equal(resCrlfLine1.verifierOmissions[0].locatorAccurate, true, "Line 1 of single blank line CRLF file must remain locatorAccurate true");
+    assert.equal(resCrlfLine1.verifierOmissions[0].evidenceSupport, "SUPPORTED", "Line 1 of single blank line CRLF file must remain SUPPORTED");
+
+    const candidateCrlfLine2 = { ...candidateLine1, file: crlfFile, line_start: 2, line_end: 2 };
+    const resCrlfLine2 = validateVerificationOutput(
+      { overallStatus: "DEFECTS_FOUND", evaluations: [], verifierOmissions: [candidateCrlfLine2] },
+      { changeSet: { repository: { root: tempDir }, files: [{ path: crlfFile }] }, scopeMode: "working-tree" }
+    );
+    assert.ok(resCrlfLine2.ok);
+    assert.equal(resCrlfLine2.verifierOmissions[0].locatorAccurate, false, "Line 2 of single blank line CRLF file must be locatorAccurate false");
+    assert.equal(resCrlfLine2.verifierOmissions[0].evidenceSupport, "INSUFFICIENT_EVIDENCE", "Line 2 of single blank line CRLF file must downgrade to INSUFFICIENT_EVIDENCE");
+
+    // 3. Completely empty file ("") -> 0 physical lines
+    const emptyFile = "src/empty.js";
+    fs.writeFileSync(path.join(tempDir, emptyFile), "", "utf8");
+
+    const candidateEmpty = { ...candidateLine1, file: emptyFile };
+    const resEmpty = validateVerificationOutput(
+      { overallStatus: "DEFECTS_FOUND", evaluations: [], verifierOmissions: [candidateEmpty] },
+      { changeSet: { repository: { root: tempDir }, files: [{ path: emptyFile }] }, scopeMode: "working-tree" }
+    );
+    assert.ok(resEmpty.ok);
+    assert.equal(resEmpty.verifierOmissions[0].locatorAccurate, false, "Line 1 of empty 0-byte file must be locatorAccurate false");
+    assert.equal(resEmpty.verifierOmissions[0].evidenceSupport, "INSUFFICIENT_EVIDENCE", "Line 1 of empty 0-byte file must downgrade to INSUFFICIENT_EVIDENCE");
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+// ============================================================================
+// PHASE2-NEG-30: (Boundary Check) Exact-Head branch physicalLineCount boundary check
+// ============================================================================
+test("PHASE2-NEG-30: Exact-Head branch verifies physicalLineCount bounds on committed repo file and rejects out-of-bounds line", () => {
+  const targetFile = "src/core/independent-verifier.mjs";
+  const exactContent = getExactHeadFileContent(process.cwd(), currentRepoHeadSha, targetFile);
+  assert.ok(typeof exactContent === "string", "Must be able to read target file from checked-out exact HEAD");
+
+  const expectedLines = exactContent.length === 0
+    ? 0
+    : exactContent.split(/\r?\n/).length - (exactContent.endsWith("\n") ? 1 : 0);
+  assert.ok(expectedLines > 100, "independent-verifier.mjs must have substantive physical lines");
+
+  const changeSet = createTestChangeSet({
+    repository: { root: process.cwd() },
+    headSha: currentRepoHeadSha,
+    files: [{ path: targetFile }]
+  });
+
+  // Scenario 1: Legitimate omission on the exact last physical line -> SUPPORTED (positive control)
+  const lastLineCandidate = {
+    title: "Flaw on the exact last physical line of file",
+    file: targetFile,
+    line_start: expectedLines,
+    line_end: expectedLines,
+    locatorAccurate: true,
+    severity: "high",
+    evidenceSupport: "SUPPORTED",
+    reasoning: "Substantive reasoning explaining flaw at final line boundary",
+    counterexample: "verifyBoundary(lastLine) -> crash"
+  };
+
+  const resLastLine = validateVerificationOutput(
+    { overallStatus: "DEFECTS_FOUND", evaluations: [], verifierOmissions: [lastLineCandidate] },
+    { changeSet, headSha: currentRepoHeadSha }
+  );
+  assert.ok(resLastLine.ok);
+  assert.equal(resLastLine.verifierOmissions[0].locatorAccurate, true, "Exact last physical line must retain locatorAccurate true");
+  assert.equal(resLastLine.verifierOmissions[0].evidenceSupport, "SUPPORTED", "Exact last physical line must retain SUPPORTED");
+
+  // Scenario 2: Omission referencing expectedLines + 1 (1 past physical end) -> downgraded (negative control)
+  const beyondEndCandidate = {
+    ...lastLineCandidate,
+    line_start: expectedLines + 1,
+    line_end: expectedLines + 1
+  };
+
+  const resBeyondEnd = validateVerificationOutput(
+    { overallStatus: "DEFECTS_FOUND", evaluations: [], verifierOmissions: [beyondEndCandidate] },
+    { changeSet, headSha: currentRepoHeadSha }
+  );
+  assert.ok(resBeyondEnd.ok);
+  assert.equal(resBeyondEnd.verifierOmissions[0].locatorAccurate, false, "Line expectedLines + 1 must set locatorAccurate false");
+  assert.equal(resBeyondEnd.verifierOmissions[0].evidenceSupport, "INSUFFICIENT_EVIDENCE", "Line expectedLines + 1 must downgrade to INSUFFICIENT_EVIDENCE");
 });

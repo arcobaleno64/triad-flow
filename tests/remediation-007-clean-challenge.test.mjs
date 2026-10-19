@@ -3126,203 +3126,218 @@ test("PR39-GATE-OUT-03-NEGATIVE: Same ChangeSet with different producer findings
 });
 
 test("PR39-GATE-OUT-04-NEGATIVE: Tier 1 omission policy (strict omission blocking) is preserved identically between orchestrator and direct gate calls", async () => {
-  const hunks = "diff --git a/src/auth.js b/src/auth.js\n@@ -1,1 +1,2 @@\n+const token = 1;";
-  const contentDigest = crypto.createHash("sha256").update(hunks).digest("hex");
-  const changeSet = {
-    ok: true,
-    schemaVersion: "1.0.0",
-    scopeMode: "working-tree",
-    repository: { root: "/repo", hasHead: true, currentBranch: "main" },
-    headSha: "a".repeat(40),
-    contentDigest,
-    totalFiles: 1,
-    totalAdditions: 1,
-    totalDeletions: 0,
-    files: [{ path: "src/auth.js", additions: 1, deletions: 0, riskTier: 1 }],
-    diffHunks: hunks
-  };
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "triad-gate-out-04-"));
+  try {
+    execFileSync("git", ["init", "-b", "main"], { cwd: tmpDir, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "Test User"], { cwd: tmpDir, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: tmpDir, stdio: "ignore" });
+    fs.mkdirSync(path.join(tmpDir, "src"), { recursive: true });
+    fs.writeFileSync(path.join(tmpDir, "src", "auth.js"), "const token = 1;\n", "utf8");
+    fs.writeFileSync(path.join(tmpDir, "src", "calc.js"), "const result = 1;\n", "utf8");
+    execFileSync("git", ["add", "."], { cwd: tmpDir, stdio: "ignore" });
+    execFileSync("git", ["commit", "-m", "initial commit"], { cwd: tmpDir, stdio: "ignore" });
+    const headSha = execFileSync("git", ["rev-parse", "HEAD"], { cwd: tmpDir, encoding: "utf8" }).trim();
 
-  const mockAdapter = {
-    providerName: "mock-sentry",
-    modelName: "test-model",
-    executeReview: async () => ({
+    const hunks = "diff --git a/src/auth.js b/src/auth.js\n@@ -1,1 +1,2 @@\n+const token = 1;";
+    const contentDigest = crypto.createHash("sha256").update(hunks).digest("hex");
+    const changeSet = {
       ok: true,
-      executionStatus: "success",
-      findings: [],
-      coverage: { coveredFiles: ["src/auth.js"], omittedFiles: [] },
-      providerIdentity: { provider: "mock-sentry", family: "anthropic", model: "test" }
-    })
-  };
+      schemaVersion: "1.0.0",
+      scopeMode: "working-tree",
+      repository: { root: tmpDir, hasHead: true, currentBranch: "main" },
+      headSha,
+      contentDigest,
+      totalFiles: 1,
+      totalAdditions: 1,
+      totalDeletions: 0,
+      files: [{ path: "src/auth.js", additions: 1, deletions: 0, riskTier: 1 }],
+      diffHunks: hunks
+    };
 
-  const consensusClean = makeTrustedConsensus([], { tier: 1 });
+    const mockAdapter = {
+      providerName: "mock-sentry",
+      modelName: "test-model",
+      executeReview: async () => ({
+        ok: true,
+        executionStatus: "success",
+        findings: [],
+        coverage: { coveredFiles: ["src/auth.js"], omittedFiles: [] },
+        providerIdentity: { provider: "mock-sentry", family: "anthropic", model: "test" }
+      })
+    };
 
-  // Mock verifier that reports a SUPPORTED Medium omission with a concrete verifiable counterexample
-  const mockVerifier = {
-    executeVerification: async () => ({
-      overallStatus: "DEFECTS_FOUND",
-      evaluations: [],
-      verifierOmissions: [
-        {
-          title: "Unchecked permission boundary in auth module",
-          severity: "medium",
-          evidenceSupport: "SUPPORTED",
-          locatorAccurate: true,
-          file: "src/auth.js",
-          line_start: 1,
-          line_end: 1,
-          counterexample: "calling validateToken(null) returns null and causes crash"
-        }
-      ]
-    })
-  };
+    const consensusClean = makeTrustedConsensus([], { tier: 1 });
 
-  const runId = "run-gate-out-04";
+    // Mock verifier that reports a SUPPORTED Medium omission with a concrete verifiable counterexample
+    const mockVerifier = {
+      executeVerification: async () => ({
+        overallStatus: "DEFECTS_FOUND",
+        evaluations: [],
+        verifierOmissions: [
+          {
+            title: "Unchecked permission boundary in auth module",
+            severity: "medium",
+            evidenceSupport: "SUPPORTED",
+            locatorAccurate: true,
+            file: "src/auth.js",
+            line_start: 1,
+            line_end: 1,
+            counterexample: "calling validateToken(null) returns null and causes crash"
+          }
+        ]
+      })
+    };
 
-  const trustedRecord = await conductIndependentVerification(
-    changeSet,
-    [],
-    mockVerifier,
-    {
-      verificationMode: "clean_challenge",
+    const runId = "run-gate-out-04";
+
+    const trustedRecord = await conductIndependentVerification(
+      changeSet,
+      [],
+      mockVerifier,
+      {
+        verificationMode: "clean_challenge",
+        headSha: changeSet.headSha,
+        changeSetDigest: changeSet.contentDigest,
+        runId
+      }
+    );
+
+    const runContext = new RunContext({
       headSha: changeSet.headSha,
-      changeSetDigest: changeSet.contentDigest,
+      contentDigest: changeSet.contentDigest,
       runId
-    }
-  );
+    });
 
-  const runContext = new RunContext({
-    headSha: changeSet.headSha,
-    contentDigest: changeSet.contentDigest,
-    runId
-  });
+    // Direct Gate: Tier 1 strictly blocks Medium omission (decision: "block")
+    const directGateT1 = evaluateGateDecision(consensusClean, {
+      tier: 1,
+      verificationRecord: trustedRecord,
+      runContext
+    });
+    assert.equal(directGateT1.decision, "block", "Tier 1 direct gate strictly blocks Medium omission");
+    assert.match(directGateT1.reason, /Supported Medium Omission \(Tier 1\)/i);
 
-  // Direct Gate: Tier 1 strictly blocks Medium omission (decision: "block")
-  const directGateT1 = evaluateGateDecision(consensusClean, {
-    tier: 1,
-    verificationRecord: trustedRecord,
-    runContext
-  });
-  assert.equal(directGateT1.decision, "block", "Tier 1 direct gate strictly blocks Medium omission");
-  assert.match(directGateT1.reason, /Supported Medium Omission \(Tier 1\)/i);
+    // Direct Gate: Tier 2 routes Medium omission to human_review_required
+    const directGateT2 = evaluateGateDecision(consensusClean, {
+      tier: 2,
+      verificationRecord: trustedRecord,
+      runContext
+    });
+    assert.equal(directGateT2.decision, "human_review_required", "Tier 2 direct gate routes Medium omission to human review");
+    assert.match(directGateT2.reason, /Supported Medium Omission \(Tier 2\)/i);
 
-  // Direct Gate: Tier 2 routes Medium omission to human_review_required
-  const directGateT2 = evaluateGateDecision(consensusClean, {
-    tier: 2,
-    verificationRecord: trustedRecord,
-    runContext
-  });
-  assert.equal(directGateT2.decision, "human_review_required", "Tier 2 direct gate routes Medium omission to human review");
-  assert.match(directGateT2.reason, /Supported Medium Omission \(Tier 2\)/i);
+    const mockMicroAdapter = {
+      providerName: "mock-micro-sentry",
+      modelName: "test-model-micro",
+      executeReview: async () => ({
+        ok: true,
+        executionStatus: "success",
+        findings: [],
+        coverage: { coveredFiles: ["src/auth.js"], omittedFiles: [] },
+        providerIdentity: { provider: "mock-micro-sentry", family: "google", model: "test-micro" }
+      })
+    };
 
-  const mockMicroAdapter = {
-    providerName: "mock-micro-sentry",
-    modelName: "test-model-micro",
-    executeReview: async () => ({
-      ok: true,
-      executionStatus: "success",
-      findings: [],
-      coverage: { coveredFiles: ["src/auth.js"], omittedFiles: [] },
-      providerIdentity: { provider: "mock-micro-sentry", family: "google", model: "test-micro" }
-    })
-  };
+    // Orchestrator with tier: 1: Must forward tier: 1 and block identically
+    const orchestratorT1 = await orchestrateReview(changeSet, { macro: mockAdapter, micro: mockMicroAdapter }, {
+      tier: 1,
+      plan: { mode: "hierarchical", highestRisk: 1 },
+      verificationRecord: trustedRecord,
+      runId
+    });
+    assert.equal(orchestratorT1.gate.decision, directGateT1.decision, "Orchestrator tier 1 must match direct gate tier 1 decision");
+    assert.equal(orchestratorT1.gate.decision, "block");
+    assert.match(orchestratorT1.gate.reason, /Supported Medium Omission \(Tier 1\)/i);
 
-  // Orchestrator with tier: 1: Must forward tier: 1 and block identically
-  const orchestratorT1 = await orchestrateReview(changeSet, { macro: mockAdapter, micro: mockMicroAdapter }, {
-    tier: 1,
-    plan: { mode: "hierarchical", highestRisk: 1 },
-    verificationRecord: trustedRecord,
-    runId
-  });
-  assert.equal(orchestratorT1.gate.decision, directGateT1.decision, "Orchestrator tier 1 must match direct gate tier 1 decision");
-  assert.equal(orchestratorT1.gate.decision, "block");
-  assert.match(orchestratorT1.gate.reason, /Supported Medium Omission \(Tier 1\)/i);
-
-  // Orchestrator with tier: 2: Must forward tier: 2 and route to human review identically on Tier 2 diff
-  const hunksT2 = "diff --git a/src/calc.js b/src/calc.js\n@@ -1,1 +1,2 @@\n+const result = 1;";
-  const contentDigestT2 = crypto.createHash("sha256").update(hunksT2).digest("hex");
-  const changeSetT2 = {
-    ...changeSet,
-    contentDigest: contentDigestT2,
-    diffHunks: hunksT2,
-    files: [{ path: "src/calc.js", additions: 1, deletions: 0, riskTier: 2 }]
-  };
-  const mockAdapterT2 = {
-    providerName: "mock-sentry-t2",
-    modelName: "test-model",
-    executeReview: async () => ({
-      ok: true,
-      executionStatus: "success",
-      findings: [],
-      coverage: { coveredFiles: ["src/calc.js"], omittedFiles: [] },
-      providerIdentity: { provider: "mock-sentry", family: "anthropic", model: "test" }
-    })
-  };
-  const mockVerifierT2 = {
-    executeVerification: async () => ({
-      overallStatus: "DEFECTS_FOUND",
-      evaluations: [],
-      verifierOmissions: [
-        {
-          title: "Calculation precision in non-critical module",
-          severity: "medium",
-          evidenceSupport: "SUPPORTED",
-          locatorAccurate: true,
-          file: "src/calc.js",
-          line_start: 1,
-          line_end: 1,
-          counterexample: "calling calc(null) returns null and causes crash"
-        }
-      ]
-    })
-  };
-  const trustedRecordT2 = await conductIndependentVerification(
-    changeSetT2,
-    [],
-    mockVerifierT2,
-    {
-      verificationMode: "clean_challenge",
-      headSha: changeSetT2.headSha,
-      changeSetDigest: changeSetT2.contentDigest,
+    // Orchestrator with tier: 2: Must forward tier: 2 and route to human review identically on Tier 2 diff
+    const hunksT2 = "diff --git a/src/calc.js b/src/calc.js\n@@ -1,1 +1,2 @@\n+const result = 1;";
+    const contentDigestT2 = crypto.createHash("sha256").update(hunksT2).digest("hex");
+    const changeSetT2 = {
+      ...changeSet,
+      contentDigest: contentDigestT2,
+      diffHunks: hunksT2,
+      files: [{ path: "src/calc.js", additions: 1, deletions: 0, riskTier: 2 }]
+    };
+    const mockAdapterT2 = {
+      providerName: "mock-sentry-t2",
+      modelName: "test-model",
+      executeReview: async () => ({
+        ok: true,
+        executionStatus: "success",
+        findings: [],
+        coverage: { coveredFiles: ["src/calc.js"], omittedFiles: [] },
+        providerIdentity: { provider: "mock-sentry", family: "anthropic", model: "test" }
+      })
+    };
+    const mockVerifierT2 = {
+      executeVerification: async () => ({
+        overallStatus: "DEFECTS_FOUND",
+        evaluations: [],
+        verifierOmissions: [
+          {
+            title: "Calculation precision in non-critical module",
+            severity: "medium",
+            evidenceSupport: "SUPPORTED",
+            locatorAccurate: true,
+            file: "src/calc.js",
+            line_start: 1,
+            line_end: 1,
+            counterexample: "calling calc(null) returns null and causes crash"
+          }
+        ]
+      })
+    };
+    const trustedRecordT2 = await conductIndependentVerification(
+      changeSetT2,
+      [],
+      mockVerifierT2,
+      {
+        verificationMode: "clean_challenge",
+        headSha: changeSetT2.headSha,
+        changeSetDigest: changeSetT2.contentDigest,
+        runId: `${runId}-t2`
+      }
+    );
+    const directGateT2Real = evaluateGateDecision(makeTrustedConsensus([], { tier: 2 }), {
+      tier: 2,
+      verificationRecord: trustedRecordT2,
+      runContext: new RunContext({
+        headSha: changeSetT2.headSha,
+        contentDigest: changeSetT2.contentDigest,
+        runId: `${runId}-t2`
+      })
+    });
+    const orchestratorT2 = await orchestrateReview(changeSetT2, { macro: mockAdapterT2 }, {
+      tier: 2,
+      plan: { mode: "single", highestRisk: 2 },
+      verificationRecord: trustedRecordT2,
       runId: `${runId}-t2`
-    }
-  );
-  const directGateT2Real = evaluateGateDecision(makeTrustedConsensus([], { tier: 2 }), {
-    tier: 2,
-    verificationRecord: trustedRecordT2,
-    runContext: new RunContext({
-      headSha: changeSetT2.headSha,
-      contentDigest: changeSetT2.contentDigest,
-      runId: `${runId}-t2`
-    })
-  });
-  const orchestratorT2 = await orchestrateReview(changeSetT2, { macro: mockAdapterT2 }, {
-    tier: 2,
-    plan: { mode: "single", highestRisk: 2 },
-    verificationRecord: trustedRecordT2,
-    runId: `${runId}-t2`
-  });
-  assert.equal(orchestratorT2.gate.decision, directGateT2Real.decision, "Orchestrator tier 2 must match direct gate tier 2 decision");
-  assert.equal(orchestratorT2.gate.decision, "human_review_required");
-  assert.match(orchestratorT2.gate.reason, /Supported Medium Omission \(Tier 2\)/i);
+    });
+    assert.equal(orchestratorT2.gate.decision, directGateT2Real.decision, "Orchestrator tier 2 must match direct gate tier 2 decision");
+    assert.equal(orchestratorT2.gate.decision, "human_review_required");
+    assert.match(orchestratorT2.gate.reason, /Supported Medium Omission \(Tier 2\)/i);
 
-  // Direct Gate with isTier1: true strictly blocks Medium omission
-  const directGateIsTier1 = evaluateGateDecision(consensusClean, {
-    isTier1: true,
-    verificationRecord: trustedRecord,
-    runContext
-  });
-  assert.equal(directGateIsTier1.decision, "block", "Direct gate isTier1: true strictly blocks Medium omission");
-  assert.match(directGateIsTier1.reason, /Supported Medium Omission \(Tier 1\)/i);
+    // Direct Gate with isTier1: true strictly blocks Medium omission
+    const directGateIsTier1 = evaluateGateDecision(consensusClean, {
+      isTier1: true,
+      verificationRecord: trustedRecord,
+      runContext
+    });
+    assert.equal(directGateIsTier1.decision, "block", "Direct gate isTier1: true strictly blocks Medium omission");
+    assert.match(directGateIsTier1.reason, /Supported Medium Omission \(Tier 1\)/i);
 
-  // Orchestrator with isTier1: true: Must forward isTier1: true and block identically
-  const orchestratorIsTier1 = await orchestrateReview(changeSet, { macro: mockAdapter, micro: mockMicroAdapter }, {
-    isTier1: true,
-    plan: { mode: "hierarchical", highestRisk: 1 },
-    verificationRecord: trustedRecord,
-    runId
-  });
-  assert.equal(orchestratorIsTier1.gate.decision, "block", "Orchestrator isTier1: true must block Medium omission");
-  assert.match(orchestratorIsTier1.gate.reason, /Supported Medium Omission \(Tier 1\)/i);
+    // Orchestrator with isTier1: true: Must forward isTier1: true and block identically
+    const orchestratorIsTier1 = await orchestrateReview(changeSet, { macro: mockAdapter, micro: mockMicroAdapter }, {
+      isTier1: true,
+      plan: { mode: "hierarchical", highestRisk: 1 },
+      verificationRecord: trustedRecord,
+      runId
+    });
+    assert.equal(orchestratorIsTier1.gate.decision, "block", "Orchestrator isTier1: true must block Medium omission");
+    assert.match(orchestratorIsTier1.gate.reason, /Supported Medium Omission \(Tier 1\)/i);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
 });
 
 test("PR39-GATE-OUT-05-NEGATIVE: Context Package missing or incomplete fileCoverageManifest fails closed to UNCERTAIN/human_review_required (CONTEXT_COVERAGE_INTEGRITY)", async () => {
