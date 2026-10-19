@@ -1157,12 +1157,18 @@ export async function runDogfoodReview(userOptions = {}) {
       }
     ] : null,
     userOptions.contextGaps,
+    changeSet?.contextGaps,
     contextPackage?.contextGaps
   );
 
-  if (contextPackage && changeSet && typeof changeSet === "object") {
+  if (changeSet && typeof changeSet === "object") {
     try {
-      changeSet.contextPackage = contextPackage;
+      if (contextPackage) {
+        changeSet.contextPackage = contextPackage;
+      }
+      if (effectiveContextGaps.length > 0) {
+        changeSet.contextGaps = effectiveContextGaps;
+      }
     } catch {}
   }
 

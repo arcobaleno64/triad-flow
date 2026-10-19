@@ -2806,6 +2806,7 @@ export function validateVerificationOutput(rawOutput, context = {}, { allowSynth
     context?.contextGaps,
     context?.contextPackage?.contextGaps,
     context?.changeSet?.contextPackage?.contextGaps,
+    context?.runContext?.contextGaps,
     context?.runContext?.contextPackage?.contextGaps,
     context?.changeSet?.contextGaps
   );
@@ -3618,7 +3619,9 @@ export async function conductIndependentVerification(changeSet, producerFindings
     options.contextGaps,
     options.contextPackage?.contextGaps,
     changeSet?.contextPackage?.contextGaps,
-    changeSet?.contextGaps
+    changeSet?.contextGaps,
+    options.runContext?.contextGaps,
+    options.runContext?.contextPackage?.contextGaps
   ];
 
   if (hasContextConflict) {
@@ -3906,7 +3909,7 @@ export async function conductIndependentVerification(changeSet, producerFindings
   if (isPromptBudgetExceeded && (overallStatus === "CLEAN" || !overallStatus)) {
     overallStatus = "UNCERTAIN";
   }
-  if (hasContextConflict || effectiveContextGaps.some(g => g?.code === "EXACT_HEAD_CONTEXT_FAILED")) {
+  if (hasContextConflict || effectiveContextGaps.length > 0) {
     if (overallStatus === "CLEAN" || !overallStatus) {
       overallStatus = "UNCERTAIN";
     }

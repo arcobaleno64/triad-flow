@@ -397,6 +397,34 @@ function _evaluateGateDecisionCore(consensus, options = {}, { allowSynthetic = f
   const isTier1 = options?.tier === 1;
   const isStrict = Boolean(options && (options.strict || isTier1));
 
+  const effectiveContextGaps = mergeContextGaps(
+    options?.contextGaps,
+    options?.runContext?.contextGaps,
+    options?.runContext?.contextPackage?.contextGaps,
+    options?.changeSet?.contextGaps,
+    consensus?.contextGaps
+  );
+  if (effectiveContextGaps.length > 0) {
+    const hasSecurityGap = effectiveContextGaps.some(g =>
+      g?.code !== "EXACT_HEAD_CONTEXT_FAILED" &&
+      g?.reason !== "EXACT_HEAD_CONTEXT_FAILED"
+    );
+    if (isTier1 && hasSecurityGap) {
+      return {
+        decision: "block",
+        reason: `Tier 1 high-risk policy: Unresolved security context gap (${effectiveContextGaps[0]?.code || effectiveContextGaps[0]?.reason || "unresolved_gap"}) blocks merge.`,
+        criticals: [],
+        advisoryFindings: []
+      };
+    }
+    return {
+      decision: "human_review_required",
+      reason: `Security Context Gap: Unresolved security context gap (${effectiveContextGaps[0]?.code || effectiveContextGaps[0]?.reason || "unresolved_gap"}) requires human adjudication.`,
+      criticals: [],
+      advisoryFindings: []
+    };
+  }
+
   if (findings.length > 0 && isStrict) {
     return {
       decision: "block",
@@ -932,6 +960,31 @@ function _evaluatePostVerificationGateCore(consensus, verificationRecord, option
   if (verificationRecord.overallStatus === "UNCERTAIN" || verificationRecord.status === "UNCERTAIN") {
     hasHumanReview = true;
     humanReviewReasons.push("Context Insufficient / Uncertain: Verifier declared UNCERTAIN due to missing callee context boundaries.");
+  }
+
+  // Row 11b: Security Context Gaps Fail-Safe (Thread trycn)
+  // Regardless of whether Verifier returns CLEAN or DEFECTS_FOUND, unresolved security context gaps must refuse approve.
+  const effectiveContextGaps = mergeContextGaps(
+    verificationRecord?.contextGaps,
+    options?.contextGaps,
+    options?.runContext?.contextGaps,
+    options?.runContext?.contextPackage?.contextGaps,
+    options?.changeSet?.contextGaps,
+    consensus?.contextGaps
+  );
+
+  if (effectiveContextGaps.length > 0) {
+    const hasSecurityGap = effectiveContextGaps.some(g =>
+      g?.code !== "EXACT_HEAD_CONTEXT_FAILED" &&
+      g?.reason !== "EXACT_HEAD_CONTEXT_FAILED"
+    );
+    if (isTier1 && hasSecurityGap) {
+      hasBlocker = true;
+      blockReasons.push(`Tier 1 high-risk policy: Unresolved security context gap (${effectiveContextGaps[0]?.code || effectiveContextGaps[0]?.reason || "unresolved_gap"}) blocks merge.`);
+    } else {
+      hasHumanReview = true;
+      humanReviewReasons.push(`Security Context Gap: Unresolved security context gap (${effectiveContextGaps[0]?.code || effectiveContextGaps[0]?.reason || "unresolved_gap"}) requires human adjudication.`);
+    }
   }
 
   // Record level: Verifier Defects Found consistency (Thread 5 & P1-04)

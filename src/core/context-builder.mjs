@@ -450,10 +450,10 @@ export function findFunctionDefinitions(lines, symbol) {
 
   const DEF_REGEX = new RegExp(
     `(?:` +
-    `^(?:\\s*(?:[a-zA-Z0-9_<>*&]|::)+\\s+)+(?:[a-zA-Z0-9_]+::)?${escapedSym}\\s*\\(|` +
-    `^\\s*(?:export\\s+)?(?:default\\s+)?(?:async\\s+)?function(?:\\s+${escapedSym})?\\s*\\(|` +
-    `^\\s*(?:static\\s+)?(?:async\\s+)?${escapedSym}\\s*\\(|` +
-    `^\\s*(?:export\\s+)?(?:const|let|var)?\\s*${escapedSym}\\s*=\\s*(?:async\\s*)?(?:\\([^)]*\\)|[a-zA-Z0-9_$]+)?\\s*(?:=>|function)|` +
+    `^(?:\\s*(?:[a-zA-Z0-9_<>*&]|::)+\\s+)+(?:[a-zA-Z0-9_]+::)?${escapedSym}\\s*(?:<[^()]+>\\s*)?\\(|` +
+    `^\\s*(?:export\\s+)?(?:default\\s+)?(?:async\\s+)?function(?:\\s+${escapedSym})?\\s*(?:<[^()]+>\\s*)?\\(|` +
+    `^\\s*(?:static\\s+)?(?:async\\s+)?${escapedSym}\\s*(?:<[^()]+>\\s*)?\\(|` +
+    `^\\s*(?:export\\s+)?(?:const|let|var)?\\s*${escapedSym}\\s*=\\s*(?:async\\s*)?(?:<[^()]+>\\s*)?(?:\\([^)]*\\)|[a-zA-Z0-9_$]+)?\\s*(?:=>|function)|` +
     `^\\s*def\\s+${escapedSym}\\s*\\(` +
     `)`
   );
@@ -721,7 +721,7 @@ function collectFunctions(cleanLines, lines) {
   const fnPatterns = [
     /^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?function(?:\s*\*|\s+[a-zA-Z0-9_$]+|\s*\()/i,
     /^\s*(?:export\s+)?(?:const|let|var)\s+[a-zA-Z0-9_$]+\s*=\s*(?:async\s+)?function(?:\s*\*|\s+[a-zA-Z0-9_$]+|\s*\()/i,
-    /^\s*(?:static\s+)?(?:async\s+)?(?:\*\s*)?(?!(?:if|for|while|switch|catch|with)\b)([a-zA-Z0-9_$]+)\s*\(/
+    /^\s*(?:static\s+)?(?:async\s+)?(?:\*\s*)?(?!(?:if|for|while|switch|catch|with)\b)([a-zA-Z0-9_$]+)\s*(?:<[^()]+>\s*)?\(/
   ];
   const functions = [];
   for (let i = 0; i < cleanLines.length; i++) {
@@ -776,7 +776,7 @@ function isMethodDirectInClass(cleanLines, classRecord, methodLineIdx, classes, 
     const initialChar = (l === startLine) ? startChar : 0;
     let endChar = line.length;
     if (l === methodLineIdx) {
-      const match = line.match(/\b(?:static\s+)?(?:async\s+)?(?:\*\s*)?[A-Za-z0-9_$]+\s*\(/);
+      const match = line.match(/\b(?:static\s+)?(?:async\s+)?(?:\*\s*)?[A-Za-z0-9_$]+\s*(?:<[^()]+>\s*)?\(/);
       endChar = match ? match.index : (line.search(/\S/) !== -1 ? line.search(/\S/) : line.length);
     }
 
@@ -823,7 +823,7 @@ export function resolveReceiverLexicalBinding(lines, qualifier, symbol, targetLi
     if (functions.some(f => f.startLine <= classRecord.startLine && classRecord.startLine <= f.endLine)) {
       return null;
     }
-    const staticMethodRegex = new RegExp(`^\\s*static\\s+(?:async\\s+)?(?:\\*\\s*)?${escapedSym}\\s*\\(`);
+    const staticMethodRegex = new RegExp(`^\\s*static\\s+(?:async\\s+)?(?:\\*\\s*)?${escapedSym}\\s*(?:<[^()]+>\\s*)?\\(`);
     let hasStaticMethod = false;
     for (let j = classRecord.braceLineIdx + 1; j < classRecord.endLine - 1; j++) {
       if (staticMethodRegex.test(cleanLines[j])) {
@@ -837,7 +837,7 @@ export function resolveReceiverLexicalBinding(lines, qualifier, symbol, targetLi
 
     let resolvedCallLine = targetLine;
     if (!resolvedCallLine) {
-      const callRegex = new RegExp(`(?:^|[^a-zA-Z0-9_$])${escapedQual}(?:\\.|\\?\\.)${escapedSym}\\s*(?:\\?\\.\\s*)?\\(`);
+      const callRegex = new RegExp(`(?:^|[^a-zA-Z0-9_$])${escapedQual}(?:\\.|\\?\\.)${escapedSym}\\s*(?:<[^()]+>\\s*)?(?:\\?\\.\\s*)?\\(`);
       const callLines = [];
       for (let idx = 0; idx < cleanLines.length; idx++) {
         if (callRegex.test(cleanLines[idx])) {
@@ -960,7 +960,7 @@ export function resolveReceiverLexicalBinding(lines, qualifier, symbol, targetLi
   }
 
   // Verify boundClass has instance method (non-static) matching symbol directly in class body
-  const instMethodRegex = new RegExp(`^\\s*(?:async\\s+)?(?:\\*\\s*)?${escapedSym}\\s*\\(`);
+  const instMethodRegex = new RegExp(`^\\s*(?:async\\s+)?(?:\\*\\s*)?${escapedSym}\\s*(?:<[^()]+>\\s*)?\\(`);
   let classHasInstanceMethod = false;
   for (let j = boundClassRecord.braceLineIdx + 1; j < boundClassRecord.endLine - 1; j++) {
     const cLine = cleanLines[j];
@@ -979,7 +979,7 @@ export function resolveReceiverLexicalBinding(lines, qualifier, symbol, targetLi
   // Determine callLine
   let resolvedCallLine = targetLine;
   if (!resolvedCallLine) {
-    const callRegex = new RegExp(`(?:^|[^a-zA-Z0-9_$])${escapedQual}(?:\\.|\\?\\.)${escapedSym}\\s*(?:\\?\\.\\s*)?\\(`);
+    const callRegex = new RegExp(`(?:^|[^a-zA-Z0-9_$])${escapedQual}(?:\\.|\\?\\.)${escapedSym}\\s*(?:<[^()]+>\\s*)?(?:\\?\\.\\s*)?\\(`);
     for (let idx = 0; idx < cleanLines.length; idx++) {
       if (callRegex.test(cleanLines[idx])) {
         resolvedCallLine = idx + 1;
@@ -1157,7 +1157,7 @@ export function findQualifiedFunctionDefinitions(lines, qualifier, symbol, optio
 
   // 1. Explicit C++ scope definitions: Class::method(...)
   const CPP_SCOPE_DEF_REGEX = new RegExp(
-    `^(?:\\s*(?:[a-zA-Z0-9_<>*&]|::)+\\s+)+${escapedQual}::${escapedSym}\\s*\\(`
+    `^(?:\\s*(?:[a-zA-Z0-9_<>*&]|::)+\\s+)+${escapedQual}::${escapedSym}\\s*(?:<[^()]+>\\s*)?\\(`
   );
 
   for (let i = 0; i < cleanLines.length; i++) {
@@ -1253,8 +1253,8 @@ export function findQualifiedFunctionDefinitions(lines, qualifier, symbol, optio
               endLine: classEndLine
             };
             const METHOD_REGEX = isPascal
-              ? new RegExp(`^\\s*static\\s+(?:async\\s+)?(?:\\*\\s*)?${escapedSym}\\s*\\(`)
-              : new RegExp(`^\\s*(?:async\\s+)?(?:\\*\\s*)?${escapedSym}\\s*\\(`);
+              ? new RegExp(`^\\s*static\\s+(?:async\\s+)?(?:\\*\\s*)?${escapedSym}\\s*(?:<[^()]+>\\s*)?\\(`)
+              : new RegExp(`^\\s*(?:async\\s+)?(?:\\*\\s*)?${escapedSym}\\s*(?:<[^()]+>\\s*)?\\(`);
             for (let j = classBraceIdx + 1; j < classEndLine - 1; j++) {
               const methodCleanLine = cleanLines[j];
               if (!isPascal && /^\s*static\b/.test(methodCleanLine)) {
@@ -1508,6 +1508,107 @@ export const UTILITY_CALLEE_SYMBOLS = new Set([
 ]);
 
 /**
+ * Scans a line of code for function call invocations, supporting both standard calls
+ * and conservative generic type arguments (e.g. auth.authorize<Session>(user), authorizeUser<Session>(user)).
+ *
+ * @param {string} cleanLine
+ * @returns {Array<{ sym: string, index: number, hasTypeArguments: boolean }>}
+ */
+export function findCallInvocations(cleanLine) {
+  if (!cleanLine || typeof cleanLine !== "string") return [];
+  const calls = [];
+  const IDENT_REGEX = /\b([a-zA-Z_][a-zA-Z0-9_]*)/g;
+  let m;
+  while ((m = IDENT_REGEX.exec(cleanLine)) !== null) {
+    const sym = m[1];
+    const symIndex = m.index;
+    let pos = symIndex + sym.length;
+
+    while (pos < cleanLine.length && /\s/.test(cleanLine[pos])) pos++;
+
+    if (cleanLine.slice(pos, pos + 2) === "?.") {
+      pos += 2;
+      while (pos < cleanLine.length && /\s/.test(cleanLine[pos])) pos++;
+    }
+
+    let hasTypeArguments = false;
+    if (cleanLine[pos] === "<") {
+      let depth = 0;
+      let braceDepth = 0;
+      let parenDepth = 0;
+      let bracketDepth = 0;
+      let valid = true;
+      let endIdx = -1;
+      for (let k = pos; k < cleanLine.length; k++) {
+        const ch = cleanLine[k];
+        if (ch === "<") {
+          depth++;
+        } else if (ch === ">") {
+          depth--;
+          if (depth === 0) {
+            endIdx = k + 1;
+            break;
+          }
+        } else if (ch === "{") {
+          braceDepth++;
+        } else if (ch === "}") {
+          braceDepth--;
+          if (braceDepth < 0) { valid = false; break; }
+        } else if (ch === "(") {
+          parenDepth++;
+        } else if (ch === ")") {
+          parenDepth--;
+          if (parenDepth < 0) { valid = false; break; }
+        } else if (ch === "[") {
+          bracketDepth++;
+        } else if (ch === "]") {
+          bracketDepth--;
+          if (bracketDepth < 0) { valid = false; break; }
+        } else if (ch === ";") {
+          if (braceDepth === 0) {
+            valid = false;
+            break;
+          }
+        } else if (ch === "=") {
+          if (cleanLine[k + 1] === ">") {
+            k++;
+            continue;
+          }
+          valid = false;
+          break;
+        } else if (ch === "&" && cleanLine[k + 1] === "&") {
+          valid = false;
+          break;
+        } else if (ch === "|" && cleanLine[k + 1] === "|") {
+          valid = false;
+          break;
+        }
+      }
+      if (valid && depth === 0 && braceDepth === 0 && parenDepth === 0 && bracketDepth === 0 && endIdx !== -1) {
+        hasTypeArguments = true;
+        pos = endIdx;
+        while (pos < cleanLine.length && /\s/.test(cleanLine[pos])) pos++;
+      }
+    }
+
+    if (cleanLine.slice(pos, pos + 2) === "?.") {
+      pos += 2;
+      while (pos < cleanLine.length && /\s/.test(cleanLine[pos])) pos++;
+    }
+
+    if (cleanLine[pos] === "(") {
+      calls.push({
+        sym,
+        index: symIndex,
+        hasTypeArguments
+      });
+      IDENT_REGEX.lastIndex = pos;
+    }
+  }
+  return calls;
+}
+
+/**
  * Extracts candidate function call symbols from diff hunks.
  * Prioritizes added lines over context lines, computes target file line numbers,
  * and excludes language keywords.
@@ -1521,8 +1622,6 @@ export function extractCandidateCallSymbols(diffHunks) {
   const lines = diffHunks.split(/\r?\n/);
   const candidates = [];
   const seen = new Set();
-
-  const CALL_REGEX = /\b([a-zA-Z_][a-zA-Z0-9_]*)\s*(?:\?\.\s*)?\(/g;
   const KEYWORDS = new Set([
     "if", "else", "for", "while", "do", "switch", "case", "default", "break", "continue",
     "return", "throw", "try", "catch", "finally", "goto", "function", "async", "await",
@@ -1571,18 +1670,17 @@ export function extractCandidateCallSymbols(diffHunks) {
     const isGuardLine = /^\s*(?:if\s*\(.*?\)\s*(?:return|throw)\b|assert(?:\.|\s*\()|throw\s+new\b)/.test(cleanLine);
     const lineCategory = isGuardLine ? "input_validation" : null;
 
-    const fnDeclMatch = cleanLine.match(/^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?function(?:\s+([a-zA-Z_][a-zA-Z0-9_]*))?\s*\(/);
+    const fnDeclMatch = cleanLine.match(/^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?function(?:\s+([a-zA-Z_][a-zA-Z0-9_]*))?(?:\s*<[^()]+>)?\s*\(/);
     const pyDeclMatch = cleanLine.match(/^\s*def\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/);
     const declaredFn = fnDeclMatch ? fnDeclMatch[1] : (pyDeclMatch ? pyDeclMatch[1] : null);
 
-    let match;
-    CALL_REGEX.lastIndex = 0;
-    while ((match = CALL_REGEX.exec(cleanLine)) !== null) {
-      const sym = match[1];
+    const invokedCalls = findCallInvocations(cleanLine);
+    for (const call of invokedCalls) {
+      const sym = call.sym;
       if (KEYWORDS.has(sym)) continue;
       if (declaredFn && sym === declaredFn) continue;
 
-      const prefix = cleanLine.slice(0, match.index);
+      const prefix = cleanLine.slice(0, call.index);
       const isQualified = /(?:\.|\->|\?\.)\s*$/.test(prefix);
 
       if (isQualified && BUILTIN_OBJECT_METHODS.has(sym)) {
@@ -1635,7 +1733,8 @@ export function extractCandidateCallSymbols(diffHunks) {
           line: lineNum,
           lineText: lineText.trim(),
           isSensitive,
-          category: symCategory
+          category: symCategory,
+          hasTypeArguments: Boolean(call.hasTypeArguments)
         });
       } else if (isAdded) {
         const existing = candidates.find(c => {
@@ -1650,6 +1749,9 @@ export function extractCandidateCallSymbols(diffHunks) {
             existing.isAdded = true;
             existing.line = lineNum;
             existing.lineText = lineText.trim();
+          }
+          if (call.hasTypeArguments && !existing.hasTypeArguments) {
+            existing.hasTypeArguments = true;
           }
           if (qualifier && !existing.qualifier) {
             existing.qualifier = qualifier;
@@ -1668,14 +1770,14 @@ export function extractCandidateCallSymbols(diffHunks) {
       }
     }
 
-    // tgXSN: Parse call expressions that span across added lines
-    // Handles cases where a symbol on an added line is followed by '(' on a subsequent added line
-    if (isAdded) {
+    // Parse call expressions and generic invocations that span across lines
+    {
       const trimmedEnd = cleanLine.trimEnd();
-      const trailingCallMatch = trimmedEnd.match(/(?:^|[\s=([{:;,?!&|+*^%~<>.-]|(?:\?\.)|(?:\->))(?:((?:(?:[a-zA-Z_][a-zA-Z0-9_]*|this)\s*(?:\.|\->|\?\.)\s*)+))?([a-zA-Z_][a-zA-Z0-9_]*)$/);
+      const trailingCallMatch = trimmedEnd.match(/(?:^|[\s=([{:;,?!&|+*^%~<>.-]|(?:\?\.)|(?:\->))(?:((?:(?:[a-zA-Z_][a-zA-Z0-9_]*|this)\s*(?:\.|\->|\?\.)\s*)+))?([a-zA-Z_][a-zA-Z0-9_]*)((?:\s*(?:\?\.\s*)?(?:<(?:=>|[^>])*>?)?(?:\s*\?\.)?(?:\s*\()?)?)$/);
       if (trailingCallMatch) {
         const qualifierChain = trailingCallMatch[1] || "";
         const sym = trailingCallMatch[2];
+        const trailingRemainder = (trailingCallMatch[3] || "").trim();
 
         // Ensure this is not a declaration, keyword, or already matched inline
         const isKeyword = KEYWORDS.has(sym);
@@ -1685,62 +1787,99 @@ export function extractCandidateCallSymbols(diffHunks) {
           cleanLine.match(/^\s*(?:type|interface)\s+/);
 
         if (!isKeyword && !isDecl) {
-          // Look ahead to the next non-empty line (added or context)
-          let nextParenFound = false;
-          for (let next = i + 1; next < lines.length; next++) {
-            const nextRaw = lines[next];
-            if (nextRaw.match(HUNK_HEADER_REGEX) || nextRaw.startsWith("---") || nextRaw.startsWith("+++") || nextRaw.startsWith("diff ") || nextRaw.startsWith("index ")) {
-              break;
-            }
-            if (nextRaw.startsWith("-")) {
-              continue; // deleted line
-            }
-            const isContextOrAdded = nextRaw.startsWith("+") || nextRaw.startsWith(" ");
-            if (!isContextOrAdded) {
-              break; // hunk boundary or file header
-            }
-            const nextLineContent = nextRaw.slice(1);
-            const nextClean = stripCommentsAndStrings(nextLineContent, { val: inBlockCommentRef.val }).trim();
-            if (!nextClean) {
-              continue; // blank or comment-only line
-            }
-            if (nextClean.startsWith("(")) {
-              nextParenFound = true;
-            }
-            break;
+          const hasLeadingDot = /^\s*(?:\.|\->|\?\.)/.test(cleanLine);
+          const isQualified = Boolean(qualifierChain || hasLeadingDot);
+          let qualifiers = [];
+          let qualifier = null;
+          if (qualifierChain) {
+            qualifiers = qualifierChain.match(/[a-zA-Z_][a-zA-Z0-9_]*|this/g) || [];
+            qualifier = qualifiers.length > 0 ? qualifiers[qualifiers.length - 1] : null;
           }
 
-          if (nextParenFound) {
-            const hasLeadingDot = /^\s*(?:\.|\->|\?\.)/.test(cleanLine);
-            const isQualified = Boolean(qualifierChain || hasLeadingDot);
-            let qualifiers = [];
-            let qualifier = null;
-            if (qualifierChain) {
-              qualifiers = qualifierChain.match(/[a-zA-Z_][a-zA-Z0-9_]*|this/g) || [];
-              qualifier = qualifiers.length > 0 ? qualifiers[qualifiers.length - 1] : null;
-            }
+          let skip = false;
+          if (isQualified && BUILTIN_OBJECT_METHODS.has(sym)) {
+            skip = true;
+          }
+          if (UTILITY_CALLEE_SYMBOLS.has(sym)) {
+            skip = true;
+          }
 
-            let skip = false;
-            if (isQualified && BUILTIN_OBJECT_METHODS.has(sym)) {
-              skip = true;
+          if (!skip) {
+            const symCat = classifySensitiveCategory(sym);
+            let qualCat = null;
+            for (const q of qualifiers) {
+              const cat = classifySensitiveCategory(q);
+              if (cat) {
+                qualCat = cat;
+                break;
+              }
             }
-            if (UTILITY_CALLEE_SYMBOLS.has(sym)) {
-              skip = true;
-            }
+            const sensitiveCategory = symCat || qualCat;
 
-            if (!skip) {
-              const symCat = classifySensitiveCategory(sym);
-              let qualCat = null;
-              for (const q of qualifiers) {
-                const cat = classifySensitiveCategory(q);
-                if (cat) {
-                  qualCat = cat;
-                  break;
+            if (!isQualified || sensitiveCategory) {
+              let foundCall = false;
+              let callHasTypeArguments = Boolean(trailingRemainder && trailingRemainder.includes("<"));
+              let isUnterminated = false;
+              let accumulatedTail = trailingRemainder;
+              let callIsAdded = isAdded;
+
+              // Check if trailingRemainder on current line already completes a call
+              const selfCalls = findCallInvocations(sym + " " + accumulatedTail);
+              if (selfCalls.some(c => c.sym === sym)) {
+                foundCall = true;
+                const m = selfCalls.find(c => c.sym === sym);
+                callHasTypeArguments = Boolean(m.hasTypeArguments);
+              }
+
+              // Look ahead to subsequent lines
+              if (!foundCall) {
+                for (let next = i + 1; next < lines.length; next++) {
+                  const nextRaw = lines[next];
+                  if (nextRaw.match(HUNK_HEADER_REGEX) || nextRaw.startsWith("---") || nextRaw.startsWith("+++") || nextRaw.startsWith("diff ") || nextRaw.startsWith("index ")) {
+                    break;
+                  }
+                  if (nextRaw.startsWith("-")) {
+                    continue; // deleted line
+                  }
+                  const isContextOrAdded = nextRaw.startsWith("+") || nextRaw.startsWith(" ");
+                  if (!isContextOrAdded) {
+                    break;
+                  }
+                  if (nextRaw.startsWith("+")) {
+                    callIsAdded = true;
+                  }
+                  const nextLineContent = nextRaw.slice(1);
+                  const nextClean = stripCommentsAndStrings(nextLineContent, { val: inBlockCommentRef.val }).trim();
+                  if (!nextClean) {
+                    continue; // blank or comment-only line
+                  }
+
+                  accumulatedTail += " " + nextClean;
+
+                  const testExpr = sym + " " + accumulatedTail;
+                  const calls = findCallInvocations(testExpr);
+                  const matchCall = calls.find(c => c.sym === sym);
+                  if (matchCall) {
+                    foundCall = true;
+                    callHasTypeArguments = Boolean(matchCall.hasTypeArguments);
+                    break;
+                  }
+
+                  // If not inside an unclosed '<' and we hit a statement boundary ';', stop looking ahead
+                  if (!accumulatedTail.includes("<") && nextClean.includes(";")) {
+                    break;
+                  }
                 }
               }
-              const sensitiveCategory = symCat || qualCat;
 
-              if (!isQualified || sensitiveCategory) {
+              // Fail-Closed: If sensitive and generic or call was opened across lines but unterminated
+              if (!foundCall && sensitiveCategory && (accumulatedTail.includes("<") || trailingRemainder.includes("<") || accumulatedTail.startsWith("(") || trailingRemainder.startsWith("("))) {
+                foundCall = true;
+                isUnterminated = true;
+                callHasTypeArguments = true;
+              }
+
+              if (foundCall) {
                 const isSensitive = Boolean(sensitiveCategory || isGuardLine);
                 const symCategory = isSensitive ? (sensitiveCategory || lineCategory || "input_validation") : null;
                 const receiverKey = isQualified
@@ -1755,13 +1894,15 @@ export function extractCandidateCallSymbols(diffHunks) {
                     qualifier,
                     qualifiers,
                     isQualified,
-                    isAdded: true,
+                    isAdded: Boolean(callIsAdded),
                     line: lineNum,
                     lineText: lineText.trim(),
                     isSensitive,
-                    category: symCategory
+                    category: symCategory,
+                    hasTypeArguments: Boolean(callHasTypeArguments),
+                    isUnterminated: Boolean(isUnterminated)
                   });
-                } else {
+                } else if (callIsAdded) {
                   const existing = candidates.find(c => {
                     const cReceiverKey = c.isQualified
                       ? (c.qualifiers?.length > 0 ? c.qualifiers.join(".") : (c.qualifier || "qualified"))
@@ -1770,9 +1911,26 @@ export function extractCandidateCallSymbols(diffHunks) {
                     return cCallKey === callKey;
                   });
                   if (existing) {
-                    existing.isAdded = true;
-                    existing.line = lineNum;
-                    existing.lineText = lineText.trim();
+                    if (!existing.isAdded) {
+                      existing.isAdded = true;
+                      existing.line = lineNum;
+                      existing.lineText = lineText.trim();
+                    }
+                    if (callHasTypeArguments && !existing.hasTypeArguments) {
+                      existing.hasTypeArguments = true;
+                    }
+                    if (isUnterminated && !existing.isUnterminated) {
+                      existing.isUnterminated = true;
+                    }
+                    if (qualifier && !existing.qualifier) {
+                      existing.qualifier = qualifier;
+                    }
+                    if (qualifiers.length > 0 && (!existing.qualifiers || existing.qualifiers.length === 0)) {
+                      existing.qualifiers = qualifiers;
+                    }
+                    if (isQualified && !existing.isQualified) {
+                      existing.isQualified = isQualified;
+                    }
                     if (isSensitive && !existing.isSensitive) {
                       existing.isSensitive = true;
                       existing.category = symCategory;
@@ -2037,6 +2195,25 @@ export function extractLocalCalleeContext(fileContent, diffHunks, targetFile, op
   }
 
   for (const candidate of candidateCalls) {
+    if (candidate.isUnterminated) {
+      const unresolvedEntry = {
+        symbol: candidate.symbol,
+        ...(candidate.qualifier ? { qualifier: candidate.qualifier } : {}),
+        reason: "EXTERNAL_CALLEE_UNRESOLVED",
+        file: targetFile,
+        line: candidate.line
+      };
+      unresolvedCallees.push(unresolvedEntry);
+      if (candidate.isSensitive && candidate.isAdded) {
+        contextGaps.push({
+          ...unresolvedEntry,
+          category: candidate.category || "input_validation",
+          impact: `Unclosed or unterminated multiline generic call '${candidate.qualifier ? candidate.qualifier + "." : ""}${candidate.symbol}' fails closed on sensitive execution path`
+        });
+      }
+      continue;
+    }
+
     const isImported = importedSymbols.has(candidate.symbol) ||
       (Array.isArray(candidate.qualifiers) && candidate.qualifiers.some(q => q !== "this" && importedSymbols.has(q))) ||
       Boolean(candidate.qualifier && candidate.qualifier !== "this" && importedSymbols.has(candidate.qualifier));
@@ -2116,7 +2293,7 @@ export function extractLocalCalleeContext(fileContent, diffHunks, targetFile, op
       const isDynamic = Boolean(candidate.lineText && (candidate.lineText.includes(`->${symbol}`) || candidate.lineText.includes(`virtual`)));
       const reason = isDynamic
         ? "MACRO_OR_DYNAMIC"
-        : (candidate.isQualified && candidate.qualifier !== "this" && candidate.qualifier !== "self"
+        : ((candidate.isQualified && candidate.qualifier !== "this" && candidate.qualifier !== "self") || candidate.hasTypeArguments
             ? "EXTERNAL_CALLEE_UNRESOLVED"
             : "UNRESOLVED_SYMBOL");
       const unresolvedEntry = {
@@ -2133,7 +2310,9 @@ export function extractLocalCalleeContext(fileContent, diffHunks, targetFile, op
           category: category || "input_validation",
           impact: candidate.isQualified
             ? `Referenced qualified callee '${candidate.qualifier ? candidate.qualifier + "." : ""}${symbol}' definition not found in modified file on sensitive execution path`
-            : "Referenced callee definition not found in modified file on sensitive execution path"
+            : (candidate.hasTypeArguments
+                ? `Referenced generic callee '${symbol}' definition not found in modified file on sensitive execution path`
+                : "Referenced callee definition not found in modified file on sensitive execution path")
         });
       }
       continue;
@@ -2222,7 +2401,7 @@ export function extractCallGraphContext(fileContent, targetFile = "", workspaceF
   if (!fileContent) return { callers, callees };
 
   // Detect callee calls inside modified content
-  const callRegex = /\b([a-zA-Z0-9_$]+)\s*(?:\?\.\s*)?\(/g;
+  const callRegex = /\b([a-zA-Z0-9_$]+)\s*(?:\?\.\s*)?(?:<[^()]+>\s*)?(?:\?\.\s*)?\(/g;
   const knownKeywords = new Set(["if", "for", "while", "switch", "catch", "with", "function", "return", "typeof", "delete", "require", "import", "super"]);
   const seenCallees = new Set();
 
