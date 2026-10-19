@@ -4,6 +4,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { execFileSync } from "node:child_process";
 
 import {
   conductIndependentVerification,
@@ -28,7 +29,17 @@ import { isTrustedConsensus } from "../src/core/consensus-state.mjs";
 import { CliReviewAdapter } from "../src/adapters/cli-transport.mjs";
 import { computeDigest } from "../src/core/canonical-digest.mjs";
 
-const TEST_HEAD_SHA = "a1dde481db4a4725e7ac5ca0f80d0ea605468cde";
+let TEST_HEAD_SHA = "a1dde481db4a4725e7ac5ca0f80d0ea605468cde";
+try {
+  const gitHead = execFileSync("git", ["rev-parse", "HEAD"], {
+    cwd: process.cwd(),
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "ignore"]
+  }).trim();
+  if (/^[a-f0-9]{40}$/i.test(gitHead)) {
+    TEST_HEAD_SHA = gitHead;
+  }
+} catch {}
 
 // Helper: build authentic trusted consensus
 function createTrustedConsensus(findings = [], { tier = 2, quorumReached = true } = {}) {
