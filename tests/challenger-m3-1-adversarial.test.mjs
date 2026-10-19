@@ -74,6 +74,8 @@ import {
   conductIndependentVerification
 } from "../src/core/independent-verifier.mjs";
 import { evaluatePostVerificationGate } from "../src/core/harness.mjs";
+import { isTrustedConsensus } from "../src/core/consensus-state.mjs";
+import { aggregateConsensus } from "../src/core/loop.mjs";
 
 function setupTmpGitRepo() {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "triad-m3-1-adv-"));
@@ -632,12 +634,38 @@ test("GATE-01: Context gap forcing Verifier UNCERTAIN status routes strictly to 
 
   assert.equal(record.overallStatus, "UNCERTAIN");
 
+  // Untrusted plain mock is rejected by formal gate (fail-closed control)
+  const untrustedTier1 = evaluatePostVerificationGate({ findings: [], tier: "tier1" }, record, { tier: 1 });
+  assert.equal(untrustedTier1.decision, "block");
+  assert.match(untrustedTier1.reason, /UNTRUSTED_OR_MISSING_CONSENSUS|Untrusted or missing consensus/i);
+
+  const untrustedTier2 = evaluatePostVerificationGate({ findings: [], tier: "tier2" }, record, { tier: 2 });
+  assert.equal(untrustedTier2.decision, "block");
+  assert.match(untrustedTier2.reason, /UNTRUSTED_OR_MISSING_CONSENSUS|Untrusted or missing consensus/i);
+
+  // Authentic trusted consensus under Tier 1 and Tier 2
+  const trustedConsensusTier1 = aggregateConsensus({
+    agy: { provider: "agy", executionStatus: "success", fileCoverageComplete: true, findings: [] },
+    claude: { provider: "claude", executionStatus: "success", fileCoverageComplete: true, findings: [] },
+    codex: { provider: "codex", executionStatus: "success", fileCoverageComplete: true, findings: [] }
+  }, { policy: "TRI_PARTY_HETEROGENEOUS", tier: 1 });
+  assert.equal(isTrustedConsensus(trustedConsensusTier1), true);
+  assert.equal(trustedConsensusTier1.quorumReached, true);
+
+  const trustedConsensusTier2 = aggregateConsensus({
+    agy: { provider: "agy", executionStatus: "success", fileCoverageComplete: true, findings: [] },
+    claude: { provider: "claude", executionStatus: "success", fileCoverageComplete: true, findings: [] },
+    codex: { provider: "codex", executionStatus: "success", fileCoverageComplete: true, findings: [] }
+  }, { policy: "TRI_PARTY_HETEROGENEOUS", tier: 2 });
+  assert.equal(isTrustedConsensus(trustedConsensusTier2), true);
+  assert.equal(trustedConsensusTier2.quorumReached, true);
+
   // Gate evaluation under Tier 1
-  const gateTier1 = evaluatePostVerificationGate({ findings: [], tier: "tier1" }, record);
+  const gateTier1 = evaluatePostVerificationGate(trustedConsensusTier1, record, { tier: 1 });
   assert.equal(gateTier1.decision, "human_review_required", "UNCERTAIN in Tier 1 must require human review");
 
   // Gate evaluation under Tier 2
-  const gateTier2 = evaluatePostVerificationGate({ findings: [], tier: "tier2" }, record);
+  const gateTier2 = evaluatePostVerificationGate(trustedConsensusTier2, record, { tier: 2 });
   assert.equal(gateTier2.decision, "human_review_required", "UNCERTAIN in Tier 2 must require human review");
 });
 

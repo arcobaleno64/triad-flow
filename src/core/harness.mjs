@@ -583,7 +583,7 @@ function findEvaluationIndexForFinding(evaluations, finding, findingIndex, usedI
 function _evaluatePostVerificationGateCore(consensus, verificationRecord, options = {}, { allowSynthetic = false } = {}) {
   // Defect 6: Post-Verification Consensus Integrity (PRRT_kwDOUWarIc6sPmw9)
   const isUncertain = verificationRecord?.overallStatus === "UNCERTAIN" || verificationRecord?.status === "UNCERTAIN";
-  if (!allowSynthetic && !isUncertain) {
+  if (!allowSynthetic) {
     if (!consensus || !isTrustedConsensus(consensus)) {
       return {
         decision: "block",
@@ -601,6 +601,16 @@ function _evaluatePostVerificationGateCore(consensus, verificationRecord, option
         advisoryFindings: []
       };
     }
+  }
+
+  // Coverage Integrity Check: parity with evaluateGateDecisionCore
+  if (options?.coverageOk === false || consensus?.coverageOk === false) {
+    return {
+      decision: "block",
+      reason: "Coverage Incomplete: Sentry omitted file(s) from review.",
+      criticals: [],
+      advisoryFindings: []
+    };
   }
 
   // Row 13: Execution Failure / Timeout / Malformed

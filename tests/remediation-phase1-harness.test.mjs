@@ -881,3 +881,159 @@ test("PHASE1-POS-01: Legitimate RunContext, valid verification records, and clea
   assert.equal(postGateDecisionProducer.decision, "approve");
   assert.match(postGateDecisionProducer.reason, /No blocking vulnerabilities found/i);
 });
+
+// ============================================================================
+// SPMW9-NEG-01: Post-Verification Coverage Integrity (PR39-SPMW9-LOCAL-PATCH-R1)
+// ============================================================================
+test("SPMW9-NEG-01: Post-verification gate fails closed when coverage is incomplete across options and consensus", async () => {
+  const changeSet = { totalFiles: 1, files: ["src/index.js"], diffHunks: "@@ -1 +1 @@\n-old\n+new" };
+  const mockAdapter = createMockVerifierAdapter("claude", {
+    executeVerification: async () => ({
+      ok: true,
+      fileCoverageComplete: true,
+      overallStatus: "CLEAN",
+      evaluations: [],
+      verifierOmissions: []
+    })
+  });
+  const cleanRecord = await conductIndependentVerification(changeSet, [], mockAdapter, {
+    verificationMode: "clean_challenge",
+    runId: "run-spmw9-neg-01",
+    headSha: "a".repeat(40),
+    patchObjective: "Security hardening"
+  });
+  const rc = new RunContext({
+    runId: "run-spmw9-neg-01",
+    headSha: "a".repeat(40),
+    contentDigest: cleanRecord.changeSetDigest,
+    patchObjective: "Security hardening"
+  });
+  const cleanConsensus = createTrustedConsensus([], { tier: 2 });
+
+  // Vector 1: options.coverageOk = false under formal evaluatePostVerificationGate
+  const resOptFalse = evaluatePostVerificationGate(cleanConsensus, cleanRecord, {
+    tier: 2,
+    coverageOk: false,
+    runContext: rc
+  });
+  assert.equal(resOptFalse.decision, "block");
+  assert.match(resOptFalse.reason, /Coverage Incomplete: Sentry omitted file\(s\) from review\./);
+
+  // Vector 2: consensus.coverageOk = false under isolated test gate
+  const resConsFalse = evaluateIsolatedTestPostVerificationGate(
+    { quorumReached: true, verdict: "approve", coverageOk: false, findings: [] },
+    cleanRecord,
+    { tier: 2, runContext: rc }
+  );
+  assert.equal(resConsFalse.decision, "block");
+  assert.match(resConsFalse.reason, /Coverage Incomplete: Sentry omitted file\(s\) from review\./);
+
+  // Vector 3: parity confirmation with evaluateGateDecision
+  const resGateParity = evaluateGateDecision(cleanConsensus, {
+    tier: 2,
+    coverageOk: false,
+    runContext: rc,
+    verificationRecord: cleanRecord
+  });
+  assert.equal(resGateParity.decision, "block");
+  assert.match(resGateParity.reason, /Coverage Incomplete: Sentry omitted file\(s\) from review\./);
+});
+
+// ============================================================================
+// SPMW9-NEG-02: UNCERTAIN Verifier Missing/Untrusted Consensus Entry Block
+// ============================================================================
+test("SPMW9-NEG-02: UNCERTAIN verifier status paired with null, undefined, or untrusted consensus fails closed", async () => {
+  const changeSet = { totalFiles: 1, files: ["src/index.js"], diffHunks: "@@ -1 +1 @@\n-old\n+new" };
+  const mockAdapter = createMockVerifierAdapter("claude", {
+    executeVerification: async () => ({
+      ok: true,
+      fileCoverageComplete: true,
+      overallStatus: "UNCERTAIN",
+      evaluations: [],
+      verifierOmissions: []
+    })
+  });
+  const uncertainRecord = await conductIndependentVerification(changeSet, [], mockAdapter, {
+    verificationMode: "clean_challenge",
+    runId: "run-spmw9-neg-02",
+    headSha: "b".repeat(40),
+    patchObjective: "Security hardening"
+  });
+  const rc = new RunContext({
+    runId: "run-spmw9-neg-02",
+    headSha: "b".repeat(40),
+    contentDigest: uncertainRecord.changeSetDigest,
+    patchObjective: "Security hardening"
+  });
+
+  // Vector 1: null consensus + UNCERTAIN verifier
+  const resNull = evaluatePostVerificationGate(null, uncertainRecord, { tier: 2, runContext: rc });
+  assert.equal(resNull.decision, "block");
+  assert.match(resNull.reason, /UNTRUSTED_OR_MISSING_CONSENSUS|Untrusted or missing consensus/i);
+
+  // Vector 2: undefined consensus + UNCERTAIN verifier
+  const resUndef = evaluatePostVerificationGate(undefined, uncertainRecord, { tier: 2, runContext: rc });
+  assert.equal(resUndef.decision, "block");
+  assert.match(resUndef.reason, /UNTRUSTED_OR_MISSING_CONSENSUS|Untrusted or missing consensus/i);
+
+  // Vector 3: untrusted plain mock object + UNCERTAIN verifier
+  const plainMock = { findings: [], quorumReached: true, verdict: "clean" };
+  const resPlain = evaluatePostVerificationGate(plainMock, uncertainRecord, { tier: 2, runContext: rc });
+  assert.equal(resPlain.decision, "block");
+  assert.match(resPlain.reason, /UNTRUSTED_OR_MISSING_CONSENSUS|Untrusted or missing consensus/i);
+
+  // Vector 4: cloned consensus + UNCERTAIN verifier
+  const realConsensus = createTrustedConsensus([], { tier: 2 });
+  const clonedConsensus = { ...realConsensus };
+  const resCloned = evaluatePostVerificationGate(clonedConsensus, uncertainRecord, { tier: 2, runContext: rc });
+  assert.equal(resCloned.decision, "block");
+  assert.match(resCloned.reason, /UNTRUSTED_OR_MISSING_CONSENSUS|Untrusted or missing consensus/i);
+});
+
+// ============================================================================
+// SPMW9-POS-01: UNCERTAIN Verifier with Trusted Consensus Preserves Human Review
+// ============================================================================
+test("SPMW9-POS-01: UNCERTAIN verifier status paired with authentic trusted consensus and complete coverage escalates to human_review_required", async () => {
+  const changeSet = { totalFiles: 1, files: ["src/index.js"], diffHunks: "@@ -1 +1 @@\n-old\n+new" };
+  const mockAdapter = createMockVerifierAdapter("claude", {
+    executeVerification: async () => ({
+      ok: true,
+      fileCoverageComplete: true,
+      overallStatus: "UNCERTAIN",
+      evaluations: [],
+      verifierOmissions: []
+    })
+  });
+  const uncertainRecord = await conductIndependentVerification(changeSet, [], mockAdapter, {
+    verificationMode: "clean_challenge",
+    runId: "run-spmw9-pos-01",
+    headSha: "c".repeat(40),
+    patchObjective: "Security hardening"
+  });
+  const rc = new RunContext({
+    runId: "run-spmw9-pos-01",
+    headSha: "c".repeat(40),
+    contentDigest: uncertainRecord.changeSetDigest,
+    patchObjective: "Security hardening"
+  });
+  const trustedConsensus = createTrustedConsensus([], { tier: 2 });
+
+  // Post-verification gate preserves human review routing
+  const resPost = evaluatePostVerificationGate(trustedConsensus, uncertainRecord, {
+    tier: 2,
+    coverageOk: true,
+    runContext: rc
+  });
+  assert.equal(resPost.decision, "human_review_required");
+  assert.match(resPost.reason, /Context Insufficient \/ Uncertain: Verifier declared UNCERTAIN/i);
+
+  // General gate preserves human review routing
+  const resGate = evaluateGateDecision(trustedConsensus, {
+    tier: 2,
+    coverageOk: true,
+    runContext: rc,
+    verificationRecord: uncertainRecord
+  });
+  assert.equal(resGate.decision, "human_review_required");
+  assert.match(resGate.reason, /Context Insufficient \/ Uncertain: Verifier declared UNCERTAIN/i);
+});

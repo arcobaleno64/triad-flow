@@ -28,6 +28,8 @@ import { getExactHeadFileContent, clearExactHeadCache } from "../src/core/git-co
 import { buildEvidenceReviewPrompt, formatContextPackageXml, formatContextGaps } from "../src/adapters/review-prompts.mjs";
 import { buildVerificationPrompt, conductIndependentVerification } from "../src/core/independent-verifier.mjs";
 import { evaluatePostVerificationGate } from "../src/core/harness.mjs";
+import { isTrustedConsensus } from "../src/core/consensus-state.mjs";
+import { aggregateConsensus } from "../src/core/loop.mjs";
 
 test("Adversarial M3.1: getExactHeadFileContent sanitization and injection prevention", () => {
   clearExactHeadCache();
@@ -251,7 +253,22 @@ test("Adversarial M3.6: Dual Prompt Visibility & Verification Routing under Cont
   });
 
   assert.equal(rec.overallStatus, "UNCERTAIN");
-  const gate = evaluatePostVerificationGate({ findings: [] }, rec);
+
+  // Untrusted plain mock is rejected by formal gate (fail-closed control)
+  const untrustedGate = evaluatePostVerificationGate({ findings: [] }, rec);
+  assert.equal(untrustedGate.decision, "block");
+  assert.match(untrustedGate.reason, /UNTRUSTED_OR_MISSING_CONSENSUS|Untrusted or missing consensus/i);
+
+  // Authentic trusted consensus routes UNCERTAIN to human_review_required
+  const trustedConsensus = aggregateConsensus({
+    agy: { provider: "agy", executionStatus: "success", fileCoverageComplete: true, findings: [] },
+    claude: { provider: "claude", executionStatus: "success", fileCoverageComplete: true, findings: [] },
+    codex: { provider: "codex", executionStatus: "success", fileCoverageComplete: true, findings: [] }
+  }, { policy: "TRI_PARTY_HETEROGENEOUS", tier: 2 });
+  assert.equal(isTrustedConsensus(trustedConsensus), true);
+  assert.equal(trustedConsensus.quorumReached, true);
+
+  const gate = evaluatePostVerificationGate(trustedConsensus, rec, { tier: 2 });
   assert.equal(gate.decision, "human_review_required");
   assert.match(gate.reason, /UNCERTAIN/i);
 });
