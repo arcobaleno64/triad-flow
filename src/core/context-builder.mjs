@@ -306,6 +306,9 @@ export function findBraceScopeEnd(lines, startIndex, options = {}) {
   let lastNonWsChar = "";
   let lastWord = "";
   let currentWord = "";
+  let prevWord = "";
+  const parenContextStack = [];
+  let lastParenWasStatementHeader = false;
 
   for (let i = startIndex; i < lines.length; i++) {
     const line = lines[i];
@@ -332,6 +335,7 @@ export function findBraceScopeEnd(lines, startIndex, options = {}) {
           lastNonWsChar = c;
           lastWord = "";
           currentWord = "";
+          prevWord = "";
         }
         continue;
       }
@@ -353,13 +357,41 @@ export function findBraceScopeEnd(lines, startIndex, options = {}) {
         stringChar = c;
         lastWord = "";
         currentWord = "";
+        prevWord = "";
+        lastParenWasStatementHeader = false;
+        continue;
+      }
+
+      if (c === "(") {
+        if (currentWord) {
+          prevWord = lastWord;
+          lastWord = currentWord;
+          currentWord = "";
+        }
+        const isHeader = /^(?:if|while|for|with|catch)$/.test(lastWord) || (lastWord === "await" && prevWord === "for");
+        parenContextStack.push(isHeader);
+        lastNonWsChar = "(";
+        lastWord = "";
+        currentWord = "";
+        prevWord = "";
+        lastParenWasStatementHeader = false;
+        continue;
+      }
+
+      if (c === ")") {
+        const isHeader = parenContextStack.pop() || false;
+        lastParenWasStatementHeader = isHeader;
+        lastNonWsChar = ")";
+        lastWord = "";
+        currentWord = "";
+        prevWord = "";
         continue;
       }
 
       // Check regex literal vs division operator
       if (c === "/") {
-        const isRegexPrecedingChar = !lastNonWsChar || /^[=([{:;,?!&|+*^%~<>-]$/.test(lastNonWsChar);
-        const isRegexPrecedingWord = /^(?:return|case|typeof|delete|void|throw|yield|await|in|instanceof|new)$/.test(lastWord);
+        const isRegexPrecedingChar = !lastNonWsChar || /^[=([{:;,?!&|+*^%~<>-]$/.test(lastNonWsChar) || lastParenWasStatementHeader;
+        const isRegexPrecedingWord = /^(?:return|case|typeof|delete|void|throw|yield|await|in|instanceof|new|else|do)$/.test(lastWord);
 
         if (isRegexPrecedingChar || isRegexPrecedingWord) {
           let j = charIdx + 1;
@@ -395,9 +427,15 @@ export function findBraceScopeEnd(lines, startIndex, options = {}) {
             lastNonWsChar = "/";
             lastWord = "";
             currentWord = "";
+            prevWord = "";
+            lastParenWasStatementHeader = false;
             continue;
           }
         }
+      }
+
+      if (!/\s/.test(c)) {
+        lastParenWasStatementHeader = false;
       }
 
       if (c === "{") {
@@ -406,17 +444,20 @@ export function findBraceScopeEnd(lines, startIndex, options = {}) {
         lastNonWsChar = "{";
         lastWord = "";
         currentWord = "";
+        prevWord = "";
       } else if (c === "}") {
         depth--;
         lastNonWsChar = "}";
         lastWord = "";
         currentWord = "";
+        prevWord = "";
         if (started && depth <= 0) {
           return i + 1;
         }
       } else if (/\s/.test(c)) {
         currentWord = "";
       } else if (/[a-zA-Z0-9_$]/.test(c)) {
+        if (!currentWord) prevWord = lastWord;
         currentWord += c;
         lastWord = currentWord;
         lastNonWsChar = c;
@@ -424,6 +465,7 @@ export function findBraceScopeEnd(lines, startIndex, options = {}) {
         lastNonWsChar = c;
         lastWord = "";
         currentWord = "";
+        prevWord = "";
       }
     }
 
@@ -2044,6 +2086,20 @@ export function extractBoundedFunctionSnippet(lines, startLine, endLine) {
     const verifiedEnd = findBraceScopeEnd(lines, braceLineIdx, { failClosed: true, startCharIndex: bodyBraceIdx });
     if (verifiedEnd !== -1 && verifiedEnd === endLine) {
       isClosed = true;
+    }
+  }
+
+  if (isClosed) {
+    const endLineText = lines[endLine - 1] || "";
+    const cleanEndLine = stripCommentsAndStrings(endLineText).trim();
+    const lastBraceIdx = cleanEndLine.lastIndexOf("}");
+    if (lastBraceIdx === -1) {
+      isClosed = false;
+    } else {
+      const trailing = cleanEndLine.slice(lastBraceIdx + 1).trim();
+      if (trailing && !/^[;,)}\]]*$/.test(trailing)) {
+        isClosed = false;
+      }
     }
   }
 

@@ -431,3 +431,106 @@ test("td7cF-NEG: findQualifiedFunctionDefinitions correctly isolates class body 
   assert.equal(matches[0].startLine, 4);
   assert.equal(matches[0].endLine, 6);
 });
+
+test("td7cF-NEG: statement-header regex literals (if/while) containing braces do not prematurely truncate function or claim full_body", () => {
+  // 1. Counterexample: if (condition) /}/.test(token)
+  const codeIfRegex = [
+    "function validateToken(token, enabled) {",
+    "  if (enabled) /}/.test(token);",
+    "  if (!authorize(token)) throw new Error(\"DENIED\");",
+    "  return true;",
+    "}"
+  ];
+
+  // Scope must extend to line 5, not line 2
+  const endLineIf = findBraceScopeEnd(codeIfRegex, 0, { failClosed: true });
+  assert.equal(endLineIf, 5, "findBraceScopeEnd must not truncate at if-statement regex literal /}/");
+
+  const defsIf = findFunctionDefinitions(codeIfRegex, "validateToken");
+  assert.equal(defsIf.length, 1, "Must find exactly one function definition");
+  assert.equal(defsIf[0].startLine, 1);
+  assert.equal(defsIf[0].endLine, 5, "Function definition must span lines 1-5");
+
+  const snippetIf = extractBoundedFunctionSnippet(codeIfRegex, 1, defsIf[0].endLine);
+  assert.equal(snippetIf.extractionMode, "full_body");
+  assert.ok(snippetIf.definition.includes("authorize(token)"), "Full body snippet must include authorize(token) guard");
+
+  // 2. Counterexample: while (condition) /}/.test(...)
+  const codeWhileRegex = [
+    "function processItems(token, ready) {",
+    "  while (ready) /}/.test(token);",
+    "  if (!authorize(token)) throw new Error(\"DENIED\");",
+    "  return true;",
+    "}"
+  ];
+  const endLineWhile = findBraceScopeEnd(codeWhileRegex, 0, { failClosed: true });
+  assert.equal(endLineWhile, 5, "findBraceScopeEnd must not truncate at while-statement regex literal /}/");
+
+  // 3. Negative control: Division operator following parenthesized expression must NOT be misidentified as regex
+  const codeDivision = [
+    "function calculateRatio(a, b, c) {",
+    "  const ratio = (a + b) / 2;",
+    "  return ratio;",
+    "}"
+  ];
+  assert.equal(findBraceScopeEnd(codeDivision, 0, { failClosed: true }), 4, "Division operator following (expr) must not disrupt brace tracking");
+
+  // 4. Defense-in-depth: extractBoundedFunctionSnippet must NOT self-certify full_body on truncated boundaries
+  const truncatedSnippet = extractBoundedFunctionSnippet(codeIfRegex, 1, 2);
+  assert.notEqual(truncatedSnippet.extractionMode, "full_body", "Truncated boundary must not be labeled full_body");
+  assert.equal(truncatedSnippet.extractionMode, "incomplete", "Truncated boundary must be labeled incomplete");
+});
+
+test("td7cF-NEG: compound statement-header (for await) regex literals do not truncate function scope or lose authorization guards", () => {
+  // 1. Single-line for await (const item of iter) /}/.test(token)
+  const codeForAwait = [
+    "async function f(iter, token) {",
+    "  for await (const item of iter) /}/.test(token);",
+    "  if (!authorize(token)) throw Error(\"DENIED\");",
+    "  return true;",
+    "}"
+  ];
+
+  // findBraceScopeEnd must extend to line 5, not line 2
+  const endLine = findBraceScopeEnd(codeForAwait, 0, { failClosed: true });
+  assert.equal(endLine, 5, "findBraceScopeEnd must correctly identify line 5 for for-await regex literal /}/");
+
+  const defs = findFunctionDefinitions(codeForAwait, "f");
+  assert.equal(defs.length, 1, "Must find exactly one function definition");
+  assert.equal(defs[0].startLine, 1);
+  assert.equal(defs[0].endLine, 5, "findFunctionDefinitions must span lines 1-5");
+
+  const snippet = extractBoundedFunctionSnippet(codeForAwait, 1, defs[0].endLine);
+  assert.equal(snippet.extractionMode, "full_body", "Full function body must be extracted as full_body");
+  assert.equal(snippet.lines, 5);
+  assert.ok(snippet.definition.includes("authorize(token)"), "Full body snippet must preserve authorize(token) guard");
+
+  // 2. Multiline for / await (const item of iter) /}/.test(token)
+  const codeForAwaitMultiline = [
+    "async function fMulti(iter, token) {",
+    "  for",
+    "    await (const item of iter) /}/.test(token);",
+    "  if (!authorize(token)) throw Error(\"DENIED\");",
+    "  return true;",
+    "}"
+  ];
+  const endLineMulti = findBraceScopeEnd(codeForAwaitMultiline, 0, { failClosed: true });
+  assert.equal(endLineMulti, 6, "findBraceScopeEnd must correctly identify line 6 for multiline for-await");
+
+  const defsMulti = findFunctionDefinitions(codeForAwaitMultiline, "fMulti");
+  assert.equal(defsMulti.length, 1);
+  assert.equal(defsMulti[0].endLine, 6);
+
+  const snippetMulti = extractBoundedFunctionSnippet(codeForAwaitMultiline, 1, defsMulti[0].endLine);
+  assert.equal(snippetMulti.extractionMode, "full_body");
+  assert.ok(snippetMulti.definition.includes("authorize(token)"));
+
+  // 3. Negative control: Division operator following parenthesized expression must NOT be misidentified as regex
+  const codeDivisionParen = [
+    "function calc(a, b) {",
+    "  const res = (a + b) / 2;",
+    "  return res;",
+    "}"
+  ];
+  assert.equal(findBraceScopeEnd(codeDivisionParen, 0, { failClosed: true }), 4, "Division following parenthesized expression must remain division");
+});
