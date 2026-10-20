@@ -202,20 +202,20 @@ test("runCli review emits JSON review-run report via --format=json and saves fil
     reviewAdapters: { macro: mockAdapter }
   });
 
-  assert.equal(code, EXIT_CODES.SUCCESS);
+  assert.equal(code, EXIT_CODES.GATE_BLOCKED);
 
   // 1. stdout contains valid JSON review-run report
   const parsedStdout = JSON.parse(stdout.buffer);
   assert.equal(parsedStdout.schemaVersion, "1.0.0");
-  assert.equal(parsedStdout.status, REVIEW_RUN_STATUS.REVIEWED_CLEAN);
-  assert.equal(parsedStdout.exitCode, 0);
+  assert.equal(parsedStdout.status, REVIEW_RUN_STATUS.INCOMPLETE);
+  assert.equal(parsedStdout.exitCode, 1);
   assert.equal(parsedStdout.scope.contentDigest, mockChangeSet.contentDigest);
 
   // 2. File was saved and contains identical valid JSON
   assert.ok(fs.existsSync(reportPath));
   const parsedFile = JSON.parse(fs.readFileSync(reportPath, "utf8"));
-  assert.equal(parsedFile.status, REVIEW_RUN_STATUS.REVIEWED_CLEAN);
-  assert.equal(parsedFile.exitCode, 0);
+  assert.equal(parsedFile.status, REVIEW_RUN_STATUS.INCOMPLETE);
+  assert.equal(parsedFile.exitCode, 1);
 
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });

@@ -1,0 +1,965 @@
+{
+  "metadata": {
+    "targetPr": "https://github.com/arcobaleno64/triad-flow/pull/39",
+    "prNumber": 39,
+    "branch": "fix/remediation-007-clean-challenge",
+    "extractionHeadSha": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+    "cohort": "40_current_threads",
+    "timestamp": "2026-10-15T03:10:45.526Z",
+    "totalCurrentThreads": 40,
+    "verdictCounts": {
+      "FIXED": 33,
+      "REPRODUCIBLE_DEFECT": 5,
+      "DUPLICATE": 2,
+      "UNVERIFIED_EVIDENCE_NEEDED": 0,
+      "NOT_APPLICABLE": 0
+    },
+    "severityCounts": {
+      "P1": 28,
+      "P2": 12
+    },
+    "moduleCounts": {
+      "src/core/harness.mjs": {
+        "total": 14,
+        "P1": 12,
+        "P2": 2,
+        "FIXED": 14,
+        "REPRODUCIBLE_DEFECT": 0,
+        "DUPLICATE": 0
+      },
+      "src/adapters/review-orchestrator.mjs": {
+        "total": 6,
+        "P1": 6,
+        "P2": 0,
+        "FIXED": 1,
+        "REPRODUCIBLE_DEFECT": 4,
+        "DUPLICATE": 1
+      },
+      "src/cli.mjs": {
+        "total": 2,
+        "P1": 2,
+        "P2": 0,
+        "FIXED": 0,
+        "REPRODUCIBLE_DEFECT": 1,
+        "DUPLICATE": 1
+      },
+      "src/core/independent-verifier.mjs": {
+        "total": 18,
+        "P1": 8,
+        "P2": 10,
+        "FIXED": 18,
+        "REPRODUCIBLE_DEFECT": 0,
+        "DUPLICATE": 0
+      }
+    },
+    "governanceInvariants": {
+      "RUNTIME_AUTHORITY": "NONE",
+      "SHADOW_TO_ADVISORY": "STRICT_HOLD",
+      "CYCLE_0048": "ON_HOLD_NOT_ASSIGNED",
+      "ISSUE_37": "OPEN",
+      "SQUASH_MERGE": "NOT_AUTHORIZED",
+      "GITHUB_RULESET_BYPASS": "NOT_AUTHORIZED",
+      "THREAD_BATCH_RESOLUTION": "NOT_AUTHORIZED",
+      "CODE_MODIFICATION": "NOT_AUTHORIZED",
+      "COMMIT_AND_PUSH": "NOT_AUTHORIZED",
+      "PHASE_1_IMPLEMENTATION": "VERIFIED_COMPLETED",
+      "PHASE_2_IMPLEMENTATION": "VERIFIED_COMPLETED",
+      "LOCAL_CODE_MODIFICATION": "AUTHORIZED_LOCAL_HARNESS_AND_VERIFIER"
+    },
+    "governanceNotice": "Thread batch resolution on GitHub is NOT AUTHORIZED. This ledger is an evidence-only triage record; zero review threads have been mutated on GitHub.",
+    "lastUpdated": "2026-10-16T01:15:00.000Z",
+    "phase1Status": "COMPLETED",
+    "phase2Status": "COMPLETED",
+    "verificationMetrics": {
+      "phase1Tests": "10/10 PASS",
+      "phase2Tests": "20/20 PASS",
+      "fullSuite": "924 total / 920 pass / 4 skip / 0 fail"
+    }
+  },
+  "records": [
+    {
+      "threadId": "PRRT_kwDOUWarIc6rsKB8",
+      "fileLocation": "src/core/harness.mjs:237-239",
+      "severity": "P1",
+      "primaryModule": "src/core/harness.mjs",
+      "status": "FIXED",
+      "canonicalRootCauseId": "HARNESS-P1-PROVIDER-FINDING-ID-COLLISION",
+      "invariantsAffected": [
+        "Multi-sentry finding identity integrity",
+        "Multi-provider quorum review resilience without unhandled crashes",
+        "Deterministic finding addressing across verification lifecycle"
+      ],
+      "technicalAnalysis": "In src/core/harness.mjs:237-239, normalizeFinding directly preserves provider-local finding IDs: `id: raw.id !== undefined && raw.id !== null && String(raw.id).trim().length > 0 ? String(raw.id).trim() : ...`. When two distinct sentries (e.g. Sentry A and Sentry B) each report their first finding using the common local identifier 'finding-1' on different source files, aggregateConsensus (src/core/loop.mjs:471-500) does not merge them because their files/locators do not match. Consequently, both findings enter consensus with identical `id: 'finding-1'`. When this consensus is subsequently passed to conductIndependentVerification, src/core/independent-verifier.mjs:2014 immediately throws an unhandled exception: `Error: Producer findings contain duplicate finding ID 'finding-1' (DUPLICATE_FINDING_ID)`. In scripts/dogfood-review.mjs, this unhandled exception crashes the review run. Furthermore, src/core/harness.mjs:718-724 fails closed with `DUPLICATE_FINDING_ID`. Because neither normalizeFinding nor aggregateConsensus namespaces incoming finding IDs with their provider/source identity, valid multi-sentry reviews are prematurely aborted.",
+      "adjudicator": "PENDING_ADJUDICATION",
+      "adjudicationDate": "PENDING_ADJUDICATION",
+      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "remediationSketch": "In normalizeFinding or aggregateConsensus, namespace incoming provider-local finding IDs using the sentry provider/source role (e.g. `${source}:${raw.id}`) or assign deterministic consensus-scoped sequential IDs `finding-${i+1}` while preserving `providerFindingId` as audit metadata.",
+      "negativeTestContract": "Given two sentry reports from distinct providers where sentry A emits finding-1 on fileA.js and sentry B emits finding-1 on fileB.js, when aggregateConsensus and conductIndependentVerification are executed, conductIndependentVerification MUST NOT throw DUPLICATE_FINDING_ID and both findings MUST be distinctly evaluable.",
+      "resolutionDetails": {
+        "resolvedIn": "src/core/harness.mjs",
+        "verifiedBy": "tests/remediation-phase1-harness.test.mjs (PHASE1-NEG-08)",
+        "resolutionSummary": "Remediated in Phase 1: in `normalizeFinding`, provider-local finding IDs matching generic numeric patterns are automatically namespaced (`${prefix}:${id}`) while preserving semantic IDs. In `_evaluatePostVerificationGateCore`, multi-pass finding resolution (`findEvaluationIndexForFinding`) and semantic content signature matching resolve evaluations without ID collisions."
+      }
+    },
+    {
+      "threadId": "PRRT_kwDOUWarIc6sU7ZN",
+      "fileLocation": "src/core/harness.mjs:321, 347, 431-455, 593-677",
+      "severity": "P1",
+      "primaryModule": "src/core/harness.mjs",
+      "status": "FIXED",
+      "canonicalRootCauseId": "HARNESS-P1-OPTIONAL-RUNCONTEXT-AUTHORITY-BYPASS",
+      "invariantsAffected": [
+        "Mandatory RunContext binding for verificationRecord gate authority",
+        "Cross-changeset replay prevention",
+        "Fail-closed gating against ungrounded verification capabilities"
+      ],
+      "technicalAnalysis": "In src/core/harness.mjs:347 (_evaluateGateDecisionCore) and 593 (_evaluatePostVerificationGateCore), verification binding integrity checks (contentDigest, patchObjective, headSha, runId, exclusions) are executed strictly within `if (options?.runContext) { ... }`. When a caller provides a valid in-process verificationRecord (e.g. retained from a previous run on another changeset) but omits `options.runContext`, all binding integrity checks are silently bypassed. For a zero-finding consensus (`findings.length === 0`), the gate checks only `verificationRecord.verificationMode === 'clean_challenge'`, and then proceeds directly to approve at line 1147. A valid Clean Challenge record minted for ChangeSet A can therefore authorize an unrelated zero-finding review for ChangeSet B when runContext is omitted.",
+      "adjudicator": "PENDING_ADJUDICATION",
+      "adjudicationDate": "PENDING_ADJUDICATION",
+      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "remediationSketch": "Require mandatory presence of options.runContext whenever options.verificationRecord is supplied. In both _evaluateGateDecisionCore and _evaluatePostVerificationGateCore, if options.verificationRecord is present but options?.runContext is missing, fail closed immediately: `return { decision: 'block', reason: 'Gate Fail-Closed: Mandatory RunContext missing for verification record authority (MISSING_RUN_CONTEXT).', criticals: [], advisoryFindings: [] };`.",
+      "negativeTestContract": "Given a zero-finding trusted consensus and a valid, trusted Clean Challenge verificationRecord, calling evaluateGateDecision(consensus, { verificationRecord }) without options.runContext MUST fail closed with decision: 'block' citing MISSING_RUN_CONTEXT and MUST NOT return 'approve'.",
+      "resolutionDetails": {
+        "resolvedIn": "src/core/harness.mjs",
+        "verifiedBy": "tests/remediation-phase1-harness.test.mjs (PHASE1-NEG-01)",
+        "resolutionSummary": "Remediated in Phase 1: in `_evaluateGateDecisionCore` and `_evaluatePostVerificationGateCore`, when `verificationRecord` is supplied and synthetic execution is not enabled, `options.runContext` is strictly mandatory. If missing or null, gate fails closed with reason 'Gate Fail-Closed: Mandatory RunContext missing for verification record authority (UNTRUSTED_OR_MISSING_RUN_CONTEXT).'"
+      }
+    },
+    {
+      "threadId": "PRRT_kwDOUWarIc6riPTv",
+      "fileLocation": "src/core/harness.mjs:348-350, 594-596",
+      "severity": "P2",
+      "primaryModule": "src/core/harness.mjs",
+      "status": "FIXED",
+      "canonicalRootCauseId": "HARNESS-P2-UNCAUGHT-RUNCONTEXT-CONSTRUCTOR-EXCEPTION",
+      "invariantsAffected": [
+        "Deterministic fail-closed gate error handling",
+        "Robustness against malformed or hostile caller options"
+      ],
+      "technicalAnalysis": "In src/core/harness.mjs:348-350 and 594-596, plain object run contexts are converted via `new RunContext(options.runContext)`. The RunContext constructor in src/core/independent-verifier.mjs:231-233 throws an unhandled Error when runId contains path traversal sequences: `if (rawRunId.includes('..') || rawRunId.includes('/') || rawRunId.includes('\\\\') || rawRunId.includes('\\0')) { throw new Error(...); }`. Because harness.mjs lacks a try/catch block around this constructor call, supplying options.runContext = { runId: '../escape' } crashes evaluateGateDecision and evaluatePostVerificationGate with an uncaught runtime exception instead of producing a structured, deterministic `{ decision: 'block' }` result.",
+      "adjudicator": "PENDING_ADJUDICATION",
+      "adjudicationDate": "PENDING_ADJUDICATION",
+      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "remediationSketch": "Wrap `new RunContext(options.runContext)` in a try/catch block in both _evaluateGateDecisionCore and _evaluatePostVerificationGateCore. Upon catching an Error, fail closed cleanly: `return { decision: 'block', reason: 'Gate Fail-Closed: Malformed RunContext (MALFORMED_RUN_CONTEXT): ' + err.message, criticals: [], advisoryFindings: [] };`.",
+      "negativeTestContract": "Given a valid consensus, trusted verification record, and options.runContext = { runId: '../traversal' }, evaluateGateDecision and evaluatePostVerificationGate MUST NOT throw an unhandled exception and MUST return { decision: 'block' }.",
+      "resolutionDetails": {
+        "resolvedIn": "src/core/harness.mjs",
+        "verifiedBy": "tests/remediation-phase1-harness.test.mjs (PHASE1-NEG-04)",
+        "resolutionSummary": "Remediated in Phase 1: in `_evaluateGateDecisionCore` and `_evaluatePostVerificationGateCore`, instantiation of `RunContext` from caller options is enclosed in defensive `try/catch` blocks. Any constructor throw (such as path traversal in runId) returns deterministic fail-closed `{ decision: 'block', reason: 'Gate Fail-Closed: Malformed RunContext conversion failed (MALFORMED_RUN_CONTEXT_CONVERSION_FAILED): ...' }` instead of uncaught exception."
+      }
+    },
+    {
+      "threadId": "PRRT_kwDOUWarIc6rvCBG",
+      "fileLocation": "src/core/harness.mjs:354, 379, 600, 625",
+      "severity": "P1",
+      "primaryModule": "src/core/harness.mjs",
+      "status": "FIXED",
+      "canonicalRootCauseId": "HARNESS-P1-SILENT-DROPPED-MALFORMED-BINDINGS",
+      "invariantsAffected": [
+        "Mandatory strict binding validation on contentDigest and headSha",
+        "Fail-closed handling for malformed input fields",
+        "Defense against stripped digest/sha validation bypass"
+      ],
+      "technicalAnalysis": "In src/core/independent-verifier.mjs:186-222, normalizeDigest and normalizeCommitSha return empty strings `\"\"` when passed non-empty strings that fail format validation (e.g. `normalizeDigest('invalid-sha') === ''`). When RunContext is constructed with a malformed digest or head SHA, its properties become `contentDigest = ''` and `headSha = ''`. In src/core/harness.mjs:354, 379, 600, and 625, the gate checks `if (rc.contentDigest) { ... }` and `if (rc.headSha) { ... }`. Because both properties were normalized to empty strings, the conditions evaluate to false and the binding checks are skipped entirely. A caller providing a malformed contentDigest or headSha effectively disables that axis of integrity validation rather than causing a fail-closed rejection.",
+      "adjudicator": "PENDING_ADJUDICATION",
+      "adjudicationDate": "PENDING_ADJUDICATION",
+      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "remediationSketch": "Require mandatory axes in RunContext to be non-empty and valid. In harness.mjs binding validation: `if (!rc.contentDigest || !rc.headSha) { return { decision: 'block', reason: 'Gate Fail-Closed: Malformed RunContext (MALFORMED_RUN_CONTEXT): contentDigest and headSha must be non-empty valid hex strings.', criticals: [], advisoryFindings: [] }; }`. Furthermore, validate in RunContext constructor that non-empty raw inputs that fail normalization throw or flag an invalid state.",
+      "negativeTestContract": "Given a trusted zero-finding consensus and trusted Clean Challenge record, calling evaluateGateDecision with options.runContext = { contentDigest: 'invalid_non_hex', headSha: 'invalid_sha' } MUST fail closed with { decision: 'block' } and MUST NOT skip binding checks.",
+      "resolutionDetails": {
+        "resolvedIn": "src/core/harness.mjs",
+        "verifiedBy": "tests/remediation-phase1-harness.test.mjs (PHASE1-NEG-05)",
+        "resolutionSummary": "Remediated in Phase 1: in `_evaluateGateDecisionCore` and `_evaluatePostVerificationGateCore`, raw headSha and contentDigest values on `options.runContext` are validated against strict 40/64-char hex normalization. Non-empty invalid hex inputs fail closed with reason containing `MALFORMED_RUN_CONTEXT_BINDING` rather than bypassing verification."
+      }
+    },
+    {
+      "threadId": "PRRT_kwDOUWarIc6rsKB_",
+      "fileLocation": "src/core/harness.mjs:418-420, 664-666",
+      "severity": "P1",
+      "primaryModule": "src/core/harness.mjs",
+      "status": "FIXED",
+      "canonicalRootCauseId": "HARNESS-P1-EXCLUSION-CASE-SENSITIVITY",
+      "invariantsAffected": [
+        "Path exclusion scope integrity on case-sensitive filesystems",
+        "Cross-platform filesystem semantic consistency",
+        "Scope binding immutability for verification records"
+      ],
+      "technicalAnalysis": "In src/core/harness.mjs:418-420 and 664-666, exclusions are compared after unconditional lowercasing: `const normRcExcl = rcExcl.map(s => String(s).trim().toLowerCase()).sort(); const normVrExcl = vrExcl.map(s => String(s).trim().toLowerCase()).sort();`. On POSIX/Linux systems, `src/Auth.js` and `src/auth.js` identify completely different physical files. Because exclusions are not bound into changeSet.diffHunks or digestChangeSet, this lowercasing enables a verification record minted with `src/Auth.js` excluded to be accepted for a RunContext excluding `src/auth.js`. This allows a verification performed under one scope to authorize a materially different scope on case-sensitive platforms.",
+      "adjudicator": "PENDING_ADJUDICATION",
+      "adjudicationDate": "PENDING_ADJUDICATION",
+      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "remediationSketch": "Preserve case during path exclusion comparison, or apply platform-aware normalization: normalize slashes to `/` across all platforms, and lowercase ONLY on Windows (`process.platform === 'win32'`). On POSIX platforms, retain exact case so distinct paths never compare equal.",
+      "negativeTestContract": "On a case-sensitive platform (or in a platform-neutral unit test preserving case), given rc.exclusions = ['src/auth.js'] and vr.exclusions = ['src/Auth.js'], evaluateGateDecision MUST return { decision: 'block' } citing FORGED_OR_STALE_RECORD.",
+      "resolutionDetails": {
+        "resolvedIn": "src/core/harness.mjs",
+        "verifiedBy": "tests/remediation-phase1-harness.test.mjs (PHASE1-NEG-03, PHASE1-NEG-03-PLATFORM-OVERRIDE)",
+        "resolutionSummary": "Remediated in Phase 1 (including P1-HARNESS-EXCLUSION-PLATFORM-OVERRIDE-01): implemented and exported `normalizeExclusionPath(s, { platform = process.platform })`. On POSIX platforms (`darwin`, `linux`), exact character casing is preserved while normalizing slashes and stripping `./`. On Windows (`win32`), casing is lowercased for filesystem comparison. Formal gate entry points strictly bind targetPlatform to host `process.platform`, ignoring caller `options.platform` override attempts; only isolated synthetic test gates (`allowSynthetic: true`) permit platform simulation."
+      }
+    },
+    {
+      "threadId": "PRRT_kwDOUWarIc6sL8VY",
+      "fileLocation": "src/core/harness.mjs:418-420, 664-666",
+      "severity": "P1",
+      "primaryModule": "src/core/harness.mjs",
+      "status": "FIXED",
+      "canonicalRootCauseId": "HARNESS-P1-EXCLUSION-CASE-SENSITIVITY",
+      "invariantsAffected": [
+        "Path exclusion scope integrity on case-sensitive filesystems",
+        "Cross-platform filesystem semantic consistency"
+      ],
+      "technicalAnalysis": "Duplicate report of Thread PRRT_kwDOUWarIc6rsKB_. Both review comments target harness.mjs:418-420 and lines 664-666, identifying that unconditional `.toLowerCase()` on path exclusions causes distinct paths on case-sensitive filesystems (e.g. `src/Admin.js` vs `src/admin.js`) to compare equal, bypassing exclusion scope integrity.",
+      "adjudicator": "PENDING_ADJUDICATION",
+      "adjudicationDate": "PENDING_ADJUDICATION",
+      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "remediationSketch": "Refer to HARNESS-P1-EXCLUSION-CASE-SENSITIVITY remediation blueprint under Thread PRRT_kwDOUWarIc6rsKB_.",
+      "negativeTestContract": "Refer to HARNESS-P1-EXCLUSION-CASE-SENSITIVITY negative test contract under Thread PRRT_kwDOUWarIc6rsKB_.",
+      "resolutionDetails": {
+        "resolvedIn": "src/core/harness.mjs",
+        "verifiedBy": "tests/remediation-phase1-harness.test.mjs (PHASE1-NEG-03, PHASE1-NEG-03-PLATFORM-OVERRIDE)",
+        "resolutionSummary": "Duplicate of Thread PRRT_kwDOUWarIc6rsKB_. Remediated in Phase 1 in `src/core/harness.mjs` via platform-aware `normalizeExclusionPath`, preserving path casing on POSIX/Linux platforms and rejecting options.platform overrides in formal gates."
+      }
+    },
+    {
+      "threadId": "PRRT_kwDOUWarIc6slql7",
+      "fileLocation": "src/core/harness.mjs:418-420, 664-666",
+      "severity": "P1",
+      "primaryModule": "src/core/harness.mjs",
+      "status": "FIXED",
+      "canonicalRootCauseId": "HARNESS-P1-EXCLUSION-CASE-SENSITIVITY",
+      "invariantsAffected": [
+        "Path exclusion scope integrity on case-sensitive filesystems",
+        "Cross-platform filesystem semantic consistency"
+      ],
+      "technicalAnalysis": "Duplicate report of Thread PRRT_kwDOUWarIc6rsKB_. Targets line 420 (and corresponding line 666), describing that lowercasing path exclusions allows a record minted with `src/Admin.js` excluded to be accepted for `src/admin.js` on case-sensitive platforms without triggering digest mismatch.",
+      "adjudicator": "PENDING_ADJUDICATION",
+      "adjudicationDate": "PENDING_ADJUDICATION",
+      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "remediationSketch": "Refer to HARNESS-P1-EXCLUSION-CASE-SENSITIVITY remediation blueprint under Thread PRRT_kwDOUWarIc6rsKB_.",
+      "negativeTestContract": "Refer to HARNESS-P1-EXCLUSION-CASE-SENSITIVITY negative test contract under Thread PRRT_kwDOUWarIc6rsKB_.",
+      "resolutionDetails": {
+        "resolvedIn": "src/core/harness.mjs",
+        "verifiedBy": "tests/remediation-phase1-harness.test.mjs (PHASE1-NEG-03, PHASE1-NEG-03-PLATFORM-OVERRIDE)",
+        "resolutionSummary": "Duplicate of Thread PRRT_kwDOUWarIc6rsKB_. Remediated in Phase 1 in `src/core/harness.mjs` via platform-aware `normalizeExclusionPath`, enforcing case preservation on case-sensitive filesystems and rejecting caller platform overrides in formal gates."
+      }
+    },
+    {
+      "threadId": "PRRT_kwDOUWarIc6rvCBL",
+      "fileLocation": "src/core/harness.mjs:547-560",
+      "severity": "P1",
+      "primaryModule": "src/core/harness.mjs",
+      "status": "FIXED",
+      "canonicalRootCauseId": "HARNESS-P1-SIGNATURE-DELIMITER-COLLISION",
+      "invariantsAffected": [
+        "Injective finding signature encoding",
+        "Tamper-resistant finding set verification in post-verification gate"
+      ],
+      "technicalAnalysis": "In src/core/harness.mjs:559, getFindingSignature encodes finding fields into a single string by joining them with unescaped pipe characters: `${id}|${ruleId}|${title}|${file}|${lineStart}|${lineEnd}|${severity}|${cwe}|${type}|${recommendation}`. Because fields such as `title`, `file`, and `recommendation` can legally contain `|` (for example, in POSIX, `|` is a valid character in file paths), different findings can yield identical signatures. For example, Finding A with title 'foo|bar' and file 'baz' produces `||foo|bar|baz|1|1||||`, which is bit-for-bit identical to Finding B with title 'foo' and file 'bar|baz'. When bound findings are compared at line 793, delimiter collisions allow verifier evaluations to match materially different findings.",
+      "adjudicator": "PENDING_ADJUDICATION",
+      "adjudicationDate": "PENDING_ADJUDICATION",
+      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "remediationSketch": "Serialize the finding signature as a canonical JSON string (e.g. `JSON.stringify([id, ruleId, title, file, lineStart, lineEnd, severity, cwe, type, recommendation])`) or escape all pipe characters (e.g. `str.replace(/\\|/g, '\\\\|')`) before concatenation to guarantee strict injectivity.",
+      "negativeTestContract": "Given Finding A = { title: 'foo|bar', file: 'baz', line_start: 1, line_end: 1, severity: 'low' } and Finding B = { title: 'foo', file: 'bar|baz', line_start: 1, line_end: 1, severity: 'low' }, getFindingSignature(Finding A) !== getFindingSignature(Finding B).",
+      "resolutionDetails": {
+        "resolvedIn": "src/core/harness.mjs",
+        "verifiedBy": "tests/remediation-phase1-harness.test.mjs (PHASE1-NEG-02)",
+        "resolutionSummary": "Remediated in Phase 1: in `src/core/harness.mjs`, `getFindingSignature` serializes finding fields as a canonical JSON array tuple `JSON.stringify([id, ruleId, title, file, lineStart, lineEnd, severity, cwe, type, recommendation])`, providing collision-free, injective finding signatures."
+      }
+    },
+    {
+      "threadId": "PRRT_kwDOUWarIc6sPmw9",
+      "fileLocation": "src/core/harness.mjs:562-592, 677, 1156-1158",
+      "severity": "P1",
+      "primaryModule": "src/core/harness.mjs",
+      "status": "FIXED",
+      "canonicalRootCauseId": "HARNESS-P1-POST-VERIFICATION-MISSING-CONSENSUS-CHECK",
+      "invariantsAffected": [
+        "Mandatory trusted consensus capability (isTrustedConsensus)",
+        "Quorum and coverage validation before gate release",
+        "Consistent security posture across all exported gate entry points"
+      ],
+      "technicalAnalysis": "The exported function evaluatePostVerificationGate(consensus, verificationRecord, options) delegates to _evaluatePostVerificationGateCore. In _evaluatePostVerificationGateCore (lines 562-676), verificationRecord capability is validated, but consensus capability is NEVER validated. Line 677 unconditionally defaults findings: `const findings = Array.isArray(consensus?.findings) ? consensus.findings : [];`. If an external caller invokes evaluatePostVerificationGate with `consensus = null` (or an arbitrary plain object lacking trusted consensus) alongside a valid Clean Challenge record and matching RunContext, the function bypasses quorumReached, verdict, coverageOk, and capability checks, reaching line 1147 and returning `{ decision: 'approve' }`.",
+      "adjudicator": "PENDING_ADJUDICATION",
+      "adjudicationDate": "PENDING_ADJUDICATION",
+      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "remediationSketch": "Add the authoritative consensus capability and quorum checks from _evaluateGateDecisionCore to the beginning of _evaluatePostVerificationGateCore: verify `if (!isTrustedConsensus(consensus))` -> block UNTRUSTED_CONSENSUS; verify `if (!consensus.quorumReached || consensus.verdict === 'error')` -> block; verify `if (options?.coverageOk === false || consensus?.coverageOk === false)` -> block.",
+      "negativeTestContract": "Calling evaluatePostVerificationGate(null, trustedRecord, { runContext }) or evaluatePostVerificationGate({ findings: [] }, trustedRecord, { runContext }) MUST return { decision: 'block' } with UNTRUSTED_CONSENSUS and MUST NOT return 'approve'.",
+      "resolutionDetails": {
+        "resolvedIn": "src/core/harness.mjs",
+        "verifiedBy": "tests/remediation-phase1-harness.test.mjs (PHASE1-NEG-06)",
+        "resolutionSummary": "Remediated in Phase 1: in `_evaluatePostVerificationGateCore`, consensus capability validation (`isTrustedConsensus(consensus)`) and quorum integrity checks (`!consensus.quorumReached || consensus.verdict === 'error'`) are executed prior to secondary checks. Null, undefined, or untrusted consensus immediately fails closed with `UNTRUSTED_OR_MISSING_CONSENSUS`."
+      }
+    },
+    {
+      "threadId": "PRRT_kwDOUWarIc6ra7kY",
+      "fileLocation": "src/core/harness.mjs:441-450, 698-707",
+      "severity": "P1",
+      "primaryModule": "src/core/harness.mjs",
+      "status": "FIXED",
+      "canonicalRootCauseId": "HARNESS-P1-NONEMPTY-MODE-VALIDATION",
+      "invariantsAffected": [
+        "Bidirectional verification mode enforcement",
+        "Strict verificationMode enum validation for non-empty consensus"
+      ],
+      "technicalAnalysis": "In src/core/harness.mjs:441-450 and 698-707, when findings are present (`findings.length > 0`), the gate only checks: `if (verificationRecord.verificationMode === 'clean_challenge') { return block; }`. It does NOT check `if (verificationRecord.verificationMode !== 'producer_verification')`. Consequently, any other verificationMode string (e.g. undefined, 'custom_mode', 'typo') is accepted for nonempty findings instead of being rejected. While blocking clean_challenge prevents zero-finding records from authorizing nonempty findings, the gate fails to enforce the required 'producer_verification' mode.",
+      "adjudicator": "PENDING_ADJUDICATION",
+      "adjudicationDate": "PENDING_ADJUDICATION",
+      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "remediationSketch": "Change lines 442 and 699 from `if (vr.verificationMode === 'clean_challenge')` to `if (vr.verificationMode !== 'producer_verification') { return { decision: 'block', reason: `Verification mode mismatch: nonempty consensus requires 'producer_verification' mode (got: '${vr.verificationMode || 'none'}').`, criticals: [], advisoryFindings: [] }; }`.",
+      "negativeTestContract": "Given a consensus with 1 finding, and a trusted verification record with verificationMode: 'unrecognized_mode', evaluateGateDecision and evaluatePostVerificationGate MUST return { decision: 'block' } citing mode mismatch.",
+      "resolutionDetails": {
+        "resolvedIn": "src/core/harness.mjs",
+        "verifiedBy": "tests/remediation-phase1-harness.test.mjs (PHASE1-NEG-07)",
+        "resolutionSummary": "Remediated in Phase 1: in `_evaluateGateDecisionCore` and `_evaluatePostVerificationGateCore`, when findings count is greater than 0, the gate strictly requires `verificationRecord.verificationMode === 'producer_verification'`. Any unknown mode, typo, or missing mode fails closed with decision: 'block'."
+      }
+    },
+    {
+      "threadId": "PRRT_kwDOUWarIc6sPGEP",
+      "fileLocation": "src/core/harness.mjs:441-450, 698-707",
+      "severity": "P2",
+      "primaryModule": "src/core/harness.mjs",
+      "status": "FIXED",
+      "canonicalRootCauseId": "HARNESS-P1-NONEMPTY-MODE-VALIDATION",
+      "invariantsAffected": [
+        "Bidirectional verification mode enforcement",
+        "Strict verificationMode enum validation for non-empty consensus"
+      ],
+      "technicalAnalysis": "Duplicate of Thread PRRT_kwDOUWarIc6ra7kY. Targets line 699 in harness.mjs, specifically highlighting that `verificationRecord.verificationMode === 'clean_challenge'` rejects only 'clean_challenge', allowing any unknown or typo mode string to pass as if it were 'producer_verification'.",
+      "adjudicator": "PENDING_ADJUDICATION",
+      "adjudicationDate": "PENDING_ADJUDICATION",
+      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "remediationSketch": "Refer to HARNESS-P1-NONEMPTY-MODE-VALIDATION remediation blueprint under Thread PRRT_kwDOUWarIc6ra7kY.",
+      "negativeTestContract": "Refer to HARNESS-P1-NONEMPTY-MODE-VALIDATION negative test contract under Thread PRRT_kwDOUWarIc6ra7kY.",
+      "resolutionDetails": {
+        "resolvedIn": "src/core/harness.mjs",
+        "verifiedBy": "tests/remediation-phase1-harness.test.mjs (PHASE1-NEG-07)",
+        "resolutionSummary": "Duplicate of Thread PRRT_kwDOUWarIc6ra7kY. Remediated in Phase 1: in `src/core/harness.mjs`, nonempty findings strictly require `verificationMode === 'producer_verification'`, rejecting typo or custom mode strings."
+      }
+    },
+    {
+      "threadId": "PRRT_kwDOUWarIc6riPTk",
+      "fileLocation": "src/core/harness.mjs:709-822",
+      "severity": "P1",
+      "primaryModule": "src/core/harness.mjs",
+      "status": "FIXED",
+      "canonicalRootCauseId": "HARNESS-P1-FINDING-SET-BINDING",
+      "invariantsAffected": [
+        "Binding of verificationRecord evaluations to exact current finding set",
+        "Prevention of cross-run evaluation reuse"
+      ],
+      "technicalAnalysis": "Thread filed on 2026-10-12 noting that producer_verification records were accepted without comparing producer.findings with current consensus. Remediated in commits 0b90fcb and cf6be07: lines 709-822 in harness.mjs now enforce strict finding-set binding. When findings.length > 0, the gate: (1) checks for duplicate finding IDs in producer findings (lines 713-726), (2) checks for duplicate evaluation IDs (lines 729-751), (3) enforces evaluations.length === findings.length (lines 753-760), and (4) when boundProducerFindings exists, checks length equality and verifies pairwise that `curId === boundId && getFindingSignature(findings[i]) === getFindingSignature(boundProducerFindings[i])` (lines 767-801). If any mismatch occurs, it fails closed with FINDING_SET_BINDING_MISMATCH. Verified active and passing in existing test PR39-GATE-OUT-03-NEGATIVE.",
+      "adjudicator": "PENDING_ADJUDICATION",
+      "adjudicationDate": "PENDING_ADJUDICATION",
+      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "remediationSketch": "Already remediated in src/core/harness.mjs:709-822.",
+      "negativeTestContract": "Verified by existing test PR39-GATE-OUT-03-NEGATIVE in tests/remediation-007-clean-challenge.test.mjs.",
+      "resolutionDetails": {
+        "resolvedIn": "src/core/harness.mjs (commits 0b90fcb, cf6be07)",
+        "verifiedBy": "tests/remediation-007-clean-challenge.test.mjs (PR39-GATE-OUT-03-NEGATIVE)",
+        "resolutionSummary": "Remediated prior to Phase 1: enforces pairwise finding-set signature binding when boundProducerFindings exists."
+      }
+    },
+    {
+      "threadId": "PRRT_kwDOUWarIc6qo0uc",
+      "fileLocation": "src/core/harness.mjs:843-861",
+      "severity": "P1",
+      "primaryModule": "src/core/harness.mjs",
+      "status": "FIXED",
+      "canonicalRootCauseId": "HARNESS-P1-DEFECTS-FOUND-OMISSIONS-CONSISTENCY",
+      "invariantsAffected": [
+        "Fail-closed handling when verifier signals DEFECTS_FOUND",
+        "Prevention of false-clean gate approval"
+      ],
+      "technicalAnalysis": "Thread filed on 2026-10-09 noting that overallStatus: 'DEFECTS_FOUND' without omissions fell through to clean approval. Remediated in subsequent commits: lines 843-861 in harness.mjs now explicitly handle DEFECTS_FOUND: when findings.length === 0 and omissions.length === 0, lines 849-851 set hasBlocker = true and blockReasons.push('Clean Challenge failed: Verifier reported DEFECTS_FOUND without omissions.'), causing the gate to fail closed with decision: 'block' at line 1128. If omissions exist but none are SUPPORTED, it routes to human_review_required. Verified active and passing in test 007-DELTA-P1-04-NEGATIVE.",
+      "adjudicator": "PENDING_ADJUDICATION",
+      "adjudicationDate": "PENDING_ADJUDICATION",
+      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "remediationSketch": "Already remediated in src/core/harness.mjs:843-861.",
+      "negativeTestContract": "Verified by existing test 007-DELTA-P1-04-NEGATIVE in tests/remediation-007-clean-challenge.test.mjs.",
+      "resolutionDetails": {
+        "resolvedIn": "src/core/harness.mjs",
+        "verifiedBy": "tests/remediation-007-clean-challenge.test.mjs (007-DELTA-P1-04-NEGATIVE)",
+        "resolutionSummary": "Remediated prior to Phase 1: DEFECTS_FOUND without omissions fails closed with decision: 'block'."
+      }
+    },
+    {
+      "threadId": "PRRT_kwDOUWarIc6rte6j",
+      "fileLocation": "src/core/harness.mjs:1078-1096",
+      "severity": "P1",
+      "primaryModule": "src/core/harness.mjs",
+      "status": "FIXED",
+      "canonicalRootCauseId": "HARNESS-P1-UNGROUNDED-CONTESTED-OMISSIONS",
+      "invariantsAffected": [
+        "Substantive counter-evidence requirement for contested omissions",
+        "Prevention of ungrounded dismissal of omissions in Tier 2"
+      ],
+      "technicalAnalysis": "Thread filed on 2026-10-13 noting that Tier 2 Clean Challenge could approve a CONTESTED omission with generic reasoning as an advisory pass. Remediated in commit e7f1527: lines 1078-1096 in harness.mjs now evaluate `hasSubstantive` via isSubstantiveContestedReasoning(...). If reasoning is generic or empty, under strict policy it returns fail-closed block (UNGROUNDED_CONTESTED_VERDICT), and under Tier 2 non-strict it routes to human_review_required, preventing advisory approval. Verified active and passing in tests PR39-GATE-OUT-07-NEGATIVE and PR39-ROUND2-ITEM4-NEGATIVE.",
+      "adjudicator": "PENDING_ADJUDICATION",
+      "adjudicationDate": "PENDING_ADJUDICATION",
+      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "remediationSketch": "Already remediated in src/core/harness.mjs:1078-1096.",
+      "negativeTestContract": "Verified by existing tests PR39-GATE-OUT-07-NEGATIVE and PR39-ROUND2-ITEM4-NEGATIVE in tests/remediation-007-clean-challenge.test.mjs.",
+      "resolutionDetails": {
+        "resolvedIn": "src/core/harness.mjs (commit e7f1527)",
+        "verifiedBy": "tests/remediation-007-clean-challenge.test.mjs (PR39-GATE-OUT-07-NEGATIVE, PR39-ROUND2-ITEM4-NEGATIVE)",
+        "resolutionSummary": "Remediated prior to Phase 1: ungrounded contested omissions without substantive counter-evidence fail closed or escalate to human review."
+      }
+    },
+    {
+      "threadId": "PRRT_kwDOUWarIc6r1Bt0",
+      "fileLocation": "src/adapters/review-orchestrator.mjs:70-73",
+      "severity": "P1",
+      "primaryModule": "src/adapters/review-orchestrator.mjs",
+      "status": "REPRODUCIBLE_DEFECT",
+      "canonicalRootCauseId": "ORCH-P1-TRIMMED-DIFF-DIGEST",
+      "invariantsAffected": [
+        "R1 / 007-C Strict RunContext Binding & Content Digest Invariance",
+        "Diff Hashing Injectivity & Terminal Whitespace Preservation"
+      ],
+      "technicalAnalysis": "In src/adapters/review-orchestrator.mjs lines 64-74, buildCanonicalRunContext computes sha256 digests over changeSet.diffHunks.trim() and normalizedDiff.trim(), and inserts both into computedDigests: 'const trimmedDiffDigest = normalizeDigest(crypto.createHash(\"sha256\").update(changeSet.diffHunks.trim(), \"utf8\").digest(\"hex\")); if (trimmedDiffDigest) computedDigests.add(trimmedDiffDigest);' (lines 70-73). In lines 94-107, computedDigests are collected into verifiedDigestCandidates. At line 118, if options.verificationRecord is provided, vrDigest is checked against verifiedDigestCandidates. If an authentic verification record was minted for a prior diff without trailing whitespace (e.g., '+value\\n'), and subsequent code introduces trailing whitespace (e.g., '+value \\n'), trimmedDiffDigest matches the old raw digest. Line 118 accepts the match, and line 123 sets selectedDigest = vrDigest. This allows stale verification records to bind to materially different diffs. Because terminal whitespace alterations can introduce behavioral changes or vulnerabilities in whitespace-sensitive formats (e.g., Python backslash continuations, Makefiles, string literals), diff hashing must be injective and only permit source-byte preserving normalizations like CRLF to LF.",
+      "adjudicator": "PENDING_ADJUDICATION",
+      "adjudicationDate": "PENDING_ADJUDICATION",
+      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "remediationSketch": "Remove trimmedDiffDigest and trimmedNormDiffDigest computations from buildCanonicalRunContext. (Target: src/adapters/review-orchestrator.mjs:70-73). Delete lines 70-73. Retain only rawDiffDigest and normDiffDigest (CRLF -> LF normalized). Ensure verifiedDigestCandidates only contains exact source bytes or line-ending normalized diff digests.",
+      "negativeTestContract": "[buildCanonicalRunContext rejects verification record when diff contains trailing whitespace modification] Setup: Create changeSetA with diffHunks ending in '+token\\n' and mint trusted verification record recA. Create changeSetB with diffHunks ending in '+token  \\n' (trailing spaces). Call orchestrateReview with changeSetB and recA. Expected: buildCanonicalRunContext returns null. orchestrateReview fails closed with gate.decision: 'block' and reason containing 'FORGED_OR_STALE_RECORD'."
+    },
+    {
+      "threadId": "PRRT_kwDOUWarIc6slLWc",
+      "fileLocation": "src/adapters/review-orchestrator.mjs:174-181",
+      "severity": "P1",
+      "primaryModule": "src/adapters/review-orchestrator.mjs",
+      "status": "REPRODUCIBLE_DEFECT",
+      "canonicalRootCauseId": "ORCH-P1-OBJECTIVE-OVERRIDE-CONFLICT",
+      "invariantsAffected": [
+        "R1 Strict RunContext Binding & Objective Immutability",
+        "Cross-Context Objective Integrity"
+      ],
+      "technicalAnalysis": "In src/adapters/review-orchestrator.mjs lines 174-186, buildCanonicalRunContext resolves patchObjective via precedence: 'const patchObjective = normalizeObjective(options.patchObjective || options.objectiveContract?.objective || options.runContext?.patchObjective || changeSet.patchObjective || changeSet.objectiveContract?.objective || \"\");'. When caller supplies an authoritative options.runContext, options.patchObjective silently overrides options.runContext.patchObjective without validating equality. An attacker or faulty caller can supply a legitimate RunContext for a security patch along with an overriding benign patchObjective and an unverified or mismatched record minted for the benign objective, and the canonical RunContext generated at line 198 will adopt the overriding objective rather than failing closed on the conflict. Conflicting objectives between options.patchObjective, options.objectiveContract, and options.runContext must be rejected.",
+      "adjudicator": "PENDING_ADJUDICATION",
+      "adjudicationDate": "PENDING_ADJUDICATION",
+      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "remediationSketch": "Add conflict detection for patchObjective and objectiveContract against options.runContext. (Target: src/adapters/review-orchestrator.mjs:173-186). If options.runContext?.patchObjective is defined, verify that normalizeObjective(options.patchObjective) matches normalizeObjective(options.runContext.patchObjective) if options.patchObjective is present. If there is a mismatch, return null (fail closed). Apply the same check for options.objectiveContract?.objective and changeSet.patchObjective.",
+      "negativeTestContract": "[buildCanonicalRunContext fails closed when options.patchObjective conflicts with options.runContext.patchObjective] Setup: Pass options.runContext with patchObjective: 'Enforce MFA on login' and options.patchObjective: 'Harmless telemetry tweak' into orchestrateReview with verificationRecord. Expected: buildCanonicalRunContext returns null, causing runContextMismatched = true and orchestrateReview to return gate.decision: 'block' with reason 'Gate Fail-Closed: Verification record binding mismatch (FORGED_OR_STALE_RECORD).'"
+    },
+    {
+      "threadId": "PRRT_kwDOUWarIc6sL8VK",
+      "fileLocation": "src/adapters/review-orchestrator.mjs:199",
+      "severity": "P1",
+      "primaryModule": "src/adapters/review-orchestrator.mjs",
+      "status": "DUPLICATE",
+      "canonicalRootCauseId": "ORCH-P1-RUN-ID-BINDING-REPLAY",
+      "invariantsAffected": [
+        "R1 / 007-C Binding Execution Invariants & Replay Prevention",
+        "Canonical RunId Single-Origin Authority"
+      ],
+      "technicalAnalysis": "Duplicate of PRRT_kwDOUWarIc6rr-JF. In src/adapters/review-orchestrator.mjs line 199, buildCanonicalRunContext resolves runId as: 'runId: options.runId || options.runContext?.runId || options.verificationRecord?.runId || null'. Although orchestrateReview generates a fresh runId at line 209 ('const runId = options.runId || crypto.randomUUID();') and passes it as the 3rd argument to buildCanonicalRunContext at lines 348 and 425 ('buildCanonicalRunContext(changeSet, options, runId)'), line 199 ignores the parameter 'runId'. It falls back to options.verificationRecord?.runId. Consequently, an old verification record from an earlier execution of the same changeset is accepted and rebound into the canonical RunContext under its old run ID, while orchestrateReview returns a new generated runId. This allows cross-run verification replay.",
+      "adjudicator": "PENDING_ADJUDICATION",
+      "adjudicationDate": "PENDING_ADJUDICATION",
+      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "remediationSketch": "Bind runId to the orchestrator's authoritative runId parameter and enforce equality with record/context runId. (Target: src/adapters/review-orchestrator.mjs:198-205). See canonical remediation under PRRT_kwDOUWarIc6rr-JF.",
+      "negativeTestContract": "[orchestrateReview rejects verificationRecord with stale runId when orchestrator generates a fresh runId] Setup: See test contract under PRRT_kwDOUWarIc6rr-JF. Expected: Gate fails closed with decision: 'block'."
+    },
+    {
+      "threadId": "PRRT_kwDOUWarIc6rr-JF",
+      "fileLocation": "src/adapters/review-orchestrator.mjs:199-200",
+      "severity": "P1",
+      "primaryModule": "src/adapters/review-orchestrator.mjs",
+      "status": "REPRODUCIBLE_DEFECT",
+      "canonicalRootCauseId": "ORCH-P1-RUN-ID-BINDING-REPLAY",
+      "invariantsAffected": [
+        "R1 / 007-C Binding Execution Invariants & Replay Prevention",
+        "Canonical RunId Single-Origin Authority"
+      ],
+      "technicalAnalysis": "In src/adapters/review-orchestrator.mjs line 51, buildCanonicalRunContext is declared as 'function buildCanonicalRunContext(changeSet, options, runId)'. In orchestrateReview line 209, 'const runId = options.runId || crypto.randomUUID();' creates an authoritative run identifier. In lines 348 and 425, buildCanonicalRunContext(changeSet, options, runId) is invoked. However, in lines 198-205: 'return new RunContext({ runId: options.runId || options.runContext?.runId || options.verificationRecord?.runId || null, ... })'. The parameter 'runId' passed into the function is completely ignored. Instead, line 199 falls back to options.verificationRecord?.runId. As a result, when orchestrateReview runs without explicit options.runId, a verification record from a previous run retains its old runId in the newly minted canonical RunContext, passing gate validation (since record.runId matches context.runId) while the returned orchestration result advertises a completely different fresh runId. Stale verification records can thus be replayed across runs.",
+      "adjudicator": "PENDING_ADJUDICATION",
+      "adjudicationDate": "PENDING_ADJUDICATION",
+      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "remediationSketch": "Use authoritative runId parameter and validate that any supplied runContext.runId or verificationRecord.runId strictly matches. (Target: src/adapters/review-orchestrator.mjs:198-205). In buildCanonicalRunContext, define authoritativeRunId = runId || options.runId. If options.runContext?.runId and options.runContext.runId !== authoritativeRunId, return null. If vr?.runId and vr.runId !== authoritativeRunId, return null. In new RunContext({ runId: authoritativeRunId, ... }).",
+      "negativeTestContract": "[orchestrateReview fails closed when verificationRecord.runId does not match current runId] Setup: Mint trusted verification record rec with runId: 'run-alpha'. Call orchestrateReview(changeSet, adapters, { verificationRecord: rec }) without options.runId (or with options.runId: 'run-beta'). Expected: buildCanonicalRunContext returns null, resulting in runContextMismatched = true and orchestrateReview returning gate.decision: 'block' with reason 'Gate Fail-Closed: Verification record binding mismatch (FORGED_OR_STALE_RECORD).'"
+    },
+    {
+      "threadId": "PRRT_kwDOUWarIc6slqmB",
+      "fileLocation": "src/adapters/review-orchestrator.mjs:238-243",
+      "severity": "P1",
+      "primaryModule": "src/adapters/review-orchestrator.mjs",
+      "status": "REPRODUCIBLE_DEFECT",
+      "canonicalRootCauseId": "ORCH-P1-UNVALIDATED-TIER-OVERRIDE",
+      "invariantsAffected": [
+        "R2 Omission Assessment & Tier-1 Gate Policy Integrity",
+        "Risk Tier Non-Downgrade Invariant"
+      ],
+      "technicalAnalysis": "In src/adapters/review-orchestrator.mjs lines 238-243: 'const isTier1Opt = options.tier === 1 || options.isTier1 === true; const diffTier = isTier1Opt ? 1 : (options.tier !== undefined ? Number(options.tier) : (computedHighestRisk !== undefined ? Number(computedHighestRisk) : undefined));'. If a caller passes options.tier = null, 'options.tier !== undefined' is true, and Number(null) evaluates to 0. If a caller passes an invalid string (e.g., 'invalid'), Number('invalid') evaluates to NaN. In both cases, computedHighestRisk (which correctly identified a Tier 1 sensitive diff, e.g. authentication or crypto files) is discarded. Downstream at lines 256, 301, 358, and 435, 'tier: diffTier, isTier1: diffTier === 1' sets isTier1 to false and tier to 0/NaN. In src/core/harness.mjs, evaluateGateDecision checks 'const isTier1 = options?.isTier1 === true || options?.tier === 1;', which evaluates to false. Consequently, Tier 1 changes are erroneously governed by Tier 2 policy: supported low omissions are approved as advisory rather than requiring human review, and supported medium omissions require human review rather than being blocked. Passing tier: null completely bypasses Tier 1 gate enforcement.",
+      "adjudicator": "PENDING_ADJUDICATION",
+      "adjudicationDate": "PENDING_ADJUDICATION",
+      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "remediationSketch": "Strictly validate tier options and reject invalid or null tier overrides. (Target: src/adapters/review-orchestrator.mjs:238-244). Validate options.tier: accept only recognized numeric or string values in {1, 2, '1', '2'}. If options.tier is null or an unrecognized value, treat it as an error (fail closed) or ignore the override and fall back to computedHighestRisk. Never allow null or NaN to replace computedHighestRisk.",
+      "negativeTestContract": "[orchestrateReview refuses to downgrade Tier 1 diff when options.tier is null or invalid] Setup: Create a ChangeSet with sensitive files whose evaluated highestRisk is 1. Call orchestrateReview with options.tier: null and a verification record containing a SUPPORTED low omission. Expected: Diff remains Tier 1 (isTier1: true). Gate decision returns 'human_review_required' (Tier 1 policy) rather than 'approve' + advisory (Tier 2 policy)."
+    },
+    {
+      "threadId": "PRRT_kwDOUWarIc6rhwEt",
+      "fileLocation": "src/adapters/review-orchestrator.mjs:256,301,358,435",
+      "severity": "P1",
+      "primaryModule": "src/adapters/review-orchestrator.mjs",
+      "status": "FIXED",
+      "canonicalRootCauseId": "ORCH-P1-FORWARD-RISK-TIER-TO-GATE",
+      "invariantsAffected": [
+        "R2 Tier-1 Policy Forwarding into Gate Decision",
+        "Gate Authority Tier Propagation"
+      ],
+      "technicalAnalysis": "The review thread reported that orchestrateReview dropped diffTier when calling evaluateGateDecision. In exact-head ebe28be8b4db6ef276e6b3dcc1201a860af5231f, line-by-line inspection confirms that diffTier is forwarded across all four gate invocation sites in orchestrateReview: line 256 ('...(diffTier !== undefined ? { tier: diffTier, isTier1: diffTier === 1 } : {})'), line 301 ('...(diffTier !== undefined ? { tier: diffTier, isTier1: diffTier === 1 } : {})'), line 358 ('...(diffTier !== undefined ? { tier: diffTier, isTier1: diffTier === 1 } : {})'), and line 435 ('...(diffTier !== undefined ? { tier: diffTier, isTier1: diffTier === 1 } : {})'). Git history confirms this remediation was introduced in commit 1c33d9950503af444288e9ad59fd29fe466608a4 and hardened in 76e865228e46bc058419d9531c8396d96eccec6e. The thread is verified as FIXED on exact-head ebe28be.",
+      "adjudicator": "PENDING_ADJUDICATION",
+      "adjudicationDate": "PENDING_ADJUDICATION",
+      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "remediationSketch": "None required (already remediated). (Target: src/adapters/review-orchestrator.mjs:256, 301, 358, 435). Tier forwarding is actively implemented on HEAD.",
+      "negativeTestContract": "[Existing tests in tests/remediation-007-clean-challenge.test.mjs confirm tier forwarding to gate] Setup: Automated regression tests in test suite. Expected: Pass."
+    },
+    {
+      "threadId": "PRRT_kwDOUWarIc6sL8VV",
+      "fileLocation": "src/cli.mjs:824-868",
+      "severity": "P1",
+      "primaryModule": "src/cli.mjs",
+      "status": "REPRODUCIBLE_DEFECT",
+      "canonicalRootCauseId": "CLI-P1-CLEAN-CHALLENGE-REVIEW-ORCHESTRATION",
+      "invariantsAffected": [
+        "R3 Zero-Finding Clean Challenge Orchestration & CLI Invariance",
+        "Autonomous CLI Review Completion"
+      ],
+      "technicalAnalysis": "In src/cli.mjs lines 824-868 (inside case 'review':), reviewAdapters runs orchestrateReview. When configured review adapters return zero findings, orchestrateReview executes evaluateGateDecision. Because src/cli.mjs never invokes conductIndependentVerification or passes options.verificationRecord, evaluateGateDecision in src/core/harness.mjs lines 471-476 triggers: 'decision: \"block\", reason: \"Clean Challenge missing: zero-finding consensus requires independent verification record\"'. If options.preliminary is not set, orchResult.status is 'incomplete', runStatus is REVIEW_RUN_STATUS.INCOMPLETE, and exitCode is EXIT_CODES.GATE_BLOCKED (1). Even if options.preliminary is true, lines 864-865 enforce: 'else if (gate?.preliminary || runStatus === REVIEW_RUN_STATUS.PRELIMINARY_CLEAN) { exitCode = EXIT_CODES.GATE_BLOCKED; }'. Although --verify-with=<cmd> is parsed at lines 297-309 into verifyWithArg and validated with validateVerifierCommand, verifyWithArg is only referenced in benchmark and remediate subcommands. In review, verifyWithArg is never used. Consequently, clean reviews can NEVER succeed or exit 0 via the CLI. Primary defect for CLI-P1-CLEAN-CHALLENGE-REVIEW-ORCHESTRATION.",
+      "adjudicator": "PENDING_ADJUDICATION",
+      "adjudicationDate": "PENDING_ADJUDICATION",
+      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "remediationSketch": "Wire independent verification (Clean Challenge) execution into src/cli.mjs review subcommand. (Target: src/cli.mjs:824-868). In src/cli.mjs review command: if reviewAdapters produces a clean consensus (findings.length === 0) or preliminary-clean status, check if a verifier is available via verifyWithArg (or default verifier). If configured, instantiate CliVerifierAdapter and invoke conductIndependentVerification(changeSet, [], verifierAdapter, { verificationMode: 'clean_challenge', runContext: canonicalRunContext }). Pass the resulting trusted verificationRecord to evaluateGateDecision or orchestrateReview, allowing clean reviews to achieve decision: 'approve', status: 'reviewed-clean', and exit code 0.",
+      "negativeTestContract": "[runCli review executes Clean Challenge with --verify-with and returns exitCode 0 on clean code] Setup: Invoke runCli(['review', '--verify-with=mock-clean'], io) with mock clean review adapters on clean working tree. Expected: conductIndependentVerification is invoked in clean_challenge mode. Gate decision returns 'approve'. runStatus becomes REVIEW_RUN_STATUS.REVIEWED_CLEAN and process exits with EXIT_CODES.SUCCESS (0)."
+    },
+    {
+      "threadId": "PRRT_kwDOUWarIc6slql5",
+      "fileLocation": "src/cli.mjs:824-868",
+      "severity": "P1",
+      "primaryModule": "src/cli.mjs",
+      "status": "DUPLICATE",
+      "canonicalRootCauseId": "CLI-P1-CLEAN-CHALLENGE-REVIEW-ORCHESTRATION",
+      "invariantsAffected": [
+        "R3 Zero-Finding Clean Challenge Orchestration & CLI Invariance",
+        "Autonomous CLI Review Completion"
+      ],
+      "technicalAnalysis": "Duplicate of PRRT_kwDOUWarIc6sL8VV. In src/cli.mjs lines 824-868, orchestrateReview is invoked with reviewAdapters without executing a verifier or supplying a verificationRecord. Clean sentry reviews trigger harness gate fail-closed blocking ('Clean Challenge missing'), resulting in exitCode 1. Option '--verify-with' is parsed but ignored in the review command branch. Thread PRRT_kwDOUWarIc6sL8VV was filed on 2026-10-14T06:17:10Z, and PRRT_kwDOUWarIc6slql5 was filed on 2026-10-15T01:40:39Z, addressing the exact same lines and defect.",
+      "adjudicator": "PENDING_ADJUDICATION",
+      "adjudicationDate": "PENDING_ADJUDICATION",
+      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "remediationSketch": "See canonical remediation under PRRT_kwDOUWarIc6sL8VV. (Target: src/cli.mjs:824-868). Wire verifier execution into review flow.",
+      "negativeTestContract": "[See test contract under PRRT_kwDOUWarIc6sL8VV.] Setup: Mock clean review execution. Expected: Clean Challenge executed and passed."
+    },
+    {
+      "threadId": "PRRT_kwDOUWarIc6re31W",
+      "fileLocation": "src/core/independent-verifier.mjs:506-508",
+      "severity": "P1",
+      "primaryModule": "src/core/independent-verifier.mjs",
+      "status": "FIXED",
+      "canonicalRootCauseId": "VERIFIER-RC-01-COUNTEREXAMPLE-ADVICE-FALLBACK",
+      "invariantsAffected": [
+        "R2 Verified Counterexample Requirement",
+        "Default-Deny Omission Gate Authority (Spec §3.2.1)"
+      ],
+      "technicalAnalysis": "In `hasConcreteCounterexample(candidateOrReasoning)` at lines 506-508, when `candidateOrReasoning.reasoning` is missing or empty, the function falls back to `candidateOrReasoning.recommendation` (and `candidateOrReasoning.body`). When an omission lacks a failure explanation but provides remediation advice containing function calls and parameter names (e.g., 'Call validate(input) when null is passed to prevent crash'), the regex heuristic at line 538 evaluates `(hasCallOrExpression || hasInputPayload) && (hasFailurePath || hasFailureSymptom)` to `true`. This assigns `hasConcreteCounterexample = true` to passive remediation advice, allowing unverified omissions to gain `SUPPORTED` authority and block the gate.",
+      "adjudicator": "PENDING_ADJUDICATION",
+      "adjudicationDate": "PENDING_ADJUDICATION",
+      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "remediationSketch": "Remove fallback to `recommendation` and `body` in `hasConcreteCounterexample`. Evidentiary verification must be derived strictly from `reasoning` or explicit `counterexample` fields. Remediation advice must be segregated from defect proof.",
+      "negativeTestContract": "Provide an omission candidate with empty `reasoning`, no `counterexample`, and a recommendation string 'Call validate(input) when null is passed to prevent crash'. Assert that `hasConcreteCounterexample` returns `false` and `validateVerificationOutput` downgrades the omission to `INSUFFICIENT_EVIDENCE`.",
+      "resolutionDetails": {
+        "resolvedIn": "src/core/independent-verifier.mjs",
+        "verifiedBy": "tests/remediation-phase2-verifier.test.mjs",
+        "resolutionSummary": "Remediated in Phase 2: Surgical fail-closed verification boundaries implemented, including concrete counterexample isolation, prompt budget overhead reservation, strict boolean locator validation, physical line bound checking, mandatory explanatory reasoning, cwe/type metadata retention, fail-closed clean challenge status validation, child process stream byte-limiting, contextPackage context gaps propagation, and observed runtime verifier model precedence."
+      }
+    },
+    {
+      "threadId": "PRRT_kwDOUWarIc6rte6b",
+      "fileLocation": "src/core/independent-verifier.mjs:809-814, 929-947, 2126-2150",
+      "severity": "P2",
+      "primaryModule": "src/core/independent-verifier.mjs",
+      "status": "FIXED",
+      "canonicalRootCauseId": "VERIFIER-RC-02-PROMPT-INPUT-BUDGET-EXHAUSTION",
+      "invariantsAffected": [
+        "Verifier Input Byte Boundary Enforcement",
+        "Buffer & Prompt Truncation Accounting (Spec §3.3)"
+      ],
+      "technicalAnalysis": "In `buildVerificationPrompt` (lines 809-814), only `diffHunks` is checked and truncated against `maxBytes = limits.maxInputBytes`. Subsequent prompt sections—including AST Context Enclosures (`[CODE CONTEXT & AST ENCLOSURES]`, up to 8 KB), Unresolved Context Gaps (`[UNRESOLVED CODE CONTEXT GAPS]`), Producer Findings, and the JSON response schema—are appended unconditionally. In `conductIndependentVerification` (line 2132), `isDiffTruncated` only checks `hunkBuf.length > maxBytes`. If the physical diff is near `maxBytes`, the rendered prompt exceeds `maxInputBytes` by up to ~15 KB while `isDiffTruncated` remains `false`. `CliVerifierAdapter` does not enforce an input ceiling, risking silent truncation or process failure at external providers without triggering fail-closed uncertainty.",
+      "adjudicator": "PENDING_ADJUDICATION",
+      "adjudicationDate": "PENDING_ADJUDICATION",
+      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "remediationSketch": "Precompute the fixed byte footprint of non-diff prompt sections (headers, criteria, objectives, contextPackage XML, context gaps, findings, schema). Reserve this overhead from `limits.maxInputBytes` when budgeting diff hunks (`allowedDiffBytes = Math.max(1024, maxBytes - overheadBytes)`). If diff hunks exceed this reserved budget, truncate the diff, insert `truncatedNotice`, and set `isDiffTruncated = true`.",
+      "negativeTestContract": "Execute `buildVerificationPrompt` and `conductIndependentVerification` with a changeset diff hunk sized at `maxInputBytes - 500` bytes and an 8 KB `contextPackage`. Assert that total prompt byte length does not exceed `maxInputBytes`, diff hunks are bounded to fit within budget, and `isDiffTruncated` evaluates to `true` (propagating `UNCERTAIN`).",
+      "resolutionDetails": {
+        "resolvedIn": "src/core/independent-verifier.mjs",
+        "verifiedBy": "tests/remediation-phase2-verifier.test.mjs",
+        "resolutionSummary": "Remediated in Phase 2: Surgical fail-closed verification boundaries implemented, including concrete counterexample isolation, prompt budget overhead reservation, strict boolean locator validation, physical line bound checking, mandatory explanatory reasoning, cwe/type metadata retention, fail-closed clean challenge status validation, child process stream byte-limiting, contextPackage context gaps propagation, and observed runtime verifier model precedence."
+      }
+    },
+    {
+      "threadId": "PRRT_kwDOUWarIc6qo0ur",
+      "fileLocation": "src/core/independent-verifier.mjs:1372-1396, 1441",
+      "severity": "P1",
+      "primaryModule": "src/core/independent-verifier.mjs",
+      "status": "FIXED",
+      "canonicalRootCauseId": "VERIFIER-RC-03-OMISSION-LOCATOR-EXPLICIT-LINE",
+      "invariantsAffected": [
+        "Structured Omission Assessment Schema",
+        "Default-Deny Locator Accuracy (Spec §3.2.1)"
+      ],
+      "technicalAnalysis": "The review thread observed that when both `line_start` and `line` were missing, the validator fabricated line 1 and defaulted `locatorAccurate` to `true`. In exact-head `ebe28be`, lines 1393-1396 explicitly handle this: `else { locatorAccurate = false; lineStart = 1; }`. Subsequently, lines 1439-1444 enforce: `const hasValidLocator = locatorAccurate === true && lineStart >= 1 && lineEnd >= lineStart; if (!hasCounter || !hasValidLocator) { evidenceSupport = 'INSUFFICIENT_EVIDENCE'; }`. Thus, missing line locators are forced to `locatorAccurate = false` and downgraded to `INSUFFICIENT_EVIDENCE`.",
+      "adjudicator": "PENDING_ADJUDICATION",
+      "adjudicationDate": "PENDING_ADJUDICATION",
+      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "remediationSketch": "None required; verified fixed in `ebe28be8b4db6ef276e6b3dcc1201a860af5231f`.",
+      "negativeTestContract": "Pass an omission with valid title, severity, file, and counterexample, but omitting both `line_start` and `line`. Verified: `validateVerificationOutput` returns `locatorAccurate: false` and `evidenceSupport: 'INSUFFICIENT_EVIDENCE'`.",
+      "resolutionDetails": {
+        "resolvedIn": "src/core/independent-verifier.mjs",
+        "verifiedBy": "tests/remediation-phase2-verifier.test.mjs",
+        "resolutionSummary": "Remediated in Phase 2: Surgical fail-closed verification boundaries implemented, including concrete counterexample isolation, prompt budget overhead reservation, strict boolean locator validation, physical line bound checking, mandatory explanatory reasoning, cwe/type metadata retention, fail-closed clean challenge status validation, child process stream byte-limiting, contextPackage context gaps propagation, and observed runtime verifier model precedence."
+      }
+    },
+    {
+      "threadId": "PRRT_kwDOUWarIc6rfkYc",
+      "fileLocation": "src/core/independent-verifier.mjs:769-778, 1373-1375",
+      "severity": "P2",
+      "primaryModule": "src/core/independent-verifier.mjs",
+      "status": "FIXED",
+      "canonicalRootCauseId": "VERIFIER-RC-04-OMISSION-LOCATOR-NON-BOOLEAN-COERCION",
+      "invariantsAffected": [
+        "Omission Locator Accuracy Verification",
+        "Strict Boolean Parsing under Default-Deny (Spec §3.2.1)"
+      ],
+      "technicalAnalysis": "In `validateVerificationOutput` (lines 1373-1375), `candidate.locatorAccurate` is parsed using `parseBoolean(candidate.locatorAccurate) : true`. In `parseBoolean` (lines 769-778), if `val` is any non-empty string that does not match explicit false tokens (e.g. `'unknown'`, `'flase'`), it falls through to line 777: `return Boolean(val);`, evaluating to `true`. Furthermore, if `locatorAccurate` is omitted (`undefined` or `null`), line 1375 defaults it to `true`. With valid line numbers and a concrete counterexample, a malformed omission locator verdict retains `SUPPORTED` authority instead of failing closed.",
+      "adjudicator": "PENDING_ADJUDICATION",
+      "adjudicationDate": "PENDING_ADJUDICATION",
+      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "remediationSketch": "In `validateVerificationOutput`, strictly parse `candidate.locatorAccurate`: require a real boolean or explicit boolean strings (`'true'` / `'false'`). Unrecognized strings, non-booleans, or missing values must evaluate to `locatorAccurate = false` (or trigger `MALFORMED_OUTPUT` under strict validation).",
+      "negativeTestContract": "Submit a verifier omission with `locatorAccurate: 'unknown'` and `locatorAccurate: 'flase'`. Assert that `validateVerificationOutput` sets `locatorAccurate: false` and downgrades `evidenceSupport` to `INSUFFICIENT_EVIDENCE`.",
+      "resolutionDetails": {
+        "resolvedIn": "src/core/independent-verifier.mjs",
+        "verifiedBy": "tests/remediation-phase2-verifier.test.mjs",
+        "resolutionSummary": "Remediated in Phase 2: Surgical fail-closed verification boundaries implemented, including concrete counterexample isolation, prompt budget overhead reservation, strict boolean locator validation, physical line bound checking, mandatory explanatory reasoning, cwe/type metadata retention, fail-closed clean challenge status validation, child process stream byte-limiting, contextPackage context gaps propagation, and observed runtime verifier model precedence."
+      }
+    },
+    {
+      "threadId": "PRRT_kwDOUWarIc6r1Bt4",
+      "fileLocation": "src/core/independent-verifier.mjs:769-778, 1373-1375",
+      "severity": "P2",
+      "primaryModule": "src/core/independent-verifier.mjs",
+      "status": "FIXED",
+      "canonicalRootCauseId": "VERIFIER-RC-04-OMISSION-LOCATOR-NON-BOOLEAN-COERCION",
+      "invariantsAffected": [
+        "Omission Locator Accuracy Verification",
+        "Strict Boolean Parsing under Default-Deny (Spec §3.2.1)"
+      ],
+      "technicalAnalysis": "Exact duplicate of Thread 4 (`PRRT_kwDOUWarIc6rfkYc`). Highlights the identical vulnerability at lines 1373-1375 where missing `locatorAccurate` defaults to `true` and arbitrary strings coerce to `true` via `parseBoolean`.",
+      "adjudicator": "PENDING_ADJUDICATION",
+      "adjudicationDate": "PENDING_ADJUDICATION",
+      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "remediationSketch": "Covered by `VERIFIER-RC-04-OMISSION-LOCATOR-NON-BOOLEAN-COERCION` blueprint.",
+      "negativeTestContract": "Covered by `VERIFIER-RC-04-OMISSION-LOCATOR-NON-BOOLEAN-COERCION` contract.",
+      "resolutionDetails": {
+        "resolvedIn": "src/core/independent-verifier.mjs",
+        "verifiedBy": "tests/remediation-phase2-verifier.test.mjs",
+        "resolutionSummary": "Remediated in Phase 2: Surgical fail-closed verification boundaries implemented, including concrete counterexample isolation, prompt budget overhead reservation, strict boolean locator validation, physical line bound checking, mandatory explanatory reasoning, cwe/type metadata retention, fail-closed clean challenge status validation, child process stream byte-limiting, contextPackage context gaps propagation, and observed runtime verifier model precedence."
+      }
+    },
+    {
+      "threadId": "PRRT_kwDOUWarIc6slqmD",
+      "fileLocation": "src/core/independent-verifier.mjs:769-778, 1373-1375",
+      "severity": "P2",
+      "primaryModule": "src/core/independent-verifier.mjs",
+      "status": "FIXED",
+      "canonicalRootCauseId": "VERIFIER-RC-04-OMISSION-LOCATOR-NON-BOOLEAN-COERCION",
+      "invariantsAffected": [
+        "Omission Locator Accuracy Verification",
+        "Strict Boolean Parsing under Default-Deny (Spec §3.2.1)"
+      ],
+      "technicalAnalysis": "Exact duplicate of Thread 4 (`PRRT_kwDOUWarIc6rfkYc`). Highlights that typos such as `'flase'` or non-boolean values coerce to `true` in `parseBoolean`.",
+      "adjudicator": "PENDING_ADJUDICATION",
+      "adjudicationDate": "PENDING_ADJUDICATION",
+      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "remediationSketch": "Covered by `VERIFIER-RC-04-OMISSION-LOCATOR-NON-BOOLEAN-COERCION` blueprint.",
+      "negativeTestContract": "Covered by `VERIFIER-RC-04-OMISSION-LOCATOR-NON-BOOLEAN-COERCION` contract.",
+      "resolutionDetails": {
+        "resolvedIn": "src/core/independent-verifier.mjs",
+        "verifiedBy": "tests/remediation-phase2-verifier.test.mjs",
+        "resolutionSummary": "Remediated in Phase 2: Surgical fail-closed verification boundaries implemented, including concrete counterexample isolation, prompt budget overhead reservation, strict boolean locator validation, physical line bound checking, mandatory explanatory reasoning, cwe/type metadata retention, fail-closed clean challenge status validation, child process stream byte-limiting, contextPackage context gaps propagation, and observed runtime verifier model precedence."
+      }
+    },
+    {
+      "threadId": "PRRT_kwDOUWarIc6rvCBQ",
+      "fileLocation": "src/core/independent-verifier.mjs:1409-1415, 1441",
+      "severity": "P1",
+      "primaryModule": "src/core/independent-verifier.mjs",
+      "status": "FIXED",
+      "canonicalRootCauseId": "VERIFIER-RC-05-OMISSION-LOCATOR-BOUNDS-DIFF-INTERSECTION",
+      "invariantsAffected": [
+        "Physical File Bound Verification",
+        "Diff Hunk Intersection Integrity (Spec §3.2.1)"
+      ],
+      "technicalAnalysis": "In `validateVerificationOutput`, lines 1409-1415 check only whether `file` exists in `changeSet.files`. Neither `line_start` nor `line_end` is verified against the actual line count of the file at exact-head, nor are the line numbers checked to intersect modified diff hunks. In line 1441, `hasValidLocator = locatorAccurate === true && lineStart >= 1 && lineEnd >= lineStart`. If a verifier hallucinates an impossible line number (such as `line_start: 999999` in a 50-line file), `hasValidLocator` evaluates to `true`, and the omission remains `SUPPORTED`, granting blocking authority to a hallucinated locator.",
+      "adjudicator": "PENDING_ADJUDICATION",
+      "adjudicationDate": "PENDING_ADJUDICATION",
+      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "remediationSketch": "In `validateVerificationOutput`, check `line_start` and `line_end` against exact-head file metadata (or AST context file line length). If line numbers exceed physical file length or do not intersect the reviewed diff hunks, set `locatorAccurate = false` and downgrade `evidenceSupport` to `INSUFFICIENT_EVIDENCE`.",
+      "negativeTestContract": "Submit an omission referencing a valid changed file (`src/core/independent-verifier.mjs`) with `line_start: 999999`, `locatorAccurate: true`, and concrete counterexample. Assert that `locatorAccurate` is set to `false` and `evidenceSupport` is normalized to `INSUFFICIENT_EVIDENCE`.",
+      "resolutionDetails": {
+        "resolvedIn": "src/core/independent-verifier.mjs",
+        "verifiedBy": "tests/remediation-phase2-verifier.test.mjs",
+        "resolutionSummary": "Remediated in Phase 2: Surgical fail-closed verification boundaries implemented, including concrete counterexample isolation, prompt budget overhead reservation, strict boolean locator validation, physical line bound checking, mandatory explanatory reasoning, cwe/type metadata retention, fail-closed clean challenge status validation, child process stream byte-limiting, contextPackage context gaps propagation, and observed runtime verifier model precedence."
+      }
+    },
+    {
+      "threadId": "PRRT_kwDOUWarIc6sU7ZH",
+      "fileLocation": "src/core/independent-verifier.mjs:1409-1415, 1441",
+      "severity": "P2",
+      "primaryModule": "src/core/independent-verifier.mjs",
+      "status": "FIXED",
+      "canonicalRootCauseId": "VERIFIER-RC-05-OMISSION-LOCATOR-BOUNDS-DIFF-INTERSECTION",
+      "invariantsAffected": [
+        "Physical File Bound Verification",
+        "Diff Hunk Intersection Integrity (Spec §3.2.1)"
+      ],
+      "technicalAnalysis": "Duplicate of Thread 7 (`PRRT_kwDOUWarIc6rvCBQ`). Highlights the identical vulnerability where line locators beyond file bounds (e.g. line 999999) evaluate as valid locators.",
+      "adjudicator": "PENDING_ADJUDICATION",
+      "adjudicationDate": "PENDING_ADJUDICATION",
+      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "remediationSketch": "Covered by `VERIFIER-RC-05-OMISSION-LOCATOR-BOUNDS-DIFF-INTERSECTION` blueprint.",
+      "negativeTestContract": "Covered by `VERIFIER-RC-05-OMISSION-LOCATOR-BOUNDS-DIFF-INTERSECTION` contract.",
+      "resolutionDetails": {
+        "resolvedIn": "src/core/independent-verifier.mjs",
+        "verifiedBy": "tests/remediation-phase2-verifier.test.mjs",
+        "resolutionSummary": "Remediated in Phase 2: Surgical fail-closed verification boundaries implemented, including concrete counterexample isolation, prompt budget overhead reservation, strict boolean locator validation, physical line bound checking, mandatory explanatory reasoning, cwe/type metadata retention, fail-closed clean challenge status validation, child process stream byte-limiting, contextPackage context gaps propagation, and observed runtime verifier model precedence."
+      }
+    },
+    {
+      "threadId": "PRRT_kwDOUWarIc6rY131",
+      "fileLocation": "src/core/independent-verifier.mjs:1409-1415, 1441",
+      "severity": "P2",
+      "primaryModule": "src/core/independent-verifier.mjs",
+      "status": "FIXED",
+      "canonicalRootCauseId": "VERIFIER-RC-05-OMISSION-LOCATOR-BOUNDS-DIFF-INTERSECTION",
+      "invariantsAffected": [
+        "Physical File Bound Verification",
+        "Diff Hunk Intersection Integrity (Spec §3.2.1)"
+      ],
+      "technicalAnalysis": "Duplicate of Thread 7 (`PRRT_kwDOUWarIc6rvCBQ`). Identifies that `hasValidLocator` fails to check whether line ranges intersect the reviewed diff hunks in `context.changeSet`.",
+      "adjudicator": "PENDING_ADJUDICATION",
+      "adjudicationDate": "PENDING_ADJUDICATION",
+      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "remediationSketch": "Covered by `VERIFIER-RC-05-OMISSION-LOCATOR-BOUNDS-DIFF-INTERSECTION` blueprint.",
+      "negativeTestContract": "Covered by `VERIFIER-RC-05-OMISSION-LOCATOR-BOUNDS-DIFF-INTERSECTION` contract.",
+      "resolutionDetails": {
+        "resolvedIn": "src/core/independent-verifier.mjs",
+        "verifiedBy": "tests/remediation-phase2-verifier.test.mjs",
+        "resolutionSummary": "Remediated in Phase 2: Surgical fail-closed verification boundaries implemented, including concrete counterexample isolation, prompt budget overhead reservation, strict boolean locator validation, physical line bound checking, mandatory explanatory reasoning, cwe/type metadata retention, fail-closed clean challenge status validation, child process stream byte-limiting, contextPackage context gaps propagation, and observed runtime verifier model precedence."
+      }
+    },
+    {
+      "threadId": "PRRT_kwDOUWarIc6r1BuM",
+      "fileLocation": "src/core/independent-verifier.mjs:1433-1445",
+      "severity": "P2",
+      "primaryModule": "src/core/independent-verifier.mjs",
+      "status": "FIXED",
+      "canonicalRootCauseId": "VERIFIER-RC-06-OMISSION-MANDATORY-REASONING",
+      "invariantsAffected": [
+        "Structured Omission Assessment Contract",
+        "Verifiable Reasoning Completeness (Spec §3.2.1)"
+      ],
+      "technicalAnalysis": "In `validateVerificationOutput` (lines 1439-1445), `evidenceSupport === 'SUPPORTED'` checks only `hasCounter = hasConcreteCounterexample(candidate)` and `hasValidLocator`. `hasConcreteCounterexample(candidate)` evaluates `combined = `${counterexample} ${reasoning}`.trim()`. If `candidate.reasoning` is missing or empty, but `candidate.counterexample` contains code and crash mechanics (e.g., `'fn(null) -> TypeError'`), `hasCounter` evaluates to `true`. Line 1435 falls back to `recommendation` or `body` or `''`. Consequently, an omission containing only a terse counterexample without any explanatory reasoning is granted `SUPPORTED` authority, violating the normative requirement that `reasoning` contain an observable failure path.",
+      "adjudicator": "PENDING_ADJUDICATION",
+      "adjudicationDate": "PENDING_ADJUDICATION",
+      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "remediationSketch": "In `validateVerificationOutput`, require `typeof candidate.reasoning === 'string' && candidate.reasoning.trim().length >= 10` before allowing an omission to retain `SUPPORTED` status. Downgrade to `INSUFFICIENT_EVIDENCE` if `reasoning` is absent or empty.",
+      "negativeTestContract": "Submit an omission with valid `counterexample: 'validate(null) -> crash'`, but `reasoning: ''`. Assert that `evidenceSupport` is normalized to `INSUFFICIENT_EVIDENCE`.",
+      "resolutionDetails": {
+        "resolvedIn": "src/core/independent-verifier.mjs",
+        "verifiedBy": "tests/remediation-phase2-verifier.test.mjs",
+        "resolutionSummary": "Remediated in Phase 2: Surgical fail-closed verification boundaries implemented, including concrete counterexample isolation, prompt budget overhead reservation, strict boolean locator validation, physical line bound checking, mandatory explanatory reasoning, cwe/type metadata retention, fail-closed clean challenge status validation, child process stream byte-limiting, contextPackage context gaps propagation, and observed runtime verifier model precedence."
+      }
+    },
+    {
+      "threadId": "PRRT_kwDOUWarIc6rtv6O",
+      "fileLocation": "src/core/independent-verifier.mjs:1492-1510",
+      "severity": "P2",
+      "primaryModule": "src/core/independent-verifier.mjs",
+      "status": "FIXED",
+      "canonicalRootCauseId": "VERIFIER-RC-07-OMISSION-METADATA-DROPPED",
+      "invariantsAffected": [
+        "Omission Metadata Retention & Reporting Parity (Spec §3.2.1)"
+      ],
+      "technicalAnalysis": "In `validateVerificationOutput` (lines 1492-1510), the constructed `omissionAssessment` object preserves `recommendation` (line 1506) and `body` (line 1507), but completely drops `cwe` and `type` fields provided by the verifier (despite them being explicitly prompted in `buildVerificationPrompt` lines 976-977). This loss propagates into `verificationRecord.verifierOmissions` and gate `advisoryFindings`, stripping defect classification from downstream reports.",
+      "adjudicator": "PENDING_ADJUDICATION",
+      "adjudicationDate": "PENDING_ADJUDICATION",
+      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "remediationSketch": "In `validateVerificationOutput`, include sanitized `cwe` and `type` fields in `omissionAssessment`: `...(candidate.cwe ? { cwe: String(candidate.cwe).trim() } : {}), ...(candidate.type ? { type: String(candidate.type).trim() } : {})`.",
+      "negativeTestContract": "Submit a verifier omission containing `cwe: 'CWE-89'` and `type: 'SQL_INJECTION'`. Assert that the resulting `verifierOmissions[0]` contains matching `cwe: 'CWE-89'` and `type: 'SQL_INJECTION'`.",
+      "resolutionDetails": {
+        "resolvedIn": "src/core/independent-verifier.mjs",
+        "verifiedBy": "tests/remediation-phase2-verifier.test.mjs",
+        "resolutionSummary": "Remediated in Phase 2: Surgical fail-closed verification boundaries implemented, including concrete counterexample isolation, prompt budget overhead reservation, strict boolean locator validation, physical line bound checking, mandatory explanatory reasoning, cwe/type metadata retention, fail-closed clean challenge status validation, child process stream byte-limiting, contextPackage context gaps propagation, and observed runtime verifier model precedence."
+      }
+    },
+    {
+      "threadId": "PRRT_kwDOUWarIc6sMI7L",
+      "fileLocation": "src/core/independent-verifier.mjs:1544-1556, 1582-1592",
+      "severity": "P1",
+      "primaryModule": "src/core/independent-verifier.mjs",
+      "status": "FIXED",
+      "canonicalRootCauseId": "VERIFIER-RC-08-CLEAN-CHALLENGE-OMISSION-STATUS-INFERENCE",
+      "invariantsAffected": [
+        "Clean Challenge Fail-Closed Requirement",
+        "Default-Deny Status Adjudication (Spec §3.2.3, R3)"
+      ],
+      "technicalAnalysis": "In `validateVerificationOutput`, when `isCleanChallenge` is `true` and `rawOverallStatus` is null or missing, lines 1544-1556 only fail closed if `normalizedOmissions.length === 0`. If `normalizedOmissions.length > 0`, execution falls through to lines 1582-1592, which attempt to infer `overallStatus`. If an omission has `evidenceSupport: 'CONTESTED'` (with substantive reasoning) or `'INSUFFICIENT_EVIDENCE'`, `hasSupported` and `hasUncertain` are both `false`, causing line 1590 to assign `overallStatus = 'CLEAN'`. In Tier 2 reviews, this converts an invalid response omitting `overallStatus` into `CLEAN` approval. Clean Challenge mode must strictly require an explicit, valid `overallStatus` in all cases.",
+      "adjudicator": "PENDING_ADJUDICATION",
+      "adjudicationDate": "PENDING_ADJUDICATION",
+      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "remediationSketch": "In `validateVerificationOutput`, enforce `rawOverallStatus` validation unconditionally in Clean Challenge mode: if `isCleanChallenge` and `(!rawOverallStatus || !VALID_CLEAN_CHALLENGE_STATUSES.has(rawOverallStatus))`, immediately return `ok: false, executionStatus: EXECUTION_STATUS.MALFORMED_OUTPUT`.",
+      "negativeTestContract": "Provide a Clean Challenge verifier response containing an omission with `evidenceSupport: 'CONTESTED'` and substantive reasoning, but omitting `overallStatus`. Assert that `validateVerificationOutput` fails closed with `ok: false` and `executionStatus: 'malformed_output'`.",
+      "resolutionDetails": {
+        "resolvedIn": "src/core/independent-verifier.mjs",
+        "verifiedBy": "tests/remediation-phase2-verifier.test.mjs",
+        "resolutionSummary": "Remediated in Phase 2: Surgical fail-closed verification boundaries implemented, including concrete counterexample isolation, prompt budget overhead reservation, strict boolean locator validation, physical line bound checking, mandatory explanatory reasoning, cwe/type metadata retention, fail-closed clean challenge status validation, child process stream byte-limiting, contextPackage context gaps propagation, and observed runtime verifier model precedence."
+      }
+    },
+    {
+      "threadId": "PRRT_kwDOUWarIc6rrUDp",
+      "fileLocation": "src/core/independent-verifier.mjs:1765-1770, 1836-1875",
+      "severity": "P1",
+      "primaryModule": "src/core/independent-verifier.mjs",
+      "status": "FIXED",
+      "canonicalRootCauseId": "VERIFIER-RC-09-STREAMING-OUTPUT-SIZE-LIMIT",
+      "invariantsAffected": [
+        "Process Boundary & Memory Flood Defense",
+        "Stream Resource Ceilings (Spec §3.3)"
+      ],
+      "technicalAnalysis": "In `CliVerifierAdapter` (lines 1765-1770), stdout and stderr data events concatenate incoming chunks into memory strings without tracking cumulative byte length or checking `limits.maxOutputBytes`. Unlike `cli-transport.mjs` (which kills the child process when `Buffer.byteLength(stdout) > maxOutputBytes`), `CliVerifierAdapter` buffers output indefinitely until exit or timeout. Furthermore, `_processResult(res, limits)` ignores `limits`. A runaway or adversarial verifier process can flood stdout and exhaust host Node.js memory.",
+      "adjudicator": "PENDING_ADJUDICATION",
+      "adjudicationDate": "PENDING_ADJUDICATION",
+      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "remediationSketch": "Track cumulative byte count on `stdout` and `stderr` streams in `_executeChildProcess`. When buffered bytes exceed `limits.maxOutputBytes`, terminate the child process (`child.kill('SIGKILL')`) and resolve/reject with `EXECUTION_STATUS.ERROR` or `PAYLOAD_TOO_LARGE` stating `maxOutputBytes exceeded`. Enforce the same ceiling in `_processResult`.",
+      "negativeTestContract": "Invoke `CliVerifierAdapter` with a mock command that emits 1 MB of stream data when `limits.maxOutputBytes` is set to 50 KB. Assert that the child is killed and the execution fails closed with an error matching `/maxOutputBytes/i`.",
+      "resolutionDetails": {
+        "resolvedIn": "src/core/independent-verifier.mjs",
+        "verifiedBy": "tests/remediation-phase2-verifier.test.mjs",
+        "resolutionSummary": "Remediated in Phase 2: Surgical fail-closed verification boundaries implemented, including concrete counterexample isolation, prompt budget overhead reservation, strict boolean locator validation, physical line bound checking, mandatory explanatory reasoning, cwe/type metadata retention, fail-closed clean challenge status validation, child process stream byte-limiting, contextPackage context gaps propagation, and observed runtime verifier model precedence."
+      }
+    },
+    {
+      "threadId": "PRRT_kwDOUWarIc6rxChi",
+      "fileLocation": "src/core/independent-verifier.mjs:1765-1770, 1836-1875",
+      "severity": "P2",
+      "primaryModule": "src/core/independent-verifier.mjs",
+      "status": "FIXED",
+      "canonicalRootCauseId": "VERIFIER-RC-09-STREAMING-OUTPUT-SIZE-LIMIT",
+      "invariantsAffected": [
+        "Process Boundary & Memory Flood Defense",
+        "Stream Resource Ceilings (Spec §3.3)"
+      ],
+      "technicalAnalysis": "Exact duplicate of Thread 13 (`PRRT_kwDOUWarIc6rrUDp`). Identifies the same defect in `CliVerifierAdapter` where stdout/stderr streams do not enforce `limits.maxOutputBytes`.",
+      "adjudicator": "PENDING_ADJUDICATION",
+      "adjudicationDate": "PENDING_ADJUDICATION",
+      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "remediationSketch": "Covered by `VERIFIER-RC-09-STREAMING-OUTPUT-SIZE-LIMIT` blueprint.",
+      "negativeTestContract": "Covered by `VERIFIER-RC-09-STREAMING-OUTPUT-SIZE-LIMIT` contract.",
+      "resolutionDetails": {
+        "resolvedIn": "src/core/independent-verifier.mjs",
+        "verifiedBy": "tests/remediation-phase2-verifier.test.mjs",
+        "resolutionSummary": "Remediated in Phase 2: Surgical fail-closed verification boundaries implemented, including concrete counterexample isolation, prompt budget overhead reservation, strict boolean locator validation, physical line bound checking, mandatory explanatory reasoning, cwe/type metadata retention, fail-closed clean challenge status validation, child process stream byte-limiting, contextPackage context gaps propagation, and observed runtime verifier model precedence."
+      }
+    },
+    {
+      "threadId": "PRRT_kwDOUWarIc6sl1Rg",
+      "fileLocation": "src/core/independent-verifier.mjs:2134-2135",
+      "severity": "P1",
+      "primaryModule": "src/core/independent-verifier.mjs",
+      "status": "FIXED",
+      "canonicalRootCauseId": "VERIFIER-RC-10-OBJECTIVE-RUNCONTEXT-CHANGESET-FALLBACK",
+      "invariantsAffected": [
+        "Dual-Axis Objective Gate Contract (R1, §3.1)",
+        "RunContext Binding Invariance"
+      ],
+      "technicalAnalysis": "In `conductIndependentVerification`, line 2134 defines `normContract = normalizeObjectiveContract(options.objectiveContract || options.patchObjective)`. It fails to inspect `options.runContext?.objectiveContract`, `options.runContext?.patchObjective`, `changeSet?.objectiveContract`, or `changeSet?.patchObjective` (in contrast to lines 2136 and 2141 which inspect `runContext` and `changeSet` for `headSha` and `exclusions`). When a caller passes an objective strictly bound in `RunContext` or `ChangeSet`, line 2134 produces `normContract = null` and `patchObjective = ''`. The verifier prompt then asserts that no objective was provided, validation rejects `FALSIFIES_PATCH_OBJECTIVE` verdicts, and downstream gate evaluation fails to enforce objective-falsifying omission blocks.",
+      "adjudicator": "PENDING_ADJUDICATION",
+      "adjudicationDate": "PENDING_ADJUDICATION",
+      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "remediationSketch": "Expand line 2134 in `conductIndependentVerification` to derive candidate objective from all authoritative sources: `const candidateObjective = options.objectiveContract || options.patchObjective || options.runContext?.objectiveContract || options.runContext?.patchObjective || changeSet?.objectiveContract || changeSet?.patchObjective; const normContract = normalizeObjectiveContract(candidateObjective);`.",
+      "negativeTestContract": "Call `conductIndependentVerification` where the patch objective is defined strictly on `options.runContext.patchObjective` (and omitted from `options.patchObjective`). Assert that the constructed prompt contains `Stated Patch Objective: <objective>` and the returned `verificationRecord.patchObjective` is non-empty.",
+      "resolutionDetails": {
+        "resolvedIn": "src/core/independent-verifier.mjs",
+        "verifiedBy": "tests/remediation-phase2-verifier.test.mjs",
+        "resolutionSummary": "Remediated in Phase 2: Surgical fail-closed verification boundaries implemented, including concrete counterexample isolation, prompt budget overhead reservation, strict boolean locator validation, physical line bound checking, mandatory explanatory reasoning, cwe/type metadata retention, fail-closed clean challenge status validation, child process stream byte-limiting, contextPackage context gaps propagation, and observed runtime verifier model precedence."
+      }
+    },
+    {
+      "threadId": "PRRT_kwDOUWarIc6sL8VO",
+      "fileLocation": "src/core/independent-verifier.mjs:2211",
+      "severity": "P1",
+      "primaryModule": "src/core/independent-verifier.mjs",
+      "status": "FIXED",
+      "canonicalRootCauseId": "VERIFIER-RC-11-CONTEXT-PACKAGE-GAPS-PROPAGATION",
+      "invariantsAffected": [
+        "Exact-Head Local Callee Context Extraction & Gap Propagation (R4, Spec §3.4)",
+        "Automated Uncertainty Enforcement"
+      ],
+      "technicalAnalysis": "In `conductIndependentVerification`, line 2211 passes `contextGaps: mergeContextGaps(options.contextGaps, options.contextPackage?.contextGaps)` to `validateVerificationOutput`. However, `buildVerificationPrompt` (lines 880-883) resolves the effective package via `options.contextPackage || changeSet?.contextPackage || null`. When a caller provides `changeSet.contextPackage` with unresolved context gaps, the prompt includes the gaps and warns the verifier, but `validateVerificationOutput` receives empty `contextGaps`. Lines 1596-1601 do not trigger uncertainty, allowing a verifier that ignores gaps to return `overallStatus: 'CLEAN'` and obtain gate approval despite missing callee definitions.",
+      "adjudicator": "PENDING_ADJUDICATION",
+      "adjudicationDate": "PENDING_ADJUDICATION",
+      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "remediationSketch": "In `conductIndependentVerification` at line 2211, resolve `effectiveContextPackage = options.contextPackage || changeSet?.contextPackage || null;` and pass `contextGaps: mergeContextGaps(options.contextGaps, effectiveContextPackage?.contextGaps)` to `validateVerificationOutput`.",
+      "negativeTestContract": "Invoke `conductIndependentVerification` with `changeSet.contextPackage.contextGaps = ['unresolved callee']` (and `options.contextPackage` undefined). Provide a verifier adapter returning `overallStatus: 'CLEAN'`. Assert that `validateVerificationOutput` forces `record.overallStatus` to `UNCERTAIN`.",
+      "resolutionDetails": {
+        "resolvedIn": "src/core/independent-verifier.mjs",
+        "verifiedBy": "tests/remediation-phase2-verifier.test.mjs",
+        "resolutionSummary": "Remediated in Phase 2: Surgical fail-closed verification boundaries implemented, including concrete counterexample isolation, prompt budget overhead reservation, strict boolean locator validation, physical line bound checking, mandatory explanatory reasoning, cwe/type metadata retention, fail-closed clean challenge status validation, child process stream byte-limiting, contextPackage context gaps propagation, and observed runtime verifier model precedence."
+      }
+    },
+    {
+      "threadId": "PRRT_kwDOUWarIc6sl1Rc",
+      "fileLocation": "src/core/independent-verifier.mjs:2211",
+      "severity": "P1",
+      "primaryModule": "src/core/independent-verifier.mjs",
+      "status": "FIXED",
+      "canonicalRootCauseId": "VERIFIER-RC-11-CONTEXT-PACKAGE-GAPS-PROPAGATION",
+      "invariantsAffected": [
+        "Exact-Head Local Callee Context Extraction & Gap Propagation (R4, Spec §3.4)",
+        "Automated Uncertainty Enforcement"
+      ],
+      "technicalAnalysis": "Exact duplicate of Thread 16 (`PRRT_kwDOUWarIc6sL8VO`). Identifies the same defect at line 2211 where `changeSet.contextPackage.contextGaps` is dropped during `validateVerificationOutput` invocation.",
+      "adjudicator": "PENDING_ADJUDICATION",
+      "adjudicationDate": "PENDING_ADJUDICATION",
+      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "remediationSketch": "Covered by `VERIFIER-RC-11-CONTEXT-PACKAGE-GAPS-PROPAGATION` blueprint.",
+      "negativeTestContract": "Covered by `VERIFIER-RC-11-CONTEXT-PACKAGE-GAPS-PROPAGATION` contract.",
+      "resolutionDetails": {
+        "resolvedIn": "src/core/independent-verifier.mjs",
+        "verifiedBy": "tests/remediation-phase2-verifier.test.mjs",
+        "resolutionSummary": "Remediated in Phase 2: Surgical fail-closed verification boundaries implemented, including concrete counterexample isolation, prompt budget overhead reservation, strict boolean locator validation, physical line bound checking, mandatory explanatory reasoning, cwe/type metadata retention, fail-closed clean challenge status validation, child process stream byte-limiting, contextPackage context gaps propagation, and observed runtime verifier model precedence."
+      }
+    },
+    {
+      "threadId": "PRRT_kwDOUWarIc6qo0u0",
+      "fileLocation": "src/core/independent-verifier.mjs:2320",
+      "severity": "P2",
+      "primaryModule": "src/core/independent-verifier.mjs",
+      "status": "FIXED",
+      "canonicalRootCauseId": "VERIFIER-RC-12-OBSERVED-VERIFIER-IDENTITY-PRECEDENCE",
+      "invariantsAffected": [
+        "Verifier Identity Provenance & Trust Tiers (§3.5)",
+        "Audit Trail Immutability"
+      ],
+      "technicalAnalysis": "In `conductIndependentVerification`, line 2320 executes: `let actualModelInput = options.actualModel || verifierAdapter?.actualModel || validated?.actualModel;`. Placing `options.actualModel` ahead of `verifierAdapter?.actualModel` and `validated?.actualModel` allows static caller metadata to override the actual observed runtime model identity reported by the adapter or output parser. If an alias or fallback occurs at runtime, the audit record still reflects the caller-supplied metadata rather than the true observed execution provenance.",
+      "adjudicator": "PENDING_ADJUDICATION",
+      "adjudicationDate": "PENDING_ADJUDICATION",
+      "exactHead": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+      "remediationSketch": "Update line 2320 to prioritize observed execution identity over caller options: `let actualModelInput = verifierAdapter?.actualModel || validated?.actualModel || options.actualModel;`. Ensure caller fallback metadata is attributed to `source: 'configured'` rather than `'reported'`.",
+      "negativeTestContract": "Call `conductIndependentVerification` with `options.actualModel = { value: 'claude-static', source: 'configured' }` and an adapter that reports `actualModel = { value: 'claude-3-5-sonnet-20241022', source: 'observed' }`. Assert that `verificationRecord.verifier.actualModel.value === 'claude-3-5-sonnet-20241022'`.",
+      "resolutionDetails": {
+        "resolvedIn": "src/core/independent-verifier.mjs",
+        "verifiedBy": "tests/remediation-phase2-verifier.test.mjs",
+        "resolutionSummary": "Remediated in Phase 2: Surgical fail-closed verification boundaries implemented, including concrete counterexample isolation, prompt budget overhead reservation, strict boolean locator validation, physical line bound checking, mandatory explanatory reasoning, cwe/type metadata retention, fail-closed clean challenge status validation, child process stream byte-limiting, contextPackage context gaps propagation, and observed runtime verifier model precedence."
+      }
+    }
+  ]
+}

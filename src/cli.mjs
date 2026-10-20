@@ -42,8 +42,15 @@ import {
   createMockVerifierAdapter,
   buildDisagreementLedgerDocument,
   CliVerifierAdapter,
-  VERIFICATION_SCHEMA_VERSION
+  VERIFICATION_SCHEMA_VERSION,
+  RunContext,
+  normalizeCommitSha,
+  normalizeDigest,
+  normalizeObjective,
+  mergeContextGaps
 } from "./core/independent-verifier.mjs";
+import { buildContextPackage } from "./core/context-builder.mjs";
+import { digestChangeSet } from "./core/canonical-digest.mjs";
 
 export const EXIT_CODES = {
   SUCCESS: 0,
@@ -139,7 +146,8 @@ export function extractFindingsFromReport(reportData) {
   return [];
 }
 
-export async function runCli(argv = process.argv.slice(2), io = { stdout: process.stdout, stderr: process.stderr }, options = {}) {
+export async function runCli(argv = process.argv.slice(2), io = { stdout: process.stdout, stderr: process.stderr }, rawOptions = {}) {
+  const options = { ...io, ...rawOptions };
   const strictArg = argv.includes("--strict") || Boolean(options.strict);
   const stagedArg = argv.includes("--staged") || Boolean(options.staged);
 
@@ -528,11 +536,50 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
     sandboxArg = options.sandbox || "worktree";
   }
 
+  let tierArg = null;
+  let hasExplicitTierFlag = false;
+  let rawTierVal = null;
+  const tierExplicit = argv.find(a => a.startsWith("--tier="));
+  if (tierExplicit) {
+    hasExplicitTierFlag = true;
+    rawTierVal = tierExplicit.slice("--tier=".length).trim();
+    tierArg = Number(rawTierVal);
+  } else {
+    const tierIdx = argv.indexOf("--tier");
+    if (tierIdx !== -1) {
+      hasExplicitTierFlag = true;
+      if (argv[tierIdx + 1] && !argv[tierIdx + 1].startsWith("--")) {
+        rawTierVal = argv[tierIdx + 1].trim();
+        tierArg = Number(rawTierVal);
+        consumedArgsIndices.add(tierIdx + 1);
+      }
+    }
+  }
+
+  if (hasExplicitTierFlag) {
+    if (rawTierVal === null || rawTierVal === "" || !Number.isInteger(tierArg) || tierArg < 1 || tierArg > 4) {
+      io.stderr.write(`✖ [USAGE ERROR] Invalid --tier='${rawTierVal ?? ""}'. Must be an integer between 1 and 4 (inclusive).\n`);
+      return EXIT_CODES.USAGE_ERROR;
+    }
+  }
+
+  if (options.tier !== undefined) {
+    const optTierNum = Number(options.tier);
+    if (!Number.isInteger(optTierNum)) {
+      io.stderr.write(`✖ [USAGE ERROR] Invalid tier option '${options.tier}'. Must be a recognized integer tier.\n`);
+      return EXIT_CODES.USAGE_ERROR;
+    }
+  }
+
+  const effectiveTier = options.tier !== undefined ? Number(options.tier) : (tierArg !== null ? tierArg : undefined);
+  const effectiveIsTier1 = options.isTier1 !== undefined ? options.isTier1 : (effectiveTier !== undefined ? effectiveTier === 1 : undefined);
+
   const planOnlyArg = argv.includes("--plan-only") || Boolean(options.planOnly);
 
   const isRecognizedArg = (arg) => {
     if (arg.startsWith("--format=") || arg === "--format") return true;
     if (arg === "--strict" || arg === "--staged" || arg === "--plan-only" || arg === "--batch") return true;
+    if (arg.startsWith("--tier=") || arg === "--tier") return true;
     if (arg.startsWith("--base=") || arg === "--base") return true;
     if (arg.startsWith("--head=") || arg === "--head") return true;
     if (arg.startsWith("--report=") || arg === "--report") return true;
@@ -712,6 +759,21 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
 
     case "review": {
       printBanner(io, "Triad-Flow • Real Scale-Adaptive Review");
+
+      // 1. Validate --verify-with profile if supplied (Injection Prevention)
+      let verifierProfile = null;
+      const verifyWithSpecified = argv.some(a => a === "--verify-with" || a.startsWith("--verify-with=")) ||
+        options.verifyWith !== undefined ||
+        verifyWithArg !== null;
+      if (verifyWithSpecified) {
+        try {
+          verifierProfile = validateVerifierCommand(verifyWithArg || "");
+        } catch (err) {
+          io.stderr.write(`✖ [USAGE ERROR] ${err.message}\n`);
+          return EXIT_CODES.USAGE_ERROR;
+        }
+      }
+
       const gitOptions = {
         base: baseArg,
         head: headArg,
@@ -721,28 +783,33 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
       const opts = { ...io, ...options };
       let changeSet;
 
-      if (typeof opts.getChangeSet === "function") {
-        changeSet = opts.getChangeSet(gitOptions);
-      } else if (typeof opts.getGitState === "function") {
-        const state = opts.getGitState(gitOptions);
-        if (!state || !state.ok) {
-          changeSet = state;
+      try {
+        if (typeof opts.getChangeSet === "function") {
+          changeSet = opts.getChangeSet(gitOptions);
+        } else if (typeof opts.getGitState === "function") {
+          const state = opts.getGitState(gitOptions);
+          if (!state || !state.ok) {
+            changeSet = state;
+          } else {
+            changeSet = {
+              ok: true,
+              schemaVersion: "1.0.0",
+              scopeMode: state.scopeMode || "working-tree",
+              repository: state.repository,
+              contentDigest: crypto.createHash("sha256").update(JSON.stringify(state.files || []), "utf8").digest("hex"),
+              totalFiles: (state.files || []).length,
+              totalAdditions: (state.files || []).reduce((sum, f) => sum + (f.additions || 0), 0),
+              totalDeletions: (state.files || []).reduce((sum, f) => sum + (f.deletions || 0), 0),
+              files: state.files || [],
+              diffHunks: ""
+            };
+          }
         } else {
-          changeSet = {
-            ok: true,
-            schemaVersion: "1.0.0",
-            scopeMode: state.scopeMode || "working-tree",
-            repository: state.repository,
-            contentDigest: crypto.createHash("sha256").update(JSON.stringify(state.files || []), "utf8").digest("hex"),
-            totalFiles: (state.files || []).length,
-            totalAdditions: (state.files || []).reduce((sum, f) => sum + (f.additions || 0), 0),
-            totalDeletions: (state.files || []).reduce((sum, f) => sum + (f.deletions || 0), 0),
-            files: state.files || [],
-            diffHunks: ""
-          };
+          changeSet = buildChangeSet(opts.cwd || process.cwd(), gitOptions);
         }
-      } else {
-        changeSet = buildChangeSet(opts.cwd || process.cwd(), gitOptions);
+      } catch (err) {
+        io.stderr.write(`✖ [FATAL SYSTEM FAILURE] Git inspection exception: ${err.message}\n\n`);
+        return EXIT_CODES.SYSTEM_FAILURE;
       }
 
       // Invariant (INV-01): Git inspection failure MUST fail closed as SYSTEM_FAILURE (3) or USAGE_ERROR (2) on invalid ref
@@ -815,31 +882,237 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
         }
       }
 
+      // Establish authoritative contextPackage and contextGaps prior to preliminary review (tdsmP)
+      const repoRootCandidate = options.repoRoot ||
+        (typeof changeSet?.repository === "object" ? changeSet?.repository?.root : (typeof changeSet?.repository === "string" ? changeSet.repository : null)) ||
+        (typeof options.cwd === "string" ? options.cwd : (typeof opts.cwd === "string" ? opts.cwd : null));
+      const targetRepo = (typeof repoRootCandidate === "string" && repoRootCandidate.trim().length > 0)
+        ? repoRootCandidate.trim()
+        : null;
+
+      const activeRunId = options.runId || crypto.randomUUID();
+      const headSha = normalizeCommitSha(
+        changeSet.headSha ||
+        changeSet.commitSha ||
+        changeSet.head ||
+        options.headSha ||
+        options.head ||
+        ""
+      );
+
+      let effectiveContextPackage = options.contextPackage || changeSet?.contextPackage || null;
+      let contextExtractionFailed = false;
+      let contextExtractionError = null;
+
+      if (!effectiveContextPackage && Array.isArray(files) && files.length > 0 && targetRepo) {
+        try {
+          effectiveContextPackage = buildContextPackage(
+            changeSet,
+            null,
+            {
+              headSha: headSha || null,
+              repositoryRoot: targetRepo,
+              cwd: targetRepo,
+              runId: activeRunId
+            }
+          );
+          if (!effectiveContextPackage || effectiveContextPackage.ok === false) {
+            contextExtractionFailed = true;
+            contextExtractionError = effectiveContextPackage?.error?.message || "buildContextPackage returned invalid or non-ok contextPackage";
+          } else if (Array.isArray(effectiveContextPackage.fileCoverageManifest)) {
+            const unavailableEntry = effectiveContextPackage.fileCoverageManifest.find(
+              m => m && (m.exactHeadAvailable === false || m.exactHeadUnavailable === true || m.contentAvailable === false)
+            );
+            if (unavailableEntry) {
+              contextExtractionFailed = true;
+              contextExtractionError = `Exact-head content unavailable for file: '${unavailableEntry.file || unavailableEntry.path}'.`;
+            }
+          }
+        } catch (err) {
+          contextExtractionFailed = true;
+          contextExtractionError = err?.message || String(err);
+        }
+      }
+
+      const effectiveContextGaps = mergeContextGaps(
+        contextExtractionFailed ? [
+          {
+            code: "EXACT_HEAD_CONTEXT_FAILED",
+            symbol: "exact-head-context",
+            reason: contextExtractionError,
+            targetFiles: files.map(f => typeof f === "string" ? f : (f?.path || f?.file || ""))
+          }
+        ] : null,
+        options.contextGaps,
+        changeSet?.contextGaps,
+        effectiveContextPackage?.contextGaps
+      );
+
+      if (effectiveContextPackage && !changeSet.contextPackage) {
+        changeSet.contextPackage = effectiveContextPackage;
+      }
+      if (Array.isArray(effectiveContextGaps) && effectiveContextGaps.length > 0 && !changeSet.contextGaps) {
+        changeSet.contextGaps = effectiveContextGaps;
+      }
+
       const reviewAdapters = opts.reviewAdapters || opts.adapters || cliAdapters || null;
       let consensus;
       let gate;
       let orchResult = null;
       let runStatus;
+      let verificationRecord = options.verificationRecord || null;
 
       if (reviewAdapters) {
+        // Run review orchestrator in preliminary mode unless caller provided an authoritative verificationRecord
+        const shouldRunPreliminary = options.preliminary === true || (options.preliminary === undefined && !options.verificationRecord);
+
         orchResult = await orchestrateReview(changeSet, reviewAdapters, {
           strict: strictArg,
           timeoutMs: options.timeoutMs,
           signal: options.signal,
-          limits: options.limits
+          limits: options.limits,
+          ...(effectiveTier !== undefined ? { tier: effectiveTier } : {}),
+          ...(effectiveIsTier1 !== undefined ? { isTier1: effectiveIsTier1 } : {}),
+          plan: options.plan,
+          ...(effectiveContextPackage ? { contextPackage: effectiveContextPackage } : {}),
+          ...(effectiveContextGaps && effectiveContextGaps.length > 0 ? { contextGaps: effectiveContextGaps } : {}),
+          ...(options.runId ? { runId: options.runId } : {}),
+          ...(options.verificationRecord ? { verificationRecord: options.verificationRecord } : {}),
+          ...(options.runContext ? { runContext: options.runContext } : {}),
+          ...(options.patchObjective ? { patchObjective: options.patchObjective } : {}),
+          ...(options.objectiveContract ? { objectiveContract: options.objectiveContract } : {}),
+          ...(shouldRunPreliminary ? { preliminary: true } : {})
         });
+
         consensus = orchResult.consensus;
         gate = orchResult.gate;
+
         if (orchResult.status === "error") {
           runStatus = REVIEW_RUN_STATUS.EXECUTION_ERROR;
         } else if (orchResult.status === "incomplete") {
           runStatus = REVIEW_RUN_STATUS.INCOMPLETE;
-        } else if (gate.decision === "approve") {
-          runStatus = (consensus?.findings && consensus.findings.length > 0)
-            ? REVIEW_RUN_STATUS.REVIEWED_WITH_FINDINGS
-            : REVIEW_RUN_STATUS.REVIEWED_CLEAN;
-        } else if (consensus?.findings && consensus.findings.length > 0) {
-          runStatus = REVIEW_RUN_STATUS.REVIEWED_WITH_FINDINGS;
+        } else if (consensus?.quorumReached) {
+          const hasFindings = consensus.findings && consensus.findings.length > 0;
+
+          if (hasFindings) {
+            // Findings present: evaluate formal gate without preliminary
+            if (options.preliminary !== true) {
+              gate = evaluateGateDecision(consensus, {
+                strict: strictArg,
+                ...(effectiveTier !== undefined ? { tier: effectiveTier } : {}),
+                ...(effectiveIsTier1 !== undefined ? { isTier1: effectiveIsTier1 } : {}),
+                ...(options.verificationRecord ? { verificationRecord: options.verificationRecord } : {}),
+                ...(options.runContext ? { runContext: options.runContext } : {}),
+                ...(effectiveContextPackage ? { contextPackage: effectiveContextPackage } : {}),
+                ...(effectiveContextGaps && effectiveContextGaps.length > 0 ? { contextGaps: effectiveContextGaps } : {})
+              });
+            }
+            runStatus = REVIEW_RUN_STATUS.REVIEWED_WITH_FINDINGS;
+          } else if (options.preliminary === true) {
+            // Caller explicitly requested preliminary review
+            runStatus = REVIEW_RUN_STATUS.PRELIMINARY_CLEAN;
+          } else if (options.verificationRecord) {
+            // Caller already provided verificationRecord and orchestrateReview handled it
+            if (gate.decision === "approve") {
+              runStatus = REVIEW_RUN_STATUS.REVIEWED_CLEAN;
+            } else {
+              runStatus = REVIEW_RUN_STATUS.INCOMPLETE;
+            }
+          } else {
+            // Zero findings and formal review: Clean Challenge required
+            const hasVerifier = Boolean(verifierProfile || options.verifierAdapter);
+
+            if (!hasVerifier) {
+              // Fail closed: zero-finding reviews require Clean Challenge verification
+              gate = {
+                decision: "block",
+                reason: "Clean Challenge missing: zero-finding reviews require independent verification record."
+              };
+              runStatus = REVIEW_RUN_STATUS.INCOMPLETE;
+            } else {
+              // Instantiate verifier adapter
+              let verifierAdapter = options.verifierAdapter || null;
+              if (!verifierAdapter && verifierProfile) {
+                const verifierModel = verifierProfile.id === "claude"
+                  ? "claude-5.5-sonnet"
+                  : (verifierProfile.id === "agy" ? "gemini-3.8-flash" : (verifierProfile.id === "codex" ? "gpt-6.1-sol" : "cli-default"));
+
+                verifierAdapter = new CliVerifierAdapter({
+                  command: verifierProfile.command,
+                  providerName: verifierProfile.id,
+                  modelName: verifierModel,
+                  actualModel: { value: verifierModel, source: "reported" },
+                  execFn: options.verifierExecFn || options.execFn || null
+                });
+              }
+
+              // Build authentic RunContext anchored to active invocation runId
+              const invocationRunId = orchResult?.runId || activeRunId;
+              let contentDigest = normalizeDigest(changeSet.contentDigest || "");
+              if (!contentDigest) {
+                try {
+                  contentDigest = normalizeDigest(digestChangeSet(changeSet));
+                } catch {
+                  if (typeof changeSet.diffHunks === "string") {
+                    contentDigest = crypto.createHash("sha256").update(changeSet.diffHunks.replace(/\r\n/g, "\n"), "utf8").digest("hex");
+                  }
+                }
+              }
+              const patchObjective = normalizeObjective(options.patchObjective || changeSet.patchObjective || "");
+
+              const runContext = new RunContext({
+                runId: invocationRunId,
+                headSha,
+                contentDigest,
+                patchObjective,
+                objectiveContract: options.objectiveContract || changeSet.objectiveContract || null,
+                exclusions: options.exclusions || changeSet.exclusions || []
+              });
+
+              io.stderr.write(`\n[Clean Challenge] Initiating Independent Verification with '${verifierAdapter.providerName || "verifier"}'...\n`);
+
+              try {
+                verificationRecord = await conductIndependentVerification(
+                  changeSet,
+                  [],
+                  verifierAdapter,
+                  {
+                    verificationMode: "clean_challenge",
+                    runId: invocationRunId,
+                    headSha,
+                    changeSetDigest: contentDigest,
+                    patchObjective,
+                    objectiveContract: runContext.objectiveContract,
+                    runContext,
+                    contextPackage: effectiveContextPackage,
+                    contextGaps: effectiveContextGaps,
+                    timeoutMs: options.timeoutMs || 60000,
+                    signal: options.signal || null
+                  }
+                );
+              } catch (err) {
+                io.stderr.write(`✖ [Clean Challenge Error] ${err.message}\n`);
+                verificationRecord = { ok: false, error: err.message };
+              }
+
+              // Evaluate formal gate integrating verificationRecord and authentic RunContext
+              gate = evaluateGateDecision(consensus, {
+                strict: strictArg,
+                ...(effectiveTier !== undefined ? { tier: effectiveTier } : {}),
+                ...(effectiveIsTier1 !== undefined ? { isTier1: effectiveIsTier1 } : {}),
+                verificationRecord,
+                runContext,
+                contextPackage: effectiveContextPackage,
+                contextGaps: effectiveContextGaps
+              });
+
+              if (gate.decision === "approve") {
+                runStatus = REVIEW_RUN_STATUS.REVIEWED_CLEAN;
+              } else {
+                runStatus = REVIEW_RUN_STATUS.INCOMPLETE;
+              }
+            }
+          }
         } else {
           runStatus = REVIEW_RUN_STATUS.INCOMPLETE;
         }
@@ -853,13 +1126,28 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
         runStatus = REVIEW_RUN_STATUS.INCOMPLETE;
       }
 
+      // Preserve strict Exit Code contracts
       let exitCode;
       if (runStatus === REVIEW_RUN_STATUS.EXECUTION_ERROR) {
-        exitCode = EXIT_CODES.EXECUTION_ERROR;
+        exitCode = EXIT_CODES.SYSTEM_FAILURE;
       } else if (runStatus === REVIEW_RUN_STATUS.CONFIGURATION_ERROR) {
-        exitCode = EXIT_CODES.CONFIGURATION_ERROR;
+        exitCode = EXIT_CODES.USAGE_ERROR;
+      } else if (gate?.preliminary || runStatus === REVIEW_RUN_STATUS.PRELIMINARY_CLEAN) {
+        exitCode = EXIT_CODES.GATE_BLOCKED;
       } else {
         exitCode = gate.decision === "approve" ? EXIT_CODES.SUCCESS : EXIT_CODES.GATE_BLOCKED;
+      }
+
+      // Save verification report if requested
+      if (verificationReportArg && verificationRecord) {
+        try {
+          fs.mkdirSync(path.dirname(path.resolve(verificationReportArg)), { recursive: true });
+          fs.writeFileSync(path.resolve(verificationReportArg), JSON.stringify(verificationRecord, null, 2) + "\n", "utf8");
+          io.stderr.write(`📝 Saved verification record: ${verificationReportArg}\n`);
+        } catch (err) {
+          io.stderr.write(`✖ [FATAL SYSTEM FAILURE] Failed to write verification record: ${err.message}\n`);
+          return EXIT_CODES.SYSTEM_FAILURE;
+        }
       }
 
       const runReport = buildReviewRunReport({
@@ -890,16 +1178,17 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
         }
       }
 
-      io.stderr.write(`\n★ Consensus Verdict: ${consensus.verdict.toUpperCase()} (${consensus.consensusProof})\n`);
-      io.stderr.write(`🛡️ Gate Decision: ${gate.decision.toUpperCase()} - ${gate.reason}\n\n`);
+      io.stderr.write(`\n★ Consensus Verdict: ${consensus?.verdict ? consensus.verdict.toUpperCase() : "UNKNOWN"} (${consensus?.consensusProof || ""})\n`);
+      io.stderr.write(`🛡️ Gate Decision: ${gate?.decision ? gate.decision.toUpperCase() : "UNKNOWN"} - ${gate?.reason || ""}\n`);
+      io.stderr.write(`Review Status: ${runStatus}\n\n`);
 
       if (formatArg === "json") {
         io.stdout.write(JSON.stringify(runReport, null, 2) + "\n");
       } else if (formatArg === "sarif") {
         const executionSuccessful = runStatus !== REVIEW_RUN_STATUS.INCOMPLETE && runStatus !== REVIEW_RUN_STATUS.EXECUTION_ERROR;
-        const sarif = formatSarifReport(consensus.findings, {
+        const sarif = formatSarifReport(consensus?.findings || [], {
           executionSuccessful,
-          failureReason: executionSuccessful ? undefined : (consensus.consensusProof || gate.reason || "Review unconfigured or quorum failed")
+          failureReason: executionSuccessful ? undefined : (consensus?.consensusProof || gate?.reason || "Review unconfigured or quorum failed")
         });
         io.stdout.write(JSON.stringify(sarif, null, 2) + "\n");
       }

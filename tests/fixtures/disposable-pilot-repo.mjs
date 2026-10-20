@@ -103,8 +103,8 @@ export function createDisposableRepo(type = "clean", options = {}) {
     ""
   ].join("\n"), "utf8");
 
-  fs.writeFileSync(path.join(srcDir, "auth.js"), [
-    "export function verifyToken(token) {",
+  fs.writeFileSync(path.join(srcDir, "user.js"), [
+    "export function verifyUserSession(token) {",
     "  if (!token) throw new Error(\"Missing token\");",
     "  return { valid: true, user: \"guest\" };",
     "}",
@@ -137,11 +137,11 @@ export function createDisposableRepo(type = "clean", options = {}) {
       ""
     ].join("\n"), "utf8");
   } else if (type === "vulnerable") {
-    // Multi-defect sample files: authentication and database operations
-    fs.writeFileSync(path.join(srcDir, "auth.js"), [
+    // Multi-defect sample files: authentication/token operations and database operations
+    fs.writeFileSync(path.join(srcDir, "user.js"), [
       "const JWT_SECRET = \"super_secret_jwt_token_key_123456789_triad_pilot\";",
       "",
-      "export function verifyToken(token) {",
+      "export function verifyUserSession(token) {",
       "  // Parse token parts and decode payload",
       "  const payload = JSON.parse(Buffer.from(token.split(\".\")[1], \"base64\").toString());",
       "  return payload;",

@@ -24,13 +24,27 @@ import {
   getOssCaseById,
   listOssCases
 } from "../../tests/fixtures/real-oss-fixtures.mjs";
-import { orchestrateReview } from "../adapters/review-orchestrator.mjs";
+import { orchestrateBenchmarkEvaluation } from "../adapters/review-orchestrator.mjs";
 import { verifyHeldOutBaseline } from "./scoring.mjs";
 import { deduplicateBenchmarkFindings } from "./benchmark-pilot.mjs";
 import { evaluateDiffScale } from "./graph-router.mjs";
 import { buildAuditReceipt, normalizeActualModel } from "./audit-receipt.mjs";
 import { createCorpusIdentity } from "./canonical-digest.mjs";
 import { TOOL_VERSION } from "./review-run-report.mjs";
+
+var _mintBenchmarkRunnerCapability = _mintBenchmarkRunnerCapability || null;
+
+/**
+ * Capability binder for genuine internal benchmark runner execution.
+ * Write-once capability binding from review-orchestrator.mjs (Thread tfxJh).
+ *
+ * @param {Function} minter
+ */
+export function __bindBenchmarkRunnerCapability(minter) {
+  if (typeof minter === "function" && !_mintBenchmarkRunnerCapability) {
+    _mintBenchmarkRunnerCapability = minter;
+  }
+}
 
 export const BENCHMARK_FRAMEWORK_NAME = "Triad-Flow Real Benchmark Corpus v0 (TF-RBC-v0)";
 export const OSS_BENCHMARK_FRAMEWORK_NAME = "Triad-Flow Real-World OSS Corpus v1 (TF-OSS-v1)";
@@ -85,11 +99,17 @@ export async function evaluateCorpusCase(caseDef, adapters = {}, options = {}) {
     }
 
     // 4. Time the execution
+    const benchmarkCapability = typeof _mintBenchmarkRunnerCapability === "function"
+      ? _mintBenchmarkRunnerCapability()
+      : null;
+
     const startTime = Date.now();
-    const orchResult = await orchestrateReview(workspace.changeSet, adapters, {
+    const orchResult = await orchestrateBenchmarkEvaluation(workspace.changeSet, adapters, {
       plan,
       strict,
-      timeoutMs
+      timeoutMs,
+      preliminary: true,
+      __internalBenchmarkCapability: benchmarkCapability
     });
     const latencyMs = Date.now() - startTime;
 
@@ -159,16 +179,21 @@ export async function evaluateCorpusCase(caseDef, adapters = {}, options = {}) {
     const goldenFindings = caseDef.goldenFindings || [];
     const evalResult = verifyHeldOutBaseline(actualFindings, goldenFindings, workspace.dir);
 
-    // 9. 3-Point Passed Check & Negative Controls
+    // 9. 3-Point Passed Check & Governance Segregation (Thread 43)
     // Point 1 (detectionPass): Golden CWEs caught (or Clean case has no blocking findings)
     const isClean = caseDef.category === "clean";
     const detectionPass = isClean
       ? !actualFindings.some(f => /critical|high/i.test(f.severity || ""))
       : (goldenFindings.length > 0 && evalResult.caughtGoldens === goldenFindings.length);
 
-    // Point 2 (gatePolicyPass): Actual gate decision strictly matches expected gate decision
-    const actualGateDecision = orchResult.gate?.decision || "block";
-    const gatePolicyPass = actualGateDecision === caseDef.expectedGateDecision;
+    // Preliminary Gate Assessment:
+    // In preliminary evaluation, orchestrateReview executes with preliminary: true.
+    // The gate decision returned is a preliminary decision (orchResult.gate.preliminary === true).
+    const isPreliminary = Boolean(orchResult.gate?.preliminary ?? true);
+    const preliminaryGateDecision = orchResult.gate?.decision || "block";
+    const preliminaryGatePolicyPass = preliminaryGateDecision === caseDef.expectedGateDecision;
+    const actualGateDecision = preliminaryGateDecision;
+    const gatePolicyPass = preliminaryGatePolicyPass;
 
     // Point 3 (executionComplete): Reviewer completed execution without incomplete coverage or runtime error
     const executionComplete = orchResult.status !== "incomplete" && orchResult.status !== "error";
@@ -176,8 +201,24 @@ export async function evaluateCorpusCase(caseDef, adapters = {}, options = {}) {
     const isFalseBlock = isClean && actualGateDecision === "block";
     const isRecallCaught = !isClean && evalResult.caughtGoldens === goldenFindings.length;
 
-    // Passed requires all 3 points to hold simultaneously
-    const passed = Boolean(detectionPass && gatePolicyPass && executionComplete);
+    // Preliminary Passed reflects 3-point check under preliminary review conditions
+    const preliminaryPassed = Boolean(detectionPass && preliminaryGatePolicyPass && executionComplete);
+
+    // Final Gate Assessment:
+    // At the final governance gate, clean cases without independent verification (clean_challenge) FAIL-CLOSED (BLOCK).
+    // Therefore, preliminary approval of clean cases does NOT translate to final gate approval.
+    const finalGateDecision = isClean ? "block" : actualGateDecision;
+    const finalGatePolicyPass = finalGateDecision === caseDef.expectedGateDecision;
+    const finalGatePassed = Boolean(detectionPass && finalGatePolicyPass && executionComplete);
+
+    // Promotion Eligibility:
+    // In accordance with governance invariant (Thread 43), preliminary benchmark passes are strictly decoupled
+    // from final gate passes and MUST NOT be counted into final gate pass or promotion eligibility metrics.
+    const promotionEligible = false;
+    const promotionIneligibilityReason = "Preliminary benchmark run lacks independent clean-challenge verification; preliminary passes cannot be counted toward promotion eligibility.";
+
+    // For backward compatibility with existing tests checking .passed, passed reflects preliminaryPassed
+    const passed = preliminaryPassed;
 
     return {
       caseId: caseDef.id,
@@ -200,6 +241,15 @@ export async function evaluateCorpusCase(caseDef, adapters = {}, options = {}) {
       detectionPass,
       gatePolicyPass,
       executionComplete,
+      isPreliminary,
+      preliminaryGateDecision,
+      preliminaryGatePolicyPass,
+      preliminaryPassed,
+      finalGateDecision,
+      finalGatePolicyPass,
+      finalGatePassed,
+      promotionEligible,
+      promotionIneligibilityReason,
       passed
     };
   } finally {
@@ -441,6 +491,9 @@ export async function evaluateCorpusSuite(corpus = null, adapters = null, option
     systemProvenance
   });
 
+  const preliminaryPassedCount = caseResults.filter(r => r.preliminaryPassed ?? r.passed).length;
+  const finalGatePassedCount = caseResults.filter(r => r.finalGatePassed === true).length;
+
   return {
     framework: isOss ? OSS_BENCHMARK_FRAMEWORK_NAME : BENCHMARK_FRAMEWORK_NAME,
     corpus: isOss ? "oss" : "v0",
@@ -463,6 +516,23 @@ export async function evaluateCorpusSuite(corpus = null, adapters = null, option
       recall,
       precision,
       falseBlockRate,
+      preliminaryScores: {
+        passedCasesCount: preliminaryPassedCount,
+        passRate: cases.length > 0 ? parseFloat((preliminaryPassedCount / cases.length).toFixed(3)) : 0.0,
+        isPreliminary: true
+      },
+      finalGateScores: {
+        passedCasesCount: finalGatePassedCount,
+        passRate: cases.length > 0 ? parseFloat((finalGatePassedCount / cases.length).toFixed(3)) : 0.0,
+        promotionEligible: false,
+        disqualificationReason: "Preliminary benchmark execution without independent clean challenge verification cannot qualify for final gate promotion."
+      },
+      promotionEligibility: {
+        eligible: false,
+        preliminaryPassCount: preliminaryPassedCount,
+        finalGatePassCount: finalGatePassedCount,
+        reason: "Preliminary benchmark scores strictly decoupled from final gate scores. Preliminary passes cannot be counted toward promotion eligibility."
+      },
       latency: {
         p50Ms,
         p95Ms,
@@ -672,6 +742,9 @@ export function formatBenchmarkSummary(runResult) {
     ? `${metrics.tokens.totalTokens.toLocaleString()} tokens total (Avg: ${metrics.tokens.avgTokensPerCase} tokens/case)`
     : "unavailable (provider did not report usage metadata)";
   lines.push(`  • Token Expenditure:       ${tokenText}`);
+  const prelimPassCount = metrics.preliminaryScores?.passedCasesCount ?? 0;
+  lines.push(`  • Preliminary Pass Rate:   ${prelimPassCount}/${metrics.totalCases} (${metrics.totalCases > 0 ? ((prelimPassCount / metrics.totalCases) * 100).toFixed(1) : 0}%) [PROVISIONAL ONLY]`);
+  lines.push(`  • Promotion Eligibility:   DISQUALIFIED (Preliminary results strictly segregated; not eligible for promotion)`);
   lines.push("==================================================================================");
 
   return lines.join("\n");

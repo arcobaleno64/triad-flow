@@ -1,0 +1,222 @@
+{
+  "metadata": {
+    "remoteHeadSha": "ebe28be8b4db6ef276e6b3dcc1201a860af5231f",
+    "timestamp": "2026-10-17T03:32:00.374Z",
+    "workingTreeStatus": "UNCOMMITTED_LOCAL_MODIFICATIONS",
+    "totalTrackedModifiedFiles": 10,
+    "totalUntrackedFiles": 20,
+    "totalIncludedFiles": 30,
+    "totalContentFilesHashed": 29,
+    "manifestSelfPath": "evidence-runs/PR-39/working-tree-snapshot.json",
+    "manifestDigestSha256": "a14aa7284ee72d98c51c4025690f1d31ab720ccc8dd3953078fb1e260f2d3f09",
+    "fullWorkingTreeDiffSha256": "39097ac5e2103cd0344ed468ddd47926f3b9017a300ca501c54bdfad7fa6c728",
+    "fullWorkingTreeDiffBytes": 120116
+  },
+  "modifiedTrackedFiles": {
+    ".github/allowed_signers": {
+      "category": "CONFIG_FILE",
+      "headSha256": "2214d608cd7773187fb2050acd96ff2b3fd421ab1a78039648950cae80d1f1ea",
+      "diskSha256": "2214d608cd7773187fb2050acd96ff2b3fd421ab1a78039648950cae80d1f1ea",
+      "diskBytes": 230,
+      "headBytes": 230,
+      "isBitForBitIdentical": true
+    },
+    ".github/workflows/nightly.yml": {
+      "category": "CONFIG_FILE",
+      "headSha256": "fb9b9b5634cf367f9cbf03143549f91ff7eeca4fd12b5d1c1e7119434bb348ca",
+      "diskSha256": "fb9b9b5634cf367f9cbf03143549f91ff7eeca4fd12b5d1c1e7119434bb348ca",
+      "diskBytes": 723,
+      "headBytes": 723,
+      "isBitForBitIdentical": true
+    },
+    ".gitignore": {
+      "category": "CONFIG_FILE",
+      "headSha256": "eb43ff82502abdb249757b047ec532530b4ce5dacb4723f63a478bb3c12287a5",
+      "diskSha256": "eb43ff82502abdb249757b047ec532530b4ce5dacb4723f63a478bb3c12287a5",
+      "diskBytes": 458,
+      "headBytes": 458,
+      "isBitForBitIdentical": true
+    },
+    "scripts/dogfood-review.mjs": {
+      "category": "CORE_SOURCE",
+      "headSha256": "b3f5046c2a95b3391e58cd23b2bf95dda852bd3bc749d79fcc60ed49cc76df38",
+      "diskSha256": "375eb4c3d2e4bc3b86d22decfa5c2f101944b0cf41e6b15620926b888e999391",
+      "diskBytes": 66145,
+      "headBytes": 65062,
+      "isBitForBitIdentical": false
+    },
+    "src/adapters/review-orchestrator.mjs": {
+      "category": "CORE_SOURCE",
+      "headSha256": "ff164c9687c124feae0178acc5185290881810bfe6e31fe4e477b52da18ce7cb",
+      "diskSha256": "287ed622b38c6d97a23dda3ab3ad92cee2f43df295d77c245c01022f5df20ec5",
+      "diskBytes": 19688,
+      "headBytes": 16655,
+      "isBitForBitIdentical": false
+    },
+    "src/cli.mjs": {
+      "category": "CORE_SOURCE",
+      "headSha256": "93a25a530355f083b033e23c8933887a3babe67c160881f6e9b7781eab47791b",
+      "diskSha256": "39f5c5f0d31a55f4e6663a56d4eb560fa53d2beb3583b3fdba714894305266b0",
+      "diskBytes": 79287,
+      "headBytes": 71765,
+      "isBitForBitIdentical": false
+    },
+    "src/core/context-builder.mjs": {
+      "category": "CORE_SOURCE",
+      "headSha256": "95fc4637cf0d3d8a94c08e62e9acfe0e034ba891fb539e0f03106d15f9ab6672",
+      "diskSha256": "b56bf26eb88d379b31f6b4861a99ecde340c8949382d67270cac16a7e0b90dd9",
+      "diskBytes": 64774,
+      "headBytes": 58786,
+      "isBitForBitIdentical": false
+    },
+    "src/core/harness.mjs": {
+      "category": "CORE_SOURCE",
+      "headSha256": "92f62a96d3d1247d03a83de9d5ecd57c9f213f3ec307f81166a5966472e7afe7",
+      "diskSha256": "dce609cfc077cd62d09956a85bc5ddea8fbbfb97708f432baeccc586fd301a85",
+      "diskBytes": 55008,
+      "headBytes": 52945,
+      "isBitForBitIdentical": false
+    },
+    "src/core/independent-verifier.mjs": {
+      "category": "CORE_SOURCE",
+      "headSha256": "ce072ae794cdbd93bcc2a86d961a343f6e5f174ae9deb9dfd0e20e169914fe03",
+      "diskSha256": "ac231d3dcaa549d679af2d66682997bf1c0cbd27c6a9adb6226e563e68342d2c",
+      "diskBytes": 146268,
+      "headBytes": 114813,
+      "isBitForBitIdentical": false
+    },
+    "tests/remediation-007-clean-challenge.test.mjs": {
+      "category": "TEST_SUITE",
+      "headSha256": "53854847f6f5e6e31047a9a55c6f38c1c7256877132f1ec388e862802c7ed97e",
+      "diskSha256": "6bd4154d1c3a76ffb8720846e50f829d3c015f813efdcd0c4cae0da05b6949e0",
+      "diskBytes": 271364,
+      "headBytes": 270992,
+      "isBitForBitIdentical": false
+    }
+  },
+  "untrackedFiles": {
+    "docs/reports/pr-39-complete-threads-triage-ledger.md": {
+      "category": "GOVERNANCE_REPORT",
+      "diskSha256": "3edc656087ab2ae4f48738a1b5040792d01bc8108776303200cae863e95c182b",
+      "diskBytes": 82402
+    },
+    "docs/reports/pr-39-comprehensive-change-ledger.md": {
+      "category": "GOVERNANCE_REPORT",
+      "diskSha256": "f839da60e04026eea8277c4e14bb2dd09e502d28542c1223362af8e6db2ab80e",
+      "diskBytes": 9095
+    },
+    "docs/reports/pr-39-gate-authorization-triage.md": {
+      "category": "GOVERNANCE_REPORT",
+      "diskSha256": "23b3fe039dff4edc24c8eb3cdc24c44f918eb078dfc7cb9ed91a2faea86fa1f8",
+      "diskBytes": 63953
+    },
+    "docs/reports/pr-39-pre-merge-governance-packet.md": {
+      "category": "GOVERNANCE_REPORT",
+      "diskSha256": "ae80c6757bbc75118a69e3a72522d3a0d47c842e392c43b0c02f4d2c7ebbbcfc",
+      "diskBytes": 23817
+    },
+    "evidence-runs/PR-39/change-ledger.json": {
+      "category": "EVIDENCE_DATA",
+      "diskSha256": "d2d13e76710c4688084ed944641763eae8c85efda59033e87720e3f36189f1d4",
+      "diskBytes": 12146
+    },
+    "evidence-runs/PR-39/complete-threads-triage-ledger.json": {
+      "category": "EVIDENCE_DATA",
+      "diskSha256": "1206e616c84da2d31805af9e4b0bcded5a2b2633deba90f5d15f0307cbe3f8c6",
+      "diskBytes": 143384
+    },
+    "evidence-runs/PR-39/gate-authorization-triage.json": {
+      "category": "EVIDENCE_DATA",
+      "diskSha256": "9ed4a70d6a01169ff2aaaaf7d858a4f5e8f311272b78b71d9f8faa94259ef714",
+      "diskBytes": 95841
+    },
+    "evidence-runs/PR-39/github-threads-raw.json": {
+      "category": "EVIDENCE_DATA",
+      "diskSha256": "802ca72ebfa7b29c70d372bf94473907c489f46ce96a2835fa21467d42ec4602",
+      "diskBytes": 185080
+    },
+    "evidence-runs/PR-39/remaining-66-details.json": {
+      "category": "EVIDENCE_DATA",
+      "diskSha256": "101ac4e5535a6869d84c04707ba790ebea72cf3e675237610793a84bed8c79c4",
+      "diskBytes": 63396
+    },
+    "evidence-runs/PR-39/remaining-66-summary.json": {
+      "category": "EVIDENCE_DATA",
+      "diskSha256": "3de6a7c01d9cfccb2ce197d9f26fb30de3814d8514954ca3a680ef3f0555fcc6",
+      "diskBytes": 19359
+    },
+    "evidence-runs/PR-39/working-tree-snapshot.json": {
+      "category": "SNAPSHOT_MANIFEST",
+      "isSelfReferentialManifest": true,
+      "excludedFromDigest": true,
+      "note": "Excluded from manifestDigestSha256 calculation to eliminate circular hash self-invalidation"
+    },
+    "scripts/generate-change-ledger.mjs": {
+      "category": "GOVERNANCE_SCRIPT",
+      "diskSha256": "495e739e96e32a9a68be07fd80a46e573be67419a4bead0529a569464f5e5198",
+      "diskBytes": 17813
+    },
+    "scripts/generate-complete-threads-ledger.mjs": {
+      "category": "GOVERNANCE_SCRIPT",
+      "diskSha256": "8df0e7a30b26fa31b734f705753169442fabd9e974bcf70d443bab5e172b339e",
+      "diskBytes": 62036
+    },
+    "scripts/generate-working-tree-snapshot.mjs": {
+      "category": "GOVERNANCE_SCRIPT",
+      "diskSha256": "b363987b8c33693550609c1d1a7ac64486fc2ab04def35d393c1b189e9b39c34",
+      "diskBytes": 8248
+    },
+    "scripts/scan-controlled-crlf.mjs": {
+      "category": "GOVERNANCE_SCRIPT",
+      "diskSha256": "fb1a3e704fe7391fe61be02bc4c8dfbdfd5c7d607277e90ae0f6e28a2b10c668",
+      "diskBytes": 2034
+    },
+    "tests/adversarial-phase3-challenger.test.mjs": {
+      "category": "TEST_SUITE",
+      "diskSha256": "63594a2be02e8c74b7d7959caa2728316322ae4302bea58dff741ece4e94c722",
+      "diskBytes": 22453
+    },
+    "tests/challenger-phase3-r1-r2-r3.test.mjs": {
+      "category": "TEST_SUITE",
+      "diskSha256": "02acedaf810b0c3d84528997e51555558b76c43617ab7f229f639b3ca96155f8",
+      "diskBytes": 19052
+    },
+    "tests/remediation-phase1-harness.test.mjs": {
+      "category": "TEST_SUITE",
+      "diskSha256": "1b01f07b50dcbcb06b8e23b0115de8dd74e53a74a46920df003269a92497462a",
+      "diskBytes": 32764
+    },
+    "tests/remediation-phase2-verifier.test.mjs": {
+      "category": "TEST_SUITE",
+      "diskSha256": "cfa91af5dcf0c9ac41e985e7f75c4b2f9e15f4e0fa418e666b143f0ae25f161c",
+      "diskBytes": 95958
+    },
+    "tests/remediation-phase3-orchestrator-cli.test.mjs": {
+      "category": "TEST_SUITE",
+      "diskSha256": "7e9fe9435f6a6e17811fe1e7fe4b31038ca5b1d9cbd08476d8cc2ab5eb59b32a",
+      "diskBytes": 30359
+    }
+  },
+  "excludedItems": [
+    {
+      "pattern": ".agents/",
+      "reason": "Multi-agent teamwork runtime workspaces and transcript scratchpads (local-only transient coordination state)"
+    },
+    {
+      "pattern": ".triad-flow/",
+      "reason": "Runtime local execution state, cached telemetry, and temporary test databases"
+    },
+    {
+      "pattern": "benchmark-results.json",
+      "reason": "Runtime benchmarking runner execution output (benchmark telemetry)"
+    },
+    {
+      "pattern": "remediation-receipt.json",
+      "reason": "Local remediation session receipt artifact"
+    },
+    {
+      "pattern": "summary.md",
+      "reason": "Local temporary workspace summary draft"
+    }
+  ]
+}

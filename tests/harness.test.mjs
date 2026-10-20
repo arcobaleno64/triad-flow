@@ -141,7 +141,7 @@ test("evaluateGateDecision enforces Trusted Capability requirement and rejects d
     micro: { provider: "claude", findings: [] }
   });
   assert.equal(isTrustedConsensus(trustedClean), true);
-  const gateApproved = evaluateGateDecision(trustedClean);
+  const gateApproved = evaluateGateDecision(trustedClean, { preliminary: true });
   assert.equal(gateApproved.decision, "approve");
 
   // 4. Real trusted blocking consensus blocks

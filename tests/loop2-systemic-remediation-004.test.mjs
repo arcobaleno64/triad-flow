@@ -6,7 +6,10 @@ import {
   OBJECTIVE_IMPACTS,
   VERIFICATION_VERDICTS
 } from "../src/core/independent-verifier.mjs";
-import { evaluatePostVerificationGate } from "../src/core/harness.mjs";
+import {
+  evaluateIsolatedTestPostVerificationGate as evaluatePostVerificationGate,
+  issueVerificationRecordFromOutput
+} from "../src/core/harness.mjs";
 import { buildEvidenceReviewPrompt } from "../src/adapters/review-prompts.mjs";
 
 test("LOOP2-004: normalizeObjectiveContract produces immutable structured contract from string or object", () => {
@@ -105,7 +108,7 @@ test("LOOP2-004 Regression 1: CYCLE-0022 Replay with unexcluded counterexample B
     }]
   };
 
-  const verificationRecord = {
+  const verificationRecord = issueVerificationRecordFromOutput({
     ok: true,
     patchObjective: "Fail the current test and stop the test session on debugger quit / BdbQuit in all cases.",
     objectiveContract: {
@@ -121,7 +124,7 @@ test("LOOP2-004 Regression 1: CYCLE-0022 Replay with unexcluded counterexample B
       objectiveImpact: "FALSIFIES_PATCH_OBJECTIVE",
       reasoning: "Retained xfail on Python 3.14 means test does not report as failed on 3.14. Exclusions list is empty. Changelog cannot establish an authorized exclusion."
     }]
-  };
+  });
 
   const gateResult = evaluatePostVerificationGate(consensus, verificationRecord, { tier: 2 });
   assert.equal(gateResult.decision, "block");
@@ -140,7 +143,7 @@ test("LOOP2-004 Regression 2: Pre-bound authorized exclusion passes as advisory 
     }]
   };
 
-  const verificationRecord = {
+  const verificationRecord = issueVerificationRecordFromOutput({
     ok: true,
     patchObjective: "Turn crash caused by empty parameter set under --runxfail into clear failure",
     objectiveContract: {
@@ -156,7 +159,7 @@ test("LOOP2-004 Regression 2: Pre-bound authorized exclusion passes as advisory 
       objectiveImpact: "DOES_NOT_FALSIFY_PATCH_OBJECTIVE",
       reasoning: "The unhandled condition is explicitly listed in the pre-bound Authorized Pre-Bound Exclusions."
     }]
-  };
+  });
 
   const gateResult = evaluatePostVerificationGate(consensus, verificationRecord, { tier: 2 });
   assert.equal(gateResult.decision, "approve");
@@ -177,7 +180,7 @@ test("LOOP2-004 Regression 3: Corroborated objective contradiction contested by 
   };
 
   // Even if verifier issues CONTESTED (e.g. arguing about changelog exclusion)
-  const verificationRecord = {
+  const verificationRecord = issueVerificationRecordFromOutput({
     ok: true,
     patchObjective: "Fail the current test and stop the test session on debugger quit / BdbQuit in all cases.",
     evaluations: [{
@@ -190,7 +193,7 @@ test("LOOP2-004 Regression 3: Corroborated objective contradiction contested by 
       objectiveImpact: "DOES_NOT_FALSIFY_PATCH_OBJECTIVE",
       reasoning: "Verifier claims changelog establishes exclusion."
     }]
-  };
+  });
 
   const gateResult = evaluatePostVerificationGate(consensus, verificationRecord, { tier: 2 });
   assert.equal(gateResult.decision, "human_review_required");
@@ -211,7 +214,7 @@ test("LOOP2-004 Regression 4: Solitary non-objective low finding contested by ve
     }]
   };
 
-  const verificationRecord = {
+  const verificationRecord = issueVerificationRecordFromOutput({
     ok: true,
     patchObjective: "Fix memory leak",
     evaluations: [{
@@ -224,7 +227,7 @@ test("LOOP2-004 Regression 4: Solitary non-objective low finding contested by ve
       objectiveImpact: "DOES_NOT_FALSIFY_PATCH_OBJECTIVE",
       reasoning: "Not a typo."
     }]
-  };
+  });
 
   const gateResult = evaluatePostVerificationGate(consensus, verificationRecord, { tier: 2 });
   assert.equal(gateResult.decision, "approve");

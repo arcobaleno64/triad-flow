@@ -16,7 +16,10 @@ import {
   OBJECTIVE_IMPACTS,
   VERIFICATION_VERDICTS
 } from "../src/core/independent-verifier.mjs";
-import { evaluatePostVerificationGate } from "../src/core/harness.mjs";
+import {
+  evaluateIsolatedTestPostVerificationGate as evaluatePostVerificationGate,
+  issueVerificationRecordFromOutput
+} from "../src/core/harness.mjs";
 
 test("WP-01: buildEvidenceReviewPrompt includes objective cross-examination block when patchObjective is provided via options", () => {
   const cs = {
@@ -181,7 +184,7 @@ test("WP-02: Gate blocks when finding has FALSIFIES_PATCH_OBJECTIVE under WP-02 
     }]
   };
 
-  const verificationRecord = {
+  const verificationRecord = issueVerificationRecordFromOutput({
     ok: true,
     patchObjective: "Ensure mounted transports are closed even if main transport raises",
     evaluations: [{
@@ -193,7 +196,7 @@ test("WP-02: Gate blocks when finding has FALSIFIES_PATCH_OBJECTIVE under WP-02 
       objectiveImpact: "FALSIFIES_PATCH_OBJECTIVE",
       reasoning: "First failing mount aborts cleanup loop before subsequent mounts are closed. This residual failure is within declared scope and not an excluded boundary."
     }]
-  };
+  });
 
   const gateResult = evaluatePostVerificationGate(consensus, verificationRecord, { tier: 2 });
   assert.equal(gateResult.decision, "block");
@@ -212,7 +215,7 @@ test("WP-02: Gate approves advisory Low when limitation is a documented exclusio
     }]
   };
 
-  const verificationRecord = {
+  const verificationRecord = issueVerificationRecordFromOutput({
     ok: true,
     patchObjective: "Add Windows named pipe transport (Unix domain sockets explicitly excluded)",
     evaluations: [{
@@ -224,7 +227,7 @@ test("WP-02: Gate approves advisory Low when limitation is a documented exclusio
       objectiveImpact: "DOES_NOT_FALSIFY_PATCH_OBJECTIVE",
       reasoning: "The limitation is explicitly stated in the PR body as an intentional exclusion."
     }]
-  };
+  });
 
   const gateResult = evaluatePostVerificationGate(consensus, verificationRecord, { tier: 2 });
   assert.equal(gateResult.decision, "approve");
@@ -243,7 +246,7 @@ test("WP-02: Gate blocks when sentry flags retained xfail contradicting all-case
     }]
   };
 
-  const verificationRecord = {
+  const verificationRecord = issueVerificationRecordFromOutput({
     ok: true,
     patchObjective: "Fail the current test and stop the test session on debugger quit / BdbQuit in all cases.",
     evaluations: [{
@@ -255,7 +258,7 @@ test("WP-02: Gate blocks when sentry flags retained xfail contradicting all-case
       objectiveImpact: "FALSIFIES_PATCH_OBJECTIVE",
       reasoning: "Retained xfail on Python 3.14 means test does not report as failed on 3.14, directly contradicting claimed 'in all cases' scope."
     }]
-  };
+  });
 
   const gateResult = evaluatePostVerificationGate(consensus, verificationRecord, { tier: 2 });
   assert.equal(gateResult.decision, "block");
@@ -274,7 +277,7 @@ test("WP-02: Gate allows ordinary advisory Low finding without patch objective f
     }]
   };
 
-  const verificationRecord = {
+  const verificationRecord = issueVerificationRecordFromOutput({
     ok: true,
     patchObjective: "Refactor string parsing for performance",
     evaluations: [{
@@ -286,7 +289,7 @@ test("WP-02: Gate allows ordinary advisory Low finding without patch objective f
       objectiveImpact: "DOES_NOT_FALSIFY_PATCH_OBJECTIVE",
       reasoning: "Style preference does not falsify string parsing performance objective."
     }]
-  };
+  });
 
   const gateResult = evaluatePostVerificationGate(consensus, verificationRecord, { tier: 2 });
   assert.equal(gateResult.decision, "approve");

@@ -35,6 +35,7 @@ import {
   parseArgs,
   runDogfoodReview
 } from "../scripts/dogfood-review.mjs";
+import { createMockVerifierAdapter } from "../src/core/independent-verifier.mjs";
 
 function makeChangeSet(files = [{ path: "src/sample.js", additions: 10, deletions: 2 }], hunks = "+ const a = 1;") {
   const contentDigest = crypto.createHash("sha256").update(hunks).digest("hex");
@@ -610,6 +611,7 @@ test("006-A P1-02: Dogfood review partitions top-level reviewer, verifier, and c
         claude: clean("claude", "anthropic", "claude-5.5-sonnet"),
         codex: timingOutCodex
       },
+      verifierAdapter: createMockVerifierAdapter("claude"),
       out: tmpOut,
       log: false
     });
