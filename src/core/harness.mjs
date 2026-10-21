@@ -354,6 +354,20 @@ function _evaluateGateDecisionCore(consensus, options = {}, { allowSynthetic = f
     };
   }
 
+  // Preliminary evaluation requested: strictly preserves preliminary semantics (S2-F15, R6-01)
+  if (options?.preliminary === true) {
+    const findings = Array.isArray(consensus.findings) ? consensus.findings : [];
+    if (findings.length === 0) {
+      return {
+        decision: "approve",
+        preliminary: true,
+        reason: "Preliminary consensus clean. Independent verification (Clean Challenge) required for final merge release.",
+        criticals: [],
+        advisoryFindings: []
+      };
+    }
+  }
+
   // 3. Verification Record Capability & Authority (delegated to post-verification core)
   if (options?.verificationRecord) {
     return _evaluatePostVerificationGateCore(consensus, options.verificationRecord, options, { allowSynthetic });
@@ -1298,14 +1312,72 @@ function _evaluatePostVerificationGateCore(consensus, verificationRecord, option
     };
   }
 
-  return {
+  // Preliminary evaluation requested: strictly preserves preliminary semantics without formal authority (S2-F15, R6-01)
+  if (options?.preliminary === true) {
+    return {
+      decision: "approve",
+      preliminary: true,
+      reason: "Preliminary consensus clean. Independent verification (Clean Challenge) required for final merge release.",
+      criticals: [],
+      advisoryFindings
+    };
+  }
+
+  const approval = Object.freeze({
     decision: "approve",
     reason: (findings.length === 0 && omissions.length === 0)
       ? "Clean Challenge passed: zero findings and zero verified omissions."
       : "No blocking vulnerabilities found. CI/CD Gate passed.",
-    criticals: [],
-    advisoryFindings
-  };
+    criticals: Object.freeze([]),
+    advisoryFindings: Object.freeze([...advisoryFindings])
+  });
+
+  if (!allowSynthetic && isTrustedVerificationRecord(verificationRecord) && !isSegregatedSyntheticRecord(verificationRecord)) {
+    formalGateDecisionRegistry.set(approval, Object.freeze({
+      verificationRecord,
+      consensus,
+      runContext: options?.runContext || null,
+      decision: "approve",
+      reason: approval.reason,
+      criticalsLength: 0,
+      advisoryLength: approval.advisoryFindings.length,
+      timestamp: Date.now()
+    }));
+  }
+
+  return approval;
+}
+
+/**
+ * Module-private authority registry for formal GateDecision provenance (SCHEMA2-LC-F02).
+ * Strictly private to harness.mjs. Callers cannot register or mint entries.
+ */
+const formalGateDecisionRegistry = new WeakMap();
+
+/**
+ * Read-only gate decision provenance verifier (SCHEMA2-LC-F02).
+ * Verifies that candidate Decision was formally minted by evaluatePostVerificationGate
+ * for candidateRecord without synthetic promotion, downgrade, or post-issuance tampering.
+ *
+ * @param {object} gateDecision
+ * @param {object} candidateRecord
+ * @returns {boolean}
+ */
+export function isFormalGateDecisionApproved(gateDecision, candidateRecord) {
+  if (!gateDecision || typeof gateDecision !== "object") return false;
+  if (!candidateRecord || typeof candidateRecord !== "object") return false;
+
+  const attestation = formalGateDecisionRegistry.get(gateDecision);
+  if (!attestation) return false;
+
+  if (attestation.verificationRecord !== candidateRecord) return false;
+  if (attestation.decision !== "approve" || gateDecision.decision !== "approve") return false;
+  if (gateDecision.preliminary === true) return false;
+  if (gateDecision.reason !== attestation.reason) return false;
+  if (!Array.isArray(gateDecision.criticals) || gateDecision.criticals.length !== attestation.criticalsLength) return false;
+  if (!Array.isArray(gateDecision.advisoryFindings) || gateDecision.advisoryFindings.length !== attestation.advisoryLength) return false;
+
+  return true;
 }
 
 export function evaluatePostVerificationGate(consensus, verificationRecord, options = {}) {

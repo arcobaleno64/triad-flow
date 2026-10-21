@@ -26,7 +26,7 @@ import {
   normalizeReceiptUsage,
   SOURCE_TRUST_TIERS
 } from "./audit-receipt.mjs";
-import { normalizeFinding } from "./harness.mjs";
+import { normalizeFinding, isFormalGateDecisionApproved } from "./harness.mjs";
 import { normalizeCanonicalPath } from "./scoring.mjs";
 import {
   EXECUTION_STATUS,
@@ -42,8 +42,17 @@ import {
   formatContextPackageXml,
   formatContextGaps
 } from "../adapters/review-prompts.mjs";
-import { getExactHeadFileContent } from "./git-collector.mjs";
-import { __bindContextBuilderWorkflowMinter } from "./context-builder.mjs";
+import {
+  getExactHeadFileContent,
+  normalizeGitPath,
+  normalizeScopeMode,
+  detectCaseCollisions,
+  collectMutationSnapshot
+} from "./git-collector.mjs";
+import {
+  getTrustedRegistryKey,
+  __bindContextBuilderWorkflowMinter
+} from "./context-builder.mjs";
 import { __bindDogfoodReviewWorkflowMinter } from "../../scripts/dogfood-review.mjs";
 
 const commitExistenceCache = new Map();
@@ -306,6 +315,8 @@ const trustedVerificationRegistry = new WeakSet();
 const segregatedSyntheticRegistry = new WeakSet();
 const trustedContextPackageRegistry = new WeakMap();
 const internalWorkflowAuthorityRegistry = new WeakSet();
+const trustedObjectIdentities = new WeakSet();
+const trustedRecordMetadataRegistry = new WeakMap();
 
 /**
  * Private capability minter for internal workflow authority tokens.
@@ -393,6 +404,182 @@ export function isWorkflowAuthorityToken(candidate, expectedPkg = null) {
 }
 
 /**
+ * Evaluates candidate ContextPackage binding against a ChangeSet under Schema v2.
+ * Enforces input spec validation, targetFile mutual exclusion, manifest completeness,
+ * and non-filtering strict set equality: S_CS === S_M.
+ *
+ * @param {object} pkg
+ * @param {object} changeSet
+ * @param {string} [expectedHeadSha=null]
+ * @returns {{ bound: boolean, reason?: string, error?: string, scopeCount?: number, missing?: string[], extraneous?: string[] }}
+ */
+export function evaluateContextPackageBinding(pkg, changeSet, expectedHeadSha = null) {
+  // 1. Validate ChangeSet specification
+  if (!changeSet || typeof changeSet !== "object") {
+    return { bound: false, reason: "INVALID_CHANGESET_SPEC" };
+  }
+  if (!Array.isArray(changeSet.files)) {
+    return { bound: false, reason: "INVALID_CHANGESET_SPEC" };
+  }
+  if (changeSet.files.length === 0) {
+    return { bound: false, reason: "EMPTY_CHANGESET_SPEC" };
+  }
+
+  const repoRoot = changeSet?.repository?.root || changeSet?.repositoryRoot || pkg?.repositoryRoot || "";
+  const changeSetPaths = [];
+  const rawChangeSetPaths = [];
+  const canonicalChangeSetPaths = new Set();
+
+  for (const entry of changeSet.files) {
+    if (entry === null || entry === undefined || typeof entry === "boolean" || typeof entry === "number") {
+      return { bound: false, reason: "INVALID_CHANGESET_ENTRY" };
+    }
+    let rawPath = "";
+    if (typeof entry === "string") {
+      rawPath = entry;
+    } else if (typeof entry === "object") {
+      rawPath = entry.path || entry.file || "";
+    }
+    if (!rawPath || typeof rawPath !== "string" || !rawPath.trim()) {
+      return { bound: false, reason: "INVALID_CHANGESET_ENTRY" };
+    }
+
+    let normPath;
+    try {
+      normPath = normalizeGitPath(rawPath, repoRoot);
+    } catch (err) {
+      return { bound: false, reason: err.code || "ILLEGAL_PATH_SECURITY_REJECT", error: err.message };
+    }
+
+    if (canonicalChangeSetPaths.has(normPath)) {
+      return { bound: false, reason: "DUPLICATE_CHANGESET_ENTRY", path: normPath };
+    }
+    canonicalChangeSetPaths.add(normPath);
+    rawChangeSetPaths.push(rawPath);
+    changeSetPaths.push(normPath);
+  }
+
+  try {
+    detectCaseCollisions(changeSetPaths);
+  } catch (err) {
+    return { bound: false, reason: err.code || "CANONICAL_PATH_COLLISION", error: err.message };
+  }
+
+  // 2. Validate Package structure
+  if (!pkg || typeof pkg !== "object") {
+    return { bound: false, reason: "INVALID_PACKAGE_SPEC" };
+  }
+
+  // TargetFile validation (Spec §2.4: mandatory in Schema v2)
+  if (pkg.targetFile === undefined || pkg.targetFile === null || pkg.targetFile === "") {
+    if (pkg.schemaVersion === "2.0.0" || pkg.targetFile !== undefined) {
+      return { bound: false, reason: "MISSING_TARGET_FILE_ROLE" };
+    }
+  } else {
+    if (changeSetPaths.length === 1) {
+      if (pkg.targetFile === "multi-file") {
+        return { bound: false, reason: "MUTUAL_EXCLUSION_VIOLATION" };
+      }
+      let normTarget;
+      try {
+        normTarget = normalizeGitPath(pkg.targetFile, repoRoot);
+      } catch (err) {
+        return { bound: false, reason: err.code || "ILLEGAL_PATH_SECURITY_REJECT", error: err.message };
+      }
+      if (normTarget !== changeSetPaths[0]) {
+        return { bound: false, reason: "MUTUAL_EXCLUSION_VIOLATION" };
+      }
+    } else {
+      // Multi-file
+      if (pkg.targetFile !== "multi-file") {
+        return { bound: false, reason: "MUTUAL_EXCLUSION_VIOLATION" };
+      }
+    }
+  }
+
+  // Manifest validation
+  if (!Array.isArray(pkg.fileCoverageManifest) || pkg.fileCoverageManifest.length === 0) {
+    return { bound: false, reason: "MISSING_FILE_MANIFEST" };
+  }
+
+  const manifestPaths = [];
+  const rawManifestPaths = [];
+  const canonicalManifestPaths = new Set();
+
+  for (const entry of pkg.fileCoverageManifest) {
+    if (!entry || typeof entry !== "object") {
+      return { bound: false, reason: "INVALID_MANIFEST_ENTRY" };
+    }
+    if (entry.inspected !== true) {
+      return { bound: false, reason: "INSPECTED_FLAG_INVALID" };
+    }
+    const rawFile = entry.file || entry.path;
+    if (!rawFile || typeof rawFile !== "string" || !rawFile.trim()) {
+      return { bound: false, reason: "INVALID_MANIFEST_ENTRY" };
+    }
+
+    let normFile;
+    try {
+      normFile = normalizeGitPath(rawFile, repoRoot);
+    } catch (err) {
+      return { bound: false, reason: err.code || "ILLEGAL_PATH_SECURITY_REJECT", error: err.message };
+    }
+
+    if (canonicalManifestPaths.has(normFile)) {
+      const duplicateRaw = rawManifestPaths.find(r => {
+        try { return normalizeGitPath(r, repoRoot) === normFile; } catch { return false; }
+      });
+      if (duplicateRaw && duplicateRaw !== rawFile) {
+        return { bound: false, reason: "CANONICAL_PATH_COLLISION", path: normFile };
+      }
+      return { bound: false, reason: "DUPLICATE_MANIFEST_ENTRY", path: normFile };
+    }
+
+    canonicalManifestPaths.add(normFile);
+    rawManifestPaths.push(rawFile);
+    manifestPaths.push(normFile);
+  }
+
+  try {
+    detectCaseCollisions(manifestPaths);
+  } catch (err) {
+    return { bound: false, reason: err.code || "CANONICAL_PATH_COLLISION", error: err.message };
+  }
+
+  // Head SHA check
+  const targetHead = normalizeCommitSha(expectedHeadSha || changeSet.headSha || changeSet.head || "");
+  const pkgHead = normalizeCommitSha(pkg.headSha || pkg.head || "");
+  if (targetHead && pkgHead && targetHead !== pkgHead) {
+    return { bound: false, reason: "HEAD_SHA_MISMATCH" };
+  }
+
+  // Strict Set Equality: S_CS vs S_M
+  const S_CS = canonicalChangeSetPaths;
+  const S_M = canonicalManifestPaths;
+
+  const missing = [];
+  for (const p of S_CS) {
+    if (!S_M.has(p)) missing.push(p);
+  }
+  const extraneous = [];
+  for (const p of S_M) {
+    if (!S_CS.has(p)) extraneous.push(p);
+  }
+
+  if (missing.length > 0 && extraneous.length === 0) {
+    return { bound: false, reason: "SCOPE_SUBSET_INCOMPLETE", missing };
+  }
+  if (extraneous.length > 0 && missing.length === 0) {
+    return { bound: false, reason: "SCOPE_SUPERSET_PROHIBITED", extraneous };
+  }
+  if (missing.length > 0 || extraneous.length > 0) {
+    return { bound: false, reason: "SCOPE_SET_MISMATCH", missing, extraneous };
+  }
+
+  return { bound: true, scopeCount: S_M.size };
+}
+
+/**
  * Verifies whether a candidate ContextPackage is cryptographically and structurally bound
  * to the specified ChangeSet diff hunks, head SHA, and files.
  *
@@ -404,22 +591,34 @@ export function isWorkflowAuthorityToken(candidate, expectedPkg = null) {
 export function isContextPackageBoundToChangeSet(pkg, changeSet, expectedHeadSha = null) {
   if (!pkg || typeof pkg !== "object") return false;
 
-  const pkgHead = normalizeCommitSha(pkg.headSha || pkg.head || "");
-  const targetHead = normalizeCommitSha(expectedHeadSha || changeSet?.headSha || changeSet?.head || "");
-  if (targetHead && (!pkgHead || pkgHead !== targetHead)) {
-    return false;
+  // Legacy single-file compatibility (e.g. tm8Ko tests) when pkg lacks manifest and schemaVersion
+  if (!pkg.schemaVersion && !Array.isArray(pkg.fileCoverageManifest)) {
+    if (Array.isArray(changeSet?.files) && changeSet.files.length === 1) {
+      const rawF = changeSet.files[0];
+      const p = typeof rawF === "string" ? rawF : (rawF?.path || rawF?.file);
+      if (p && pkg.targetFile === p) {
+        const pkgDigest = normalizeDigest(pkg.contentDigest || pkg.digest || "");
+        if (!pkgDigest) return false;
+        const rawHunks = typeof changeSet?.diffHunks === "string" ? changeSet.diffHunks : "";
+        if (rawHunks) {
+          const rawDigest = crypto.createHash("sha256").update(rawHunks).digest("hex");
+          const normDigest = crypto.createHash("sha256").update(rawHunks.replace(/\r\n/g, "\n")).digest("hex");
+          if (pkgDigest !== rawDigest && pkgDigest !== normDigest) return false;
+        } else {
+          const csDeclaredDigest = normalizeDigest(changeSet?.contentDigest || changeSet?.changeSetDigest || "");
+          if (!csDeclaredDigest || pkgDigest !== csDeclaredDigest) return false;
+        }
+        return true;
+      }
+    }
   }
-  if (pkgHead && targetHead && pkgHead !== targetHead) {
-    return false;
-  }
+
+  const result = evaluateContextPackageBinding(pkg, changeSet, expectedHeadSha);
+  if (!result || result.bound !== true) return false;
 
   const rawHunks = typeof changeSet?.diffHunks === "string" ? changeSet.diffHunks : "";
   const pkgDigest = normalizeDigest(pkg.contentDigest || pkg.digest || "");
-
-  // Missing or non-SHA-256 digest fails closed under all circumstances
-  if (!pkgDigest) {
-    return false;
-  }
+  if (!pkgDigest) return false;
 
   if (rawHunks) {
     const rawDigest = crypto.createHash("sha256").update(rawHunks).digest("hex");
@@ -435,56 +634,9 @@ export function isContextPackageBoundToChangeSet(pkg, changeSet, expectedHeadSha
       }
     }
   } else {
-    // When diffHunks is absent, require declared changeSet digest evidence and match strictly
     const csDeclaredDigest = normalizeDigest(changeSet?.contentDigest || changeSet?.changeSetDigest || "");
     if (!csDeclaredDigest || pkgDigest !== csDeclaredDigest) {
       return false;
-    }
-  }
-
-  if (Array.isArray(changeSet?.files) && changeSet.files.length > 0) {
-    const repoRoot = changeSet?.repository?.root || changeSet?.repositoryRoot || pkg.repositoryRoot || "";
-    const fileList = changeSet.files
-      .map(f => typeof f === "string" ? f : (f?.path || f?.file || ""))
-      .map(p => normalizeCanonicalPath(p, repoRoot))
-      .filter(Boolean);
-
-    if (fileList.length > 0) {
-      if (fileList.length === 1) {
-        const targetPath = pkg.targetFile ? normalizeCanonicalPath(pkg.targetFile, repoRoot) : null;
-        if (targetPath && targetPath !== "multi-file" && targetPath !== fileList[0]) {
-          return false;
-        }
-        if (Array.isArray(pkg.fileCoverageManifest) && pkg.fileCoverageManifest.length > 0) {
-          const manifestFiles = pkg.fileCoverageManifest
-            .filter(m => m && m.inspected !== false)
-            .map(m => normalizeCanonicalPath(m?.file || m?.path || "", repoRoot))
-            .filter(Boolean);
-          if (!manifestFiles.includes(fileList[0])) {
-            return false;
-          }
-        }
-      } else {
-        // Multi-file changeSet: single-file context package must fail closed (tqhHk)
-        if (pkg.targetFile && pkg.targetFile !== "multi-file") {
-          return false;
-        }
-        // Multi-file changeSet requires a complete fileCoverageManifest covering all files
-        if (!Array.isArray(pkg.fileCoverageManifest) || pkg.fileCoverageManifest.length === 0) {
-          return false;
-        }
-        const manifestFiles = new Set(
-          pkg.fileCoverageManifest
-            .filter(m => m && m.inspected !== false)
-            .map(m => normalizeCanonicalPath(m?.file || m?.path || "", repoRoot))
-            .filter(Boolean)
-        );
-        for (const file of fileList) {
-          if (!manifestFiles.has(file)) {
-            return false;
-          }
-        }
-      }
     }
   }
 
@@ -504,8 +656,37 @@ export function validateContextPackageAuthenticity(pkg, evidence = {}) {
   if (!pkg || typeof pkg !== "object" || Array.isArray(pkg)) {
     return false;
   }
-  if (pkg.schemaVersion !== "1.0.0") {
+
+  // Synthetic containment
+  if (pkg.isSynthetic === true || evidence?.isSynthetic === true || evidence?.changeSet?.isSynthetic === true) {
     return false;
+  }
+
+  const isV2Required = Boolean(
+    evidence?.requiredSchemaVersion === "2.0.0" ||
+    evidence?.requireSchemaV2 === true
+  );
+  if (isV2Required) {
+    if (pkg.schemaVersion !== "2.0.0") {
+      return false;
+    }
+  } else {
+    if (pkg.schemaVersion !== "1.0.0" && pkg.schemaVersion !== "2.0.0") {
+      return false;
+    }
+  }
+
+  // ChangeSet binding verification if changeSet provided in evidence
+  if (evidence.changeSet) {
+    if (!isContextPackageBoundToChangeSet(pkg, evidence.changeSet, evidence.headSha || pkg.headSha)) {
+      return false;
+    }
+    if (evidence.changeSet.changeSetDigest) {
+      const recomputedCsDigest = digestChangeSet(evidence.changeSet);
+      if (evidence.changeSet.changeSetDigest !== recomputedCsDigest) {
+        return false;
+      }
+    }
   }
   if (!pkg.layers || typeof pkg.layers !== "object" || Array.isArray(pkg.layers)) {
     return false;
@@ -1133,6 +1314,15 @@ export function validateContextPackageAuthenticity(pkg, evidence = {}) {
           }
         }
         if (!allExactHeadFilesPhysicallyExist) break;
+      } else if (entry.exactHeadAvailable === false) {
+        // Truthful deletion or uncommitted state: file must NOT exist at headSha
+        const exactContent = getExactHeadFileContent(repoRoot, headSha, entry.file) ??
+          getExactHeadFileContent(repoRoot, headSha, normalizeCanonicalPath(entry.file)) ??
+          null;
+        if (exactContent !== null) {
+          allExactHeadFilesPhysicallyExist = false;
+          break;
+        }
       } else {
         allExactHeadFilesPhysicallyExist = false;
         break;
@@ -1191,10 +1381,55 @@ export function computeContextPackageSnapshotHash(pkg) {
  * @returns {object|null}
  */
 export function registerTrustedContextPackage(pkg, evidence = {}) {
+  // If changeSet is supplied, evaluate binding first
+  if (evidence?.changeSet) {
+    const binding = evaluateContextPackageBinding(pkg, evidence.changeSet, evidence.headSha || pkg.headSha);
+    if (!binding || binding.bound !== true) {
+      return null;
+    }
+  }
+
   if (validateContextPackageAuthenticity(pkg, evidence)) {
+    const repoRoot = evidence.repositoryRoot || evidence.repoRoot || pkg.repositoryRoot || (isGitRepo(process.cwd()) ? process.cwd() : null);
+
+    // If pkg declares mutationSnapshotHash and repo is available, verify snapshot freshness
+    if (pkg.mutationSnapshotHash && repoRoot && isGitRepo(repoRoot)) {
+      try {
+        const currentSnap = collectMutationSnapshot(repoRoot, {
+          scopeMode: pkg.scopeMode || evidence.scopeMode || "revision_range",
+          baseSha: evidence.baseSha || pkg.baseSha,
+          headSha: evidence.headSha || pkg.headSha
+        });
+        if (currentSnap.mutationSnapshotHash !== pkg.mutationSnapshotHash) {
+          return null;
+        }
+      } catch {
+        return null;
+      }
+    }
+
+    let trustedKey = null;
+    try {
+      trustedKey = getTrustedRegistryKey({
+        repoId: pkg.repoId || (repoRoot ? path.basename(repoRoot) : "triad-flow"),
+        scopeMode: pkg.scopeMode || evidence.scopeMode || "revision_range",
+        baseSha: pkg.baseSha || evidence.baseSha || "",
+        headSha: pkg.headSha || evidence.headSha || "",
+        changeSet: evidence.changeSet || { files: (pkg.fileCoverageManifest || []).map(m => m.file) },
+        diffHunks: evidence.diffHunks || pkg.layers?.layer0Diff || "",
+        snapshotHash: pkg.mutationSnapshotHash || ""
+      });
+    } catch {}
+
     deepFreeze(pkg);
+    trustedObjectIdentities.add(pkg);
     const snapshotHash = computeContextPackageSnapshotHash(pkg);
-    trustedContextPackageRegistry.set(pkg, snapshotHash);
+    trustedContextPackageRegistry.set(pkg, {
+      snapshotHash,
+      trustedKey,
+      mutationSnapshotHash: pkg.mutationSnapshotHash || null,
+      registeredAt: Date.now()
+    });
     return pkg;
   }
   return null;
@@ -1214,13 +1449,17 @@ export function isTrustedContextPackage(candidate) {
   if (!Object.isFrozen(candidate)) {
     return false;
   }
+  if (!trustedObjectIdentities.has(candidate)) {
+    return false;
+  }
   if (!trustedContextPackageRegistry.has(candidate)) {
     return false;
   }
-  const storedHash = trustedContextPackageRegistry.get(candidate);
-  if (!storedHash) {
+  const entry = trustedContextPackageRegistry.get(candidate);
+  if (!entry) {
     return false;
   }
+  const storedHash = typeof entry === "string" ? entry : entry.snapshotHash;
   const currentHash = computeContextPackageSnapshotHash(candidate);
   return Boolean(currentHash && currentHash === storedHash);
 }
@@ -1416,14 +1655,52 @@ export function issueVerificationRecordFromOutput(outputOrParams = {}, maybePara
 
 /**
  * Checks if candidate is an in-process trusted verification record.
+ * Re-evaluates snapshot freshness for mutable modes against physical tree.
+ *
  * @param {any} candidate
  * @returns {boolean}
  */
 export function isTrustedVerificationRecord(candidate) {
-  if (!candidate || typeof candidate !== "object") {
+  if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
     return false;
   }
-  return trustedVerificationRegistry.has(candidate);
+  if (!trustedVerificationRegistry.has(candidate)) {
+    return false;
+  }
+
+  const meta = trustedRecordMetadataRegistry.get(candidate);
+  if (meta) {
+    if (meta.contextPackage && !trustedObjectIdentities.has(meta.contextPackage)) {
+      trustedVerificationRegistry.delete(candidate);
+      trustedRecordMetadataRegistry.delete(candidate);
+      return false;
+    }
+
+    const normMode = meta.scopeMode ? normalizeScopeMode(meta.scopeMode) : null;
+    if (normMode === "staged" || normMode === "working_tree") {
+      if (meta.repoRoot && meta.mutationSnapshotHash) {
+        try {
+          const currentSnap = collectMutationSnapshot(meta.repoRoot, {
+            scopeMode: normMode,
+            baseSha: meta.baseSha,
+            headSha: meta.headSha
+          });
+          if (currentSnap.mutationSnapshotHash !== meta.mutationSnapshotHash) {
+            trustedVerificationRegistry.delete(candidate);
+            trustedRecordMetadataRegistry.delete(candidate);
+            console.warn("[SECURITY_AUDIT] STALE_MUTATION_SNAPSHOT: Post-issuance file drift detected.");
+            return false;
+          }
+        } catch {
+          trustedVerificationRegistry.delete(candidate);
+          trustedRecordMetadataRegistry.delete(candidate);
+          return false;
+        }
+      }
+    }
+  }
+
+  return true;
 }
 
 /**
@@ -3974,6 +4251,30 @@ export async function conductIndependentVerification(changeSet, producerFindings
     segregatedSyntheticRegistry.add(frozenRecord);
   } else if (validated.ok === true) {
     trustedVerificationRegistry.add(frozenRecord);
+    const normMode = changeSet?.scopeMode ? normalizeScopeMode(changeSet.scopeMode) : "revision_range";
+    const repoRoot = options.repositoryRoot || changeSet?.repository?.root || changeSet?.repositoryRoot || (isGitRepo(process.cwd()) ? process.cwd() : null);
+    let snapHash = (effectiveContextPackage && trustedContextPackageRegistry.get(effectiveContextPackage)?.mutationSnapshotHash) ||
+      effectiveContextPackage?.mutationSnapshotHash ||
+      options.mutationSnapshotHash ||
+      null;
+    if (!snapHash && repoRoot && (normMode === "staged" || normMode === "working_tree")) {
+      try {
+        const currentSnap = collectMutationSnapshot(repoRoot, {
+          scopeMode: normMode,
+          baseSha: changeSet?.baseSha || options.baseSha || null,
+          headSha: headSha || options.headSha || changeSet?.headSha || null
+        });
+        snapHash = currentSnap?.mutationSnapshotHash || null;
+      } catch {}
+    }
+    trustedRecordMetadataRegistry.set(frozenRecord, {
+      contextPackage: effectiveContextPackage,
+      mutationSnapshotHash: snapHash,
+      scopeMode: normMode,
+      repoRoot,
+      baseSha: changeSet?.baseSha || options.baseSha || null,
+      headSha: headSha || options.headSha || changeSet?.headSha || null
+    });
   }
 
   return frozenRecord;
@@ -4286,4 +4587,94 @@ export function buildDisagreementLedgerDocument({ verificationRecord, producerRu
     summary: verificationRecord.summary || {},
     ledger: verificationRecord.disagreementLedger || []
   };
+}
+
+/**
+ * Evaluates whether a gate decision represents a trusted final clean approval (Spec §1.1.3, §2.3, S2-F15).
+ * Strictly requires decision === "approve", preliminary !== true, and backed by an authentic,
+ * non-synthetic, fresh verification record capability.
+ * Plain unauthenticated objects or forged records without registry authority are strictly denied.
+ * Furthermore, binds gate decision reason, criticals count, and record overallStatus to prevent forged decisions.
+ *
+ * @param {object} gateDecision - Gate evaluation result.
+ * @param {object} [verificationRecordOrEvidence=null] - Backing verification record or evidence container.
+ * @returns {boolean}
+ */
+export function isTrustedCleanApproval(gateDecision, verificationRecordOrEvidence = null) {
+  // 1. Validate GateDecision structure
+  if (!gateDecision || typeof gateDecision !== "object") return false;
+  if (gateDecision.decision !== "approve" || gateDecision.preliminary === true) return false;
+  if (!Array.isArray(gateDecision.criticals) || gateDecision.criticals.length !== 0) return false;
+  if (!Array.isArray(gateDecision.advisoryFindings)) return false;
+
+  const CANONICAL_GATE_PASS_REASONS = new Set([
+    "Clean Challenge passed: zero findings and zero verified omissions.",
+    "No blocking vulnerabilities found. CI/CD Gate passed."
+  ]);
+  const trimmedReason = String(gateDecision.reason || "").trim();
+  if (!CANONICAL_GATE_PASS_REASONS.has(trimmedReason)) return false;
+
+  // 2. Extract candidate verification record
+  const candidateRecord = verificationRecordOrEvidence?.verificationRecord ||
+    (verificationRecordOrEvidence && typeof verificationRecordOrEvidence === "object" && verificationRecordOrEvidence.schemaVersion ? verificationRecordOrEvidence : null) ||
+    gateDecision.verificationRecord;
+
+  if (!candidateRecord || typeof candidateRecord !== "object") {
+    return false; // Plain unauthenticated gate decision without record is rejected fail-closed
+  }
+
+  // 3. Must possess authentic, non-synthetic, fresh verification record capability
+  if (!isTrustedVerificationRecord(candidateRecord)) return false;
+  if (isSegregatedSyntheticRecord(candidateRecord)) return false;
+
+  // 3b. Mandatory Formal Gate Decision Provenance Verification (SCHEMA2-LC-F02)
+  // Decision MUST possess affirmative provenance issued by formal evaluatePostVerificationGate in harness.mjs.
+  if (!isFormalGateDecisionApproved(gateDecision, candidateRecord)) {
+    return false;
+  }
+
+  // 4. Record Execution & Semantic Integrity (must be affirmatively CLEAN, never UNCERTAIN or DEFECTS_FOUND)
+  if (candidateRecord.ok !== true || candidateRecord.valid === false) return false;
+  if (candidateRecord.overallStatus !== "CLEAN" || candidateRecord.status === "UNCERTAIN") return false;
+
+  // 5. Zero Unresolved Context Gaps
+  if (Array.isArray(candidateRecord.contextGaps) && candidateRecord.contextGaps.length > 0) return false;
+
+  // 6. Mode & Omission Authority Consistency
+  if (trimmedReason.includes("Clean Challenge passed")) {
+    if (candidateRecord.verificationMode !== "clean_challenge") return false;
+    if (Array.isArray(candidateRecord.evaluations) && candidateRecord.evaluations.length > 0) return false;
+    if (Array.isArray(candidateRecord.verifierOmissions) && candidateRecord.verifierOmissions.length > 0) return false;
+  } else {
+    // CI/CD Gate passed
+    if (Array.isArray(candidateRecord.verifierOmissions)) {
+      for (const omission of candidateRecord.verifierOmissions) {
+        if (!omission) continue;
+        const sev = String(omission.severity || "medium").toLowerCase();
+        const support = String(omission.evidenceSupport || "INSUFFICIENT_EVIDENCE").toUpperCase();
+        const objImpact = String(omission.objectiveImpact || "NOT_ASSESSED").toUpperCase();
+        if (support === "UNCERTAIN" || support === "INSUFFICIENT_EVIDENCE") return false;
+        if (support === "SUPPORTED" && (sev === "critical" || sev === "high" || sev === "medium" || objImpact === "FALSIFIES_PATCH_OBJECTIVE")) {
+          return false;
+        }
+      }
+    }
+  }
+
+  // 7. RunContext and Target Binding Consistency
+  const runContext = verificationRecordOrEvidence?.runContext || gateDecision.runContext;
+  if (runContext && typeof runContext === "object") {
+    const rcHead = normalizeCommitSha(runContext.headSha || runContext.head || "");
+    const vrHead = normalizeCommitSha(candidateRecord.headSha || "");
+    if (rcHead && vrHead && rcHead !== vrHead) return false;
+
+    const rcDigest = normalizeDigest(runContext.contentDigest || runContext.changeSetDigest || "");
+    const vrDigest = normalizeDigest(candidateRecord.changeSetDigest || "");
+    if (rcDigest && vrDigest && rcDigest !== vrDigest) return false;
+  }
+
+  // 8. If gateDecision contains bound verificationRecord, verify strict reference equality
+  if (gateDecision.verificationRecord && gateDecision.verificationRecord !== candidateRecord) return false;
+
+  return true;
 }

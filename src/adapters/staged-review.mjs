@@ -16,7 +16,16 @@ import { reconcileFindings } from "../core/reconciler.mjs";
 import { classifyFileRisk, RISK_TIERS } from "../core/graph-router.mjs";
 import { normalizeCanonicalPath } from "../core/scoring.mjs";
 import { normalizeFinding } from "../core/harness.mjs";
-import { mergeContextGaps, normalizeCommitSha, normalizeDigest, isTrustedContextPackage, registerTrustedContextPackage } from "../core/independent-verifier.mjs";
+import {
+  mergeContextGaps,
+  normalizeCommitSha,
+  normalizeDigest,
+  isTrustedContextPackage,
+  registerTrustedContextPackage,
+  evaluateContextPackageBinding,
+  isContextPackageBoundToChangeSet,
+  validateContextPackageAuthenticity
+} from "../core/independent-verifier.mjs";
 import { digestChangeSet } from "../core/canonical-digest.mjs";
 import { EXECUTION_STATUS, COVERAGE_OMISSION_CODES, safeRenderUntrusted, safeGet, safeIsArray, safeArrayLength, safeErrorMessage } from "./provider-contract.mjs";
 
@@ -512,6 +521,13 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
       }
 
       let isScopeMismatch = false;
+      if (callerContextPackage.schemaVersion === "2.0.0") {
+        const bindingResult = evaluateContextPackageBinding(callerContextPackage, changeSet, expectedHeadSha);
+        if (!bindingResult || bindingResult.bound !== true) {
+          isScopeMismatch = true;
+          bindingMismatchReason = `Caller contextPackage scope binding failed: ${bindingResult?.reason || "SCOPE_SET_MISMATCH"}`;
+        }
+      }
       const changeSetFiles = Array.isArray(changeSet?.files)
         ? changeSet.files.map(f => typeof f === "string" ? f : (f?.path || f?.file)).filter(Boolean).map(f => normalizeCanonicalPath(f))
         : [];
@@ -596,6 +612,7 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
     !isCallerContextBindingMismatch &&
     isCallerContextTrusted;
 
+  let fallbackContextPackage = null;
   if (hasValidCallerContext) {
     resolvedContextPackage = callerContextPackage;
   } else if (hasExtractionFailedGap) {
@@ -621,6 +638,20 @@ export async function executeStagedReview(changeSet, adapter, options = {}) {
                 : (callerContextPackage?.error?.message || callerContextPackage?.error || "Caller contextPackage has ok: false or unavailable exact-head content"))),
       targetFiles: Array.isArray(changeSet?.files) ? changeSet.files.map(f => typeof f === "string" ? f : (f?.path || f?.file)).filter(Boolean) : []
     });
+
+    // Execute staged extraction fallback under Dual Visibility for diagnostic coverage (IMP-F03)
+    try {
+      fallbackContextPackage = buildContextPackage(
+        changeSet,
+        null,
+        {
+          runId,
+          headSha: expectedHeadSha || undefined,
+          repositoryRoot: repoRoot,
+          cwd: repoRoot
+        }
+      );
+    } catch {}
   } else {
     // Explicitly null, undefined, empty/vacuous, or untrusted contextPackage without extraction gap:
     // Re-extract valid exact-head contextPackage via buildContextPackage

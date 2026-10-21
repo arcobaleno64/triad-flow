@@ -9,7 +9,8 @@ import fs from "node:fs";
 import crypto from "node:crypto";
 import path from "node:path";
 import { normalizeCanonicalPath } from "./scoring.mjs";
-import { getExactHeadFileContent } from "./git-collector.mjs";
+import { getExactHeadFileContent, normalizeGitPath, normalizeScopeMode, detectCaseCollisions } from "./git-collector.mjs";
+import { canonicalJsonStringify } from "./canonical-digest.mjs";
 import { splitDiffByFiles } from "./chunk-manager.mjs";
 import { truncateUtf8Safe, registerTrustedContextPackage, isGitRepo, isCommitInRepo, deepFreeze } from "./independent-verifier.mjs";
 
@@ -2633,6 +2634,127 @@ export function allocateContextBudget(rawLayers, config = DEFAULT_BUDGET_CONFIG)
 }
 
 /**
+ * Generates an authoritative FileCoverageManifest from a ChangeSet (Spec §2.6).
+ * Enforces mandatory inspected: true, exactHeadAvailable semantics, and path canonicalization.
+ *
+ * @param {object} changeSet
+ * @param {object} [options={}]
+ * @returns {Array<object>}
+ */
+export function buildFileCoverageManifest(changeSet, options = {}) {
+  if (!changeSet || typeof changeSet !== "object") {
+    const err = new Error("Invalid changeSet: changeSet must be an object");
+    err.code = "INVALID_CHANGESET_SPEC";
+    throw err;
+  }
+  if (!Array.isArray(changeSet.files)) {
+    const err = new Error("Invalid changeSet: files must be an array");
+    err.code = "INVALID_CHANGESET_SPEC";
+    throw err;
+  }
+  if (changeSet.files.length === 0) {
+    const err = new Error("Empty changeSet: files array must not be empty");
+    err.code = "EMPTY_CHANGESET_SPEC";
+    throw err;
+  }
+
+  const manifest = [];
+  const seenPaths = new Set();
+  const rawMode = changeSet.scopeMode || options.scopeMode || "working_tree";
+  const scopeMode = normalizeScopeMode(rawMode);
+
+  for (const entry of changeSet.files) {
+    if (!entry) {
+      const err = new Error("Invalid changeSet file entry: null or undefined");
+      err.code = "INVALID_CHANGESET_ENTRY";
+      throw err;
+    }
+    const rawPath = typeof entry === "string" ? entry : (entry.path || entry.canonicalPath || entry.file);
+    if (typeof rawPath !== "string" || !rawPath.trim()) {
+      const err = new Error("Invalid changeSet file entry: path must be non-empty string");
+      err.code = "INVALID_CHANGESET_ENTRY";
+      throw err;
+    }
+
+    const canonicalPath = normalizeGitPath(rawPath);
+    if (seenPaths.has(canonicalPath)) {
+      const err = new Error(`Duplicate changeSet entry: ${canonicalPath}`);
+      err.code = "DUPLICATE_CHANGESET_ENTRY";
+      throw err;
+    }
+    seenPaths.add(canonicalPath);
+
+    const changeType = entry.changeType || (entry.deleted ? "D" : (entry.untracked || entry.added ? "A" : "M"));
+
+    // exactHeadAvailable semantics (Spec §2.2)
+    let exactHeadAvailable = false;
+    if (scopeMode === "revision_range") {
+      exactHeadAvailable = changeType !== "D";
+    } else {
+      exactHeadAvailable = false;
+    }
+
+    manifest.push({
+      file: canonicalPath,
+      inspected: true,
+      exactHeadAvailable,
+      ...(exactHeadAvailable ? {} : { exactHeadUnavailable: true }),
+      changeType,
+      calleesExtracted: Array.isArray(entry.calleesExtracted) ? [...entry.calleesExtracted] : [],
+      unresolvedCallees: Array.isArray(entry.unresolvedCallees) ? [...entry.unresolvedCallees] : [],
+      contextGaps: Array.isArray(entry.contextGaps) ? [...entry.contextGaps] : []
+    });
+  }
+
+  return manifest;
+}
+
+/**
+ * Computes authoritative 8-tuple cache key for trusted registry (Spec §2.3).
+ *
+ * @param {object} params
+ * @returns {string} SHA-256 hex string
+ */
+export function getTrustedRegistryKey(params = {}) {
+  const repoId = String(params.repoId || params.repositoryRoot || "").replace(/\\/g, "/");
+  const rawMode = params.scopeMode || params.changeSet?.scopeMode || "working_tree";
+  const scopeMode = normalizeScopeMode(rawMode);
+  const baseSha = params.baseSha || params.changeSet?.baseSha || params.changeSet?.repository?.baseSha || null;
+  const headSha = params.headSha || params.changeSet?.headSha || params.changeSet?.repository?.headSha || null;
+
+  // digest(S_CS)
+  const rawFiles = params.files || params.changeSet?.files || [];
+  const canonicalFiles = rawFiles.map(f => {
+    const raw = typeof f === "string" ? f : (f?.path || f?.canonicalPath || f?.file || "");
+    return normalizeGitPath(raw);
+  });
+  canonicalFiles.sort();
+  const filesDigest = crypto.createHash("sha256").update(canonicalFiles.join("\n"), "utf8").digest("hex");
+
+  // digest(diffHunks)
+  const diffHunks = params.diffHunks || params.changeSet?.diffHunks || "";
+  const normalizedHunks = diffHunks.replace(/\r\n/g, "\n");
+  const diffHunksDigest = crypto.createHash("sha256").update(normalizedHunks, "utf8").digest("hex");
+
+  const snapshotHash = params.snapshotHash || params.mutationSnapshotHash || params.changeSet?.mutationSnapshotHash || "";
+  const schemaVersion = "2.0.0";
+
+  const tuple = [
+    repoId,
+    scopeMode,
+    baseSha,
+    headSha,
+    filesDigest,
+    diffHunksDigest,
+    snapshotHash,
+    schemaVersion
+  ];
+
+  const canonicalJson = canonicalJsonStringify(tuple);
+  return crypto.createHash("sha256").update(canonicalJson, "utf8").digest("hex");
+}
+
+/**
  * Builds a canonical ContextPackage for a target file within a ChangeSet.
  * @param {object} changeSet
  * @param {string} targetFile
@@ -2640,6 +2762,32 @@ export function allocateContextBudget(rawLayers, config = DEFAULT_BUDGET_CONFIG)
  * @returns {object} ContextPackage
  */
 export function buildContextPackage(changeSet, targetFile, options = {}) {
+  const isV2 = options.schemaVersion === "2.0.0" || options.strictRole === true;
+  const filesList = Array.isArray(changeSet?.files) ? changeSet.files : [];
+
+  // Schema v2 TargetFile Mutual Exclusion Enforcement (Spec §2.4)
+  if (isV2) {
+    if (targetFile === undefined || targetFile === null || targetFile === "") {
+      const err = new Error("Missing targetFile role in Schema v2 ContextPackage");
+      err.code = "MISSING_TARGET_FILE_ROLE";
+      throw err;
+    }
+    const normalizedFiles = filesList.map(f => normalizeGitPath(typeof f === "string" ? f : (f.path || f.canonicalPath || f.file)));
+    if (normalizedFiles.length === 1) {
+      if (targetFile === "multi-file" || normalizeGitPath(targetFile) !== normalizedFiles[0]) {
+        const err = new Error(`Mutual exclusion violation: single-file ChangeSet requires targetFile: '${normalizedFiles[0]}', got '${targetFile}'`);
+        err.code = "MUTUAL_EXCLUSION_VIOLATION";
+        throw err;
+      }
+    } else if (normalizedFiles.length > 1) {
+      if (targetFile !== "multi-file") {
+        const err = new Error(`Mutual exclusion violation: multi-file ChangeSet requires targetFile: 'multi-file', got '${targetFile}'`);
+        err.code = "MUTUAL_EXCLUSION_VIOLATION";
+        throw err;
+      }
+    }
+  }
+
   const isMultiFile = !targetFile || Array.isArray(targetFile) || options.allFiles === true;
 
   if (isMultiFile) {
@@ -2922,7 +3070,7 @@ export function buildContextPackage(changeSet, targetFile, options = {}) {
     const requiresStdin = isWindows && (budgeted.budgetAccounting.consumedBytes > SAFE_ARGV_THRESHOLD_BYTES);
 
     const resultPackage = {
-      schemaVersion: "1.0.0",
+      schemaVersion: options.schemaVersion || "1.0.0",
       ok: !hasPathEscape,
       ...(hasPathEscape ? {
         error: {
@@ -2931,7 +3079,10 @@ export function buildContextPackage(changeSet, targetFile, options = {}) {
         }
       } : {}),
       runId,
-      targetFile: filePaths.length === 1 ? normalizeCanonicalPath(filePaths[0]) : "multi-file",
+      targetFile: filePaths.length === 1 ? (() => {
+        try { return normalizeGitPath(filePaths[0], repoRoot); }
+        catch { return normalizeCanonicalPath(filePaths[0]); }
+      })() : "multi-file",
       ...(headSha ? { headSha } : {}),
       ...(repoRoot ? { repositoryRoot: repoRoot } : {}),
       scopeMode: changeSet?.scopeMode || "working-tree",
@@ -2972,14 +3123,25 @@ export function buildContextPackage(changeSet, targetFile, options = {}) {
   }
 
   // Single-file mode
-  const normTarget = normalizeCanonicalPath(targetFile);
+  const headSha = options.headSha || changeSet?.headSha || changeSet?.repository?.headSha || null;
+  const repoRoot = options.repositoryRoot || changeSet?.repository?.root || options.cwd || null;
+  let normTarget;
+  try {
+    normTarget = normalizeGitPath(targetFile, repoRoot);
+  } catch {
+    normTarget = normalizeCanonicalPath(targetFile);
+  }
   const diffHunks = changeSet?.diffHunks || "";
   const runId = options.runId || crypto.randomUUID();
 
   // Find file stats in changeSet
   const fileMeta = (changeSet?.files || []).find(f => {
     const p = typeof f === "string" ? f : f?.path;
-    return normalizeCanonicalPath(p) === normTarget;
+    try {
+      return normalizeGitPath(p, repoRoot) === normTarget;
+    } catch {
+      return normalizeCanonicalPath(p) === normTarget;
+    }
   });
 
   const actualFilePath = (typeof fileMeta === "string" ? fileMeta : fileMeta?.path) ||
@@ -3000,8 +3162,6 @@ export function buildContextPackage(changeSet, targetFile, options = {}) {
     options.fileContents?.[targetFile] ??
     null;
   let fileContent = callerSuppliedContent;
-  const headSha = options.headSha || changeSet?.headSha || changeSet?.repository?.headSha || null;
-  const repoRoot = options.repositoryRoot || changeSet?.repository?.root || options.cwd || null;
 
   const isRealRepo = Boolean(repoRoot && isGitRepo(repoRoot));
   const isHeadInRepo = Boolean(isRealRepo && headSha && isCommitInRepo(repoRoot, headSha));
@@ -3142,7 +3302,7 @@ export function buildContextPackage(changeSet, targetFile, options = {}) {
   const requiresStdin = isWindows && (budgeted.budgetAccounting.consumedBytes > SAFE_ARGV_THRESHOLD_BYTES);
 
   const resultPackage = {
-    schemaVersion: "1.0.0",
+    schemaVersion: options.schemaVersion || "1.0.0",
     ok: !hasPathEscape,
     ...(hasPathEscape ? {
       error: {
