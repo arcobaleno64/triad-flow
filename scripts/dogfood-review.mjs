@@ -1101,20 +1101,42 @@ export async function runDogfoodReview(userOptions = {}) {
       contextPackage = null;
       if (log) console.warn(`  ⚠️ Failed to bind external contextPackage: ${contextExtractionError}`);
     } else {
-      contextPackage = pkg;
-      registerTrustedContextPackage(pkg, {
-        repositoryRoot: targetRepo,
-        headSha: commitSha,
-        diffHunks: changeSet.diffHunks,
-        changeSet,
-        verifiedBy: "dogfood-review",
-        workflowAuthority: typeof _internalDogfoodWorkflowMinter === "function"
-          ? _internalDogfoodWorkflowMinter("dogfood-review", {
-              contentDigest: pkg.contentDigest,
-              headSha: commitSha
-            })
-          : null
-      });
+      let registrationSucceeded = false;
+      try {
+        const regResult = registerTrustedContextPackage(pkg, {
+          repositoryRoot: targetRepo,
+          headSha: commitSha,
+          diffHunks: changeSet.diffHunks,
+          changeSet,
+          verifiedBy: "dogfood-review",
+          workflowAuthority: typeof _internalDogfoodWorkflowMinter === "function"
+            ? _internalDogfoodWorkflowMinter("dogfood-review", {
+                contentDigest: pkg.contentDigest,
+                headSha: commitSha
+              })
+            : null
+        });
+        registrationSucceeded = Boolean(
+          regResult &&
+          typeof regResult === "object" &&
+          regResult.ok !== false &&
+          regResult !== null
+        );
+      } catch (err) {
+        registrationSucceeded = false;
+        pkgInvalidReason = `Context package registration failed: ${err?.message || String(err)}`;
+      }
+
+      if (!registrationSucceeded) {
+        pkgInvalid = true;
+        if (!pkgInvalidReason) pkgInvalidReason = "Failed to register context package into trusted registry.";
+        contextExtractionFailed = true;
+        contextExtractionError = `External contextPackage failed trusted registration: ${pkgInvalidReason}`;
+        contextPackage = null;
+        if (log) console.warn(`  ⚠️ Failed to register external contextPackage: ${contextExtractionError}`);
+      } else {
+        contextPackage = pkg;
+      }
     }
   } else if (!contextPackage && changeSet?.files?.length > 0 && targetRepo && commitSha) {
     try {
@@ -1147,7 +1169,7 @@ export async function runDogfoodReview(userOptions = {}) {
     }
   }
 
-  const effectiveContextGaps = mergeContextGaps(
+  let effectiveContextGaps = mergeContextGaps(
     contextExtractionFailed ? [
       {
         code: "EXACT_HEAD_CONTEXT_FAILED",
@@ -1437,6 +1459,33 @@ export async function runDogfoodReview(userOptions = {}) {
       }
     );
   } else if (consensus.quorumReached === true && findings.length === 0 && !isStructuralFailure && userOptions.cleanChallenge !== false) {
+    // Verify sentry coverage before entering Clean Challenge (SYSTEMIC-C14C)
+    const sentryCoverageManifest = Object.entries(rawReports).map(([name, rep]) => {
+      const cov = rep?.coverage || rep?.report?.coverage || null;
+      const coveredFiles = Array.isArray(cov?.coveredFiles) ? cov.coveredFiles : [];
+      const omittedFiles = Array.isArray(cov?.omittedFiles) ? cov.omittedFiles : [];
+      const isDeclared = Boolean(cov && typeof cov === "object" && Array.isArray(cov.coveredFiles));
+      return { name, isDeclared, coveredFiles, omittedFiles };
+    });
+
+    const sentryCoverageIncomplete = sentryCoverageManifest.some(s => {
+      if (!s.isDeclared) return true;
+      if (s.omittedFiles.length > 0) return true;
+      const expectedFiles = (changeSet?.files || []).map(f => typeof f === "string" ? f : f?.path).filter(Boolean);
+      return expectedFiles.some(f => !s.coveredFiles.includes(f));
+    });
+
+    if (sentryCoverageIncomplete) {
+      if (log) console.warn("  ⚠️ Sentry coverage incomplete or omitted files reported; cannot Clean Approve.");
+      const gap = {
+        code: "INSUFFICIENT_PRODUCER_COVERAGE",
+        symbol: "sentry-coverage",
+        reason: "One or more review sentries failed complete file coverage declaration or reported omitted files.",
+        coverage: sentryCoverageManifest
+      };
+      effectiveContextGaps = mergeContextGaps(effectiveContextGaps, [gap]);
+    }
+
     cleanChallengeAttempted = true;
     if (log) console.log("  ⚡ Zero-finding quorum reached. Executing Clean Challenge verification...");
     const tClean0 = Date.now();
@@ -1496,7 +1545,9 @@ export async function runDogfoodReview(userOptions = {}) {
     tier: diffTier,
     strict: isStrict,
     verificationRecord,
-    runContext
+    runContext,
+    contextGaps: effectiveContextGaps,
+    contextPackage
   });
   if (log) {
     console.log(`  🛡️ Final Advisory Gate: ${gate.decision.toUpperCase()} (${gate.reason})`);

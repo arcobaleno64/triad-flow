@@ -481,6 +481,84 @@ export function findBraceScopeEnd(lines, startIndex, options = {}) {
 }
 
 /**
+ * Strips block and line comments from lines, replacing comment characters with spaces
+ * to preserve line numbers, line lengths, and column positions for lexical analysis (C2).
+ *
+ * @param {string[]} lines
+ * @returns {string[]}
+ */
+export function stripCommentsPreservingLayout(lines) {
+  if (!Array.isArray(lines)) return [];
+  const result = [];
+  let inBlockComment = false;
+  let inString = false;
+  let stringChar = null;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    let out = "";
+    for (let j = 0; j < line.length; j++) {
+      const c = line[j];
+      const next = j + 1 < line.length ? line[j + 1] : "";
+
+      if (inBlockComment) {
+        if (c === "*" && next === "/") {
+          inBlockComment = false;
+          out += "  ";
+          j++;
+        } else {
+          out += " ";
+        }
+        continue;
+      }
+
+      if (inString) {
+        if (c === "\\") {
+          out += "  ";
+          j++;
+          continue;
+        }
+        if (c === stringChar) {
+          inString = false;
+          stringChar = null;
+        }
+        out += " ";
+        continue;
+      }
+
+      if (c === "/" && next === "*") {
+        inBlockComment = true;
+        out += "  ";
+        j++;
+        continue;
+      }
+
+      if (c === "/" && next === "/") {
+        out += " ".repeat(line.length - j);
+        break;
+      }
+
+      if (c === '"' || c === "'" || c === "`") {
+        inString = true;
+        stringChar = c;
+        out += " ";
+        continue;
+      }
+
+      out += c;
+    }
+
+    if (inString && stringChar !== "`") {
+      inString = false;
+      stringChar = null;
+    }
+
+    result.push(out);
+  }
+  return result;
+}
+
+/**
  * Finds all candidate definition line ranges for a given symbol in file lines.
  *
  * @param {string[]} lines
@@ -490,6 +568,18 @@ export function findBraceScopeEnd(lines, startIndex, options = {}) {
 export function findFunctionDefinitions(lines, symbol) {
   const matches = [];
   const escapedSym = symbol.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+  const cleanLines = stripCommentsPreservingLayout(lines);
+
+  const HAS_EXPLICIT_DECL_HEADER = new RegExp(
+    `(?:` +
+    `^(?:\\s*(?:[a-zA-Z0-9_<>*&]|::)+\\s+)+(?:[a-zA-Z0-9_]+::)?${escapedSym}\\s*(?:<[^()]+>\\s*)?\\(|` +
+    `^\\s*(?:export\\s+)?(?:default\\s+)?(?:async\\s+)?function(?:\\s+${escapedSym})?\\s*(?:<[^()]+>\\s*)?\\(|` +
+    `^\\s*(?:(?:static|async|public|private|protected|virtual|inline|override)\\s+)+${escapedSym}\\s*(?:<[^()]+>\\s*)?\\(|` +
+    `^\\s*(?:export\\s+)?(?:const|let|var)?\\s*${escapedSym}\\s*=\\s*(?:async\\s*)?(?:<[^()]+>\\s*)?(?:\\([^)]*\\)|[a-zA-Z0-9_$]+)?\\s*(?:=>|function)|` +
+    `^\\s*def\\s+${escapedSym}\\s*\\(` +
+    `)`
+  );
 
   const DEF_REGEX = new RegExp(
     `(?:` +
@@ -505,8 +595,8 @@ export function findFunctionDefinitions(lines, symbol) {
   const CALL_EXPR_DISQUALIFIERS = /(?:==|!=|&&|\|\||return\s+|throw\s+|new\s+)/;
   const PROP_START = /^\s*(?:[a-zA-Z0-9_$]+|"[^"]*"|'[^']*')\s*:\s*/;
 
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
+  for (let i = 0; i < cleanLines.length; i++) {
+    const line = cleanLines[i];
 
     if (!line.includes(symbol)) continue;
     if (CONTROL_START.test(line)) continue;
@@ -533,8 +623,8 @@ export function findFunctionDefinitions(lines, symbol) {
     const openParenIdx = symIdx !== -1 ? line.indexOf("(", symIdx) : -1;
     const scanCharIdx = openParenIdx !== -1 ? openParenIdx : 0;
 
-    for (let j = i; j < Math.min(i + 15, lines.length); j++) {
-      const scanLine = lines[j];
+    for (let j = i; j < Math.min(i + 15, cleanLines.length); j++) {
+      const scanLine = cleanLines[j];
       const trimmed = scanLine.trim();
 
       if (!parenClosed) {
@@ -607,7 +697,25 @@ export function findFunctionDefinitions(lines, symbol) {
       continue;
     }
 
-    const endLine = findBraceScopeEnd(lines, braceLineIdx, { failClosed: true, startCharIndex: bodyBraceIdx });
+    let hasExplicitHeader = HAS_EXPLICIT_DECL_HEADER.test(line);
+    if (!hasExplicitHeader) {
+      for (let prevIdx = i - 1; prevIdx >= Math.max(0, i - 3); prevIdx--) {
+        const prevTrim = cleanLines[prevIdx].trim();
+        if (prevTrim.length === 0) continue;
+        if (HAS_EXPLICIT_DECL_HEADER.test(`${prevTrim} ${line.trim()}`)) {
+          hasExplicitHeader = true;
+          break;
+        }
+        break;
+      }
+    }
+
+    if (braceLineIdx > i && !hasExplicitHeader) {
+      // Reject bare call expressions accepting delayed body brace (sl1Ri / C3)
+      continue;
+    }
+
+    const endLine = findBraceScopeEnd(cleanLines, braceLineIdx, { failClosed: true, startCharIndex: bodyBraceIdx });
     if (endLine === -1 || endLine < i + 1) {
       continue;
     }
@@ -1356,7 +1464,7 @@ export function classifySensitiveCategory(text) {
   const REMAINING_PATTERNS = [
     { category: "input_validation", regex: /(?:^|_|\b)(?:valid|check|assert|verify|sanitize|parse|bounds?|range|empty|null|param|limit)\w*/gi },
     { category: "error_handling", regex: /(?:^|_|\b)(?:handle|error|err|fail|throw|catch|reject|abort|except|status|try|drop)\w*/gi },
-    { category: "security", regex: /(?:^|_|\b)(?:auth|permit|permiss|allow|deny|token|secret|privilege|guard|secure)\w*/gi }
+    { category: "security", regex: /(?:^|_|\b)(?:auth|permit|permiss|allow|deny|token|secret|privilege|guard|secure|policy|enforce|rbac|acl|role|access)\w*/gi }
   ];
 
   let earliestPos = Infinity;
@@ -1470,35 +1578,58 @@ export function stripCommentsAndStrings(line, inBlockCommentRef = { val: false }
       quote = ch;
       continue;
     }
-    if (ch === "/" && (i === 0 || /[\s=,(:!&|]/.test(line[i - 1]))) {
-      let j = i + 1;
-      let inCharClass = false;
-      let foundEnd = false;
-      while (j < line.length) {
-        if (line[j] === "\\") {
-          j += 2;
-          continue;
-        }
-        if (line[j] === "[" && !inCharClass) {
-          inCharClass = true;
-          j++;
-          continue;
-        }
-        if (line[j] === "]" && inCharClass) {
-          inCharClass = false;
-          j++;
-          continue;
-        }
-        if (line[j] === "/" && !inCharClass) {
-          foundEnd = true;
-          break;
-        }
-        if (line[j] === ";") break;
-        j++;
+    if (ch === "/" && nextCh !== "/" && nextCh !== "*") {
+      let k = i - 1;
+      while (k >= 0 && /\s/.test(line[k])) {
+        k--;
       }
-      if (foundEnd) {
-        i = j;
-        continue;
+      const prevNonWs = k >= 0 ? line[k] : null;
+
+      let isDivision = false;
+      if (prevNonWs === ")" || prevNonWs === "]" || prevNonWs === "}") {
+        isDivision = true;
+      } else if (prevNonWs && /[a-zA-Z0-9_$]/.test(prevNonWs)) {
+        let wStart = k;
+        while (wStart >= 0 && /[a-zA-Z0-9_$]/.test(line[wStart])) {
+          wStart--;
+        }
+        const prevWord = line.slice(wStart + 1, k + 1);
+        const isRegexKeyword = /^(?:return|yield|case|throw|delete|typeof|void|await|in|instanceof|new|else|do)$/.test(prevWord);
+        if (!isRegexKeyword) {
+          isDivision = true;
+        }
+      }
+
+      if (!isDivision && (prevNonWs === null || /^[=([{:;,?!&|+*^%~<>-]$/.test(prevNonWs) || (i === 0))) {
+        let j = i + 1;
+        let inCharClass = false;
+        let foundEnd = false;
+        while (j < line.length) {
+          if (line[j] === "\\") {
+            j += 2;
+            continue;
+          }
+          if (line[j] === "[" && !inCharClass) {
+            inCharClass = true;
+            j++;
+            continue;
+          }
+          if (line[j] === "]" && inCharClass) {
+            inCharClass = false;
+            j++;
+            continue;
+          }
+          if (line[j] === "/" && !inCharClass) {
+            foundEnd = true;
+            break;
+          }
+          if (line[j] === ";") break;
+          j++;
+        }
+        if (foundEnd) {
+          i = j;
+          continue;
+        }
       }
     }
     result += ch;
@@ -1659,7 +1790,7 @@ export function findCallInvocations(cleanLine) {
  * @param {string} diffHunks
  * @returns {Array<{ symbol: string, isAdded: boolean, line: number, lineText: string, isSensitive: boolean, category: string|null }>}
  */
-export function extractCandidateCallSymbols(diffHunks) {
+export function extractCandidateCallSymbols(diffHunks, options = {}) {
   if (!diffHunks || typeof diffHunks !== "string") return [];
 
   const lines = diffHunks.split(/\r?\n/);
@@ -1683,6 +1814,8 @@ export function extractCandidateCallSymbols(diffHunks) {
   let currentTargetLine = 1;
   const HUNK_HEADER_REGEX = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/;
   const inBlockCommentRef = { val: false, inTemplate: false, templateDepths: [] };
+  let currentHunkLexicalUncertain = false;
+  let currentHunkHasControlFlow = false;
 
   for (let i = 0; i < lines.length; i++) {
     const rawLine = lines[i];
@@ -1690,14 +1823,40 @@ export function extractCandidateCallSymbols(diffHunks) {
     const hunkMatch = rawLine.match(HUNK_HEADER_REGEX);
     if (hunkMatch) {
       currentTargetLine = parseInt(hunkMatch[1], 10);
-      inBlockCommentRef.val = false;
-      inBlockCommentRef.inTemplate = false;
-      inBlockCommentRef.templateDepths = [];
+      currentHunkHasControlFlow = false;
+      if (options.fileContent && typeof options.fileContent === "string") {
+        const fLines = options.fileContent.split(/\r?\n/);
+        const preLines = fLines.slice(0, Math.max(0, currentTargetLine - 1));
+        const reconRef = { val: false, inTemplate: false, templateDepths: [] };
+        for (const pLine of preLines) {
+          stripCommentsAndStrings(pLine, reconRef);
+        }
+        inBlockCommentRef.val = reconRef.val;
+        inBlockCommentRef.inTemplate = reconRef.inTemplate;
+        inBlockCommentRef.templateDepths = reconRef.templateDepths;
+        currentHunkLexicalUncertain = false;
+      } else if (currentTargetLine > 1) {
+        inBlockCommentRef.val = false;
+        inBlockCommentRef.inTemplate = false;
+        inBlockCommentRef.templateDepths = [];
+        currentHunkLexicalUncertain = true;
+      } else {
+        inBlockCommentRef.val = false;
+        inBlockCommentRef.inTemplate = false;
+        inBlockCommentRef.templateDepths = [];
+        currentHunkLexicalUncertain = false;
+      }
       continue;
     }
 
     if (rawLine.startsWith("---") || rawLine.startsWith("+++") || rawLine.startsWith("diff ") || rawLine.startsWith("index ")) {
       continue;
+    }
+
+    if (rawLine.startsWith("+") || rawLine.startsWith("-")) {
+      if (/\b(?:if|else|return|throw|while|for|switch|try|catch|finally|break|continue|guard|assert)\b/.test(rawLine)) {
+        currentHunkHasControlFlow = true;
+      }
     }
 
     if (rawLine.startsWith("-")) {
@@ -1726,13 +1885,6 @@ export function extractCandidateCallSymbols(diffHunks) {
       const prefix = cleanLine.slice(0, call.index);
       const isQualified = /(?:\.|\->|\?\.)\s*$/.test(prefix);
 
-      if (isQualified && BUILTIN_OBJECT_METHODS.has(sym)) {
-        continue;
-      }
-      if (UTILITY_CALLEE_SYMBOLS.has(sym)) {
-        continue;
-      }
-
       const chainMatch = prefix.match(/(?:(?:[a-zA-Z_][a-zA-Z0-9_]*|this)\s*(?:\.|\->|\?\.)\s*)+$/);
       let qualifier = null;
       let qualifiers = [];
@@ -1750,6 +1902,16 @@ export function extractCandidateCallSymbols(diffHunks) {
           break;
         }
       }
+
+      if (isQualified && BUILTIN_OBJECT_METHODS.has(sym)) {
+        if (!qualCat) {
+          continue;
+        }
+      }
+      if (UTILITY_CALLEE_SYMBOLS.has(sym)) {
+        continue;
+      }
+
       const sensitiveCategory = symCat || qualCat;
 
       // For qualified calls, only recognize if sensitive (P1-03)
@@ -1773,6 +1935,8 @@ export function extractCandidateCallSymbols(diffHunks) {
           qualifiers,
           isQualified,
           isAdded,
+          isControlFlowModified: Boolean(currentHunkHasControlFlow),
+          lexicalStateUncertain: Boolean(currentHunkLexicalUncertain),
           line: lineNum,
           lineText: lineText.trim(),
           isSensitive,
@@ -1809,6 +1973,9 @@ export function extractCandidateCallSymbols(diffHunks) {
             existing.isSensitive = true;
             existing.category = symCategory;
           }
+          if (currentHunkHasControlFlow && !existing.isControlFlowModified) {
+            existing.isControlFlowModified = true;
+          }
         }
       }
     }
@@ -1839,24 +2006,27 @@ export function extractCandidateCallSymbols(diffHunks) {
             qualifier = qualifiers.length > 0 ? qualifiers[qualifiers.length - 1] : null;
           }
 
+          const symCat = classifySensitiveCategory(sym);
+          let qualCat = null;
+          for (const q of qualifiers) {
+            const cat = classifySensitiveCategory(q);
+            if (cat) {
+              qualCat = cat;
+              break;
+            }
+          }
+
           let skip = false;
           if (isQualified && BUILTIN_OBJECT_METHODS.has(sym)) {
-            skip = true;
+            if (!qualCat) {
+              skip = true;
+            }
           }
           if (UTILITY_CALLEE_SYMBOLS.has(sym)) {
             skip = true;
           }
 
           if (!skip) {
-            const symCat = classifySensitiveCategory(sym);
-            let qualCat = null;
-            for (const q of qualifiers) {
-              const cat = classifySensitiveCategory(q);
-              if (cat) {
-                qualCat = cat;
-                break;
-              }
-            }
             const sensitiveCategory = symCat || qualCat;
 
             if (!isQualified || sensitiveCategory) {
@@ -1938,6 +2108,8 @@ export function extractCandidateCallSymbols(diffHunks) {
                     qualifiers,
                     isQualified,
                     isAdded: Boolean(callIsAdded),
+                    isControlFlowModified: Boolean(currentHunkHasControlFlow),
+                    lexicalStateUncertain: Boolean(currentHunkLexicalUncertain),
                     line: lineNum,
                     lineText: lineText.trim(),
                     isSensitive,
@@ -1977,6 +2149,9 @@ export function extractCandidateCallSymbols(diffHunks) {
                     if (isSensitive && !existing.isSensitive) {
                       existing.isSensitive = true;
                       existing.category = symCategory;
+                    }
+                    if (currentHunkHasControlFlow && !existing.isControlFlowModified) {
+                      existing.isControlFlowModified = true;
                     }
                   }
                 }
@@ -2209,7 +2384,7 @@ export function extractLocalCalleeContext(fileContent, diffHunks, targetFile, op
     return { callees, unresolvedCallees, contextGaps };
   }
 
-  const candidateCalls = extractCandidateCallSymbols(diffHunks);
+  const candidateCalls = extractCandidateCallSymbols(diffHunks, { fileContent, targetFile });
   if (candidateCalls.length === 0) {
     return { callees, unresolvedCallees, contextGaps };
   }
@@ -2218,11 +2393,42 @@ export function extractLocalCalleeContext(fileContent, diffHunks, targetFile, op
   const runningTotal = options.extractedCalleesCount || 0;
   let fileCalleesCount = 0;
 
-  // Extract imported symbols from module imports
+  // Extract imported symbols and aliases from module imports (C8 / C9)
   const importedSymbols = new Set();
+  const importAliases = new Map(); // localAlias -> originalSymbol
+  const deletedLocalDefinitions = new Set();
+
+  function recordImportSpecifier(specifier) {
+    const namedMatch = specifier.match(/\{([\s\S]*?)\}/);
+    if (namedMatch) {
+      const parts = namedMatch[1].split(",");
+      for (const part of parts) {
+        const trimmed = part.trim();
+        if (!trimmed) continue;
+        const aliasMatch = trimmed.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\s+as\s+([a-zA-Z_][a-zA-Z0-9_]*)$/);
+        if (aliasMatch) {
+          const originalSym = aliasMatch[1];
+          const localAlias = aliasMatch[2];
+          importedSymbols.add(localAlias);
+          importAliases.set(localAlias, originalSym);
+        } else {
+          const symMatch = trimmed.match(/^([a-zA-Z_][a-zA-Z0-9_]*)$/);
+          if (symMatch) {
+            importedSymbols.add(symMatch[1]);
+          }
+        }
+      }
+    }
+    const defaultMatch = specifier.match(/import\s+([a-zA-Z_][a-zA-Z0-9_]*)\s+(?:from|,)/);
+    if (defaultMatch && defaultMatch[1] !== "type") {
+      importedSymbols.add(defaultMatch[1]);
+    }
+  }
+
   const importRegex = /import\s+(?:\{[\s\S]*?\}|[a-zA-Z0-9_$,\s*]+)\s+from\s+['"][^'"]+['"]/g;
   let matchImport;
   while ((matchImport = importRegex.exec(fileContent)) !== null) {
+    recordImportSpecifier(matchImport[0]);
     const symMatches = matchImport[0].match(/\b([a-zA-Z_][a-zA-Z0-9_]*)\b/g) || [];
     for (const s of symMatches) {
       if (s !== "import" && s !== "from" && s !== "as" && s !== "default") {
@@ -2230,16 +2436,28 @@ export function extractLocalCalleeContext(fileContent, diffHunks, targetFile, op
       }
     }
   }
-  const requireRegex = /(?:const|let|var)\s+(?:\{[\s\S]*?\}|[a-zA-Z0-9_$]+)\s*=\s*require\s*\(/g;
+
+  const requireRegex = /(?:const|let|var)\s+(?:\{([\s\S]*?)\}|([a-zA-Z0-9_$]+))\s*=\s*require\s*\(/g;
   let matchRequire;
   while ((matchRequire = requireRegex.exec(fileContent)) !== null) {
-    const symMatches = matchRequire[0].match(/\b([a-zA-Z_][a-zA-Z0-9_]*)\b/g) || [];
-    for (const s of symMatches) {
-      if (s !== "const" && s !== "let" && s !== "var" && s !== "require") {
-        importedSymbols.add(s);
+    if (matchRequire[1]) {
+      const parts = matchRequire[1].split(",");
+      for (const p of parts) {
+        const trimmed = p.trim();
+        const aliasMatch = trimmed.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\s*:\s*([a-zA-Z_][a-zA-Z0-9_]*)$/);
+        if (aliasMatch) {
+          importedSymbols.add(aliasMatch[2]);
+          importAliases.set(aliasMatch[2], aliasMatch[1]);
+        } else {
+          const s = trimmed.match(/^([a-zA-Z_][a-zA-Z0-9_]*)$/);
+          if (s) importedSymbols.add(s[1]);
+        }
       }
+    } else if (matchRequire[2]) {
+      importedSymbols.add(matchRequire[2]);
     }
   }
+
   const pyFromImportRegex = /(?:from\s+[a-zA-Z0-9_.]+\s+)?import\s+([a-zA-Z0-9_,\s*()]+)/g;
   let matchPyFrom;
   while ((matchPyFrom = pyFromImportRegex.exec(fileContent)) !== null) {
@@ -2251,7 +2469,76 @@ export function extractLocalCalleeContext(fileContent, diffHunks, targetFile, op
     }
   }
 
+  // Scan diffHunks for patch-added imports and patch-deleted local definitions (C9)
+  if (diffHunks && typeof diffHunks === "string") {
+    const hunkLines = diffHunks.split(/\r?\n/);
+    for (const hLine of hunkLines) {
+      if (hLine.startsWith("+") && !hLine.startsWith("+++")) {
+        const addedText = hLine.slice(1);
+        if (/import\s+/.test(addedText)) {
+          recordImportSpecifier(addedText);
+          const syms = addedText.match(/\b([a-zA-Z_][a-zA-Z0-9_]*)\b/g) || [];
+          for (const s of syms) {
+            if (s !== "import" && s !== "from" && s !== "as" && s !== "default") importedSymbols.add(s);
+          }
+        }
+        if (/require\s*\(/.test(addedText)) {
+          const m = addedText.match(/(?:const|let|var)\s+(?:\{([\s\S]*?)\}|([a-zA-Z0-9_$]+))\s*=\s*require/);
+          if (m) {
+            if (m[1]) {
+              for (const p of m[1].split(",")) {
+                const t = p.trim();
+                const a = t.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\s*:\s*([a-zA-Z_][a-zA-Z0-9_]*)$/);
+                if (a) {
+                  importedSymbols.add(a[2]);
+                  importAliases.set(a[2], a[1]);
+                } else {
+                  const s = t.match(/^([a-zA-Z_][a-zA-Z0-9_]*)$/);
+                  if (s) importedSymbols.add(s[1]);
+                }
+              }
+            } else if (m[2]) {
+              importedSymbols.add(m[2]);
+            }
+          }
+        }
+      } else if (hLine.startsWith("-") && !hLine.startsWith("---")) {
+        const deletedText = hLine.slice(1);
+        const delMatch = deletedText.match(/^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?function(?:\s+([a-zA-Z_][a-zA-Z0-9_]*))\s*\(/) ||
+          deletedText.match(/^\s*(?:export\s+)?(?:const|let|var)\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*(?:async\s*)?(?:\([^)]*\)|[a-zA-Z0-9_$]+)?\s*=>/) ||
+          deletedText.match(/^\s*def\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/);
+        if (delMatch && delMatch[1]) {
+          deletedLocalDefinitions.add(delMatch[1]);
+        }
+      }
+    }
+  }
+
   for (const candidate of candidateCalls) {
+    // Preserve sensitivity from import aliases (C8)
+    const originalSymbol = importAliases.get(candidate.symbol) || candidate.symbol;
+    if (!candidate.isSensitive) {
+      const aliasCat = classifySensitiveCategory(originalSymbol);
+      if (aliasCat) {
+        candidate.isSensitive = true;
+        candidate.category = aliasCat;
+      }
+    }
+
+    const isCandidateImpacted = Boolean(candidate.isAdded || candidate.isControlFlowModified);
+
+    if (candidate.lexicalStateUncertain && candidate.isSensitive) {
+      contextGaps.push({
+        symbol: candidate.symbol,
+        ...(candidate.qualifier ? { qualifier: candidate.qualifier } : {}),
+        reason: "HUNK_LEXICAL_STATE_UNCERTAIN",
+        file: targetFile,
+        line: candidate.line,
+        category: candidate.category || "security",
+        impact: `Lexical state at hunk boundary uncertain; unverified whether sensitive call '${candidate.symbol}' is inside block comment or template`
+      });
+    }
+
     if (candidate.isUnterminated) {
       const unresolvedEntry = {
         symbol: candidate.symbol,
@@ -2261,7 +2548,7 @@ export function extractLocalCalleeContext(fileContent, diffHunks, targetFile, op
         line: candidate.line
       };
       unresolvedCallees.push(unresolvedEntry);
-      if (candidate.isSensitive && candidate.isAdded) {
+      if (candidate.isSensitive && isCandidateImpacted) {
         contextGaps.push({
           ...unresolvedEntry,
           category: candidate.category || "input_validation",
@@ -2272,6 +2559,7 @@ export function extractLocalCalleeContext(fileContent, diffHunks, targetFile, op
     }
 
     const isImported = importedSymbols.has(candidate.symbol) ||
+      importedSymbols.has(originalSymbol) ||
       (Array.isArray(candidate.qualifiers) && candidate.qualifiers.some(q => q !== "this" && importedSymbols.has(q))) ||
       Boolean(candidate.qualifier && candidate.qualifier !== "this" && importedSymbols.has(candidate.qualifier));
 
@@ -2284,7 +2572,7 @@ export function extractLocalCalleeContext(fileContent, diffHunks, targetFile, op
         line: candidate.line
       };
       unresolvedCallees.push(unresolvedEntry);
-      if (candidate.isSensitive && candidate.isAdded) {
+      if (candidate.isSensitive && isCandidateImpacted) {
         contextGaps.push({
           ...unresolvedEntry,
           category: candidate.category || "input_validation",
@@ -2295,7 +2583,7 @@ export function extractLocalCalleeContext(fileContent, diffHunks, targetFile, op
     }
 
     if (fileCalleesCount >= MAX_CALLEES_PER_FILE || runningTotal + callees.length >= MAX_CALLEES_TOTAL) {
-      if (candidate.isSensitive && candidate.isAdded) {
+      if (candidate.isSensitive && isCandidateImpacted) {
         contextGaps.push({
           symbol: candidate.symbol,
           ...(candidate.qualifier ? { qualifier: candidate.qualifier } : {}),
@@ -2309,7 +2597,7 @@ export function extractLocalCalleeContext(fileContent, diffHunks, targetFile, op
       continue;
     }
 
-    const { symbol, line, isAdded, isSensitive, category } = candidate;
+    const { symbol, line, isSensitive, category } = candidate;
 
     // 1. Check for Macro Definition
     const macroRegex = new RegExp(`^\\s*#\\s*define\\s+${symbol}\\b`, "m");
@@ -2322,7 +2610,7 @@ export function extractLocalCalleeContext(fileContent, diffHunks, targetFile, op
         line
       };
       unresolvedCallees.push(unresolvedEntry);
-      if (isSensitive && isAdded) {
+      if (isSensitive && isCandidateImpacted) {
         contextGaps.push({
           ...unresolvedEntry,
           category: category || "default_values",
@@ -2334,7 +2622,10 @@ export function extractLocalCalleeContext(fileContent, diffHunks, targetFile, op
 
     // 2. Find function definitions in same file
     let defMatches = [];
-    if (candidate.isQualified) {
+    if (deletedLocalDefinitions.has(symbol)) {
+      // Definition was deleted by patch; cannot treat deleted HEAD definition as valid implementation (C9)
+      defMatches = [];
+    } else if (candidate.isQualified) {
       if (candidate.qualifier && candidate.qualifier !== "this" && candidate.qualifier !== "self") {
         defMatches = findQualifiedFunctionDefinitions(lines, candidate.qualifier, symbol, { callLine: line, candidate });
       } else if (candidate.qualifier === "this" || candidate.qualifier === "self") {
@@ -2350,7 +2641,7 @@ export function extractLocalCalleeContext(fileContent, diffHunks, targetFile, op
       const isDynamic = Boolean(candidate.lineText && (candidate.lineText.includes(`->${symbol}`) || candidate.lineText.includes(`virtual`)));
       const reason = isDynamic
         ? "MACRO_OR_DYNAMIC"
-        : ((candidate.isQualified && candidate.qualifier !== "this" && candidate.qualifier !== "self") || candidate.hasTypeArguments
+        : ((candidate.isQualified && candidate.qualifier !== "this" && candidate.qualifier !== "self") || candidate.hasTypeArguments || deletedLocalDefinitions.has(symbol)
             ? "EXTERNAL_CALLEE_UNRESOLVED"
             : "UNRESOLVED_SYMBOL");
       const unresolvedEntry = {
@@ -2361,7 +2652,7 @@ export function extractLocalCalleeContext(fileContent, diffHunks, targetFile, op
         line
       };
       unresolvedCallees.push(unresolvedEntry);
-      if (isSensitive && isAdded) {
+      if (isSensitive && isCandidateImpacted) {
         contextGaps.push({
           ...unresolvedEntry,
           category: category || "input_validation",
@@ -2369,7 +2660,9 @@ export function extractLocalCalleeContext(fileContent, diffHunks, targetFile, op
             ? `Referenced qualified callee '${candidate.qualifier ? candidate.qualifier + "." : ""}${symbol}' definition not found in modified file on sensitive execution path`
             : (candidate.hasTypeArguments
                 ? `Referenced generic callee '${symbol}' definition not found in modified file on sensitive execution path`
-                : "Referenced callee definition not found in modified file on sensitive execution path")
+                : (deletedLocalDefinitions.has(symbol)
+                    ? `Local definition of callee '${symbol}' deleted by patch and external implementation unavailable on sensitive execution path`
+                    : "Referenced callee definition not found in modified file on sensitive execution path"))
         });
       }
       continue;
@@ -2382,7 +2675,7 @@ export function extractLocalCalleeContext(fileContent, diffHunks, targetFile, op
         line
       };
       unresolvedCallees.push(unresolvedEntry);
-      if (isSensitive && isAdded) {
+      if (isSensitive && isCandidateImpacted) {
         contextGaps.push({
           ...unresolvedEntry,
           category: category || "input_validation",
@@ -2407,6 +2700,19 @@ export function extractLocalCalleeContext(fileContent, diffHunks, targetFile, op
         category
       });
       fileCalleesCount++;
+
+      // Emit context gap if sensitive callee is truncated or incomplete (C7)
+      if (snippet.extractionMode !== "full_body" && isSensitive) {
+        contextGaps.push({
+          symbol,
+          ...(candidate.qualifier ? { qualifier: candidate.qualifier } : {}),
+          reason: "CALLEE_TRUNCATED_ELIDED",
+          category: category || "input_validation",
+          file: targetFile,
+          line: match.startLine,
+          impact: `Sensitive callee '${candidate.qualifier ? candidate.qualifier + "." : ""}${symbol}' body was truncated (${snippet.extractionMode}) due to budget limits; implementation completeness unverified on sensitive execution path`
+        });
+      }
     }
   }
 
@@ -2788,7 +3094,7 @@ export function buildContextPackage(changeSet, targetFile, options = {}) {
     }
   }
 
-  const isMultiFile = !targetFile || Array.isArray(targetFile) || options.allFiles === true;
+  const isMultiFile = targetFile === "multi-file" || !targetFile || Array.isArray(targetFile) || options.allFiles === true;
 
   if (isMultiFile) {
     const runId = options.runId || crypto.randomUUID();
@@ -3131,7 +3437,7 @@ export function buildContextPackage(changeSet, targetFile, options = {}) {
   } catch {
     normTarget = normalizeCanonicalPath(targetFile);
   }
-  const diffHunks = changeSet?.diffHunks || "";
+  const rawDiffHunks = changeSet?.diffHunks || "";
   const runId = options.runId || crypto.randomUUID();
 
   // Find file stats in changeSet
@@ -3146,11 +3452,30 @@ export function buildContextPackage(changeSet, targetFile, options = {}) {
 
   const actualFilePath = (typeof fileMeta === "string" ? fileMeta : fileMeta?.path) ||
     targetFile.replace(/\\/g, "/").replace(/^\.\//, "");
+  normTarget = normTarget || normalizeCanonicalPath(actualFilePath);
+
+  // Isolate single-file diff hunks if changeSet contains multi-file diff (C12)
+  let diffHunks = rawDiffHunks;
+  let diffFileMismatch = false;
+  if (rawDiffHunks && actualFilePath) {
+    const fileDiffMap = splitDiffByFiles(rawDiffHunks, [normTarget]);
+    const isolated = fileDiffMap.get(normTarget);
+    if (isolated !== undefined) {
+      diffHunks = isolated;
+    } else {
+      const hasFileBoundaries = fileDiffMap.size > 0 ||
+        /^(?:diff --git |--- [ab]\/|\+\+\+ [ab]\/)/m.test(rawDiffHunks);
+      if (hasFileBoundaries) {
+        diffHunks = "";
+        diffFileMismatch = true;
+      }
+    }
+  }
 
   const additions = fileMeta?.additions || 0;
   const deletions = fileMeta?.deletions || 0;
 
-  // Extract changed line spans from diff
+  // Extract changed line spans from isolated diff
   const changedSpans = extractChangedLineSpans(diffHunks);
 
   const isNonCodeOrTest = NON_CODE_FILE_REGEX.test(actualFilePath) ||
@@ -3260,6 +3585,17 @@ export function buildContextPackage(changeSet, targetFile, options = {}) {
       reason: "EXACT_HEAD_CONTENT_UNAVAILABLE",
       category: "exact_head_source",
       impact: `Exact-head file content at commit ${headSha} could not be retrieved; callee definitions and AST context unavailable.`
+    });
+  }
+
+  if (diffFileMismatch) {
+    contextGaps.push({
+      symbol: normTarget,
+      file: actualFilePath || normTarget,
+      code: "DIFF_TARGET_FILE_NOT_FOUND",
+      reason: "DIFF_TARGET_FILE_NOT_FOUND",
+      category: "scope_boundary",
+      impact: `Supplied diff contains structured file boundaries, but target file '${actualFilePath}' was not found in diff hunks; fallback to multi-file raw diff rejected.`
     });
   }
 

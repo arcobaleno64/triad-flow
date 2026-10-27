@@ -257,7 +257,11 @@ export function formatContextPackageXml(contextPackage) {
           : ` lines="${escapeXmlAttribute(c.lines)}"`;
         const symAttr = escapeXmlAttribute(c.symbol);
         const bytesAttr = escapeXmlAttribute(c.bytes);
-        lines.push(`      <callee symbol="${symAttr}"${lineAttr} bytes="${bytesAttr}">`);
+        const fileVal = targetFileAttr === "multi-file"
+          ? (c.file && c.file !== "multi-file" ? c.file : (c.path || c.sourceFile || ""))
+          : (c.file && c.file !== "multi-file" && c.file !== targetFileAttr ? c.file : "");
+        const fileAttr = fileVal ? ` file="${escapeXmlAttribute(fileVal)}"` : "";
+        lines.push(`      <callee symbol="${symAttr}"${fileAttr}${lineAttr} bytes="${bytesAttr}">`);
         if (typeof c.definition === "string") {
           const escapedDef = escapeXmlText(c.definition.trim()).replace(/\n/g, "\n        ");
           lines.push(`        ${escapedDef}`);

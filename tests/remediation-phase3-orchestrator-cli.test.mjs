@@ -16,6 +16,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { execFileSync } from "node:child_process";
 
 import * as reviewOrchestrator from "../src/adapters/review-orchestrator.mjs";
 const { orchestrateReview, buildCanonicalRunContext } = reviewOrchestrator;
@@ -583,62 +587,104 @@ test("PHASE3-POS-01-01: Orchestrator level: matching RunContext, valid tier, and
   assert.match(res.gate.reason, /Clean Challenge passed/i);
 });
 
-test("PHASE3-POS-01-02: CLI level text format: --verify-with=claude with clean consensus evaluates to reviewed-clean (exit code 0)", async () => {
-  const changeSet = createTestChangeSet();
-  const reviewAdapters = {
-    macro: createCleanReviewAdapter("macro"),
-    micro: createCleanReviewAdapter("micro")
+function createTempGitRepository(filePath = "src/auth/token.mjs", content = "export const verified = true;\n") {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "phase3-pos-git-"));
+  execFileSync("git", ["init"], { cwd: tmpDir, stdio: "ignore" });
+  execFileSync("git", ["config", "user.name", "Test"], { cwd: tmpDir, stdio: "ignore" });
+  execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: tmpDir, stdio: "ignore" });
+  const fullPath = path.join(tmpDir, filePath);
+  fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+  fs.writeFileSync(fullPath, content);
+  execFileSync("git", ["add", "."], { cwd: tmpDir, stdio: "ignore" });
+  execFileSync("git", ["commit", "-m", "initial"], { cwd: tmpDir, stdio: "ignore" });
+  const realHead = execFileSync("git", ["rev-parse", "HEAD"], { cwd: tmpDir }).toString().trim();
+  return {
+    tmpDir,
+    headSha: realHead,
+    cleanup: () => {
+      try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+    }
   };
-  let verifierInvoked = false;
-  const mockCleanVerifier = createMockVerifierAdapter("claude", {
-    executeVerification: async () => {
-      verifierInvoked = true;
-      return {
+}
+
+test("PHASE3-POS-01-02: CLI level text format: --verify-with=claude with clean consensus evaluates to reviewed-clean (exit code 0)", async () => {
+  const repo = createTempGitRepository();
+  try {
+    const changeSet = createTestChangeSet({
+      headSha: repo.headSha,
+      commitSha: repo.headSha,
+      repository: { root: repo.tmpDir }
+    });
+    const reviewAdapters = {
+      macro: createCleanReviewAdapter("macro"),
+      micro: createCleanReviewAdapter("micro")
+    };
+    let verifierInvoked = false;
+    const mockCleanVerifier = createMockVerifierAdapter("claude", {
+      executeVerification: async () => {
+        verifierInvoked = true;
+        return {
+          ok: true,
+          fileCoverageComplete: true,
+          overallStatus: "CLEAN",
+          evaluations: [],
+          verifierOmissions: []
+        };
+      }
+    });
+
+    const { exitCode, stderr } = await runCliHelper(["review", "--verify-with=claude"], {
+      getChangeSet: () => changeSet,
+      repoRoot: repo.tmpDir,
+      cwd: repo.tmpDir,
+      reviewAdapters,
+      verifierAdapter: mockCleanVerifier
+    });
+    assert.equal(verifierInvoked, true, "Clean Challenge verifier adapter must be invoked");
+    assert.equal(exitCode, EXIT_CODES.SUCCESS, "Clean review with verified Clean Challenge must exit with code 0");
+    assert.match(stderr, /Gate Decision: APPROVE/i);
+    assert.match(stderr, /reviewed-clean/i);
+  } finally {
+    repo.cleanup();
+  }
+});
+
+test("PHASE3-POS-01-03: CLI level json format: --verify-with=claude --format=json outputs approved report with exit code 0", async () => {
+  const repo = createTempGitRepository();
+  try {
+    const changeSet = createTestChangeSet({
+      headSha: repo.headSha,
+      commitSha: repo.headSha,
+      repository: { root: repo.tmpDir }
+    });
+    const reviewAdapters = {
+      macro: createCleanReviewAdapter("macro"),
+      micro: createCleanReviewAdapter("micro")
+    };
+    const mockCleanVerifier = createMockVerifierAdapter("claude", {
+      executeVerification: async () => ({
         ok: true,
         fileCoverageComplete: true,
         overallStatus: "CLEAN",
         evaluations: [],
         verifierOmissions: []
-      };
-    }
-  });
+      })
+    });
 
-  const { exitCode, stderr } = await runCliHelper(["review", "--verify-with=claude"], {
-    getChangeSet: () => changeSet,
-    reviewAdapters,
-    verifierAdapter: mockCleanVerifier
-  });
-  assert.equal(verifierInvoked, true, "Clean Challenge verifier adapter must be invoked");
-  assert.equal(exitCode, EXIT_CODES.SUCCESS, "Clean review with verified Clean Challenge must exit with code 0");
-  assert.match(stderr, /Gate Decision: APPROVE/i);
-  assert.match(stderr, /reviewed-clean/i);
-});
-
-test("PHASE3-POS-01-03: CLI level json format: --verify-with=claude --format=json outputs approved report with exit code 0", async () => {
-  const changeSet = createTestChangeSet();
-  const reviewAdapters = {
-    macro: createCleanReviewAdapter("macro"),
-    micro: createCleanReviewAdapter("micro")
-  };
-  const mockCleanVerifier = createMockVerifierAdapter("claude", {
-    executeVerification: async () => ({
-      ok: true,
-      fileCoverageComplete: true,
-      overallStatus: "CLEAN",
-      evaluations: [],
-      verifierOmissions: []
-    })
-  });
-
-  const { exitCode, stdout, stderr } = await runCliHelper(["review", "--verify-with=claude", "--format=json"], {
-    getChangeSet: () => changeSet,
-    reviewAdapters,
-    verifierAdapter: mockCleanVerifier
-  });
-  assert.equal(exitCode, EXIT_CODES.SUCCESS, "CLI JSON review must exit with code 0");
-  assert.ok(stdout.length > 0, "Stdout must contain JSON report");
-  const report = JSON.parse(stdout);
-  assert.equal(report.exitCode, EXIT_CODES.SUCCESS);
-  assert.equal(report.status, REVIEW_RUN_STATUS.REVIEWED_CLEAN);
-  assert.equal(report.gate.decision, "approve");
+    const { exitCode, stdout, stderr } = await runCliHelper(["review", "--verify-with=claude", "--format=json"], {
+      getChangeSet: () => changeSet,
+      repoRoot: repo.tmpDir,
+      cwd: repo.tmpDir,
+      reviewAdapters,
+      verifierAdapter: mockCleanVerifier
+    });
+    assert.equal(exitCode, EXIT_CODES.SUCCESS, "CLI JSON review must exit with code 0");
+    assert.ok(stdout.length > 0, "Stdout must contain JSON report");
+    const report = JSON.parse(stdout);
+    assert.equal(report.exitCode, EXIT_CODES.SUCCESS);
+    assert.equal(report.status, REVIEW_RUN_STATUS.REVIEWED_CLEAN);
+    assert.equal(report.gate.decision, "approve");
+  } finally {
+    repo.cleanup();
+  }
 });

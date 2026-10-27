@@ -13,6 +13,8 @@ import crypto from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
 import path from "node:path";
 import process from "node:process";
+import fs from "node:fs";
+import os from "node:os";
 
 import { orchestrateReview } from "../src/adapters/review-orchestrator.mjs";
 import { runCli, EXIT_CODES } from "../src/cli.mjs";
@@ -429,69 +431,104 @@ test("R5-LIFECYCLE-01: Clean review on changed code WITHOUT verifier fails close
   assert.match(res.stderr, /Clean Challenge missing/i);
 });
 
-test("R5-LIFECYCLE-02: Clean review on changed code WITH verifier (CLEAN) exits with code 0 (SUCCESS)", async (t) => {
-  const changeSet = createTestChangeSet();
-  const reviewAdapters = {
-    macro: createCleanReviewAdapter("macro"),
-    micro: createCleanReviewAdapter("micro")
-  };
-  let verifierInvoked = false;
-  const mockCleanVerifier = createMockVerifierAdapter("claude", {
-    executeVerification: async () => {
-      verifierInvoked = true;
-      return {
-        ok: true,
-        fileCoverageComplete: true,
-        overallStatus: "CLEAN",
-        evaluations: [],
-        verifierOmissions: []
-      };
+function createTempGitRepository(filePath = "src/auth/token.mjs", content = "export const verified = true;\n") {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "phase3-challenger-git-"));
+  execFileSync("git", ["init"], { cwd: tmpDir, stdio: "ignore" });
+  execFileSync("git", ["config", "user.name", "Test"], { cwd: tmpDir, stdio: "ignore" });
+  execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: tmpDir, stdio: "ignore" });
+  const fullPath = path.join(tmpDir, filePath);
+  fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+  fs.writeFileSync(fullPath, content);
+  execFileSync("git", ["add", "."], { cwd: tmpDir, stdio: "ignore" });
+  execFileSync("git", ["commit", "-m", "initial"], { cwd: tmpDir, stdio: "ignore" });
+  const realHead = execFileSync("git", ["rev-parse", "HEAD"], { cwd: tmpDir }).toString().trim();
+  return {
+    tmpDir,
+    headSha: realHead,
+    cleanup: () => {
+      try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
     }
-  });
+  };
+}
 
-  // 1. Text mode
-  await t.test("text output format", async () => {
-    verifierInvoked = false;
-    const resText = await runCliHelper(["review", "--verify-with=claude"], {
-      getChangeSet: () => changeSet,
-      reviewAdapters,
-      verifierAdapter: mockCleanVerifier
+test("R5-LIFECYCLE-02: Clean review on changed code WITH verifier (CLEAN) exits with code 0 (SUCCESS)", async (t) => {
+  const repo = createTempGitRepository();
+  try {
+    const changeSet = createTestChangeSet({
+      headSha: repo.headSha,
+      commitSha: repo.headSha,
+      repository: { root: repo.tmpDir }
     });
-    assert.equal(verifierInvoked, true, "Verifier must have been invoked");
-    assert.equal(resText.exitCode, EXIT_CODES.SUCCESS, "Clean verified review must exit code 0");
-    assert.match(resText.stderr, /Gate Decision: APPROVE/i);
-    assert.match(resText.stderr, /reviewed-clean/i);
-  });
+    const reviewAdapters = {
+      macro: createCleanReviewAdapter("macro"),
+      micro: createCleanReviewAdapter("micro")
+    };
+    let verifierInvoked = false;
+    const mockCleanVerifier = createMockVerifierAdapter("claude", {
+      executeVerification: async () => {
+        verifierInvoked = true;
+        return {
+          ok: true,
+          fileCoverageComplete: true,
+          overallStatus: "CLEAN",
+          evaluations: [],
+          verifierOmissions: []
+        };
+      }
+    });
 
-  // 2. JSON mode
-  await t.test("json output format", async () => {
-    verifierInvoked = false;
-    const resJson = await runCliHelper(["review", "--verify-with=claude", "--format=json"], {
-      getChangeSet: () => changeSet,
-      reviewAdapters,
-      verifierAdapter: mockCleanVerifier
+    // 1. Text mode
+    await t.test("text output format", async () => {
+      verifierInvoked = false;
+      const resText = await runCliHelper(["review", "--verify-with=claude"], {
+        getChangeSet: () => changeSet,
+        repoRoot: repo.tmpDir,
+        cwd: repo.tmpDir,
+        reviewAdapters,
+        verifierAdapter: mockCleanVerifier
+      });
+      assert.equal(verifierInvoked, true, "Verifier must have been invoked");
+      assert.equal(resText.exitCode, EXIT_CODES.SUCCESS, "Clean verified review must exit code 0");
+      assert.match(resText.stderr, /Gate Decision: APPROVE/i);
+      assert.match(resText.stderr, /reviewed-clean/i);
     });
-    assert.equal(verifierInvoked, true, "Verifier must have been invoked");
-    assert.equal(resJson.exitCode, EXIT_CODES.SUCCESS, "Clean verified review in JSON mode must exit code 0");
-    assert.ok(resJson.stdout.length > 0, "Stdout must contain JSON output");
-    const parsed = JSON.parse(resJson.stdout);
-    assert.equal(parsed.exitCode, EXIT_CODES.SUCCESS);
-    assert.equal(parsed.status, REVIEW_RUN_STATUS.REVIEWED_CLEAN);
-    assert.equal(parsed.gate.decision, "approve");
-  });
 
-  // 3. Space-separated flag: --verify-with claude
-  await t.test("space-separated argument --verify-with claude", async () => {
-    verifierInvoked = false;
-    const resSpace = await runCliHelper(["review", "--verify-with", "claude"], {
-      getChangeSet: () => changeSet,
-      reviewAdapters,
-      verifierAdapter: mockCleanVerifier
+    // 2. JSON mode
+    await t.test("json output format", async () => {
+      verifierInvoked = false;
+      const resJson = await runCliHelper(["review", "--verify-with=claude", "--format=json"], {
+        getChangeSet: () => changeSet,
+        repoRoot: repo.tmpDir,
+        cwd: repo.tmpDir,
+        reviewAdapters,
+        verifierAdapter: mockCleanVerifier
+      });
+      assert.equal(verifierInvoked, true, "Verifier must have been invoked");
+      assert.equal(resJson.exitCode, EXIT_CODES.SUCCESS, "Clean verified review in JSON mode must exit code 0");
+      assert.ok(resJson.stdout.length > 0, "Stdout must contain JSON output");
+      const parsed = JSON.parse(resJson.stdout);
+      assert.equal(parsed.exitCode, EXIT_CODES.SUCCESS);
+      assert.equal(parsed.status, REVIEW_RUN_STATUS.REVIEWED_CLEAN);
+      assert.equal(parsed.gate.decision, "approve");
     });
-    assert.equal(verifierInvoked, true, "Verifier must have been invoked");
-    assert.equal(resSpace.exitCode, EXIT_CODES.SUCCESS);
-    assert.match(resSpace.stderr, /Gate Decision: APPROVE/i);
-  });
+
+    // 3. Space-separated argument --verify-with claude
+    await t.test("space-separated argument --verify-with claude", async () => {
+      verifierInvoked = false;
+      const resSpace = await runCliHelper(["review", "--verify-with", "claude"], {
+        getChangeSet: () => changeSet,
+        repoRoot: repo.tmpDir,
+        cwd: repo.tmpDir,
+        reviewAdapters,
+        verifierAdapter: mockCleanVerifier
+      });
+      assert.equal(verifierInvoked, true, "Verifier must have been invoked");
+      assert.equal(resSpace.exitCode, EXIT_CODES.SUCCESS);
+      assert.match(resSpace.stderr, /Gate Decision: APPROVE/i);
+    });
+  } finally {
+    repo.cleanup();
+  }
 });
 
 test("R5-LIFECYCLE-03: Clean review where verifier returns DEFECTS_FOUND fails closed with exit code 1", async (t) => {

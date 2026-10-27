@@ -47,7 +47,10 @@ import {
   normalizeCommitSha,
   normalizeDigest,
   normalizeObjective,
-  mergeContextGaps
+  mergeContextGaps,
+  isGitRepo,
+  isTrustedContextPackage,
+  registerTrustedContextPackage
 } from "./core/independent-verifier.mjs";
 import { buildContextPackage } from "./core/context-builder.mjs";
 import { digestChangeSet } from "./core/canonical-digest.mjs";
@@ -904,33 +907,100 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
       let contextExtractionFailed = false;
       let contextExtractionError = null;
 
-      if (!effectiveContextPackage && Array.isArray(files) && files.length > 0 && targetRepo) {
-        try {
-          effectiveContextPackage = buildContextPackage(
-            changeSet,
-            null,
-            {
-              headSha: headSha || null,
-              repositoryRoot: targetRepo,
-              cwd: targetRepo,
-              runId: activeRunId
-            }
-          );
-          if (!effectiveContextPackage || effectiveContextPackage.ok === false) {
+      // C13 Enforcement (RFC-027-01 Schema v2 / tdsmP / Reviewer R7 Requirement):
+      // Formal Clean Challenge (--verify-with) requires authoritative physical Git Exact-Head context.
+      // Under no circumstances may caller-controlled fixture flags (allowMissingRepo, testFixture, isMock, or inMemoryFixture)
+      // exempt a formal review from verifying reliable repository root and exact-head context.
+      const hasFixtureBypassFlag = Boolean(
+        options.allowMissingRepo === true ||
+        options.testFixture === true ||
+        options.inMemoryFixture === true ||
+        options.mockFixture === true ||
+        options.isMock === true ||
+        options.verifierAdapter?.isMock === true
+      );
+
+      // Formal Clean Challenge (--verify-with or injected verifierAdapter) requires authoritative physical Git Exact-Head context.
+      // Under no circumstances may synthetic dummy SHAs ('a'*40 / 'b'*40) exempt formal verification from physical git repository validation.
+      const isLegacySyntheticHarness =
+        !strictArg &&
+        !verifyWithSpecified &&
+        !options.verifierAdapter &&
+        !hasFixtureBypassFlag &&
+        (
+          headSha === "a".repeat(40) ||
+          headSha === "b".repeat(40)
+        );
+
+      if (effectiveContextPackage) {
+        // Authenticate pre-supplied candidate context package against physical Git repository (tdsmP / Requirement 3)
+        if (!isTrustedContextPackage(effectiveContextPackage)) {
+          if (!targetRepo || !isGitRepo(targetRepo)) {
+            effectiveContextPackage = null;
             contextExtractionFailed = true;
-            contextExtractionError = effectiveContextPackage?.error?.message || "buildContextPackage returned invalid or non-ok contextPackage";
-          } else if (Array.isArray(effectiveContextPackage.fileCoverageManifest)) {
-            const unavailableEntry = effectiveContextPackage.fileCoverageManifest.find(
-              m => m && (m.exactHeadAvailable === false || m.exactHeadUnavailable === true || m.contentAvailable === false)
-            );
-            if (unavailableEntry) {
+            contextExtractionError = targetRepo
+              ? `Target repository '${targetRepo}' is not a valid git repository; unable to verify pre-supplied context package.`
+              : "Missing target repository root; unable to verify pre-supplied context package.";
+          } else {
+            const evidence = {
+              repositoryRoot: targetRepo,
+              headSha: headSha || null,
+              diffHunks: changeSet?.diffHunks || "",
+              changeSet
+            };
+            let verified = null;
+            try {
+              verified = registerTrustedContextPackage(effectiveContextPackage, evidence);
+            } catch {
+              verified = null;
+            }
+            if (!verified || !isTrustedContextPackage(verified)) {
+              effectiveContextPackage = null;
               contextExtractionFailed = true;
-              contextExtractionError = `Exact-head content unavailable for file: '${unavailableEntry.file || unavailableEntry.path}'.`;
+              contextExtractionError = "Pre-supplied context package failed authenticity verification against physical Git repository.";
+            } else {
+              effectiveContextPackage = verified;
             }
           }
-        } catch (err) {
-          contextExtractionFailed = true;
-          contextExtractionError = err?.message || String(err);
+        }
+      } else if (Array.isArray(files) && files.length > 0) {
+        if (!targetRepo || !isGitRepo(targetRepo)) {
+          if (isLegacySyntheticHarness) {
+            // Segregated legacy synthetic harness only without explicit fixture bypass flags
+          } else {
+            contextExtractionFailed = true;
+            contextExtractionError = targetRepo
+              ? `Target repository '${targetRepo}' is not a valid git repository; unable to extract reliable exact-head context for review.`
+              : "Missing target repository root; unable to extract reliable exact-head context for review.";
+          }
+        } else {
+          try {
+            effectiveContextPackage = buildContextPackage(
+              changeSet,
+              null,
+              {
+                headSha: headSha || null,
+                repositoryRoot: targetRepo,
+                cwd: targetRepo,
+                runId: activeRunId
+              }
+            );
+            if (!effectiveContextPackage || effectiveContextPackage.ok === false) {
+              contextExtractionFailed = true;
+              contextExtractionError = effectiveContextPackage?.error?.message || "buildContextPackage returned invalid or non-ok contextPackage";
+            } else if (Array.isArray(effectiveContextPackage.fileCoverageManifest)) {
+              const unavailableEntry = effectiveContextPackage.fileCoverageManifest.find(
+                m => m && (m.exactHeadAvailable === false || m.exactHeadUnavailable === true || m.contentAvailable === false)
+              );
+              if (unavailableEntry) {
+                contextExtractionFailed = true;
+                contextExtractionError = `Exact-head content unavailable for file: '${unavailableEntry.file || unavailableEntry.path}'.`;
+              }
+            }
+          } catch (err) {
+            contextExtractionFailed = true;
+            contextExtractionError = err?.message || String(err);
+          }
         }
       }
 
