@@ -40,7 +40,8 @@ import {
 } from "../adapters/provider-profiles.mjs";
 import {
   formatContextPackageXml,
-  formatContextGaps
+  formatContextGaps,
+  truncateUtf8Safe
 } from "../adapters/review-prompts.mjs";
 import {
   getExactHeadFileContent,
@@ -1966,49 +1967,9 @@ export function mergeContextGaps(...gapLists) {
 
 
 /**
- * Truncates a UTF-8 buffer or string to at most maxBytes without splitting
- * multi-byte UTF-8 sequences (avoiding replacement character \uFFFD).
- *
- * @param {Buffer|string} input
- * @param {number} maxBytes
- * @returns {string} UTF-8 decoded string guaranteed to end on a complete code point
+ * Re-exports truncateUtf8Safe from review-prompts.mjs for backward compatibility.
  */
-export function truncateUtf8Safe(input, maxBytes) {
-  const buf = Buffer.isBuffer(input) ? input : Buffer.from(String(input || ""), "utf8");
-  if (maxBytes <= 0) return "";
-  if (buf.length <= maxBytes) return buf.toString("utf8");
-
-  let end = maxBytes;
-  let i = end - 1;
-  let continuationCount = 0;
-  while (i >= 0 && (buf[i] & 0xC0) === 0x80 && continuationCount < 3) {
-    continuationCount++;
-    i--;
-  }
-
-  if (i < 0) {
-    // Only continuation bytes were found up to maxBytes; cannot form a valid character
-    end = 0;
-  } else {
-    const lead = buf[i];
-    let expectedLength = 1;
-    if ((lead & 0x80) === 0) {
-      expectedLength = 1;
-    } else if ((lead & 0xE0) === 0xC0) {
-      expectedLength = 2;
-    } else if ((lead & 0xF0) === 0xE0) {
-      expectedLength = 3;
-    } else if ((lead & 0xF8) === 0xF0) {
-      expectedLength = 4;
-    }
-
-    if (i + expectedLength > end) {
-      end = i;
-    }
-  }
-
-  return buf.subarray(0, end).toString("utf8");
-}
+export { truncateUtf8Safe };
 
 /**
  * Safely parses boolean values from LLM responses handling string variations.
@@ -2120,47 +2081,10 @@ export function buildVerificationPrompt(changeSet = {}, producerFindings = [], o
       ];
 
   const contextPackage = options.contextPackage || changeSet?.contextPackage || null;
-  const contextBlock = formatContextPackageXml(contextPackage);
+  let contextBlock = formatContextPackageXml(contextPackage);
   const contextGaps = mergeContextGaps(options?.contextGaps, contextPackage?.contextGaps);
-  const contextGapsBlock = formatContextGaps(contextGaps);
 
-  // Precompute non-diff prompt overhead to ensure total prompt fits within maxInputBytes (VERIFIER-RC-02 / PRRT_kwDOUWarIc6rte6b)
-  const nonDiffOverheadEstimate = Buffer.byteLength(
-    [
-      ...headerLines,
-      findingsBlock,
-      contextBlock || "",
-      contextGapsBlock || "",
-      fileList,
-      exclusionsList,
-      scope,
-      contentDigest,
-      patchObjective
-    ].join("\n"),
-    "utf8"
-  ) + 2500;
-
-  let allowedDiffBytes;
-  if (maxBytes > nonDiffOverheadEstimate) {
-    allowedDiffBytes = Math.max(0, maxBytes - nonDiffOverheadEstimate);
-  } else if (contextBlock || contextGapsBlock || maxBytes >= 1000) {
-    // When non-diff overhead (such as large contextBlock) exceeds budget, diff allocation is 0
-    allowedDiffBytes = 0;
-  } else {
-    // Small unit tests without context (e.g. maxBytes=200/500 testing diff truncation notice)
-    allowedDiffBytes = maxBytes;
-  }
-
-  let hunks = "";
-  let truncatedNotice = "";
-  if (hunkBuf.length > allowedDiffBytes) {
-    hunks = allowedDiffBytes > 0 ? truncateUtf8Safe(hunkBuf, allowedDiffBytes) : "";
-    truncatedNotice = `\n[NOTE: Diff truncated at ${allowedDiffBytes} bytes limit]\n`;
-  } else {
-    hunks = hunkBuf.toString("utf8");
-  }
-
-  const promptSections = [
+  const fixedSectionsBefore = [
     ...headerLines,
     ``,
     `EVALUATION CRITERIA:`,
@@ -2200,26 +2124,19 @@ export function buildVerificationPrompt(changeSet = {}, producerFindings = [], o
     `Authorized Pre-Bound Exclusions:`,
     exclusionsList,
     `Files Changed:`,
-    fileList,
-    truncatedNotice
+    fileList
   ];
 
-  if (contextBlock) {
-    promptSections.push(``, `[CODE CONTEXT & AST ENCLOSURES]`, contextBlock);
-  }
-
-  if (contextGapsBlock) {
-    promptSections.push(``, `[UNRESOLVED CODE CONTEXT GAPS]`, contextGapsBlock);
-  }
-
-  promptSections.push(
+  const fixedSectionsAfter = [
     ``,
     `Producer Findings Under Independent Verification:`,
     findingsBlock,
     ``,
     `Diff:`,
-    `\`\`\``,
-    hunks,
+    `\`\`\``
+  ];
+
+  const fixedSectionsFormat = [
     `\`\`\``,
     ``,
     `Respond ONLY with a JSON object in this exact format, with no preamble or commentary:`,
@@ -2261,9 +2178,101 @@ export function buildVerificationPrompt(changeSet = {}, producerFindings = [], o
     `    "totalTokens": null`,
     `  }`,
     `}`
+  ];
+
+  const fixedOverheadBytes = Buffer.byteLength(
+    fixedSectionsBefore.concat(fixedSectionsAfter, fixedSectionsFormat).join("\n"),
+    "utf8"
+  );
+  const availableForPayload = Math.max(0, maxBytes - fixedOverheadBytes);
+
+  let hunks = "";
+  let truncatedNotice = "";
+
+  if (maxBytes < 1000 && !contextPackage) {
+    if (hunkBuf.length > maxBytes) {
+      hunks = truncateUtf8Safe(hunkBuf, maxBytes);
+      truncatedNotice = `\n[NOTE: Diff truncated at ${maxBytes} bytes limit]\n`;
+    } else {
+      hunks = hunkBuf.toString("utf8");
+    }
+  } else {
+    if (hunkBuf.length <= availableForPayload) {
+      hunks = hunkBuf.toString("utf8");
+      const remainingForContext = availableForPayload - hunkBuf.length;
+      if (contextBlock && Buffer.byteLength(contextBlock, "utf8") > remainingForContext) {
+        const budgetGap = {
+          symbol: "(all_context)",
+          reason: "PROMPT_BUDGET_CONTEXT_TRUNCATED",
+          category: "context_budget",
+          file: (files[0]?.path || "prompt"),
+          line: 1,
+          impact: "Code context and AST enclosures were truncated or omitted to satisfy total prompt budget ceiling"
+        };
+        contextGaps.push(budgetGap);
+        if (Array.isArray(options?.contextGaps) && !options.contextGaps.some(g => g.reason === "PROMPT_BUDGET_CONTEXT_TRUNCATED")) {
+          options.contextGaps.push(budgetGap);
+        }
+        const gapsBlock = formatContextGaps(contextGaps);
+        const gapsBytes = Buffer.byteLength(gapsBlock || "", "utf8");
+        const maxContextAllowed = Math.max(0, remainingForContext - gapsBytes - 50);
+        if (maxContextAllowed > 300) {
+          contextBlock = truncateUtf8Safe(contextBlock, maxContextAllowed - 50) + "\n<!-- [CONTEXT TRUNCATED DUE TO PROMPT BUDGET] -->";
+        } else {
+          contextBlock = "";
+        }
+      }
+    } else {
+      if (contextBlock) {
+        const budgetGap = {
+          symbol: "(all_context)",
+          reason: "PROMPT_BUDGET_CONTEXT_TRUNCATED",
+          category: "context_budget",
+          file: (files[0]?.path || "prompt"),
+          line: 1,
+          impact: "Code context and AST enclosures were omitted to satisfy total prompt budget ceiling"
+        };
+        contextGaps.push(budgetGap);
+        if (Array.isArray(options?.contextGaps) && !options.contextGaps.some(g => g.reason === "PROMPT_BUDGET_CONTEXT_TRUNCATED")) {
+          options.contextGaps.push(budgetGap);
+        }
+        contextBlock = "";
+      }
+      const gapsBlock = formatContextGaps(contextGaps);
+      const gapsBytes = Buffer.byteLength(gapsBlock || "", "utf8");
+      const allowedDiffBytes = Math.max(0, availableForPayload - gapsBytes - 100);
+      hunks = allowedDiffBytes > 0 ? truncateUtf8Safe(hunkBuf, allowedDiffBytes) : "";
+      truncatedNotice = `\n[NOTE: Diff truncated at ${allowedDiffBytes} bytes limit]\n`;
+    }
+  }
+
+  const promptSections = [
+    ...fixedSectionsBefore,
+    truncatedNotice
+  ];
+
+  if (contextBlock) {
+    promptSections.push(``, `[CODE CONTEXT & AST ENCLOSURES]`, contextBlock);
+  }
+
+  const contextGapsBlock = formatContextGaps(contextGaps);
+  if (contextGapsBlock) {
+    promptSections.push(``, `[UNRESOLVED CODE CONTEXT GAPS]`, contextGapsBlock);
+  }
+
+  promptSections.push(
+    ...fixedSectionsAfter,
+    hunks,
+    ...fixedSectionsFormat
   );
 
-  return promptSections.filter(s => s !== "").join("\n");
+  let renderedPrompt = promptSections.filter(s => s !== "").join("\n");
+  const totalPromptBytes = Buffer.byteLength(renderedPrompt, "utf8");
+  if (maxBytes >= 1000 && totalPromptBytes > maxBytes) {
+    renderedPrompt = truncateUtf8Safe(renderedPrompt, maxBytes);
+  }
+
+  return renderedPrompt;
 }
 
 /**
@@ -3981,12 +3990,14 @@ export async function conductIndependentVerification(changeSet, producerFindings
   });
 
   const promptBytes = Buffer.byteLength(prompt, "utf8");
-  const isPromptBudgetExceeded = maxBytes > 0 && promptBytes > maxBytes;
+  const isPromptBudgetExceeded = maxBytes > 0 && promptBytes >= maxBytes;
   const isDiffTruncated = isPromptBudgetExceeded ||
     hunkBuf.length > maxBytes ||
     Boolean(changeSet?.diffTruncated) ||
     Boolean(options?.diffTruncated) ||
-    prompt.includes("[NOTE: Diff truncated at");
+    prompt.includes("[NOTE: Diff truncated at") ||
+    prompt.includes("PROMPT_BUDGET_CONTEXT_TRUNCATED") ||
+    effectiveContextGaps.some(g => g.reason === "PROMPT_BUDGET_CONTEXT_TRUNCATED");
 
   // 4. Invoke verifier adapter
   const timeoutMs = options.timeoutMs || 60000;

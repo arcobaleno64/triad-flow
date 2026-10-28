@@ -324,7 +324,53 @@ export function formatContextGaps(contextGaps) {
 }
 
 /**
+ * Truncates an input string or buffer to at most maxBytes while respecting
+ * multi-byte UTF-8 sequences (avoiding replacement character \uFFFD).
+ *
+ * @param {Buffer|string} input
+ * @param {number} maxBytes
+ * @returns {string} UTF-8 decoded string guaranteed to end on a complete code point
+ */
+export function truncateUtf8Safe(input, maxBytes) {
+  const buf = Buffer.isBuffer(input) ? input : Buffer.from(String(input || ""), "utf8");
+  if (maxBytes <= 0) return "";
+  if (buf.length <= maxBytes) return buf.toString("utf8");
+
+  let end = maxBytes;
+  let i = end - 1;
+  let continuationCount = 0;
+  while (i >= 0 && (buf[i] & 0xC0) === 0x80 && continuationCount < 3) {
+    continuationCount++;
+    i--;
+  }
+
+  if (i < 0) {
+    end = 0;
+  } else {
+    const lead = buf[i];
+    let expectedLength = 1;
+    if ((lead & 0x80) === 0) {
+      expectedLength = 1;
+    } else if ((lead & 0xE0) === 0xC0) {
+      expectedLength = 2;
+    } else if ((lead & 0xF0) === 0xE0) {
+      expectedLength = 3;
+    } else if ((lead & 0xF8) === 0xF0) {
+      expectedLength = 4;
+    }
+
+    if (i + expectedLength > end) {
+      end = i;
+    }
+  }
+
+  return buf.subarray(0, end).toString("utf8");
+}
+
+/**
  * Builds the canonical structured evidence-oriented review prompt (RFC-027-01).
+ * Enforces total prompt byte ceiling budgeting across diff and context (G5-P2-06 / sMI66).
+ *
  * @param {object} changeSet
  * @param {string} [role="macro"]
  * @param {object} [limits=DEFAULT_LIMITS]
@@ -334,13 +380,9 @@ export function formatContextGaps(contextGaps) {
  */
 export function buildEvidenceReviewPrompt(changeSet, role = "macro", limits = DEFAULT_LIMITS, contextPackage = null, options = {}) {
   const maxBytes = limits?.maxInputBytes || DEFAULT_LIMITS.maxInputBytes;
-  let hunks = changeSet?.diffHunks || "";
-  let truncatedNotice = "";
-
-  if (Buffer.byteLength(hunks, "utf8") > maxBytes) {
-    hunks = hunks.slice(0, maxBytes);
-    truncatedNotice = `\n[NOTE: Diff truncated at ${maxBytes} bytes limit]\n`;
-  }
+  const hunkBuf = Buffer.isBuffer(changeSet?.diffHunks)
+    ? changeSet.diffHunks
+    : Buffer.from(String(changeSet?.diffHunks || ""), "utf8");
 
   const files = changeSet?.files || [];
   const fileList = files.map(f => {
@@ -350,9 +392,13 @@ export function buildEvidenceReviewPrompt(changeSet, role = "macro", limits = DE
 
   const checklists = selectChecklists(changeSet, options);
   const checklistsBlock = formatChecklistsXml(checklists);
-  const contextBlock = formatContextPackageXml(contextPackage);
+  let contextBlock = formatContextPackageXml(contextPackage);
 
-  const sections = [
+  const contextGaps = (Array.isArray(options?.contextGaps) && Array.isArray(contextPackage?.contextGaps))
+    ? [...contextPackage.contextGaps, ...options.contextGaps]
+    : (contextPackage?.contextGaps ? [...contextPackage.contextGaps] : (Array.isArray(options?.contextGaps) ? [...options.contextGaps] : []));
+
+  const baseSectionsBefore = [
     `[SYSTEM IDENTITY & ROLE CONTRACT]`,
     `You are a strict read-only code review sentry (${role} role).`,
     `Review the following code changes for security vulnerabilities, bugs, and defects.`,
@@ -363,24 +409,11 @@ export function buildEvidenceReviewPrompt(changeSet, role = "macro", limits = DE
     `Scope: ${changeSet?.scopeMode || "working-tree"}`,
     `Content Digest: ${changeSet?.contentDigest || "none"}`,
     `Files Changed:`,
-    fileList,
-    truncatedNotice
+    fileList
   ];
 
   if (checklistsBlock) {
-    sections.push(``, `[MANDATORY SECURITY REVIEW CHECKLISTS]`, checklistsBlock);
-  }
-
-  if (contextBlock) {
-    sections.push(``, `[CODE CONTEXT & AST ENCLOSURES]`, contextBlock);
-  }
-
-  const contextGaps = (Array.isArray(options?.contextGaps) && Array.isArray(contextPackage?.contextGaps))
-    ? [...contextPackage.contextGaps, ...options.contextGaps]
-    : (contextPackage?.contextGaps || options?.contextGaps || []);
-  const contextGapsBlock = formatContextGaps(contextGaps);
-  if (contextGapsBlock) {
-    sections.push(``, `[UNRESOLVED CODE CONTEXT GAPS]`, contextGapsBlock);
+    baseSectionsBefore.push(``, `[MANDATORY SECURITY REVIEW CHECKLISTS]`, checklistsBlock);
   }
 
   const objectiveContract = options?.objectiveContract || changeSet?.objectiveContract || null;
@@ -393,12 +426,13 @@ export function buildEvidenceReviewPrompt(changeSet, role = "macro", limits = DE
     ? objectiveContract.exclusions
     : (Array.isArray(options?.patchExclusions) ? options.patchExclusions : []);
 
+  const baseSectionsAfter = [];
   if (patchObjective) {
     const exclusionsBlock = exclusions.length > 0
       ? exclusions.map(ex => `  - ${ex}`).join("\n")
       : "  (None. Candidate patch must fulfill the stated objective in all cases without exclusions)";
 
-    sections.push(
+    baseSectionsAfter.push(
       ``,
       `[DECLARED OBJECTIVE & EXCEPTIONAL BEHAVIOR CROSS-EXAMINATION]`,
       `Declared Patch Objective:`,
@@ -428,7 +462,7 @@ export function buildEvidenceReviewPrompt(changeSet, role = "macro", limits = DE
     );
   }
 
-  sections.push(
+  baseSectionsAfter.push(
     ``,
     `[STATE MUTATION & INVARIANT PRESERVATION RUBRIC]`,
     `Core Analytical Principle:`,
@@ -468,8 +502,10 @@ export function buildEvidenceReviewPrompt(changeSet, role = "macro", limits = DE
     ``,
     `[UNTRUSTED CODE MODIFICATIONS (DIFF)]`,
     `Diff:`,
-    `\`\`\``,
-    hunks,
+    `\`\`\``
+  );
+
+  const baseSectionsFormat = [
     `\`\`\``,
     ``,
     `[RESPONSE FORMAT SPECIFICATION]`,
@@ -513,9 +549,101 @@ export function buildEvidenceReviewPrompt(changeSet, role = "macro", limits = DE
     `- 'code' MUST strictly be an authorized omission code: ${ALLOWED_OMISSION_CODES_LIST.join(", ")}. Any other code will be rejected as malformed output.`,
     `- 'reason' MUST be a non-empty human-readable explanation.`,
     `- Critical Tier 1 security files can never be omitted under any code.`
+  ];
+
+  const fixedOverheadBytes = Buffer.byteLength(
+    baseSectionsBefore.concat(baseSectionsAfter, baseSectionsFormat).join("\n"),
+    "utf8"
+  );
+  const availableForPayload = Math.max(0, maxBytes - fixedOverheadBytes);
+
+  let hunks = "";
+  let truncatedNotice = "";
+
+  if (maxBytes < 1000 && !contextPackage) {
+    if (hunkBuf.length > maxBytes) {
+      hunks = truncateUtf8Safe(hunkBuf, maxBytes);
+      truncatedNotice = `\n[NOTE: Diff truncated at ${maxBytes} bytes limit]\n`;
+    } else {
+      hunks = hunkBuf.toString("utf8");
+    }
+  } else {
+    if (hunkBuf.length <= availableForPayload) {
+      hunks = hunkBuf.toString("utf8");
+      const remainingForContext = availableForPayload - hunkBuf.length;
+      if (contextBlock && Buffer.byteLength(contextBlock, "utf8") > remainingForContext) {
+        const budgetGap = {
+          symbol: "(all_context)",
+          reason: "PROMPT_BUDGET_CONTEXT_TRUNCATED",
+          category: "context_budget",
+          file: (files[0]?.path || files[0] || "prompt"),
+          line: 1,
+          impact: "Code context and AST enclosures were truncated or omitted to satisfy total prompt budget ceiling"
+        };
+        contextGaps.push(budgetGap);
+        if (Array.isArray(options?.contextGaps) && !options.contextGaps.some(g => g.reason === "PROMPT_BUDGET_CONTEXT_TRUNCATED")) {
+          options.contextGaps.push(budgetGap);
+        }
+        const gapsBlock = formatContextGaps(contextGaps);
+        const gapsBytes = Buffer.byteLength(gapsBlock || "", "utf8");
+        const maxContextAllowed = Math.max(0, remainingForContext - gapsBytes - 50);
+        if (maxContextAllowed > 300) {
+          contextBlock = truncateUtf8Safe(contextBlock, maxContextAllowed - 50) + "\n<!-- [CONTEXT TRUNCATED DUE TO PROMPT BUDGET] -->";
+        } else {
+          contextBlock = "";
+        }
+      }
+    } else {
+      if (contextBlock) {
+        const budgetGap = {
+          symbol: "(all_context)",
+          reason: "PROMPT_BUDGET_CONTEXT_TRUNCATED",
+          category: "context_budget",
+          file: (files[0]?.path || files[0] || "prompt"),
+          line: 1,
+          impact: "Code context and AST enclosures were omitted to satisfy total prompt budget ceiling"
+        };
+        contextGaps.push(budgetGap);
+        if (Array.isArray(options?.contextGaps) && !options.contextGaps.some(g => g.reason === "PROMPT_BUDGET_CONTEXT_TRUNCATED")) {
+          options.contextGaps.push(budgetGap);
+        }
+        contextBlock = "";
+      }
+      const gapsBlock = formatContextGaps(contextGaps);
+      const gapsBytes = Buffer.byteLength(gapsBlock || "", "utf8");
+      const allowedDiffBytes = Math.max(0, availableForPayload - gapsBytes - 100);
+      hunks = allowedDiffBytes > 0 ? truncateUtf8Safe(hunkBuf, allowedDiffBytes) : "";
+      truncatedNotice = `\n[NOTE: Diff truncated at ${allowedDiffBytes} bytes limit]\n`;
+    }
+  }
+
+  const sections = [
+    ...baseSectionsBefore,
+    truncatedNotice
+  ];
+
+  if (contextBlock) {
+    sections.push(``, `[CODE CONTEXT & AST ENCLOSURES]`, contextBlock);
+  }
+
+  const contextGapsBlock = formatContextGaps(contextGaps);
+  if (contextGapsBlock) {
+    sections.push(``, `[UNRESOLVED CODE CONTEXT GAPS]`, contextGapsBlock);
+  }
+
+  sections.push(
+    ...baseSectionsAfter,
+    hunks,
+    ...baseSectionsFormat
   );
 
-  return sections.filter(s => s !== "").join("\n");
+  let renderedPrompt = sections.filter(s => s !== "").join("\n");
+  const totalPromptBytes = Buffer.byteLength(renderedPrompt, "utf8");
+  if (maxBytes >= 1000 && totalPromptBytes > maxBytes) {
+    renderedPrompt = truncateUtf8Safe(renderedPrompt, maxBytes);
+  }
+
+  return renderedPrompt;
 }
 
 /**
