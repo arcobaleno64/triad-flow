@@ -118,6 +118,9 @@ export function validateConsensusSemantics(report) {
         return { ok: false, valid: false, code: "MALFORMED_FINDING_FILE", reason: `Finding at index ${i} contains illegal NUL byte in file path.` };
       }
       cleanFindings.push({
+        ...(f.id !== undefined && f.id !== null && String(f.id).trim().length > 0
+          ? { id: String(f.id).trim() }
+          : (f.findingId !== undefined && f.findingId !== null && String(f.findingId).trim().length > 0 ? { id: String(f.findingId).trim() } : {})),
         title,
         severity,
         file,

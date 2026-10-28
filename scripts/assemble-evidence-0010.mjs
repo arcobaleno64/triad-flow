@@ -632,7 +632,8 @@ export async function assembleEvidence0010(userOptions = {}) {
       // Enforce Tier 1 high-risk policy gate: any findings block merge
       const gate = evaluateGateDecision(consensus, {
         tier: caseDef.riskTier || 1,
-        strict: true
+        strict: true,
+        preliminary: true
       });
 
       const actualFindings = [...(consensus.findings || [])];

@@ -535,12 +535,13 @@ test("Review Orchestrator (Acceptance 13: Low-risk diff with single reviewer app
     providerName: "macro-sentry"
   });
 
-  const orchResult = await orchestrateReview(smallChangeSet, { macro: macroAdapter });
+  const orchResult = await orchestrateReview(smallChangeSet, { macro: macroAdapter }, { preliminary: true });
 
   assert.equal(orchResult.plan.mode, "single");
-  assert.equal(orchResult.status, "reviewed-clean");
+  assert.equal(orchResult.status, "preliminary-clean");
   assert.equal(orchResult.consensus.verdict, "approve");
   assert.equal(orchResult.gate.decision, "approve");
+  assert.equal(orchResult.gate.preliminary, true);
 });
 
 test("runCli review integrates reviewAdapters with real CLI execution and exit codes", async () => {
@@ -556,14 +557,15 @@ test("runCli review integrates reviewAdapters with real CLI execution and exit c
     providerName: "cli-macro"
   });
 
-  // 1. Clean review passes with EXIT_CODES.SUCCESS (0)
+  // 1. Clean review without Clean Challenge fails closed with EXIT_CODES.GATE_BLOCKED (1)
   const exitCodeClean = await runCli(["review"], { stdout, stderr }, {
     getChangeSet: () => mockChangeSet,
     reviewAdapters: { macro: cleanAdapter }
   });
 
-  assert.equal(exitCodeClean, EXIT_CODES.SUCCESS);
-  assert.match(stderr.buffer, /Gate Decision: APPROVE/i);
+  assert.equal(exitCodeClean, EXIT_CODES.GATE_BLOCKED);
+  assert.match(stderr.buffer, /Gate Decision: BLOCK/i);
+  assert.match(stderr.buffer, /Clean Challenge missing/i);
 
   // 2. Review with blocking finding fails with EXIT_CODES.GATE_BLOCKED (1)
   const stdout2 = new MockStream();

@@ -19,27 +19,51 @@ import crypto from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-import { buildChangeSet } from "../src/core/git-collector.mjs";
+import { buildChangeSet, getExactHeadFileContent } from "../src/core/git-collector.mjs";
 import { decodeGitCStyleString } from "../src/core/git-numstat.mjs";
+import { buildContextPackage } from "../src/core/context-builder.mjs";
 import {
   CliReviewAdapter,
   resolveProviderProfile
 } from "../src/adapters/cli-transport.mjs";
 import { aggregateConsensus } from "../src/core/loop.mjs";
-import { evaluateGateDecision } from "../src/core/harness.mjs";
+import { evaluateGateDecision, normalizeDigest } from "../src/core/harness.mjs";
+import { normalizeCanonicalPath } from "../src/core/scoring.mjs";
 import {
   EXECUTION_STATUS,
   convertProviderResultToSentryReport
 } from "../src/adapters/provider-contract.mjs";
-import { executeStagedReview } from "../src/adapters/staged-review.mjs";
 import {
   conductIndependentVerification,
   buildDisagreementLedgerDocument,
   CliVerifierAdapter,
   createMockVerifierAdapter,
-  VERIFICATION_SCHEMA_VERSION
+  VERIFICATION_SCHEMA_VERSION,
+  RunContext,
+  mergeContextGaps,
+  registerTrustedContextPackage
 } from "../src/core/independent-verifier.mjs";
 import { TOOL_VERSION } from "../src/core/review-run-report.mjs";
+import { digestChangeSet } from "../src/core/canonical-digest.mjs";
+
+var _internalDogfoodWorkflowMinter = _internalDogfoodWorkflowMinter || null;
+
+/**
+ * Internal capability binder for dogfood-review workflow authority.
+ * Write-once, called by independent-verifier.mjs during internal module wiring (P2-CAP-05).
+ *
+ * @param {Function} minter
+ */
+export function __bindDogfoodReviewWorkflowMinter(minter) {
+  if (typeof minter === "function" && !_internalDogfoodWorkflowMinter) {
+    _internalDogfoodWorkflowMinter = minter;
+  }
+}
+
+async function runStagedReviewFallback(...args) {
+  const { executeStagedReview } = await import("../src/adapters/staged-review.mjs");
+  return executeStagedReview(...args);
+}
 
 export function getCommitShaForRef(ref = "HEAD", cwd = process.cwd()) {
   try {
@@ -565,18 +589,29 @@ export function instrumentVerifierAdapter(adapter, onTimeout) {
  */
 export async function runDogfoodReview(userOptions = {}) {
   const runStartedAt = new Date().toISOString();
-  const runId = `dogfood-${Date.now()}-${crypto.randomUUID()}`;
+  const runId = String(userOptions.runId || `dogfood-${Date.now()}-${crypto.randomUUID()}`);
   const isLive = Boolean(userOptions.live);
   const isMock = !isLive;
   const base = userOptions.base || "main";
-  const head = userOptions.head || "HEAD";
+  const changeSetProvided = Boolean(userOptions.changeSet);
+  const fallbackHead = userOptions.changeSet?.repository?.headSha ||
+    userOptions.changeSet?.repository?.commitSha ||
+    userOptions.changeSet?.repository?.head ||
+    userOptions.changeSet?.headSha ||
+    userOptions.changeSet?.head ||
+    "HEAD";
+  const head = userOptions.head || fallbackHead;
   const repoDir = path.resolve(userOptions.repoDir || userOptions.cwd || process.cwd());
   const timeoutMs = userOptions.timeoutMs || (isLive ? 300000 : 30000);
   const log = userOptions.log !== false;
   const outPath = path.resolve(userOptions.out || "dogfood-run.json");
 
   const branch = getBranchForRef(head, repoDir);
-  const requestedHeadSha = getCommitShaForRef(head, repoDir);
+  const requestedHeadSha = getCommitShaForRef(head, repoDir) || (
+    changeSetProvided && /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i.test(head) && !/^0+$/.test(head)
+      ? head.toLowerCase()
+      : null
+  );
   if (!requestedHeadSha) {
     throw new Error(`Reviewed head ref '${head}' cannot be resolved to a non-zero commit SHA in repository at '${repoDir}'`);
   }
@@ -612,11 +647,73 @@ export async function runDogfoodReview(userOptions = {}) {
     throw new Error(`Failed to capture ChangeSet: ${changeSet?.error?.message || "Unknown Git inspection failure"}`);
   }
 
-  const changeSetHeadSha = typeof changeSet?.repository?.headSha === "string"
-    ? changeSet.repository.headSha.trim().toLowerCase()
-    : requestedHeadSha;
-  if (changeSetHeadSha !== requestedHeadSha) {
-    throw new Error(`Reviewed ChangeSet head SHA '${changeSetHeadSha}' does not match requested --head '${requestedHeadSha}'`);
+  const resolveHeadCandidate = (val) => {
+    if (typeof val !== "string" || !val.trim()) return null;
+    const raw = val.trim();
+    if (/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i.test(raw)) {
+      return raw.toLowerCase();
+    }
+    const gitSha = getCommitShaForRef(raw, repoDir);
+    if (gitSha) return gitSha.toLowerCase();
+    return raw.toLowerCase();
+  };
+
+  const matchesTargetSha = (candidate, targetSha) => {
+    if (!candidate || !targetSha) return true;
+    if (candidate === targetSha) return true;
+    if (/^[0-9a-f]{7,63}$/i.test(candidate) && targetSha.startsWith(candidate)) {
+      return true;
+    }
+    return false;
+  };
+
+  const headsConsistent = (a, b) => {
+    if (!a || !b) return true;
+    if (a === b) return true;
+    if (/^[0-9a-f]{7,63}$/i.test(a) && b.startsWith(a)) return true;
+    if (/^[0-9a-f]{7,63}$/i.test(b) && a.startsWith(b)) return true;
+    return false;
+  };
+
+  const repoHeadSha = resolveHeadCandidate(changeSet?.repository?.headSha);
+  const repoCommitSha = resolveHeadCandidate(changeSet?.repository?.commitSha);
+  const repoHead = resolveHeadCandidate(changeSet?.repository?.head);
+  const directHeadSha = resolveHeadCandidate(changeSet?.headSha);
+  const csHead = resolveHeadCandidate(changeSet?.head);
+
+  if (repoHeadSha && directHeadSha && !headsConsistent(repoHeadSha, directHeadSha)) {
+    throw new Error(`Reviewed ChangeSet repository head SHA '${repoHeadSha}' does not match changeSet.headSha '${directHeadSha}'`);
+  }
+  if (repoCommitSha && directHeadSha && !headsConsistent(repoCommitSha, directHeadSha)) {
+    throw new Error(`Reviewed ChangeSet repository commit SHA '${repoCommitSha}' does not match changeSet.headSha '${directHeadSha}'`);
+  }
+  if (repoHeadSha && repoCommitSha && !headsConsistent(repoHeadSha, repoCommitSha)) {
+    throw new Error(`Reviewed ChangeSet repository head SHA '${repoHeadSha}' does not match repository commit SHA '${repoCommitSha}'`);
+  }
+  if (repoHead && directHeadSha && !headsConsistent(repoHead, directHeadSha)) {
+    throw new Error(`Reviewed ChangeSet repository head '${repoHead}' does not match changeSet.headSha '${directHeadSha}'`);
+  }
+  if (csHead && directHeadSha && !headsConsistent(csHead, directHeadSha)) {
+    throw new Error(`Reviewed ChangeSet head SHA '${csHead}' does not match changeSet.headSha '${directHeadSha}'`);
+  }
+  if (csHead && repoHeadSha && !headsConsistent(csHead, repoHeadSha)) {
+    throw new Error(`Reviewed ChangeSet head SHA '${csHead}' does not match repository head SHA '${repoHeadSha}'`);
+  }
+
+  if (repoHeadSha && !matchesTargetSha(repoHeadSha, requestedHeadSha)) {
+    throw new Error(`Reviewed ChangeSet repository head SHA '${repoHeadSha}' does not match requested --head '${requestedHeadSha}'`);
+  }
+  if (repoCommitSha && !matchesTargetSha(repoCommitSha, requestedHeadSha)) {
+    throw new Error(`Reviewed ChangeSet repository commit SHA '${repoCommitSha}' does not match requested --head '${requestedHeadSha}'`);
+  }
+  if (repoHead && !matchesTargetSha(repoHead, requestedHeadSha)) {
+    throw new Error(`Reviewed ChangeSet repository head '${repoHead}' does not match requested --head '${requestedHeadSha}'`);
+  }
+  if (directHeadSha && !matchesTargetSha(directHeadSha, requestedHeadSha)) {
+    throw new Error(`Reviewed ChangeSet head SHA '${directHeadSha}' does not match requested --head '${requestedHeadSha}'`);
+  }
+  if (csHead && !matchesTargetSha(csHead, requestedHeadSha)) {
+    throw new Error(`Reviewed ChangeSet head SHA '${csHead}' does not match requested --head '${requestedHeadSha}'`);
   }
   const commitSha = requestedHeadSha;
   const requestedRepository = userOptions.repository === undefined
@@ -716,7 +813,9 @@ export async function runDogfoodReview(userOptions = {}) {
   }
 
   if (!verifierAdapter) {
-    if (isLive) {
+    if (userOptions.verifierAdapter === "mock") {
+      verifierAdapter = createMockVerifierAdapter("claude");
+    } else if (isLive) {
       verifierAdapter = new CliVerifierAdapter({
         command: "claude",
         providerName: "claude",
@@ -738,10 +837,386 @@ export async function runDogfoodReview(userOptions = {}) {
     finalizedBeforeRun: true
   } : null);
 
-  let stagedFallbackUsed = false;
-  let stagedChunkCount = null;
-  let stagedTimeoutCount = 0;
-  let stagedTelemetry = null;
+  const exclusions = Array.isArray(userOptions.patchExclusions)
+    ? userOptions.patchExclusions
+    : (Array.isArray(objectiveContract?.exclusions)
+        ? objectiveContract.exclusions
+        : (Array.isArray(changeSet?.excludedFiles) ? changeSet.excludedFiles : []));
+
+  const runContext = userOptions.runContext instanceof RunContext
+    ? userOptions.runContext
+    : new RunContext({
+        runId,
+        headSha: commitSha,
+        contentDigest: changeSet.contentDigest,
+        patchObjective: userOptions.patchObjective || objectiveContract?.objective || null,
+        objectiveContract,
+        exclusions
+      });
+
+  // Extract exact-head callee context package across modified files (Spec §3.3.4 Dual Visibility, P1-02, Item 3)
+  const repoRootCandidate = changeSet?.repository?.root || (!changeSetProvided ? repoDir : null);
+  const targetRepo = (typeof repoRootCandidate === "string" && repoRootCandidate.trim().length > 0)
+    ? repoRootCandidate.trim()
+    : null;
+  let contextPackage = userOptions.contextPackage || changeSet?.contextPackage || null;
+  let contextExtractionFailed = false;
+  let contextExtractionError = null;
+
+  const isRepoValidObject =
+    changeSet?.repository !== null &&
+    typeof changeSet?.repository === "object" &&
+    !Array.isArray(changeSet?.repository) &&
+    typeof changeSet.repository.root === "string" &&
+    changeSet.repository.root.trim().length > 0;
+
+  if (!isRepoValidObject) {
+    contextExtractionFailed = true;
+    contextExtractionError = "Missing trusted repository root for exact-head context construction.";
+    if (log) console.warn(`  ⚠️ Failed to extract callee contextPackage: ${contextExtractionError}`);
+  } else if (contextPackage) {
+    // Validate externally provided contextPackage identity binding (PR-39 Item 1)
+    const pkg = contextPackage;
+    let pkgInvalid = false;
+    let pkgInvalidReason = "";
+
+    if (!pkg || typeof pkg !== "object" || Array.isArray(pkg)) {
+      pkgInvalid = true;
+      pkgInvalidReason = "ContextPackage must be a non-null object.";
+    } else if (Object.keys(pkg).length === 0 || !pkg.layers || !pkg.budgetAccounting) {
+      pkgInvalid = true;
+      pkgInvalidReason = "ContextPackage is empty or missing required layers/budget accounting.";
+    } else {
+      // Validate headSha
+      const pkgHead = pkg.headSha ? String(pkg.headSha).trim().toLowerCase() : "";
+      if (commitSha) {
+        if (!pkgHead) {
+          pkgInvalid = true;
+          pkgInvalidReason = `ContextPackage missing headSha (expected '${commitSha}').`;
+        } else if (!headsConsistent(pkgHead, commitSha)) {
+          pkgInvalid = true;
+          pkgInvalidReason = `ContextPackage cross-head mismatch (package headSha: '${pkgHead}', expected: '${commitSha}').`;
+        }
+      }
+
+      // Validate target repo
+      const pkgRepo = pkg.repositoryRoot || pkg.repository?.root || pkg.targetRepo || pkg.repo || null;
+      if (!pkgInvalid && targetRepo) {
+        if (!pkgRepo) {
+          pkgInvalid = true;
+          pkgInvalidReason = `ContextPackage missing required repositoryRoot (expected '${targetRepo}').`;
+        } else {
+          let normPkgRepo = normalizeCanonicalPath(path.resolve(String(pkgRepo)));
+          let normTargetRepo = normalizeCanonicalPath(path.resolve(String(targetRepo)));
+          try {
+            normPkgRepo = normalizeCanonicalPath(fs.realpathSync(normPkgRepo));
+          } catch {}
+          try {
+            normTargetRepo = normalizeCanonicalPath(fs.realpathSync(normTargetRepo));
+          } catch {}
+          if (normPkgRepo !== normTargetRepo) {
+            pkgInvalid = true;
+            pkgInvalidReason = `ContextPackage repositoryRoot mismatch ('${normPkgRepo}' vs '${normTargetRepo}').`;
+          }
+        }
+      }
+
+      // Validate diff contentDigest (PR-39 Item 1 / P1-01)
+      if (!pkgInvalid) {
+        const computedDiffDigests = new Set();
+        if (typeof changeSet?.diffHunks === "string") {
+          const d1 = normalizeDigest(crypto.createHash("sha256").update(changeSet.diffHunks, "utf8").digest("hex"));
+          if (d1) computedDiffDigests.add(d1);
+          const normalizedHunks = changeSet.diffHunks.replace(/\r\n/g, "\n");
+          const d2 = normalizeDigest(crypto.createHash("sha256").update(normalizedHunks, "utf8").digest("hex"));
+          if (d2) computedDiffDigests.add(d2);
+          const d3 = normalizeDigest(crypto.createHash("sha256").update(changeSet.diffHunks.trim(), "utf8").digest("hex"));
+          if (d3) computedDiffDigests.add(d3);
+          const d4 = normalizeDigest(crypto.createHash("sha256").update(normalizedHunks.trim(), "utf8").digest("hex"));
+          if (d4) computedDiffDigests.add(d4);
+        }
+
+        if (computedDiffDigests.size === 0) {
+          pkgInvalid = true;
+          pkgInvalidReason = "Cannot verify ContextPackage: changeSet missing required diffHunks for recomputed digest validation.";
+        } else {
+          // Validate declared digests against recomputed diff digest BEFORE accepting external contextPackage
+          let canonicalCsDigest = "";
+          try {
+            canonicalCsDigest = normalizeDigest(digestChangeSet(changeSet));
+          } catch {}
+
+          const declaredContentDigest = changeSet?.contentDigest ? normalizeDigest(changeSet.contentDigest) : "";
+          const declaredChangeSetDigest = changeSet?.changeSetDigest ? normalizeDigest(changeSet.changeSetDigest) : "";
+
+          if (declaredContentDigest && !computedDiffDigests.has(declaredContentDigest)) {
+            pkgInvalid = true;
+            pkgInvalidReason = `Declared changeSet.contentDigest ('${declaredContentDigest}') conflicts with recomputed diff digest.`;
+          } else if (declaredChangeSetDigest && !computedDiffDigests.has(declaredChangeSetDigest) && (!canonicalCsDigest || declaredChangeSetDigest !== canonicalCsDigest)) {
+            pkgInvalid = true;
+            pkgInvalidReason = `Declared changeSet.changeSetDigest ('${declaredChangeSetDigest}') conflicts with recomputed diff digest.`;
+          }
+        }
+
+        const pkgDigest = pkg.contentDigest ? normalizeDigest(pkg.contentDigest) : "";
+        if (!pkgInvalid) {
+          if (!pkgDigest) {
+            pkgInvalid = true;
+            pkgInvalidReason = "ContextPackage missing required diff contentDigest.";
+          } else if (!computedDiffDigests.has(pkgDigest)) {
+            pkgInvalid = true;
+            pkgInvalidReason = `ContextPackage diff contentDigest mismatch ('${pkgDigest}').`;
+          }
+        }
+      }
+
+      // Validate fileCoverageManifest (PR-39 Item 1 / CONTEXT_COVERAGE_INTEGRITY, Item 2)
+      if (!pkgInvalid) {
+        if (!Array.isArray(pkg.fileCoverageManifest)) {
+          pkgInvalid = true;
+          pkgInvalidReason = "ContextPackage missing required fileCoverageManifest array.";
+        } else if (pkg.fileCoverageManifest.some(m => !m || typeof m !== "object" || Array.isArray(m))) {
+          pkgInvalid = true;
+          pkgInvalidReason = "ContextPackage fileCoverageManifest contains invalid non-object entries.";
+        } else if (pkg.fileCoverageManifest.some(m => !m.file && !m.path)) {
+          pkgInvalid = true;
+          pkgInvalidReason = "ContextPackage fileCoverageManifest contains entries without valid file path.";
+        } else if (pkg.fileCoverageManifest.some(m => m && (m.exactHeadAvailable === false || m.exactHeadUnavailable === true || m.contentAvailable === false))) {
+          pkgInvalid = true;
+          pkgInvalidReason = "ContextPackage fileCoverageManifest contains entries where exact-head content is unavailable (exactHeadAvailable is false).";
+        } else if (Array.isArray(changeSet?.files) && changeSet.files.length > 0) {
+          const coveredFiles = new Set(
+            pkg.fileCoverageManifest
+              .filter(m => m && m.inspected !== false && m.exactHeadAvailable !== false && m.exactHeadUnavailable !== true && m.contentAvailable !== false)
+              .map(m => normalizeCanonicalPath(String(m.file || m.path || ""), targetRepo))
+              .filter(Boolean)
+          );
+          for (const f of changeSet.files) {
+            const expectedPath = normalizeCanonicalPath(String(typeof f === "string" ? f : (f?.path || f?.file || "")), targetRepo);
+            if (expectedPath && !coveredFiles.has(expectedPath)) {
+              pkgInvalid = true;
+              pkgInvalidReason = `ContextPackage fileCoverageManifest does not cover file under review with valid exact-head content: '${expectedPath}'.`;
+              break;
+            }
+          }
+        }
+      // Physically verify contained code snippets and source digests against exact-head Git commit objects (tdsmT)
+      if (!pkgInvalid && commitSha && targetRepo) {
+        const fileContentCache = new Map();
+        const getGitFile = (relFile) => {
+          if (!fileContentCache.has(relFile)) {
+            try {
+              const content = getExactHeadFileContent(targetRepo, commitSha, relFile);
+              fileContentCache.set(relFile, content);
+            } catch {
+              fileContentCache.set(relFile, null);
+            }
+          }
+          return fileContentCache.get(relFile);
+        };
+
+        // 1. Verify file sourceDigest if manifest provides it
+        if (Array.isArray(pkg.fileCoverageManifest)) {
+          for (const m of pkg.fileCoverageManifest) {
+            if (!m || typeof m !== "object") {
+              pkgInvalid = true;
+              pkgInvalidReason = "Manifest contains non-object entry.";
+              break;
+            }
+            const relFile = String(m.file || m.path || "").trim();
+            if (!relFile || !m.sourceDigest) continue;
+            const gitContent = getGitFile(relFile);
+            if (gitContent === null) {
+              pkgInvalid = true;
+              pkgInvalidReason = `Manifest references file not physically present in exact-head git commit: '${relFile}'.`;
+              break;
+            }
+            const expectedDigest = crypto.createHash("sha256").update(gitContent.replace(/\r\n/g, "\n"), "utf8").digest("hex");
+            if (normalizeDigest(m.sourceDigest) !== expectedDigest) {
+              pkgInvalid = true;
+              pkgInvalidReason = `Manifest sourceDigest for '${relFile}' does not match physical exact-head content.`;
+              break;
+            }
+          }
+        }
+
+        // 2. Verify callee definitions and snippets exist in exact-head git commit content (tdsmT)
+        const callees = pkg.layers?.layer1AstEnclosure?.callees;
+        if (!pkgInvalid && Array.isArray(callees) && callees.length > 0) {
+          for (const callee of callees) {
+            if (!callee || typeof callee !== "object") {
+              pkgInvalid = true;
+              pkgInvalidReason = "ContextPackage callees array contains non-object entry.";
+              break;
+            }
+            const cFile = String(callee.file || callee.path || "").trim();
+            if (!cFile) {
+              pkgInvalid = true;
+              pkgInvalidReason = `Callee '${callee.symbol || "unknown"}' missing required file property.`;
+              break;
+            }
+            const gitContent = getGitFile(cFile);
+            if (gitContent === null) {
+              pkgInvalid = true;
+              pkgInvalidReason = `Callee references file not physically present in exact-head commit: '${cFile}'.`;
+              break;
+            }
+            const normGit = gitContent.replace(/\r\n/g, "\n");
+
+            const cDef = typeof callee.definition === "string" ? callee.definition.trim() : "";
+            const cSnippet = typeof callee.snippet === "string" ? callee.snippet.trim() : "";
+
+            if (!cDef && !cSnippet) {
+              pkgInvalid = true;
+              pkgInvalidReason = `Callee '${callee.symbol || "unknown"}' in '${cFile}' missing required definition or snippet content.`;
+              break;
+            }
+
+            if (cDef) {
+              const normDef = cDef.replace(/\r\n/g, "\n").trim();
+              if (normDef && !normGit.includes(normDef)) {
+                pkgInvalid = true;
+                pkgInvalidReason = `Callee definition '${callee.symbol || "unknown"}' in '${cFile}' does not physically exist in exact-head commit.`;
+                break;
+              }
+            }
+
+            if (cSnippet) {
+              const normSnippet = cSnippet.replace(/\r\n/g, "\n").trim();
+              if (normSnippet && !normGit.includes(normSnippet)) {
+                pkgInvalid = true;
+                pkgInvalidReason = `Callee snippet '${callee.symbol || "unknown"}' in '${cFile}' does not physically exist in exact-head commit.`;
+                break;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+    if (pkgInvalid) {
+      contextExtractionFailed = true;
+      contextExtractionError = `External contextPackage failed identity or coverage binding: ${pkgInvalidReason}`;
+      contextPackage = null;
+      if (log) console.warn(`  ⚠️ Failed to bind external contextPackage: ${contextExtractionError}`);
+    } else {
+      let registrationSucceeded = false;
+      try {
+        const regResult = registerTrustedContextPackage(pkg, {
+          repositoryRoot: targetRepo,
+          headSha: commitSha,
+          diffHunks: changeSet.diffHunks,
+          changeSet,
+          verifiedBy: "dogfood-review",
+          workflowAuthority: typeof _internalDogfoodWorkflowMinter === "function"
+            ? _internalDogfoodWorkflowMinter("dogfood-review", {
+                contentDigest: pkg.contentDigest,
+                headSha: commitSha
+              })
+            : null
+        });
+        registrationSucceeded = Boolean(
+          regResult &&
+          typeof regResult === "object" &&
+          regResult.ok !== false &&
+          regResult !== null
+        );
+      } catch (err) {
+        registrationSucceeded = false;
+        pkgInvalidReason = `Context package registration failed: ${err?.message || String(err)}`;
+      }
+
+      if (!registrationSucceeded) {
+        pkgInvalid = true;
+        if (!pkgInvalidReason) pkgInvalidReason = "Failed to register context package into trusted registry.";
+        contextExtractionFailed = true;
+        contextExtractionError = `External contextPackage failed trusted registration: ${pkgInvalidReason}`;
+        contextPackage = null;
+        if (log) console.warn(`  ⚠️ Failed to register external contextPackage: ${contextExtractionError}`);
+      } else {
+        contextPackage = pkg;
+      }
+    }
+  } else if (!contextPackage && changeSet?.files?.length > 0 && targetRepo && commitSha) {
+    try {
+      contextPackage = buildContextPackage(
+        changeSet,
+        null,
+        {
+          headSha: commitSha,
+          repositoryRoot: targetRepo,
+          cwd: targetRepo,
+          runId
+        }
+      );
+      if (!contextPackage || contextPackage.ok === false) {
+        contextExtractionFailed = true;
+        contextExtractionError = contextPackage?.error?.message || "buildContextPackage returned invalid or non-ok contextPackage";
+        if (log) console.warn("  ⚠️ Failed to extract callee contextPackage:", contextExtractionError);
+      } else if (Array.isArray(contextPackage.fileCoverageManifest)) {
+        const unavailableEntry = contextPackage.fileCoverageManifest.find(m => m && (m.exactHeadAvailable === false || m.exactHeadUnavailable === true || m.contentAvailable === false));
+        if (unavailableEntry) {
+          contextExtractionFailed = true;
+          contextExtractionError = `Exact-head content unavailable for file: '${unavailableEntry.file || unavailableEntry.path}'.`;
+          if (log) console.warn("  ⚠️ Exact-head context unavailable:", contextExtractionError);
+        }
+      }
+    } catch (err) {
+      contextExtractionFailed = true;
+      contextExtractionError = err?.message || String(err);
+      if (log) console.warn("  ⚠️ Failed to extract callee contextPackage:", contextExtractionError);
+    }
+  }
+
+  let effectiveContextGaps = mergeContextGaps(
+    contextExtractionFailed ? [
+      {
+        code: "EXACT_HEAD_CONTEXT_FAILED",
+        symbol: "exact-head-context",
+        reason: contextExtractionError,
+        targetFiles: changeSet?.files?.map(f => typeof f === "string" ? f : (f?.path || f?.file || "")) || []
+      }
+    ] : null,
+    userOptions.contextGaps,
+    changeSet?.contextGaps,
+    contextPackage?.contextGaps
+  );
+
+  if (changeSet && typeof changeSet === "object") {
+    try {
+      if (contextPackage) {
+        changeSet.contextPackage = contextPackage;
+      }
+      if (effectiveContextGaps.length > 0) {
+        changeSet.contextGaps = effectiveContextGaps;
+      }
+    } catch {}
+  }
+
+  let agyStagedFallbackUsed = false;
+  let claudeStagedFallbackUsed = false;
+  let codexStagedFallbackUsed = false;
+  const stagedReviewMetrics = {
+    agy: {
+      stagedFallbackUsed: false,
+      stagedTelemetry: null,
+      chunkCount: null,
+      chunkTimeoutCount: 0
+    },
+    claude: {
+      stagedFallbackUsed: false,
+      stagedTelemetry: null,
+      chunkCount: null,
+      chunkTimeoutCount: 0
+    },
+    codex: {
+      stagedFallbackUsed: false,
+      stagedTelemetry: null,
+      chunkCount: null,
+      chunkTimeoutCount: 0
+    }
+  };
   const tAgy0 = Date.now();
   const executeAgyReview = async () => {
     const providerRunId = `${runId}-agy`;
@@ -753,13 +1228,15 @@ export async function runDogfoodReview(userOptions = {}) {
       timeoutMs,
       patchObjective: userOptions.patchObjective || null,
       objectiveContract,
-      signal: userOptions.signal || null
+      signal: userOptions.signal || null,
+      contextPackage,
+      contextGaps: effectiveContextGaps
     });
 
     if (res?.executionStatus === EXECUTION_STATUS.PAYLOAD_TOO_LARGE) {
       if (log) console.log("    ℹ [agy] Prompt exceeds Windows argv limit; delegating to staged chunked review (RFC-027-01)...");
-      stagedFallbackUsed = true;
-      res = await executeStagedReview(changeSet, reviewAdapters.agy, {
+      agyStagedFallbackUsed = true;
+      res = await runStagedReviewFallback(changeSet, reviewAdapters.agy, {
         runId: providerRunId,
         role: "agy",
         policyId: "TRI_PARTY_HETEROGENEOUS",
@@ -767,43 +1244,129 @@ export async function runDogfoodReview(userOptions = {}) {
         patchObjective: userOptions.patchObjective || null,
         objectiveContract,
         signal: userOptions.signal || null,
-        maxConcurrency: userOptions.stagedConcurrency || 2
+        maxConcurrency: userOptions.stagedConcurrency || 2,
+        contextPackage,
+        contextGaps: effectiveContextGaps,
+        cwd: targetRepo
       });
-      stagedChunkCount = Array.isArray(res?.receipts) ? res.receipts.length : null;
-      stagedTimeoutCount = Array.isArray(res?.receipts)
-        ? res.receipts.filter(r => r?.status === "timeout").length
-        : 0;
-      stagedTelemetry = res?.telemetry || null;
+      const receipts = Array.isArray(res?.receipts) ? res.receipts : [];
+      const chunkCount = receipts.length > 0 ? receipts.length : (res?.telemetry?.chunkCount ?? null);
+      const timeoutCount = receipts.filter(r => r?.status === "timeout").length || (res?.telemetry?.chunkTimeoutCount ?? 0);
+      stagedReviewMetrics.agy = {
+        stagedFallbackUsed: true,
+        stagedTelemetry: res?.telemetry || null,
+        chunkCount,
+        chunkTimeoutCount: timeoutCount
+      };
     }
     return res;
   };
   const pAgy = executeAgyReview().then(res => ({ res, latencyMs: Date.now() - tAgy0 }));
 
   const tClaude0 = Date.now();
-  const pClaude = reviewAdapters.claude.executeReview({
-    runId: `${runId}-claude`,
-    role: "claude",
-    changeSet,
-    policyId: "TRI_PARTY_HETEROGENEOUS",
-    timeoutMs,
-    patchObjective: userOptions.patchObjective || null,
-    objectiveContract,
-    signal: userOptions.signal || null
-  }).then(res => ({ res, latencyMs: Date.now() - tClaude0 }));
+  const executeClaudeReview = async () => {
+    const providerRunId = `${runId}-claude`;
+    let res = await reviewAdapters.claude.executeReview({
+      runId: providerRunId,
+      role: "claude",
+      changeSet,
+      policyId: "TRI_PARTY_HETEROGENEOUS",
+      timeoutMs,
+      patchObjective: userOptions.patchObjective || null,
+      objectiveContract,
+      signal: userOptions.signal || null,
+      contextPackage,
+      contextGaps: effectiveContextGaps
+    });
+
+    if (res?.executionStatus === EXECUTION_STATUS.PAYLOAD_TOO_LARGE) {
+      if (log) console.log("    ℹ [claude] Prompt exceeds limit; delegating to staged chunked review (RFC-027-01)...");
+      claudeStagedFallbackUsed = true;
+      res = await runStagedReviewFallback(changeSet, reviewAdapters.claude, {
+        runId: providerRunId,
+        role: "claude",
+        policyId: "TRI_PARTY_HETEROGENEOUS",
+        timeoutMs,
+        patchObjective: userOptions.patchObjective || null,
+        objectiveContract,
+        signal: userOptions.signal || null,
+        maxConcurrency: userOptions.stagedConcurrency || 2,
+        contextPackage,
+        contextGaps: effectiveContextGaps,
+        cwd: targetRepo
+      });
+      const receipts = Array.isArray(res?.receipts) ? res.receipts : [];
+      const chunkCount = receipts.length > 0 ? receipts.length : (res?.telemetry?.chunkCount ?? null);
+      const timeoutCount = receipts.filter(r => r?.status === "timeout").length || (res?.telemetry?.chunkTimeoutCount ?? 0);
+      stagedReviewMetrics.claude = {
+        stagedFallbackUsed: true,
+        stagedTelemetry: res?.telemetry || null,
+        chunkCount,
+        chunkTimeoutCount: timeoutCount
+      };
+    }
+    return res;
+  };
+  const pClaude = executeClaudeReview().then(res => ({ res, latencyMs: Date.now() - tClaude0 }));
 
   const tCodex0 = Date.now();
-  const pCodex = reviewAdapters.codex.executeReview({
-    runId: `${runId}-codex`,
-    role: "codex",
-    changeSet,
-    policyId: "TRI_PARTY_HETEROGENEOUS",
-    timeoutMs,
-    patchObjective: userOptions.patchObjective || null,
-    objectiveContract,
-    signal: userOptions.signal || null
-  }).then(res => ({ res, latencyMs: Date.now() - tCodex0 }));
+  const executeCodexReview = async () => {
+    const providerRunId = `${runId}-codex`;
+    let res = await reviewAdapters.codex.executeReview({
+      runId: providerRunId,
+      role: "codex",
+      changeSet,
+      policyId: "TRI_PARTY_HETEROGENEOUS",
+      timeoutMs,
+      patchObjective: userOptions.patchObjective || null,
+      objectiveContract,
+      signal: userOptions.signal || null,
+      contextPackage,
+      contextGaps: effectiveContextGaps
+    });
+
+    if (res?.executionStatus === EXECUTION_STATUS.PAYLOAD_TOO_LARGE) {
+      if (log) console.log("    ℹ [codex] Prompt exceeds limit; delegating to staged chunked review (RFC-027-01)...");
+      codexStagedFallbackUsed = true;
+      res = await runStagedReviewFallback(changeSet, reviewAdapters.codex, {
+        runId: providerRunId,
+        role: "codex",
+        policyId: "TRI_PARTY_HETEROGENEOUS",
+        timeoutMs,
+        patchObjective: userOptions.patchObjective || null,
+        objectiveContract,
+        signal: userOptions.signal || null,
+        maxConcurrency: userOptions.stagedConcurrency || 2,
+        contextPackage,
+        contextGaps: effectiveContextGaps,
+        cwd: targetRepo
+      });
+      const receipts = Array.isArray(res?.receipts) ? res.receipts : [];
+      const chunkCount = receipts.length > 0 ? receipts.length : (res?.telemetry?.chunkCount ?? null);
+      const timeoutCount = receipts.filter(r => r?.status === "timeout").length || (res?.telemetry?.chunkTimeoutCount ?? 0);
+      stagedReviewMetrics.codex = {
+        stagedFallbackUsed: true,
+        stagedTelemetry: res?.telemetry || null,
+        chunkCount,
+        chunkTimeoutCount: timeoutCount
+      };
+    }
+    return res;
+  };
+  const pCodex = executeCodexReview().then(res => ({ res, latencyMs: Date.now() - tCodex0 }));
 
   const [agyOut, claudeOut, codexOut] = await Promise.all([pAgy, pClaude, pCodex]);
+  const stagedFallbackUsed = Boolean(agyStagedFallbackUsed || claudeStagedFallbackUsed || codexStagedFallbackUsed);
+  const stagedProviders = [
+    ...(agyStagedFallbackUsed ? [{ provider: "agy", ...stagedReviewMetrics.agy }] : []),
+    ...(claudeStagedFallbackUsed ? [{ provider: "claude", ...stagedReviewMetrics.claude }] : []),
+    ...(codexStagedFallbackUsed ? [{ provider: "codex", ...stagedReviewMetrics.codex }] : [])
+  ];
+  const stagedTimeoutCount = stagedProviders.reduce((sum, p) => sum + (p.chunkTimeoutCount || 0), 0);
+  const totalStagedChunks = stagedProviders.reduce((sum, p) => sum + (p.chunkCount || 0), 0);
+  const stagedChunkCount = stagedProviders.length > 0
+    ? (stagedProviders.length === 1 ? stagedProviders[0].chunkCount : (stagedProviders.some(p => p.chunkCount !== null) ? totalStagedChunks : null))
+    : null;
   const reviewerPhaseDurationMs = Date.now() - t0;
 
   const rawReports = {
@@ -862,10 +1425,18 @@ export async function runDogfoodReview(userOptions = {}) {
     preGate.reason?.includes("UNTRUSTED_CONSENSUS") ||
     preGate.reason?.includes("Quorum failure");
 
+  let cleanChallengeAttempted = false;
+  let cleanChallengeDurationMs = 0;
+  let cleanChallengeStatus = "SKIPPED";
+
+  const instrumentedVerifier = instrumentVerifierAdapter(verifierAdapter, () => {
+    verifierTimedOut = true;
+  });
+
   if (findings.length > 0 && !isStructuralFailure) {
-    const instrumentedVerifier = instrumentVerifierAdapter(verifierAdapter, () => {
-      verifierTimedOut = true;
-    });
+    cleanChallengeAttempted = false;
+    cleanChallengeDurationMs = 0;
+    cleanChallengeStatus = "SKIPPED";
     verificationRecord = await conductIndependentVerification(
       changeSet,
       findings,
@@ -878,17 +1449,105 @@ export async function runDogfoodReview(userOptions = {}) {
         changeSetDigest: changeSet.contentDigest,
         patchObjective: userOptions.patchObjective || null,
         objectiveContract,
+        headSha: commitSha,
+        runContext,
+        contextPackage,
+        contextGaps: effectiveContextGaps,
         timeoutMs,
-        signal: userOptions.signal || null
+        signal: userOptions.signal || null,
+        verificationMode: "producer_verification"
       }
     );
+  } else if (consensus.quorumReached === true && findings.length === 0 && !isStructuralFailure && userOptions.cleanChallenge !== false) {
+    // Verify sentry coverage before entering Clean Challenge (SYSTEMIC-C14C)
+    const sentryCoverageManifest = Object.entries(rawReports).map(([name, rep]) => {
+      const cov = rep?.coverage || rep?.report?.coverage || null;
+      const coveredFiles = Array.isArray(cov?.coveredFiles) ? cov.coveredFiles : [];
+      const omittedFiles = Array.isArray(cov?.omittedFiles) ? cov.omittedFiles : [];
+      const isDeclared = Boolean(cov && typeof cov === "object" && Array.isArray(cov.coveredFiles));
+      return { name, isDeclared, coveredFiles, omittedFiles };
+    });
+
+    const sentryCoverageIncomplete = sentryCoverageManifest.some(s => {
+      if (!s.isDeclared) return true;
+      if (s.omittedFiles.length > 0) return true;
+      const expectedFiles = (changeSet?.files || []).map(f => typeof f === "string" ? f : f?.path).filter(Boolean);
+      return expectedFiles.some(f => !s.coveredFiles.includes(f));
+    });
+
+    if (sentryCoverageIncomplete) {
+      if (log) console.warn("  ⚠️ Sentry coverage incomplete or omitted files reported; cannot Clean Approve.");
+      const gap = {
+        code: "INSUFFICIENT_PRODUCER_COVERAGE",
+        symbol: "sentry-coverage",
+        reason: "One or more review sentries failed complete file coverage declaration or reported omitted files.",
+        coverage: sentryCoverageManifest
+      };
+      effectiveContextGaps = mergeContextGaps(effectiveContextGaps, [gap]);
+    }
+
+    cleanChallengeAttempted = true;
+    if (log) console.log("  ⚡ Zero-finding quorum reached. Executing Clean Challenge verification...");
+    const tClean0 = Date.now();
+    try {
+      verificationRecord = await conductIndependentVerification(
+        changeSet,
+        [],
+        instrumentedVerifier,
+        {
+          producerName: "tri-party-quorum",
+          producerModel: "agy+claude+codex",
+          verifierName: "claude",
+          verifierModel: "claude-5.5-sonnet",
+          actualModel: {
+            value: "claude-5.5-sonnet (independent_verifier_stage)",
+            source: "reported"
+          },
+          changeSetDigest: changeSet.contentDigest,
+          patchObjective: userOptions.patchObjective || null,
+          objectiveContract,
+          headSha: commitSha,
+          runContext,
+          contextPackage,
+          contextGaps: effectiveContextGaps,
+          timeoutMs,
+          signal: userOptions.signal || null,
+          verificationMode: "clean_challenge"
+        }
+      );
+    } catch (err) {
+      verifierTimedOut = verifierTimedOut || isTimeoutLikeError(err);
+      verificationRecord = { ok: false, error: err?.message || String(err) };
+    } finally {
+      cleanChallengeDurationMs = Date.now() - tClean0;
+    }
+
+    if (verifierTimedOut || verificationRecord?.executionStatus === EXECUTION_STATUS.TIMEOUT || /timeout/i.test(verificationRecord?.error || "")) {
+      verifierTimedOut = true;
+      cleanChallengeStatus = "TIMEOUT";
+    } else if (verificationRecord && verificationRecord.ok === true) {
+      cleanChallengeStatus = "SUCCESS";
+    } else {
+      cleanChallengeStatus = "ERROR";
+    }
+
+    if (log) {
+      console.log(`  🛡️ Clean Challenge Status: ${verificationRecord?.overallStatus || cleanChallengeStatus} (${cleanChallengeDurationMs}ms)`);
+    }
+  } else {
+    cleanChallengeAttempted = false;
+    cleanChallengeDurationMs = 0;
+    cleanChallengeStatus = "SKIPPED";
   }
 
-  // Evaluate authoritative Final Advisory Gate integrating verificationRecord
+  // Evaluate authoritative Final Advisory Gate integrating verificationRecord and runContext
   const gate = evaluateGateDecision(consensus, {
     tier: diffTier,
     strict: isStrict,
-    verificationRecord
+    verificationRecord,
+    runContext,
+    contextGaps: effectiveContextGaps,
+    contextPackage
   });
   if (log) {
     console.log(`  🛡️ Final Advisory Gate: ${gate.decision.toUpperCase()} (${gate.reason})`);
@@ -910,17 +1569,35 @@ export async function runDogfoodReview(userOptions = {}) {
   const isExecutionComplete =
     consensus.quorumReached &&
     allProvidersSucceeded &&
-    (!verificationAttempted || verificationRecord.ok === true);
+    (!cleanChallengeAttempted || cleanChallengeStatus === "SUCCESS") &&
+    (!verificationAttempted || (verificationRecord.ok === true && verificationRecord.overallStatus !== "UNCERTAIN"));
 
   const dogfoodDoc = {
     schemaVersion: "1.1.0",
     runId,
+    gate: {
+      decision: gate.decision,
+      reason: gate.reason
+    },
+    summary: {
+      cleanChallengeStatus: verificationRecord?.overallStatus === "UNCERTAIN" ? "UNCERTAIN" : cleanChallengeStatus,
+      decision: gate.decision
+    },
+    isExecutionComplete,
     executionMode: isLive ? "live" : "mock",
     runStartedAt,
     timestamp: new Date().toISOString(),
     track: "Track D1: SHADOW_DOGFOOD",
     authority: "NONE (ADVISORY_ONLY)",
     triadFlowVersion: TOOL_VERSION,
+    runContext: {
+      runId: runContext.runId,
+      headSha: runContext.headSha,
+      contentDigest: runContext.contentDigest,
+      patchObjective: runContext.patchObjective,
+      objectiveContract: runContext.objectiveContract,
+      exclusions: runContext.exclusions
+    },
     repository: {
       name: repositoryName,
       commitSha,
@@ -939,9 +1616,27 @@ export async function runDogfoodReview(userOptions = {}) {
       excludedFiles: changeSet.excludedFiles || []
     },
     providerTelemetry: {
-      agy: { ...buildProviderTelemetry(agyOut, rawReports.agy), stagedFallbackUsed },
-      claude: { ...buildProviderTelemetry(claudeOut, rawReports.claude), stagedFallbackUsed: false },
-      codex: { ...buildProviderTelemetry(codexOut, rawReports.codex), stagedFallbackUsed: false }
+      agy: {
+        ...buildProviderTelemetry(agyOut, rawReports.agy),
+        stagedFallbackUsed: agyStagedFallbackUsed,
+        ...(stagedReviewMetrics.agy.chunkCount !== null ? { stagedChunkCount: stagedReviewMetrics.agy.chunkCount } : {}),
+        stagedTimeoutCount: stagedReviewMetrics.agy.chunkTimeoutCount,
+        ...(stagedReviewMetrics.agy.stagedTelemetry ? { stagedTelemetry: stagedReviewMetrics.agy.stagedTelemetry } : {})
+      },
+      claude: {
+        ...buildProviderTelemetry(claudeOut, rawReports.claude),
+        stagedFallbackUsed: claudeStagedFallbackUsed,
+        ...(stagedReviewMetrics.claude.chunkCount !== null ? { stagedChunkCount: stagedReviewMetrics.claude.chunkCount } : {}),
+        stagedTimeoutCount: stagedReviewMetrics.claude.chunkTimeoutCount,
+        ...(stagedReviewMetrics.claude.stagedTelemetry ? { stagedTelemetry: stagedReviewMetrics.claude.stagedTelemetry } : {})
+      },
+      codex: {
+        ...buildProviderTelemetry(codexOut, rawReports.codex),
+        stagedFallbackUsed: codexStagedFallbackUsed,
+        ...(stagedReviewMetrics.codex.chunkCount !== null ? { stagedChunkCount: stagedReviewMetrics.codex.chunkCount } : {}),
+        stagedTimeoutCount: stagedReviewMetrics.codex.chunkTimeoutCount,
+        ...(stagedReviewMetrics.codex.stagedTelemetry ? { stagedTelemetry: stagedReviewMetrics.codex.stagedTelemetry } : {})
+      }
     },
     consensus: {
       verdict: consensus.verdict,
@@ -969,6 +1664,9 @@ export async function runDogfoodReview(userOptions = {}) {
       reviewerPhaseDurationMs,
       avgProviderLatencyMs: Math.round((agyOut.latencyMs + claudeOut.latencyMs + codexOut.latencyMs) / 3),
       executionComplete: isExecutionComplete,
+      cleanChallengeAttempted,
+      cleanChallengeDurationMs,
+      cleanChallengeStatus,
       malformedOutputCount: malformedCount,
       reviewerTimeoutCount: directReviewerTimeoutCount,
       verifierTimeoutCount,
@@ -980,15 +1678,46 @@ export async function runDogfoodReview(userOptions = {}) {
       otherFailureCount,
       stagedFallbackUsed,
       chunkCount: stagedFallbackUsed ? stagedChunkCount : null,
-      phaseMetrics: stagedFallbackUsed && stagedTelemetry ? {
+      phaseMetrics: stagedFallbackUsed ? {
         platform: process.platform,
         transport: userOptions.agyStreamJson ? "stream-json" : "argv",
-        budgetAllocatedMs: stagedTelemetry.budgetAllocatedMs,
-        globalDeadlineRemainingMs: stagedTelemetry.globalDeadlineRemainingMs,
+        budgetAllocatedMs: stagedProviders.length === 1
+          ? (stagedProviders[0].stagedTelemetry?.budgetAllocatedMs ?? timeoutMs)
+          : (stagedProviders.reduce((sum, p) => sum + (p.stagedTelemetry?.budgetAllocatedMs || 0), 0) || timeoutMs),
+        globalDeadlineRemainingMs: Math.min(...stagedProviders.map(p => p.stagedTelemetry?.globalDeadlineRemainingMs ?? timeoutMs)),
         stagedFallbackUsed: true,
-        chunkCount: stagedTelemetry.chunkCount,
-        maxConcurrency: stagedTelemetry.maxConcurrency,
-        feasibility: stagedTelemetry.feasibility
+        chunkCount: stagedChunkCount,
+        chunkTimeoutCount: stagedTimeoutCount,
+        maxConcurrency: Math.max(...stagedProviders.map(p => p.stagedTelemetry?.maxConcurrency ?? (userOptions.stagedConcurrency || 2))),
+        feasibility: stagedProviders.length === 1
+          ? (stagedProviders[0].stagedTelemetry?.feasibility || { isFeasible: true, reason: "Staged review feasible" })
+          : {
+            isFeasible: stagedProviders.every(p => p.stagedTelemetry?.feasibility?.isFeasible !== false),
+            reason: stagedProviders.map(p => `${p.provider}: ${p.stagedTelemetry?.feasibility?.reason || "feasible"}`).join("; ")
+          },
+        byProvider: {
+          ...(agyStagedFallbackUsed ? {
+            agy: stagedReviewMetrics.agy.stagedTelemetry || {
+              chunkCount: stagedReviewMetrics.agy.chunkCount,
+              chunkTimeoutCount: stagedReviewMetrics.agy.chunkTimeoutCount,
+              stagedFallbackUsed: true
+            }
+          } : {}),
+          ...(claudeStagedFallbackUsed ? {
+            claude: stagedReviewMetrics.claude.stagedTelemetry || {
+              chunkCount: stagedReviewMetrics.claude.chunkCount,
+              chunkTimeoutCount: stagedReviewMetrics.claude.chunkTimeoutCount,
+              stagedFallbackUsed: true
+            }
+          } : {}),
+          ...(codexStagedFallbackUsed ? {
+            codex: stagedReviewMetrics.codex.stagedTelemetry || {
+              chunkCount: stagedReviewMetrics.codex.chunkCount,
+              chunkTimeoutCount: stagedReviewMetrics.codex.chunkTimeoutCount,
+              stagedFallbackUsed: true
+            }
+          } : {})
+        }
       } : {
         platform: process.platform,
         transport: userOptions.agyStreamJson ? "stream-json" : "argv",

@@ -131,7 +131,7 @@ after(async () => {
   await cleanupDir(tempDir);
 });
 
-test("E2E-01: Single sentry clean review (Tier 2 small diff) -> Exit 0, Gate APPROVE", async () => {
+test("E2E-01: Single sentry clean review without Clean Challenge fails closed -> Exit 1, Gate BLOCK", async () => {
   const stdout = new MockStream();
   const stderr = new MockStream();
   const changeSet = makeChangeSet([{ path: "src/calc.js", additions: 5, deletions: 1 }]);
@@ -148,14 +148,15 @@ test("E2E-01: Single sentry clean review (Tier 2 small diff) -> Exit 0, Gate APP
     { getChangeSet: () => changeSet }
   );
 
-  assert.equal(exitCode, EXIT_CODES.SUCCESS);
+  assert.equal(exitCode, EXIT_CODES.GATE_BLOCKED);
   assert.match(stderr.buffer, /Scale Routing: Mode = SINGLE/i);
   assert.match(stderr.buffer, /Consensus Verdict: APPROVE/i);
-  assert.match(stderr.buffer, /Gate Decision: APPROVE/i);
+  assert.match(stderr.buffer, /Gate Decision: BLOCK/i);
+  assert.match(stderr.buffer, /Clean Challenge missing/i);
 
   const report = JSON.parse(stdout.buffer);
-  assert.equal(report.status, "reviewed-clean");
-  assert.equal(report.gate.decision, "approve");
+  assert.equal(report.status, "incomplete");
+  assert.equal(report.gate.decision, "block");
   assert.equal(report.findings.total, 0);
   assert.equal(report.findings.blocking, 0);
 
@@ -224,7 +225,7 @@ test("E2E-02: Heterogeneous quorum consensus (Tier 1 high-risk diff) -> Exit 1, 
   assert.equal(directRes.findings[0].title, "Unverified Signature");
 });
 
-test("E2E-03: Model instruction injection neutralization -> Arbitrary commands stripped, host safe", async () => {
+test("E2E-03: Model instruction injection neutralization -> Arbitrary commands stripped, host safe (Clean Challenge fails closed)", async () => {
   const stdout = new MockStream();
   const stderr = new MockStream();
   const changeSet = makeChangeSet([{ path: "src/calc.js", additions: 5, deletions: 1 }]);
@@ -241,12 +242,13 @@ test("E2E-03: Model instruction injection neutralization -> Arbitrary commands s
     { getChangeSet: () => changeSet }
   );
 
-  assert.equal(exitCode, EXIT_CODES.SUCCESS);
-  assert.match(stderr.buffer, /Gate Decision: APPROVE/i);
+  assert.equal(exitCode, EXIT_CODES.GATE_BLOCKED);
+  assert.match(stderr.buffer, /Gate Decision: BLOCK/i);
+  assert.match(stderr.buffer, /Clean Challenge missing/i);
 
   const report = JSON.parse(stdout.buffer);
-  assert.equal(report.status, "reviewed-clean");
-  assert.equal(report.gate.decision, "approve");
+  assert.equal(report.status, "incomplete");
+  assert.equal(report.gate.decision, "block");
   // Hostile command keys must be stripped by Default-Deny
   assert.equal("command" in report, false);
   assert.equal("shell" in report, false);
@@ -487,18 +489,20 @@ test("E2E-08: Invocation via bin/triad-flow.mjs directly -> Real outer CLI invoc
     timeout: 15000
   });
 
-  assert.equal(res.status, 0, `CLI exited with ${res.status}: ${res.stderr}`);
+  assert.equal(res.status, 1, `CLI exited with ${res.status}: ${res.stderr}`);
   assert.equal(fs.existsSync(reportFile), true);
 
   const stdoutReport = JSON.parse(res.stdout);
   assert.equal(stdoutReport.schemaVersion, "1.0.0");
-  assert.equal(stdoutReport.status, "reviewed-clean");
-  assert.equal(stdoutReport.gate.decision, "approve");
+  assert.equal(stdoutReport.status, "incomplete");
+  assert.equal(stdoutReport.gate.decision, "block");
+  assert.match(stdoutReport.gate.reason, /Clean Challenge missing/i);
   assert.equal(stdoutReport.policy.id, "STRICT_HETEROGENEOUS");
 
   const fileReport = JSON.parse(fs.readFileSync(reportFile, "utf8"));
   assert.equal(fileReport.schemaVersion, "1.0.0");
-  assert.equal(fileReport.status, "reviewed-clean");
-  assert.equal(fileReport.gate.decision, "approve");
+  assert.equal(fileReport.status, "incomplete");
+  assert.equal(fileReport.gate.decision, "block");
+  assert.match(fileReport.gate.reason, /Clean Challenge missing/i);
   assert.equal(fileReport.routing.mode, "hierarchical");
 });

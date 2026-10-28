@@ -10,6 +10,7 @@ import { deepFreeze } from "./consensus-state.mjs";
 
 export const REVIEW_RUN_STATUS = Object.freeze({
   REVIEWED_CLEAN: "reviewed-clean",
+  PRELIMINARY_CLEAN: "preliminary-clean",
   REVIEWED_WITH_FINDINGS: "reviewed-with-findings",
   NO_CHANGES: "no-changes",
   INCOMPLETE: "incomplete",
@@ -20,6 +21,7 @@ export const REVIEW_RUN_STATUS = Object.freeze({
 export const STATUS_EXIT_CODES = Object.freeze({
   [REVIEW_RUN_STATUS.REVIEWED_CLEAN]: 0,
   [REVIEW_RUN_STATUS.NO_CHANGES]: 0,
+  [REVIEW_RUN_STATUS.PRELIMINARY_CLEAN]: 1,
   [REVIEW_RUN_STATUS.REVIEWED_WITH_FINDINGS]: 1,
   [REVIEW_RUN_STATUS.INCOMPLETE]: 1,
   [REVIEW_RUN_STATUS.CONFIGURATION_ERROR]: 2,
@@ -123,7 +125,8 @@ export function buildReviewRunReport(params = {}) {
     } : null,
     gate: gate ? {
       decision: String(gate.decision || "block"),
-      reason: String(gate.reason || "")
+      reason: String(gate.reason || ""),
+      ...(gate.preliminary !== undefined ? { preliminary: Boolean(gate.preliminary) } : {})
     } : null,
     error: error ? String(error) : null
   };

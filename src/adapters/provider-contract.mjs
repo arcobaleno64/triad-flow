@@ -219,7 +219,9 @@ export function validateProviderInput(input = {}) {
         prompt: typeof safeGet(input, "prompt") === "string" ? safeGet(input, "prompt") : undefined,
         patchObjective: typeof safeGet(input, "patchObjective") === "string" ? safeGet(input, "patchObjective").trim() : undefined,
         objectiveContract: (safeGet(input, "objectiveContract") && typeof safeGet(input, "objectiveContract") === "object") ? safeGet(input, "objectiveContract") : undefined,
-        options: (safeGet(input, "options") && typeof safeGet(input, "options") === "object") ? safeGet(input, "options") : undefined
+        options: (safeGet(input, "options") && typeof safeGet(input, "options") === "object") ? safeGet(input, "options") : undefined,
+        contextPackage: (safeGet(input, "contextPackage") && typeof safeGet(input, "contextPackage") === "object") ? safeGet(input, "contextPackage") : undefined,
+        contextGaps: safeIsArray(safeGet(input, "contextGaps")) ? safeGet(input, "contextGaps") : undefined
       })
     };
   } catch (err) {

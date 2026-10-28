@@ -5,7 +5,16 @@
  * XML-delimited context sections, and Default-Deny sentry contracts.
  */
 
-import { DEFAULT_LIMITS, COVERAGE_OMISSION_CODES } from "./provider-contract.mjs";
+import { DEFAULT_LIMITS } from "./provider-contract.mjs";
+
+export const COVERAGE_OMISSION_CODES = Object.freeze({
+  UNMODIFIED: "OMIT_UNMODIFIED",
+  SIZE_LIMIT: "OMIT_SIZE_LIMIT",
+  BINARY: "OMIT_BINARY",
+  GENERATED: "OMIT_GENERATED",
+  OUT_OF_SCOPE: "OMIT_OUT_OF_SCOPE",
+  TIMEOUT: "OMIT_TIMEOUT"
+});
 
 const ALLOWED_OMISSION_CODES_LIST = Object.values(COVERAGE_OMISSION_CODES);
 
@@ -151,6 +160,35 @@ export function selectChecklists(changeSet, options = {}) {
 }
 
 /**
+ * Safely escapes characters for XML attribute values.
+ * @param {any} value
+ * @returns {string}
+ */
+export function escapeXmlAttribute(value) {
+  if (value === null || value === undefined) return "";
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+/**
+ * Safely escapes characters for XML element text content.
+ * Prevents markup injection or breakout from XML-like structures.
+ * @param {any} value
+ * @returns {string}
+ */
+export function escapeXmlText(value) {
+  if (value === null || value === undefined) return "";
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+/**
  * Formats taxonomy checklists into an XML-delimited prompt block.
  * @param {Array<object>} checklists
  * @returns {string}
@@ -159,7 +197,7 @@ export function formatChecklistsXml(checklists) {
   if (!checklists || checklists.length === 0) return "";
   const lines = ["<security_checklists>"];
   for (const list of checklists) {
-    lines.push(`  <checklist id="${list.id}" title="${list.title}">`);
+    lines.push(`  <checklist id="${escapeXmlAttribute(list.id)}" title="${escapeXmlAttribute(list.title)}">`);
     for (const rule of list.rules) {
       lines.push(`    - ${rule}`);
     }
@@ -179,9 +217,14 @@ export function formatContextPackageXml(contextPackage) {
   const lines = [];
 
   const { layer1AstEnclosure, layer2ModuleScope, layer3CallGraph } = contextPackage.layers;
+  const targetFileAttr = escapeXmlAttribute(contextPackage.targetFile || "unknown");
 
-  if (layer1AstEnclosure && (layer1AstEnclosure.enclosingFunctions?.length > 0 || layer1AstEnclosure.enclosingClasses?.length > 0)) {
-    lines.push(`<enclosing_context targetFile="${contextPackage.targetFile || "unknown"}">`);
+  if (layer1AstEnclosure && (
+    layer1AstEnclosure.enclosingFunctions?.length > 0 ||
+    layer1AstEnclosure.enclosingClasses?.length > 0 ||
+    layer1AstEnclosure.callees?.length > 0
+  )) {
+    lines.push(`<enclosing_context targetFile="${targetFileAttr}">`);
     if (layer1AstEnclosure.enclosingClasses?.length > 0) {
       lines.push("  <enclosing_classes>");
       for (const cls of layer1AstEnclosure.enclosingClasses) {
@@ -199,11 +242,40 @@ export function formatContextPackageXml(contextPackage) {
       }
       lines.push("  </enclosing_functions>");
     }
+    if (layer1AstEnclosure.callees?.length > 0) {
+      for (const c of layer1AstEnclosure.callees) {
+        if (!c || typeof c !== "object" || (c.definition !== undefined && typeof c.definition !== "string")) {
+          return `<context_package targetFile="${targetFileAttr}" status="untrusted" error="INVALID_CALLEE_DEFINITION">\n  <extraction_failure reason="Callee definition must be a string, received ${typeof c?.definition}"/>\n</context_package>`;
+        }
+      }
+
+      lines.push("  <callee_definitions>");
+      lines.push(`    <local_callees targetFile="${targetFileAttr}">`);
+      for (const c of layer1AstEnclosure.callees) {
+        const lineAttr = c.startLine && c.endLine
+          ? ` startLine="${escapeXmlAttribute(c.startLine)}" endLine="${escapeXmlAttribute(c.endLine)}" lines="${escapeXmlAttribute(c.lines)}"`
+          : ` lines="${escapeXmlAttribute(c.lines)}"`;
+        const symAttr = escapeXmlAttribute(c.symbol);
+        const bytesAttr = escapeXmlAttribute(c.bytes);
+        const fileVal = targetFileAttr === "multi-file"
+          ? (c.file && c.file !== "multi-file" ? c.file : (c.path || c.sourceFile || ""))
+          : (c.file && c.file !== "multi-file" && c.file !== targetFileAttr ? c.file : "");
+        const fileAttr = fileVal ? ` file="${escapeXmlAttribute(fileVal)}"` : "";
+        lines.push(`      <callee symbol="${symAttr}"${fileAttr}${lineAttr} bytes="${bytesAttr}">`);
+        if (typeof c.definition === "string") {
+          const escapedDef = escapeXmlText(c.definition.trim()).replace(/\n/g, "\n        ");
+          lines.push(`        ${escapedDef}`);
+        }
+        lines.push("      </callee>");
+      }
+      lines.push("    </local_callees>");
+      lines.push("  </callee_definitions>");
+    }
     lines.push("</enclosing_context>");
   }
 
   if (layer2ModuleScope && (layer2ModuleScope.imports?.length > 0 || layer2ModuleScope.exports?.length > 0)) {
-    lines.push(`<module_scope targetFile="${contextPackage.targetFile || "unknown"}">`);
+    lines.push(`<module_scope targetFile="${targetFileAttr}">`);
     if (layer2ModuleScope.imports?.length > 0) {
       lines.push(`  <imports>\n${layer2ModuleScope.imports.map(i => `    ${i}`).join("\n")}\n  </imports>`);
     }
@@ -214,7 +286,7 @@ export function formatContextPackageXml(contextPackage) {
   }
 
   if (layer3CallGraph && (layer3CallGraph.callers?.length > 0 || layer3CallGraph.callees?.length > 0)) {
-    lines.push(`<call_graph targetFile="${contextPackage.targetFile || "unknown"}">`);
+    lines.push(`<call_graph targetFile="${targetFileAttr}">`);
     if (layer3CallGraph.callers?.length > 0) {
       lines.push(`  <callers>\n${layer3CallGraph.callers.map(c => `    - ${c.callerName} at ${c.file}:${c.line}`).join("\n")}\n  </callers>`);
     }
@@ -224,6 +296,30 @@ export function formatContextPackageXml(contextPackage) {
     lines.push("</call_graph>");
   }
 
+  return lines.join("\n");
+}
+
+/**
+ * Formats unresolved code context gaps into a structured prompt block.
+ * @param {Array<object>} contextGaps
+ * @returns {string}
+ */
+export function formatContextGaps(contextGaps) {
+  if (!Array.isArray(contextGaps) || contextGaps.length === 0) return "";
+  const lines = [
+    `The following referenced callee definitions on sensitive execution paths could not be deterministically extracted from the target commit:`,
+    ...contextGaps.map(gap => {
+      const sym = gap.symbol || gap.code || "unknown";
+      const loc = gap.line ? `${gap.file}:${gap.line}` : (gap.file || (Array.isArray(gap.targetFiles) ? gap.targetFiles.join(", ") : "unknown"));
+      const cat = gap.category ? ` [Category: ${gap.category}]` : (gap.code ? ` [Code: ${gap.code}]` : "");
+      return `  - Symbol: '${sym}' (Reason: ${gap.reason || "UNRESOLVED_SYMBOL"})${cat} at ${loc}`;
+    }),
+    ``,
+    `MANDATORY UNCERTAINTY INSTRUCTION:`,
+    `Callee definitions on sensitive execution paths could not be resolved.`,
+    `Under Default-Deny, when an unresolved code context gap affects execution reachability, input validation, default-value handling, or security invariants, you MUST NOT certify clean.`,
+    `You MUST explicitly report overallStatus: "UNCERTAIN" or mark affected assessments as evidenceSupport: "UNCERTAIN".`
+  ];
   return lines.join("\n");
 }
 
@@ -277,6 +373,14 @@ export function buildEvidenceReviewPrompt(changeSet, role = "macro", limits = DE
 
   if (contextBlock) {
     sections.push(``, `[CODE CONTEXT & AST ENCLOSURES]`, contextBlock);
+  }
+
+  const contextGaps = (Array.isArray(options?.contextGaps) && Array.isArray(contextPackage?.contextGaps))
+    ? [...contextPackage.contextGaps, ...options.contextGaps]
+    : (contextPackage?.contextGaps || options?.contextGaps || []);
+  const contextGapsBlock = formatContextGaps(contextGaps);
+  if (contextGapsBlock) {
+    sections.push(``, `[UNRESOLVED CODE CONTEXT GAPS]`, contextGapsBlock);
   }
 
   const objectiveContract = options?.objectiveContract || changeSet?.objectiveContract || null;
@@ -419,5 +523,6 @@ export function buildEvidenceReviewPrompt(changeSet, role = "macro", limits = DE
  * Retains exact compatibility with legacy expectations while supporting enhanced structured outputs.
  */
 export function buildReviewPrompt(changeSet, role = "macro", limits = DEFAULT_LIMITS, options = {}) {
-  return buildEvidenceReviewPrompt(changeSet, role, limits, null, options);
+  const contextPackage = options?.contextPackage || changeSet?.contextPackage || null;
+  return buildEvidenceReviewPrompt(changeSet, role, limits, contextPackage, options);
 }

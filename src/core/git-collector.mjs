@@ -29,6 +29,440 @@ function gitExec(repoRoot, args, options = {}) {
   });
 }
 
+const exactHeadContentCache = new Map();
+
+/**
+ * Normalizes scope mode string to canonical form (IMP-F05).
+ * Rejects unknown or unmapped mode strings fail-closed.
+ *
+ * @param {string} mode
+ * @returns {string}
+ */
+export function normalizeScopeMode(mode) {
+  if (typeof mode !== "string") {
+    const err = new Error(`Unknown scope mode: ${mode}`);
+    err.code = "UNKNOWN_SCOPE_MODE";
+    throw err;
+  }
+  const trimmed = mode.trim();
+  if (trimmed === "revision-range" || trimmed === "revision_range") {
+    return "revision_range";
+  }
+  if (trimmed === "staged") {
+    return "staged";
+  }
+  if (trimmed === "working-tree" || trimmed === "working_tree") {
+    return "working_tree";
+  }
+  if (trimmed === "synthetic") {
+    return "synthetic";
+  }
+  const err = new Error(`Unknown scope mode: ${mode}`);
+  err.code = "UNKNOWN_SCOPE_MODE";
+  throw err;
+}
+
+/**
+ * Validates and normalizes path to canonical POSIX Git identity (Spec §2.5).
+ * Rejects illegal characters, NUL, control codes, traversals, and absolute roots fail-closed.
+ *
+ * @param {string} filePath
+ * @returns {string}
+ */
+export function normalizeGitPath(filePath, repoRoot = "") {
+  if (typeof filePath !== "string" || !filePath.trim()) {
+    const err = new Error(`Illegal path: path must be a non-empty string`);
+    err.code = "ILLEGAL_PATH_SECURITY_REJECT";
+    throw err;
+  }
+
+  // Pre-validation: reject NUL or ASCII control codes 0x01-0x1F
+  for (let i = 0; i < filePath.length; i++) {
+    const code = filePath.charCodeAt(i);
+    if (code === 0 || (code >= 1 && code <= 31)) {
+      const err = new Error(`Illegal path contains NUL or control characters: ${JSON.stringify(filePath)}`);
+      err.code = "ILLEGAL_PATH_SECURITY_REJECT";
+      throw err;
+    }
+  }
+
+  // Check directory traversal tokens (../ or ..\ or segment ..)
+  if (/(^|[\\/])\.\.([\\/]|$)/.test(filePath)) {
+    const err = new Error(`Illegal path traversal: ${filePath}`);
+    err.code = "ILLEGAL_PATH_SECURITY_REJECT";
+    throw err;
+  }
+
+  let normalized = filePath.replace(/\\/g, "/");
+
+  // If repoRoot is provided, allow absolute paths that resolve strictly within repoRoot
+  if (repoRoot && typeof repoRoot === "string") {
+    let normRoot = repoRoot.replace(/\\/g, "/").replace(/\/+$/, "");
+    if (normalized.startsWith(normRoot + "/")) {
+      normalized = normalized.slice(normRoot.length + 1);
+    }
+  }
+
+  // Check absolute paths (starts with / or \, or drive letter like C:/ or C:\)
+  if (/^[a-zA-Z]:[\\/]/.test(normalized) || normalized.startsWith("/") || normalized.startsWith("\\")) {
+    const err = new Error(`Illegal absolute path: ${filePath}`);
+    err.code = "ILLEGAL_PATH_SECURITY_REJECT";
+    throw err;
+  }
+
+  // Strip redundant leading ./
+  while (normalized.startsWith("./")) {
+    normalized = normalized.slice(2);
+  }
+
+  // Strip redundant double slashes
+  normalized = normalized.replace(/\/{2,}/g, "/");
+
+  // Strip trailing slashes
+  while (normalized.length > 1 && normalized.endsWith("/")) {
+    normalized = normalized.slice(0, -1);
+  }
+
+  // Re-check traversal or empty after stripping
+  if (!normalized || normalized === "." || normalized === "/" || /(^|\/)\.\.($|\/)/.test(normalized)) {
+    const err = new Error(`Illegal path resolution: ${filePath}`);
+    err.code = "ILLEGAL_PATH_SECURITY_REJECT";
+    throw err;
+  }
+
+  // Process segments
+  const segments = normalized.split("/");
+  const cleanSegments = [];
+  for (const seg of segments) {
+    if (seg === ".") continue;
+    if (seg === "..") {
+      const err = new Error(`Illegal path traversal: ${filePath}`);
+      err.code = "ILLEGAL_PATH_SECURITY_REJECT";
+      throw err;
+    }
+    cleanSegments.push(seg);
+  }
+
+  if (cleanSegments.length === 0) {
+    const err = new Error(`Illegal empty path after normalization: ${filePath}`);
+    err.code = "ILLEGAL_PATH_SECURITY_REJECT";
+    throw err;
+  }
+
+  normalized = cleanSegments.join("/");
+
+  // Unicode Normalization Form C (NFC)
+  normalized = normalized.normalize("NFC");
+
+  return normalized;
+}
+
+/**
+ * Detects case collisions across canonical paths on case-insensitive filesystems (Spec §2.5).
+ * Throws CANONICAL_PATH_COLLISION fail-closed if different paths map to the same lowercase path.
+ *
+ * @param {Array<string|object>} paths
+ * @returns {boolean}
+ */
+export function detectCaseCollisions(paths) {
+  if (!Array.isArray(paths)) return true;
+  const seen = new Map();
+  for (const p of paths) {
+    const raw = typeof p === "string" ? p : (p?.canonicalPath || p?.path || p?.file || "");
+    const normalized = normalizeGitPath(raw);
+    const lower = normalized.toLowerCase();
+    if (seen.has(lower) && seen.get(lower) !== normalized) {
+      const err = new Error(`Canonical path case collision detected: '${seen.get(lower)}' vs '${normalized}'`);
+      err.code = "CANONICAL_PATH_COLLISION";
+      throw err;
+    }
+    seen.set(lower, normalized);
+  }
+  return true;
+}
+
+/**
+ * Collects an authoritative, byte-exact mutation snapshot for a repository working state (Spec §2.2).
+ * Computes mutationSnapshotHash binding canonical paths, changeTypes, index and worktree SHA-256s, base blob SHAs, and index tree SHA.
+ *
+ * @param {string} repoRoot
+ * @param {object} [options={}]
+ * @returns {object}
+ */
+export function collectMutationSnapshot(repoRoot, options = {}) {
+  const normRepoRoot = path.resolve(repoRoot || process.cwd()).replace(/\\/g, "/");
+  const rawMode = options.scopeMode || (options.stagedOnly ? "staged" : (options.base ? "revision_range" : "working_tree"));
+  const scopeMode = normalizeScopeMode(rawMode);
+
+  let baseSha = options.baseSha || options.baseCommitSha || null;
+  let headSha = options.headSha || null;
+
+  // Resolve commit SHAs if not explicitly given
+  if (scopeMode === "revision_range") {
+    if (!baseSha && options.base) {
+      try {
+        baseSha = gitExec(normRepoRoot, ["rev-parse", "--verify", `${options.base}^{commit}`]).trim();
+      } catch (_e) {}
+    }
+    if (!headSha && (options.head || options.headSha)) {
+      try {
+        headSha = gitExec(normRepoRoot, ["rev-parse", "--verify", `${options.head || options.headSha}^{commit}`]).trim();
+      } catch (_e) {}
+    }
+  } else {
+    try {
+      baseSha = gitExec(normRepoRoot, ["rev-parse", "--verify", "HEAD^{commit}"], { stdio: ["ignore", "pipe", "ignore"] }).trim();
+    } catch (_e) {
+      baseSha = null; // unborn repository
+    }
+    headSha = baseSha;
+  }
+
+  // Obtain index tree SHA
+  let indexTreeSha = EMPTY_TREE_SHA;
+  try {
+    indexTreeSha = gitExec(normRepoRoot, ["write-tree"], { stdio: ["ignore", "pipe", "ignore"] }).trim();
+  } catch (_e) {
+    if (baseSha) {
+      try {
+        indexTreeSha = gitExec(normRepoRoot, ["rev-parse", `${baseSha}^{tree}`], { stdio: ["ignore", "pipe", "ignore"] }).trim();
+      } catch (_e2) {
+        indexTreeSha = EMPTY_TREE_SHA;
+      }
+    }
+  }
+
+  // Determine file entries to process
+  let candidateEntries = [];
+  if (Array.isArray(options.files) && options.files.length > 0) {
+    candidateEntries = options.files;
+  } else {
+    const workingState = collectGitWorkingState(normRepoRoot, {
+      ...options,
+      base: options.base || baseSha,
+      head: options.head || headSha,
+      scopeMode: scopeMode === "revision_range" ? "revision-range" : (scopeMode === "working_tree" ? "working-tree" : scopeMode)
+    });
+    if (workingState.ok && Array.isArray(workingState.files)) {
+      candidateEntries = workingState.files;
+    }
+  }
+
+  // Detect case collisions across all candidate files
+  detectCaseCollisions(candidateEntries);
+
+  const fileSnapshots = [];
+  for (const entry of candidateEntries) {
+    const rawPath = typeof entry === "string" ? entry : (entry.path || entry.canonicalPath || entry.file);
+    const canonicalPath = normalizeGitPath(rawPath);
+
+    // If entry already carries full pre-computed snapshot fields (e.g. In synthetic tests), preserve them
+    if (entry && entry.indexContentSha256 !== undefined && entry.worktreeContentSha256 !== undefined && entry.baseBlobSha !== undefined) {
+      const changeType = entry.changeType || (entry.worktreeContentSha256 === "DELETED" ? "D" : (entry.baseBlobSha === "NEW" ? "A" : "M"));
+      // S2-F13 Mixed Deletion Collision check
+      if (entry.indexContentSha256 === "DELETED" && entry.worktreeContentSha256 !== "DELETED") {
+        if (scopeMode === "working_tree") {
+          const err = new Error(`Stale or conflicting mutation state: staged deletion collides with worktree file: ${canonicalPath}`);
+          err.code = "STALE_OR_CONFLICTING_MUTATION_STATE";
+          throw err;
+        }
+      }
+
+      fileSnapshots.push({
+        canonicalPath,
+        changeType,
+        indexContentSha256: entry.indexContentSha256,
+        worktreeContentSha256: entry.worktreeContentSha256,
+        baseBlobSha: entry.baseBlobSha
+      });
+      continue;
+    }
+
+    // Determine changeType
+    let changeType = "M";
+    if (entry.changeType) {
+      changeType = entry.changeType;
+    } else if (entry.untracked || entry.added) {
+      changeType = "A";
+    } else if (entry.deleted) {
+      changeType = "D";
+    } else if (entry.renamed) {
+      changeType = "R";
+    } else if (entry.copied) {
+      changeType = "C";
+    } else if (baseSha) {
+      let inBase = true;
+      try {
+        gitExec(normRepoRoot, ["rev-parse", "--verify", `${baseSha}:${canonicalPath}`], {
+          stdio: ["ignore", "pipe", "ignore"]
+        });
+      } catch (_e) {
+        inBase = false;
+      }
+      if (!inBase) {
+        changeType = "A";
+      }
+    }
+
+    // Determine indexContentSha256
+    let indexContentSha256 = "UNSTAGED";
+    try {
+      const lsOut = gitExec(normRepoRoot, ["ls-files", "-s", "-z", "--", canonicalPath], {
+        stdio: ["ignore", "pipe", "ignore"]
+      }).trim();
+      if (lsOut) {
+        const match = lsOut.match(/^[0-9]+\s+([0-9a-fA-F]{40,64})\s+[0-9]+/);
+        if (match) {
+          const blobSha = match[1];
+          const blobBuf = gitExec(normRepoRoot, ["cat-file", "-p", blobSha], {
+            encoding: "buffer",
+            stdio: ["ignore", "pipe", "ignore"],
+            maxBuffer: 20 * 1024 * 1024
+          });
+          indexContentSha256 = crypto.createHash("sha256").update(blobBuf).digest("hex");
+        }
+      }
+    } catch (_e) {}
+
+    // Check if staged for deletion
+    if (entry.staged && changeType === "D") {
+      indexContentSha256 = "DELETED";
+    }
+
+    // Determine worktreeContentSha256
+    let worktreeContentSha256 = "DELETED";
+    const fullPhysicalPath = path.join(normRepoRoot, canonicalPath);
+    try {
+      const st = fs.lstatSync(fullPhysicalPath);
+      if (st.isFile()) {
+        const fileBuf = fs.readFileSync(fullPhysicalPath);
+        worktreeContentSha256 = crypto.createHash("sha256").update(fileBuf).digest("hex");
+      }
+    } catch (_e) {
+      worktreeContentSha256 = "DELETED";
+    }
+
+    // Determine baseBlobSha
+    let baseBlobSha = "NEW";
+    if (changeType === "A" && !entry.modified) {
+      baseBlobSha = "NEW";
+      if (baseSha) {
+        try {
+          const existingBlob = gitExec(normRepoRoot, ["rev-parse", "--verify", `${baseSha}:${canonicalPath}`], {
+            stdio: ["ignore", "pipe", "ignore"]
+          }).trim();
+          if (existingBlob) {
+            const err = new Error(`Mutation semantics mismatch: added file '${canonicalPath}' already exists in base tree '${baseSha}'`);
+            err.code = "MUTATION_SEMANTICS_MISMATCH";
+            throw err;
+          }
+        } catch (checkErr) {
+          if (checkErr.code === "MUTATION_SEMANTICS_MISMATCH") throw checkErr;
+        }
+      }
+    } else if (baseSha) {
+      try {
+        baseBlobSha = gitExec(normRepoRoot, ["rev-parse", "--verify", `${baseSha}:${canonicalPath}`], {
+          stdio: ["ignore", "pipe", "ignore"]
+        }).trim();
+      } catch (_e) {
+        if (changeType === "M") {
+          const err = new Error(`Base blob provenance unavailable for modified file: ${canonicalPath}`);
+          err.code = "PROVENANCE_UNAVAILABLE";
+          throw err;
+        }
+        if (changeType === "D") {
+          const err = new Error(`Mutation semantics mismatch: deleted file '${canonicalPath}' does not exist in base tree '${baseSha}'`);
+          err.code = "MUTATION_SEMANTICS_MISMATCH";
+          throw err;
+        }
+        baseBlobSha = "NEW";
+      }
+    } else {
+      baseBlobSha = "NEW";
+    }
+
+    // S2-F13 Mixed Deletion Collision check
+    if (indexContentSha256 === "DELETED" && worktreeContentSha256 !== "DELETED") {
+      if (scopeMode === "working_tree") {
+        const err = new Error(`Stale or conflicting mutation state: staged deletion collides with worktree file: ${canonicalPath}`);
+        err.code = "STALE_OR_CONFLICTING_MUTATION_STATE";
+        throw err;
+      }
+    }
+
+    fileSnapshots.push({
+      canonicalPath,
+      changeType,
+      indexContentSha256,
+      worktreeContentSha256,
+      baseBlobSha
+    });
+  }
+
+  // Sort canonically by canonicalPath POSIX order
+  fileSnapshots.sort((a, b) => (a.canonicalPath < b.canonicalPath ? -1 : a.canonicalPath > b.canonicalPath ? 1 : 0));
+
+  // Compute authoritative mutationSnapshotHash
+  const lines = fileSnapshots.map(f =>
+    [f.canonicalPath, f.changeType, f.indexContentSha256, f.worktreeContentSha256, f.baseBlobSha].join(":")
+  );
+  const payload = lines.join("\n") + "\n" + indexTreeSha;
+  const mutationSnapshotHash = crypto.createHash("sha256").update(payload, "utf8").digest("hex");
+
+  return {
+    mutationSnapshotHash,
+    snapshotHash: mutationSnapshotHash,
+    scopeMode,
+    indexTreeSha,
+    baseSha,
+    headSha,
+    files: fileSnapshots
+  };
+}
+
+/**
+ * Safely extracts file content at a specific Git commit SHA without touching the working tree.
+ * Enforces strict exact-head invariant (Spec §3.3.1).
+ * Caches content in memory keyed on `${headSha}:${filePath}`.
+ *
+ * @param {string} repoRoot - Absolute repository root path
+ * @param {string} headSha - Commit SHA (40 or 64 hex characters)
+ * @param {string} filePath - Path of file relative to repository root
+ * @returns {string|null} File content string or null if unresolvable / non-existent
+ */
+export function getExactHeadFileContent(repoRoot, headSha, filePath) {
+  if (!repoRoot || !headSha || !filePath) return null;
+  const normPath = filePath.replace(/\\/g, "/").replace(/^\.\//, "");
+  const normSha = String(headSha).trim();
+  if (!/^[0-9a-fA-F]{40,64}$/.test(normSha)) return null;
+
+  const normRepo = path.resolve(repoRoot).replace(/\\/g, "/");
+  const cacheKey = `${normRepo}:${normSha}:${normPath}`;
+  if (exactHeadContentCache.has(cacheKey)) {
+    return exactHeadContentCache.get(cacheKey);
+  }
+
+  try {
+    const content = gitExec(repoRoot, ["show", `${normSha}:${normPath}`], {
+      stdio: ["ignore", "pipe", "ignore"],
+      maxBuffer: 10 * 1024 * 1024
+    });
+    exactHeadContentCache.set(cacheKey, content);
+    return content;
+  } catch (_err) {
+    exactHeadContentCache.set(cacheKey, null);
+    return null;
+  }
+}
+
+/**
+ * Clears the in-memory exact-head file content cache.
+ */
+export function clearExactHeadCache() {
+  exactHeadContentCache.clear();
+}
+
 /**
  * Checks if buffer contains NUL bytes to determine if it is binary.
  */
@@ -160,30 +594,33 @@ export function collectGitWorkingState(cwd = process.cwd(), options = {}) {
   }
 
   // 2. Check if HEAD exists (Unborn repository support)
+  let headSha = null;
   try {
-    gitExec(repoRoot, ["rev-parse", "--verify", "HEAD"], {
-      stdio: "ignore"
-    });
+    headSha = gitExec(repoRoot, ["rev-parse", "--verify", "HEAD^{commit}"], {
+      stdio: ["ignore", "pipe", "ignore"]
+    }).trim();
   } catch (_err) {
     hasHead = false;
+    headSha = null;
   }
 
   // 3. Revision Range Mode (--base / --head)
-  if (options.base) {
+  if (options.base || options.baseSha) {
+    const baseRef = options.base || options.baseSha;
     let baseSha;
     try {
-      baseSha = gitExec(repoRoot, ["rev-parse", "--verify", `${options.base}^{commit}`]).trim();
+      baseSha = gitExec(repoRoot, ["rev-parse", "--verify", `${baseRef}^{commit}`]).trim();
     } catch (_err) {
       return {
         ok: false,
         error: {
           code: "INVALID_BASE_REF",
-          message: `Base reference '${options.base}' is invalid or cannot be resolved.`
+          message: `Base reference '${baseRef}' is invalid or cannot be resolved.`
         }
       };
     }
 
-    const headRef = options.head || "HEAD";
+    const headRef = options.head || options.headSha || "HEAD";
     let headSha;
     try {
       headSha = gitExec(repoRoot, ["rev-parse", "--verify", `${headRef}^{commit}`]).trim();
@@ -272,7 +709,8 @@ export function collectGitWorkingState(cwd = process.cwd(), options = {}) {
         scopeMode: "staged",
         repository: {
           root: repoRoot,
-          hasHead
+          hasHead,
+          ...(headSha ? { headSha } : {})
         },
         files: Array.from(fileMap.values())
       };
@@ -338,12 +776,16 @@ export function collectGitWorkingState(cwd = process.cwd(), options = {}) {
       }
     }
 
+    const isUncommittedScope = !options.base;
+    const computedScopeMode = options.scopeMode || (options.stagedOnly ? "staged" : "working-tree");
     return {
       ok: true,
-      scopeMode: "working-tree",
+      scopeMode: computedScopeMode,
       repository: {
         root: repoRoot,
-        hasHead
+        hasHead,
+        ...(hasHead && headSha ? { baseCommitSha: headSha } : {}),
+        ...(!isUncommittedScope && headSha ? { headSha } : {})
       },
       files: Array.from(fileMap.values())
     };
@@ -435,11 +877,16 @@ export function buildChangeSet(cwd = process.cwd(), options = {}) {
   const totalAdditions = files.reduce((sum, f) => sum + f.additions, 0);
   const totalDeletions = files.reduce((sum, f) => sum + f.deletions, 0);
 
+  const isUncommitted = scopeMode === "working-tree" || scopeMode === "staged";
   return {
     ok: true,
     schemaVersion: "1.0.0",
     scopeMode,
     repository: state.repository,
+    ...(isUncommitted
+      ? (state.repository?.baseCommitSha ? { baseCommitSha: state.repository.baseCommitSha } : {})
+      : (state.repository?.headSha ? { headSha: state.repository.headSha } : {})),
+    ...(isUncommitted ? { contentIdentity: `${scopeMode}:${contentDigest}` } : {}),
     contentDigest,
     totalFiles: files.length,
     totalAdditions,
