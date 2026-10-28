@@ -1321,3 +1321,54 @@ test("Observation producer authority: staged chunk timeout contributes to review
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 });
+
+test("G5-P2-03: runDogfoodReview dynamically derives Clean Challenge verifier identity and actualModel from active verifierAdapter", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-dogfood-g5-p2-03-"));
+  const tmpOut = path.join(tmpDir, "dogfood-run.json");
+
+  try {
+    // 1. Injected custom verifier with explicit actualModel
+    const customCodexAdapter = {
+      providerName: "codex",
+      modelName: "codex-preview-2026",
+      actualModel: { value: "codex-preview-2026", source: "reported" },
+      executeVerification: async () => ({
+        ok: true,
+        overallStatus: "CLEAN",
+        findings: [],
+        omissions: [],
+        actualModel: { value: "codex-preview-2026", source: "reported" }
+      })
+    };
+
+    const reportCodex = await runDogfoodReview({
+      mock: true,
+      verifierAdapter: customCodexAdapter,
+      out: tmpOut,
+      log: false
+    });
+
+    assert.ok(reportCodex.verificationRecord);
+    assert.equal(reportCodex.verificationRecord.verifier.providerName, "codex");
+    assert.equal(reportCodex.verificationRecord.verifier.modelName, "codex-preview-2026");
+    assert.equal(reportCodex.verificationRecord.verifier.actualModel.value, "codex-preview-2026");
+    assert.notEqual(reportCodex.verificationRecord.verifier.actualModel.value.includes("claude"), true, "Must not be polluted with claude identity");
+
+    // 2. Injected generic mock verifier adapter (e.g. createMockVerifierAdapter('agy'))
+    const mockAgyAdapter = createMockVerifierAdapter("agy");
+    const reportAgy = await runDogfoodReview({
+      mock: true,
+      verifierAdapter: mockAgyAdapter,
+      out: tmpOut,
+      log: false
+    });
+
+    assert.ok(reportAgy.verificationRecord);
+    assert.equal(reportAgy.verificationRecord.verifier.providerName, "agy");
+    assert.equal(reportAgy.verificationRecord.verifier.modelName, "agy-mock");
+    assert.equal(reportAgy.verificationRecord.verifier.actualModel.value, "agy-mock-v1");
+    assert.notEqual(reportAgy.verificationRecord.verifier.actualModel.value.includes("claude"), true, "Must not be polluted with claude identity");
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});

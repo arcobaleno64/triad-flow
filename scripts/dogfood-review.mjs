@@ -1433,6 +1433,16 @@ export async function runDogfoodReview(userOptions = {}) {
     verifierTimedOut = true;
   });
 
+  const activeVerifierName = verifierAdapter?.providerName || verifierAdapter?.provider || "claude";
+  const activeVerifierModel = verifierAdapter?.modelName || verifierAdapter?.model || (typeof verifierAdapter?.actualModel === "object" ? verifierAdapter?.actualModel?.value : verifierAdapter?.actualModel) || "claude-5.5-sonnet";
+  const activeActualModel = verifierAdapter?.actualModel
+    ? (typeof verifierAdapter.actualModel === "object"
+      ? { ...verifierAdapter.actualModel }
+      : { value: String(verifierAdapter.actualModel), source: "reported" })
+    : (activeVerifierName === "claude"
+      ? { value: "claude-5.5-sonnet (independent_verifier_stage)", source: "reported" }
+      : null);
+
   if (findings.length > 0 && !isStructuralFailure) {
     cleanChallengeAttempted = false;
     cleanChallengeDurationMs = 0;
@@ -1444,8 +1454,9 @@ export async function runDogfoodReview(userOptions = {}) {
       {
         producerName: "tri-party-quorum",
         producerModel: "agy+claude+codex",
-        verifierName: "claude",
-        verifierModel: "claude-5.5-sonnet",
+        verifierName: activeVerifierName,
+        verifierModel: activeVerifierModel,
+        ...(activeActualModel ? { actualModel: activeActualModel } : {}),
         changeSetDigest: changeSet.contentDigest,
         patchObjective: userOptions.patchObjective || null,
         objectiveContract,
@@ -1497,12 +1508,9 @@ export async function runDogfoodReview(userOptions = {}) {
         {
           producerName: "tri-party-quorum",
           producerModel: "agy+claude+codex",
-          verifierName: "claude",
-          verifierModel: "claude-5.5-sonnet",
-          actualModel: {
-            value: "claude-5.5-sonnet (independent_verifier_stage)",
-            source: "reported"
-          },
+          verifierName: activeVerifierName,
+          verifierModel: activeVerifierModel,
+          ...(activeActualModel ? { actualModel: activeActualModel } : {}),
           changeSetDigest: changeSet.contentDigest,
           patchObjective: userOptions.patchObjective || null,
           objectiveContract,
