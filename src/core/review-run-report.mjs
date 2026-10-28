@@ -126,6 +126,9 @@ export function buildReviewRunReport(params = {}) {
     gate: gate ? {
       decision: String(gate.decision || "block"),
       reason: String(gate.reason || ""),
+      advisoryFindings: Array.isArray(gate.advisoryFindings)
+        ? gate.advisoryFindings.map(a => (typeof a === "object" && a !== null ? { ...a } : a))
+        : [],
       ...(gate.preliminary !== undefined ? { preliminary: Boolean(gate.preliminary) } : {})
     } : null,
     error: error ? String(error) : null
