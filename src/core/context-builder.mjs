@@ -481,6 +481,316 @@ export function findBraceScopeEnd(lines, startIndex, options = {}) {
 }
 
 /**
+ * Computes leading visual indentation width in spaces, converting tabs to 4-space tab stops.
+ *
+ * @param {string} str
+ * @returns {number}
+ */
+export function computeIndent(str) {
+  if (!str) return 0;
+  let width = 0;
+  for (let i = 0; i < str.length; i++) {
+    const ch = str[i];
+    if (ch === " ") {
+      width += 1;
+    } else if (ch === "\t") {
+      width += 4 - (width % 4);
+    } else {
+      break;
+    }
+  }
+  return width;
+}
+
+/**
+ * Strips Python line comment (# ...) from a string while respecting string literals.
+ *
+ * @param {string} str
+ * @returns {string}
+ */
+export function stripPythonLineComment(str) {
+  if (!str) return "";
+  let inString = false;
+  let stringChar = null;
+  for (let i = 0; i < str.length; i++) {
+    const ch = str[i];
+    if (inString) {
+      if (ch === "\\" && i + 1 < str.length) {
+        i++;
+      } else if (ch === stringChar) {
+        inString = false;
+        stringChar = null;
+      }
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      inString = true;
+      stringChar = ch;
+      continue;
+    }
+    if (ch === "#") {
+      return str.slice(0, i);
+    }
+  }
+  return str;
+}
+
+/**
+ * Finds the 1-based end line of a Python function definition starting at defLineIdx (0-based).
+ * Handles multiline parameter lists, type annotations, single-line functions, docstrings,
+ * nested structures, and dict/set literals without relying on braces (G5-P2-05).
+ * Returns -1 if the function signature is malformed/unclosed or has no body.
+ *
+ * @param {string[]} lines
+ * @param {number} defLineIdx - 0-based line index of the def line
+ * @returns {number} 1-based end line number, or -1 if invalid
+ */
+export function findPythonScopeEnd(lines, defLineIdx) {
+  if (!Array.isArray(lines) || defLineIdx < 0 || defLineIdx >= lines.length) {
+    return -1;
+  }
+
+  const defLine = lines[defLineIdx];
+  const defMatch = defLine.match(/^(\s*)(?:async\s+)?def\s+([a-zA-Z0-9_$]+)\s*\(/);
+  if (!defMatch) {
+    return -1;
+  }
+
+  const baseIndent = computeIndent(defMatch[1]);
+  const sym = defMatch[2];
+  const symIdx = defLine.indexOf(sym);
+  const openParenIdx = defLine.indexOf("(", symIdx);
+  if (openParenIdx === -1) return -1;
+
+  // 1. Scan for signature completion: matching ')' followed by ':'
+  let parenDepth = 0;
+  let bracketDepth = 0;
+  let braceDepth = 0;
+  let inString = false;
+  let stringChar = null;
+  let isTripleQuote = false;
+  let sigClosed = false;
+  let colonLineIdx = -1;
+  let colonCharIdx = -1;
+
+  const maxSigLines = Math.min(lines.length, defLineIdx + 30);
+  for (let i = defLineIdx; i < maxSigLines; i++) {
+    const line = lines[i];
+    const startChar = (i === defLineIdx) ? openParenIdx : 0;
+
+    for (let c = startChar; c < line.length; c++) {
+      const ch = line[c];
+      const next1 = c + 1 < line.length ? line[c + 1] : "";
+      const next2 = c + 2 < line.length ? line[c + 2] : "";
+
+      if (inString) {
+        if (ch === "\\" && !isTripleQuote) {
+          c++;
+          continue;
+        }
+        if (isTripleQuote) {
+          if (ch === stringChar && next1 === stringChar && next2 === stringChar) {
+            inString = false;
+            stringChar = null;
+            isTripleQuote = false;
+            c += 2;
+          }
+        } else {
+          if (ch === stringChar) {
+            inString = false;
+            stringChar = null;
+          }
+        }
+        continue;
+      }
+
+      if (ch === "#") {
+        break; // comment to end of line
+      }
+
+      if (ch === '"' || ch === "'") {
+        if (next1 === ch && next2 === ch) {
+          inString = true;
+          stringChar = ch;
+          isTripleQuote = true;
+          c += 2;
+        } else {
+          inString = true;
+          stringChar = ch;
+          isTripleQuote = false;
+        }
+        continue;
+      }
+
+      if (ch === "(") {
+        parenDepth++;
+      } else if (ch === ")") {
+        if (parenDepth > 0) parenDepth--;
+      } else if (ch === "[") {
+        bracketDepth++;
+      } else if (ch === "]") {
+        if (bracketDepth > 0) bracketDepth--;
+      } else if (ch === "{") {
+        braceDepth++;
+      } else if (ch === "}") {
+        if (braceDepth > 0) braceDepth--;
+      } else if (ch === ":") {
+        if (parenDepth === 0 && bracketDepth === 0 && braceDepth === 0) {
+          sigClosed = true;
+          colonLineIdx = i;
+          colonCharIdx = c;
+          break;
+        }
+      }
+    }
+
+    if (sigClosed) break;
+  }
+
+  if (!sigClosed || colonLineIdx === -1) {
+    return -1;
+  }
+
+  // 2. Check for single-line function: def foo(x): return x
+  const colonLine = lines[colonLineIdx];
+  const afterColon = colonLine.slice(colonCharIdx + 1);
+  const codeAfterColon = stripPythonLineComment(afterColon).trim();
+  if (codeAfterColon.length > 0) {
+    return colonLineIdx + 1;
+  }
+
+  // 3. Scan indented body lines
+  let lastBodyLineIdx = -1;
+  inString = false;
+  stringChar = null;
+  isTripleQuote = false;
+  parenDepth = 0;
+  bracketDepth = 0;
+  braceDepth = 0;
+
+  for (let i = colonLineIdx + 1; i < lines.length; i++) {
+    const rawLine = lines[i];
+    const trimmed = rawLine.trim();
+
+    // Inside a multiline string/docstring, all lines belong to the body
+    if (inString) {
+      lastBodyLineIdx = i;
+      for (let c = 0; c < rawLine.length; c++) {
+        const ch = rawLine[c];
+        const next1 = c + 1 < rawLine.length ? rawLine[c + 1] : "";
+        const next2 = c + 2 < rawLine.length ? rawLine[c + 2] : "";
+        if (isTripleQuote) {
+          if (ch === stringChar && next1 === stringChar && next2 === stringChar) {
+            inString = false;
+            stringChar = null;
+            isTripleQuote = false;
+            c += 2;
+          }
+        } else {
+          if (ch === "\\" && c + 1 < rawLine.length) {
+            c++;
+          } else if (ch === stringChar) {
+            inString = false;
+            stringChar = null;
+          }
+        }
+      }
+      continue;
+    }
+
+    // Blank line
+    if (trimmed.length === 0) {
+      continue;
+    }
+
+    const indent = computeIndent(rawLine);
+
+    // Comment line handling
+    if (trimmed.startsWith("#")) {
+      if (indent > baseIndent) {
+        lastBodyLineIdx = i;
+      } else {
+        // Comment at <= baseIndent: check if subsequent non-blank code resumes indent > baseIndent
+        let resumes = false;
+        for (let k = i + 1; k < lines.length; k++) {
+          const nextTrim = lines[k].trim();
+          if (nextTrim.length === 0 || nextTrim.startsWith("#")) continue;
+          if (computeIndent(lines[k]) > baseIndent) {
+            resumes = true;
+          }
+          break;
+        }
+        if (!resumes) {
+          break;
+        }
+      }
+      continue;
+    }
+
+    // Code line: check indentation boundary if outside open brackets/parens/braces
+    if (indent <= baseIndent && parenDepth === 0 && bracketDepth === 0 && braceDepth === 0) {
+      break;
+    }
+
+    lastBodyLineIdx = i;
+
+    // Scan line for string literals, comments, and bracket/paren/brace depths
+    for (let c = 0; c < rawLine.length; c++) {
+      const ch = rawLine[c];
+      const next1 = c + 1 < rawLine.length ? rawLine[c + 1] : "";
+      const next2 = c + 2 < rawLine.length ? rawLine[c + 2] : "";
+
+      if (ch === "#") {
+        break;
+      }
+
+      if (ch === '"' || ch === "'") {
+        if (next1 === ch && next2 === ch) {
+          inString = true;
+          stringChar = ch;
+          isTripleQuote = true;
+          c += 2;
+          // check if closed on same line
+          for (let k = c + 1; k < rawLine.length - 2; k++) {
+            if (rawLine[k] === stringChar && rawLine[k + 1] === stringChar && rawLine[k + 2] === stringChar) {
+              inString = false;
+              stringChar = null;
+              isTripleQuote = false;
+              c = k + 2;
+              break;
+            }
+          }
+        } else {
+          // single-line string literal
+          for (let k = c + 1; k < rawLine.length; k++) {
+            if (rawLine[k] === "\\") {
+              k++;
+            } else if (rawLine[k] === ch) {
+              c = k;
+              break;
+            }
+          }
+        }
+        continue;
+      }
+
+      if (ch === "(") parenDepth++;
+      else if (ch === ")") { if (parenDepth > 0) parenDepth--; }
+      else if (ch === "[") bracketDepth++;
+      else if (ch === "]") { if (bracketDepth > 0) bracketDepth--; }
+      else if (ch === "{") braceDepth++;
+      else if (ch === "}") { if (braceDepth > 0) braceDepth--; }
+    }
+  }
+
+  if (lastBodyLineIdx === -1) {
+    return -1;
+  }
+
+  return lastBodyLineIdx + 1;
+}
+
+/**
  * Strips block and line comments from lines, replacing comment characters with spaces
  * to preserve line numbers, line lengths, and column positions for lexical analysis (C2).
  *
@@ -577,7 +887,7 @@ export function findFunctionDefinitions(lines, symbol) {
     `^\\s*(?:export\\s+)?(?:default\\s+)?(?:async\\s+)?function(?:\\s+${escapedSym})?\\s*(?:<[^()]+>\\s*)?\\(|` +
     `^\\s*(?:(?:static|async|public|private|protected|virtual|inline|override)\\s+)+${escapedSym}\\s*(?:<[^()]+>\\s*)?\\(|` +
     `^\\s*(?:export\\s+)?(?:const|let|var)?\\s*${escapedSym}\\s*=\\s*(?:async\\s*)?(?:<[^()]+>\\s*)?(?:\\([^)]*\\)|[a-zA-Z0-9_$]+)?\\s*(?:=>|function)|` +
-    `^\\s*def\\s+${escapedSym}\\s*\\(` +
+    `^\\s*(?:async\\s+)?def\\s+${escapedSym}\\s*\\(` +
     `)`
   );
 
@@ -587,9 +897,10 @@ export function findFunctionDefinitions(lines, symbol) {
     `^\\s*(?:export\\s+)?(?:default\\s+)?(?:async\\s+)?function(?:\\s+${escapedSym})?\\s*(?:<[^()]+>\\s*)?\\(|` +
     `^\\s*(?:static\\s+)?(?:async\\s+)?${escapedSym}\\s*(?:<[^()]+>\\s*)?\\(|` +
     `^\\s*(?:export\\s+)?(?:const|let|var)?\\s*${escapedSym}\\s*=\\s*(?:async\\s*)?(?:<[^()]+>\\s*)?(?:\\([^)]*\\)|[a-zA-Z0-9_$]+)?\\s*(?:=>|function)|` +
-    `^\\s*def\\s+${escapedSym}\\s*\\(` +
+    `^\\s*(?:async\\s+)?def\\s+${escapedSym}\\s*\\(` +
     `)`
   );
+  const PYTHON_DEF_REGEX = new RegExp(`^\\s*(?:async\\s+)?def\\s+${escapedSym}\\s*\\(`);
 
   const CONTROL_START = /^\s*(?:if|while|for|switch|catch|with|return|throw|delete|typeof|sizeof|case|else\s+if)\b/;
   const CALL_EXPR_DISQUALIFIERS = /(?:==|!=|&&|\|\||return\s+|throw\s+|new\s+)/;
@@ -602,6 +913,21 @@ export function findFunctionDefinitions(lines, symbol) {
     if (CONTROL_START.test(line)) continue;
     if (PROP_START.test(line)) continue;
     if (!DEF_REGEX.test(line)) continue;
+
+    // Python function definitions use indentation-based scoping instead of braces (G5-P2-05)
+    if (PYTHON_DEF_REGEX.test(line)) {
+      const endLine = findPythonScopeEnd(lines, i);
+      if (endLine !== -1 && endLine >= i + 1) {
+        matches.push({
+          startLine: i + 1,
+          endLine: endLine
+        });
+        if (endLine > i + 1) {
+          i = endLine - 1;
+        }
+      }
+      continue;
+    }
 
     if (line.includes("=") && !line.includes("=>") && !line.includes("function") && !line.includes("{")) {
       continue;
@@ -2197,84 +2523,94 @@ export function extractBoundedFunctionSnippet(lines, startLine, endLine) {
 
   // Verify that the function boundary is confirmed and closed
   let isClosed = false;
-  let braceLineIdx = -1;
-  let bodyBraceIdx = 0;
-  let parenClosed = false;
-  let parenDepth = 0;
-  for (let j = startLine - 1; j < Math.min(lines.length, startLine + 15); j++) {
-    const scanLine = lines[j];
-    if (!parenClosed) {
-      for (let k = 0; k < scanLine.length; k++) {
-        const ch = scanLine[k];
-        if (ch === "(") parenDepth++;
-        else if (ch === ")") {
-          parenDepth--;
-          if (parenDepth <= 0) {
-            parenClosed = true;
-            let searchFrom = k + 1;
-            let foundBraceIdx = -1;
-            while (searchFrom < scanLine.length) {
-              const bIdx = scanLine.indexOf("{", searchFrom);
-              if (bIdx === -1) break;
-              const closeIdx = scanLine.indexOf("}", bIdx + 1);
-              const nextOpenIdx = scanLine.indexOf("{", bIdx + 1);
-              if (closeIdx !== -1 && (nextOpenIdx === -1 || closeIdx < nextOpenIdx)) {
-                const subsequentOpen = scanLine.indexOf("{", closeIdx + 1);
-                if (subsequentOpen !== -1) {
-                  searchFrom = subsequentOpen;
-                  continue;
-                }
-              }
-              foundBraceIdx = bIdx;
-              break;
-            }
-            if (foundBraceIdx !== -1) {
-              braceLineIdx = j;
-              bodyBraceIdx = foundBraceIdx;
-            }
-            break;
-          }
-        }
-      }
-      if (braceLineIdx !== -1) break;
-    } else {
-      const idx = scanLine.indexOf("{");
-      if (idx !== -1) {
-        braceLineIdx = j;
-        bodyBraceIdx = idx;
-        break;
-      }
-    }
-  }
+  const startLineText = lines[startLine - 1] || "";
+  const isPythonDef = /^\s*(?:async\s+)?def\s+[a-zA-Z0-9_$]+\s*\(/.test(startLineText);
 
-  if (braceLineIdx === -1) {
-    for (let j = startLine - 1; j < Math.min(lines.length, startLine + 15); j++) {
-      const idx = lines[j].indexOf("{");
-      if (idx !== -1) {
-        braceLineIdx = j;
-        bodyBraceIdx = idx;
-        break;
-      }
-    }
-  }
-
-  if (braceLineIdx !== -1) {
-    const verifiedEnd = findBraceScopeEnd(lines, braceLineIdx, { failClosed: true, startCharIndex: bodyBraceIdx });
+  if (isPythonDef) {
+    const verifiedEnd = findPythonScopeEnd(lines, startLine - 1);
     if (verifiedEnd !== -1 && verifiedEnd === endLine) {
       isClosed = true;
     }
-  }
+  } else {
+    let braceLineIdx = -1;
+    let bodyBraceIdx = 0;
+    let parenClosed = false;
+    let parenDepth = 0;
+    for (let j = startLine - 1; j < Math.min(lines.length, startLine + 15); j++) {
+      const scanLine = lines[j];
+      if (!parenClosed) {
+        for (let k = 0; k < scanLine.length; k++) {
+          const ch = scanLine[k];
+          if (ch === "(") parenDepth++;
+          else if (ch === ")") {
+            parenDepth--;
+            if (parenDepth <= 0) {
+              parenClosed = true;
+              let searchFrom = k + 1;
+              let foundBraceIdx = -1;
+              while (searchFrom < scanLine.length) {
+                const bIdx = scanLine.indexOf("{", searchFrom);
+                if (bIdx === -1) break;
+                const closeIdx = scanLine.indexOf("}", bIdx + 1);
+                const nextOpenIdx = scanLine.indexOf("{", bIdx + 1);
+                if (closeIdx !== -1 && (nextOpenIdx === -1 || closeIdx < nextOpenIdx)) {
+                  const subsequentOpen = scanLine.indexOf("{", closeIdx + 1);
+                  if (subsequentOpen !== -1) {
+                    searchFrom = subsequentOpen;
+                    continue;
+                  }
+                }
+                foundBraceIdx = bIdx;
+                break;
+              }
+              if (foundBraceIdx !== -1) {
+                braceLineIdx = j;
+                bodyBraceIdx = foundBraceIdx;
+              }
+              break;
+            }
+          }
+        }
+        if (braceLineIdx !== -1) break;
+      } else {
+        const idx = scanLine.indexOf("{");
+        if (idx !== -1) {
+          braceLineIdx = j;
+          bodyBraceIdx = idx;
+          break;
+        }
+      }
+    }
 
-  if (isClosed) {
-    const endLineText = lines[endLine - 1] || "";
-    const cleanEndLine = stripCommentsAndStrings(endLineText).trim();
-    const lastBraceIdx = cleanEndLine.lastIndexOf("}");
-    if (lastBraceIdx === -1) {
-      isClosed = false;
-    } else {
-      const trailing = cleanEndLine.slice(lastBraceIdx + 1).trim();
-      if (trailing && !/^[;,)}\]]*$/.test(trailing)) {
+    if (braceLineIdx === -1) {
+      for (let j = startLine - 1; j < Math.min(lines.length, startLine + 15); j++) {
+        const idx = lines[j].indexOf("{");
+        if (idx !== -1) {
+          braceLineIdx = j;
+          bodyBraceIdx = idx;
+          break;
+        }
+      }
+    }
+
+    if (braceLineIdx !== -1) {
+      const verifiedEnd = findBraceScopeEnd(lines, braceLineIdx, { failClosed: true, startCharIndex: bodyBraceIdx });
+      if (verifiedEnd !== -1 && verifiedEnd === endLine) {
+        isClosed = true;
+      }
+    }
+
+    if (isClosed) {
+      const endLineText = lines[endLine - 1] || "";
+      const cleanEndLine = stripCommentsAndStrings(endLineText).trim();
+      const lastBraceIdx = cleanEndLine.lastIndexOf("}");
+      if (lastBraceIdx === -1) {
         isClosed = false;
+      } else {
+        const trailing = cleanEndLine.slice(lastBraceIdx + 1).trim();
+        if (trailing && !/^[;,)}\]]*$/.test(trailing)) {
+          isClosed = false;
+        }
       }
     }
   }
@@ -2307,13 +2643,13 @@ export function extractBoundedFunctionSnippet(lines, startLine, endLine) {
 
   const extracted = [];
   let headerEnded = false;
-  const GUARD_REGEX = /\b(?:if\s*\(.*?\)\s*(?:return|throw)\b|\breturn\b|\bthrow\b|\bassert\b|isMapValueDefault|\bcheck\b|\bvalidate\b|\bguard\b)/i;
+  const GUARD_REGEX = /\b(?:if\s*\(.*?\)\s*(?:return|throw)\b|\breturn\b|\bthrow\b|\braise\b|\bassert\b|isMapValueDefault|\bcheck\b|\bvalidate\b|\bguard\b)/i;
 
   for (let i = startLine - 1; i < endLine - 1; i++) {
     const l = lines[i];
     if (!headerEnded) {
       extracted.push(l);
-      if (l.includes("{")) headerEnded = true;
+      if (isPythonDef ? l.includes(":") : l.includes("{")) headerEnded = true;
       continue;
     }
 
@@ -2324,7 +2660,7 @@ export function extractBoundedFunctionSnippet(lines, startLine, endLine) {
     if (extracted.length >= 55) break;
   }
 
-  extracted.push("    /* ... [remainder of function body elided for context bounds] ... */");
+  extracted.push(isPythonDef ? "    # ... [remainder of function body elided for context bounds] ..." : "    /* ... [remainder of function body elided for context bounds] ... */");
   extracted.push(lines[endLine - 1]);
 
   let finalLines = extracted.slice(0, MAX_SNIPPET_LINES);
@@ -2334,13 +2670,13 @@ export function extractBoundedFunctionSnippet(lines, startLine, endLine) {
   if (bytes > MAX_SNIPPET_BYTES) {
     const headerLines = [];
     for (const line of finalLines) {
-      if (Buffer.byteLength(headerLines.concat([line, "    /* ... elided ... */", lines[endLine - 1]]).join("\n"), "utf8") < MAX_SNIPPET_BYTES - 50) {
+      if (Buffer.byteLength(headerLines.concat([line, isPythonDef ? "    # ... elided ..." : "    /* ... elided ... */", lines[endLine - 1]]).join("\n"), "utf8") < MAX_SNIPPET_BYTES - 50) {
         headerLines.push(line);
       } else {
         break;
       }
     }
-    headerLines.push("    /* ... [remainder of function body elided for context bounds] ... */");
+    headerLines.push(isPythonDef ? "    # ... [remainder of function body elided for context bounds] ..." : "    /* ... [remainder of function body elided for context bounds] ... */");
     headerLines.push(lines[endLine - 1]);
     finalLines = headerLines;
     truncated = finalLines.join("\n");
@@ -2506,7 +2842,7 @@ export function extractLocalCalleeContext(fileContent, diffHunks, targetFile, op
         const deletedText = hLine.slice(1);
         const delMatch = deletedText.match(/^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?function(?:\s+([a-zA-Z_][a-zA-Z0-9_]*))\s*\(/) ||
           deletedText.match(/^\s*(?:export\s+)?(?:const|let|var)\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*(?:async\s*)?(?:\([^)]*\)|[a-zA-Z0-9_$]+)?\s*=>/) ||
-          deletedText.match(/^\s*def\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/);
+          deletedText.match(/^\s*(?:async\s+)?def\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/);
         if (delMatch && delMatch[1]) {
           deletedLocalDefinitions.add(delMatch[1]);
         }
