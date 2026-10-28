@@ -246,7 +246,8 @@ export class CheckpointStore {
     const raw = String(runId || "").trim();
     const sanitized = raw.replace(/[^a-zA-Z0-9_-]/g, "_");
     const safeRunId = sanitized.length > 0 ? sanitized : "default-run";
-    const resolved = path.resolve(this.checkpointDir, `checkpoint-${safeRunId}.json`);
+    const hash = crypto.createHash("sha256").update(raw).digest("hex").slice(0, 8);
+    const resolved = path.resolve(this.checkpointDir, `checkpoint-${safeRunId}-${hash}.json`);
     const resolvedDir = path.resolve(this.checkpointDir);
     if (!resolved.startsWith(resolvedDir + path.sep) && resolved !== resolvedDir) {
       throw new Error(`Invalid runId path traversal attempt: '${runId}'`);

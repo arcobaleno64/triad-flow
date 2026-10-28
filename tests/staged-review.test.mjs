@@ -1247,3 +1247,40 @@ test("Finding C: malformed findings array is atomic and cannot salvage a valid p
 
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
+
+test("G5-P2-01: CheckpointStore incorporates SHA-256 hash prefix to prevent collision across custom runIds with punctuation", () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-checkpoint-collision-"));
+  const store = new CheckpointStore({ cwd: tmpDir });
+
+  // 1. Path collision resistance between runIds that sanitize to the same safeRunId
+  const runA = "run:test:1";
+  const runB = "run/test/1";
+  const runC = "run?test?1";
+
+  const pathA = store.getCheckpointPath(runA);
+  const pathB = store.getCheckpointPath(runB);
+  const pathC = store.getCheckpointPath(runC);
+
+  assert.notEqual(pathA, pathB, "Paths for run:test:1 and run/test/1 must not collide");
+  assert.notEqual(pathA, pathC, "Paths for run:test:1 and run?test?1 must not collide");
+  assert.notEqual(pathB, pathC, "Paths for run/test/1 and run?test?1 must not collide");
+
+  // 2. Verified isolated persistence and retrieval
+  store.saveCheckpoint(runA, { val: "payload-A" });
+  store.saveCheckpoint(runB, { val: "payload-B" });
+
+  const readA = store.readCheckpoint(runA);
+  const readB = store.readCheckpoint(runB);
+
+  assert.ok(readA);
+  assert.ok(readB);
+  assert.equal(readA.val, "payload-A");
+  assert.equal(readB.val, "payload-B");
+
+  // 3. Clear one does not affect the other
+  store.clearCheckpoint(runA);
+  assert.equal(store.readCheckpoint(runA), null);
+  assert.equal(store.readCheckpoint(runB)?.val, "payload-B");
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
