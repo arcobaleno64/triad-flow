@@ -20,6 +20,7 @@ import { evaluateCorpusSuite, formatBenchmarkSummary } from "./core/real-benchma
 import { generateManifestBundle } from "./core/manifest-bundle.mjs";
 import { createMockCorpusAdapters, getCorpusCaseById, buildSynthesizedChangeSet, createCorpusCaseWorkspace, createCorpusMultiCaseWorkspace } from "../tests/fixtures/real-corpus-fixtures.mjs";
 import { createMockOssAdapters, getOssCaseById, buildSynthesizedOssChangeSet } from "../tests/fixtures/real-oss-fixtures.mjs";
+import { createMockOssV2Adapters, getOssV2CaseById, buildSynthesizedOssV2ChangeSet } from "../tests/fixtures/real-oss-v2-fixtures.mjs";
 import {
   ControlledRemediationSession,
   REMEDIATION_STATES,
@@ -108,7 +109,7 @@ Options:
 Run reproducible benchmark suites against golden CWE cases and real-world OSS vulnerabilities.
 
 Options:
-  --corpus=<v0|oss>           Corpus suite to evaluate: v0 (TF-RBC-v0) or oss (TF-OSS-v1) (default: v0)
+  --corpus=<v0|oss|v2>        Corpus suite to evaluate: v0 (TF-RBC-v0), oss (TF-OSS-v1), or v2 (TF-OSS-v2) (default: v0)
   --mode=<mode>               Execution mode: single, batch, parallel (default: single)
   --case=<id>                 Run only a single benchmark case by ID
   --cases=<ids>               Comma-separated list of case IDs to evaluate
@@ -167,7 +168,7 @@ Usage:
 Commands:
   doctor       Probe environment capabilities, provider CLIs, and quorum readiness (default)
   review       Run multi-agent security review on working tree, staged diff, or commit range
-  benchmark    Execute deterministic benchmark evaluation suite (TF-RBC-v0 or TF-OSS-v1)
+  benchmark    Execute deterministic benchmark evaluation suite (TF-RBC-v0, TF-OSS-v1, or TF-OSS-v2)
   remediate    Run controlled autonomous patch synthesis and verification loop
   demo         Run offline simulation demo demonstrating routing, consensus, and gate decisions
   factory      Continuous security verification and promotion pipeline (stub)
@@ -1432,12 +1433,14 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
         return EXIT_CODES.USAGE_ERROR;
       }
 
-      const VALID_CORPORA = new Set(["v0", "oss", "real-oss"]);
+      const VALID_CORPORA = new Set(["v0", "oss", "real-oss", "v1", "oss-v1", "v2", "oss-v2"]);
       if (corpusArg && !VALID_CORPORA.has(corpusArg)) {
-        io.stderr.write(`✖ [USAGE ERROR] Invalid --corpus='${corpusArg}'. Must be 'v0' or 'oss'.\n`);
+        io.stderr.write(`✖ [USAGE ERROR] Invalid --corpus='${corpusArg}'. Must be 'v0', 'oss' (v1), or 'v2'.\n`);
         return EXIT_CODES.USAGE_ERROR;
       }
-      const isOss = corpusArg === "oss" || corpusArg === "real-oss";
+      const isV2 = corpusArg === "v2" || corpusArg === "oss-v2";
+      const isOss = !isV2 && (corpusArg === "oss" || corpusArg === "real-oss" || corpusArg === "v1" || corpusArg === "oss-v1");
+      const resolvedCorpus = isV2 ? "v2" : (isOss ? "oss" : "v0");
 
       let verifierProfile = null;
       if (verifyWithArg) {
@@ -1493,13 +1496,13 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
             })
           };
         } else {
-          adapters = isOss ? createMockOssAdapters() : createMockCorpusAdapters();
+          adapters = isV2 ? createMockOssV2Adapters() : (isOss ? createMockOssAdapters() : createMockCorpusAdapters());
         }
       }
 
       const suiteOptions = {
         mode: modeArg,
-        corpus: isOss ? "oss" : "v0",
+        corpus: resolvedCorpus,
         live: isLive,
         executionMode: isLive ? "live" : "mock",
         virtual: isVirtual,
@@ -1585,9 +1588,16 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
         let verificationRecord = null;
         const caseResults = runResult.caseResults || [];
 
+        const resolveCaseChangeSet = (c) => {
+          if (c.changeSet) return c.changeSet;
+          if (c.caseId?.startsWith("TF-OSS-2")) return buildSynthesizedOssV2ChangeSet(getOssV2CaseById(c.caseId));
+          if (c.caseId?.startsWith("TF-OSS")) return buildSynthesizedOssChangeSet(getOssCaseById(c.caseId));
+          return buildSynthesizedChangeSet(getCorpusCaseById(c.caseId));
+        };
+
         if (caseResults.length === 1) {
           const c = caseResults[0];
-          const cs = c.changeSet || (isOss ? buildSynthesizedOssChangeSet(getOssCaseById(c.caseId)) : buildSynthesizedChangeSet(getCorpusCaseById(c.caseId)));
+          const cs = resolveCaseChangeSet(c);
           verificationRecord = await conductIndependentVerification(
             cs,
             c.actualFindings || [],
@@ -1602,7 +1612,7 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
           const caseRecords = {};
           const aggregatedLedger = [];
           for (const c of caseResults) {
-            const cs = c.changeSet || (isOss ? buildSynthesizedOssChangeSet(getOssCaseById(c.caseId)) : buildSynthesizedChangeSet(getCorpusCaseById(c.caseId)));
+            const cs = resolveCaseChangeSet(c);
             const rec = await conductIndependentVerification(
               cs,
               c.actualFindings || [],
