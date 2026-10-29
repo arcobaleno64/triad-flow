@@ -2699,6 +2699,554 @@ export function extractBoundedFunctionSnippet(lines, startLine, endLine) {
 }
 
 /**
+ * Finds macro definitions matching a symbol in source lines (#define symbol ...).
+ *
+ * @param {string[]} lines
+ * @param {string} symbol
+ * @returns {Array<{ type: string, startLine: number, endLine: number, snippet: object }>}
+ */
+export function findMacroDefinitions(lines, symbol) {
+  if (!Array.isArray(lines) || !symbol || typeof symbol !== "string") return [];
+  const matches = [];
+  const escaped = symbol.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const macroRegex = new RegExp(`^\\s*#\\s*define\\s+${escaped}(?:\\(|\\s|$)`);
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (macroRegex.test(line)) {
+      const startLine = i + 1;
+      let cur = i;
+      while (cur < lines.length) {
+        const l = lines[cur];
+        const trimmedEnd = l.trimEnd();
+        if (trimmedEnd.endsWith("\\") && cur + 1 < lines.length) {
+          cur++;
+        } else {
+          break;
+        }
+      }
+      const endLine = cur + 1;
+      const snippetLines = lines.slice(startLine - 1, endLine);
+      const defText = snippetLines.join("\n");
+      matches.push({
+        type: "macro",
+        startLine,
+        endLine,
+        snippet: {
+          definition: defText,
+          lines: snippetLines.length,
+          bytes: Buffer.byteLength(defText, "utf8"),
+          extractionMode: "full_body"
+        }
+      });
+    }
+  }
+  return matches;
+}
+
+/**
+ * Finds function declarations / signatures ending in semicolon for a symbol (for headers).
+ *
+ * @param {string[]} lines
+ * @param {string} symbol
+ * @returns {Array<{ type: string, startLine: number, endLine: number, snippet: object }>}
+ */
+export function findFunctionDeclarations(lines, symbol) {
+  if (!Array.isArray(lines) || !symbol || typeof symbol !== "string") return [];
+  const matches = [];
+  const escaped = symbol.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const cleanLines = stripCommentsPreservingLayout(lines);
+
+  const DECL_START = new RegExp(
+    `(?:` +
+    `^(?:\\s*(?:[a-zA-Z0-9_<>*&]|::)+\\s+)+(?:[a-zA-Z0-9_]+::)?${escaped}\\s*(?:<[^()]+>\\s*)?\\(|` +
+    `^\\s*(?:(?:extern|static|virtual|inline)\\s+)+.*\\b${escaped}\\s*(?:<[^()]+>\\s*)?\\(|` +
+    `^\\s*declare\\s+function\\s+${escaped}\\s*\\(` +
+    `)`
+  );
+
+  const CONTROL_START = /^\s*(?:if|while|for|switch|catch|with|return|throw|delete|typeof|sizeof|case|else\s+if)\b/;
+
+  for (let i = 0; i < cleanLines.length; i++) {
+    const line = cleanLines[i];
+    if (!line.includes(symbol)) continue;
+    if (CONTROL_START.test(line)) continue;
+
+    let hasStart = DECL_START.test(line);
+    let startIdx = i;
+    if (!hasStart && i > 0) {
+      for (let prev = i - 1; prev >= Math.max(0, i - 2); prev--) {
+        const prefix = cleanLines.slice(prev, i).map(l => l.trim()).join(" ");
+        if (prefix && DECL_START.test(`${prefix} ${line.trim()}`)) {
+          hasStart = true;
+          startIdx = prev;
+          break;
+        }
+      }
+    }
+    if (!hasStart) continue;
+
+    let foundSemi = false;
+    let endIdx = -1;
+    let parenDepth = 0;
+    let seenOpen = false;
+
+    for (let j = i; j < Math.min(i + 15, cleanLines.length); j++) {
+      const scanLine = cleanLines[j];
+      const braceIdx = scanLine.indexOf("{");
+      const semiIdx = scanLine.indexOf(";");
+
+      if (braceIdx !== -1 && (semiIdx === -1 || braceIdx < semiIdx)) {
+        break;
+      }
+
+      for (let k = 0; k < scanLine.length; k++) {
+        if (scanLine[k] === "(") { parenDepth++; seenOpen = true; }
+        else if (scanLine[k] === ")") { if (parenDepth > 0) parenDepth--; }
+      }
+
+      const lastSemi = scanLine.lastIndexOf(";");
+      const lastCloseParen = scanLine.lastIndexOf(")");
+      if (lastSemi !== -1 && seenOpen && parenDepth === 0 && (j > i || lastSemi > lastCloseParen)) {
+        foundSemi = true;
+        endIdx = j;
+        break;
+      }
+    }
+
+    if (foundSemi && endIdx !== -1) {
+      const startLine = startIdx + 1;
+      const endLine = endIdx + 1;
+      const snippetLines = lines.slice(startLine - 1, endLine);
+      const defText = snippetLines.join("\n");
+      matches.push({
+        type: "signature",
+        startLine,
+        endLine,
+        snippet: {
+          definition: defText,
+          lines: snippetLines.length,
+          bytes: Buffer.byteLength(defText, "utf8"),
+          extractionMode: "signature"
+        }
+      });
+    }
+  }
+
+  return matches;
+}
+
+/**
+ * Finds type definitions (struct, class, enum, interface, typedef, type alias) for a symbol.
+ *
+ * @param {string[]} lines
+ * @param {string} symbol
+ * @returns {Array<{ type: string, startLine: number, endLine: number, snippet: object }>}
+ */
+export function findTypeDefinitions(lines, symbol) {
+  if (!Array.isArray(lines) || !symbol || typeof symbol !== "string") return [];
+  const matches = [];
+  const escaped = symbol.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const cleanLines = stripCommentsPreservingLayout(lines);
+
+  const TYPE_DECL = new RegExp(
+    `(?:` +
+    `^\\s*(?:typedef\\s+)?(?:struct|class|enum|union|interface)\\s+${escaped}\\b|` +
+    `^\\s*(?:export\\s+)?(?:default\\s+)?class\\s+${escaped}\\b|` +
+    `^\\s*(?:export\\s+)?(?:interface)\\s+${escaped}\\b|` +
+    `^\\s*(?:export\\s+)?(?:type)\\s+${escaped}\\s*(?:<[^>]+>)?\\s*=|` +
+    `^\\s*typedef\\s+.*\\b${escaped}\\s*;` +
+    `)`
+  );
+
+  const TYPEDEF_END = new RegExp(`\\}\\s*(?:\\*\\s*)?${escaped}\\s*;`);
+
+  for (let i = 0; i < cleanLines.length; i++) {
+    const line = cleanLines[i];
+    if (!line.includes(symbol)) continue;
+
+    // Check for typedef struct/enum/union { ... } Symbol;
+    if (TYPEDEF_END.test(line)) {
+      let startIdx = -1;
+      for (let prev = i; prev >= Math.max(0, i - 100); prev--) {
+        if (/^\s*typedef\s+(?:struct|union|enum)\b/.test(cleanLines[prev])) {
+          startIdx = prev;
+          break;
+        }
+      }
+      if (startIdx !== -1) {
+        const startLine = startIdx + 1;
+        const endLine = i + 1;
+        const snippetLines = lines.slice(startLine - 1, endLine);
+        const defText = snippetLines.join("\n");
+        matches.push({
+          type: "type",
+          startLine,
+          endLine,
+          snippet: {
+            definition: defText,
+            lines: snippetLines.length,
+            bytes: Buffer.byteLength(defText, "utf8"),
+            extractionMode: "full_body"
+          }
+        });
+        continue;
+      }
+    }
+
+    if (!TYPE_DECL.test(line)) continue;
+
+    let hasBrace = false;
+    let braceLineIdx = -1;
+    for (let j = i; j < Math.min(i + 5, cleanLines.length); j++) {
+      if (cleanLines[j].includes("{")) {
+        hasBrace = true;
+        braceLineIdx = j;
+        break;
+      }
+      if (cleanLines[j].includes(";")) {
+        break;
+      }
+    }
+
+    if (hasBrace && braceLineIdx !== -1) {
+      const endLine = findBraceScopeEnd(cleanLines, braceLineIdx);
+      if (endLine !== -1 && endLine >= i + 1) {
+        const startLine = i + 1;
+        const snippetLines = lines.slice(startLine - 1, endLine);
+        const defText = snippetLines.join("\n");
+        matches.push({
+          type: "type",
+          startLine,
+          endLine,
+          snippet: {
+            definition: defText,
+            lines: snippetLines.length,
+            bytes: Buffer.byteLength(defText, "utf8"),
+            extractionMode: "full_body"
+          }
+        });
+      }
+    } else {
+      let endIdx = -1;
+      for (let j = i; j < Math.min(i + 10, cleanLines.length); j++) {
+        if (cleanLines[j].includes(";")) {
+          endIdx = j;
+          break;
+        }
+      }
+      if (endIdx !== -1) {
+        const startLine = i + 1;
+        const endLine = endIdx + 1;
+        const snippetLines = lines.slice(startLine - 1, endLine);
+        const defText = snippetLines.join("\n");
+        matches.push({
+          type: "type",
+          startLine,
+          endLine,
+          snippet: {
+            definition: defText,
+            lines: snippetLines.length,
+            bytes: Buffer.byteLength(defText, "utf8"),
+            extractionMode: "full_body"
+          }
+        });
+      }
+    }
+  }
+
+  return matches;
+}
+
+/**
+ * Searches for all symbol definition candidates (function, macro, type, signature) in source lines.
+ *
+ * @param {string[]} lines
+ * @param {string} symbol
+ * @param {object} [options={}]
+ * @returns {Array<{ type: string, startLine: number, endLine: number, snippet: object }>}
+ */
+export function findSymbolDefinitionsInSource(lines, symbol, options = {}) {
+  if (!Array.isArray(lines) || !symbol || typeof symbol !== "string") return [];
+  const matches = [];
+
+  // 1. Function definitions (with body)
+  const fnDefs = findFunctionDefinitions(lines, symbol);
+  for (const fd of fnDefs) {
+    const snip = extractBoundedFunctionSnippet(lines, fd.startLine, fd.endLine);
+    matches.push({
+      type: "function",
+      startLine: fd.startLine,
+      endLine: fd.endLine,
+      snippet: snip
+    });
+  }
+
+  // 2. Macro definitions (#define symbol ...)
+  const macroDefs = findMacroDefinitions(lines, symbol);
+  for (const md of macroDefs) {
+    matches.push(md);
+  }
+
+  // 3. Type definitions (struct, class, enum, typedef, interface, type)
+  const typeDefs = findTypeDefinitions(lines, symbol);
+  for (const td of typeDefs) {
+    matches.push(td);
+  }
+
+  // 4. Function declarations / signatures (if enabled and no full function definition was found)
+  if (matches.length === 0 && options.allowSignature) {
+    const decls = findFunctionDeclarations(lines, symbol);
+    for (const d of decls) {
+      matches.push(d);
+    }
+  }
+
+  return matches;
+}
+
+/**
+ * Extracts direct relative include/import paths from source content.
+ * Enforces repository path containment fail-closed.
+ *
+ * @param {string} fileContent
+ * @param {string} callingFilePath
+ * @returns {string[]} Normalized repository-relative paths
+ */
+export function extractDirectIncludePaths(fileContent, callingFilePath) {
+  if (!fileContent || typeof fileContent !== "string") return [];
+  const paths = [];
+  const seen = new Set();
+  const callingDir = path.posix.dirname((callingFilePath || "").replace(/\\/g, "/"));
+
+  function addCandidate(specifier) {
+    if (!specifier || typeof specifier !== "string") return;
+    const clean = specifier.replace(/\\/g, "/").trim();
+    if (!clean || clean.includes("\0")) return;
+    if (/^[a-zA-Z]+:\/\//.test(clean)) return;
+
+    const candidates = [];
+    if (clean.startsWith("./") || clean.startsWith("../")) {
+      const resolved = path.posix.normalize(path.posix.join(callingDir, clean));
+      candidates.push(resolved);
+    } else {
+      const relToCalling = path.posix.normalize(path.posix.join(callingDir, clean));
+      candidates.push(relToCalling);
+      const relToRoot = path.posix.normalize(clean);
+      if (relToRoot !== relToCalling) {
+        candidates.push(relToRoot);
+      }
+      if (!clean.startsWith("include/")) {
+        const inInclude = path.posix.normalize(path.posix.join("include", clean));
+        candidates.push(inInclude);
+      }
+    }
+
+    for (const cand of candidates) {
+      if (cand.startsWith("..") || path.posix.isAbsolute(cand) || cand === "." || cand === "") {
+        continue;
+      }
+      if (!seen.has(cand)) {
+        seen.add(cand);
+        paths.push(cand);
+      }
+      if (!path.posix.extname(cand)) {
+        for (const ext of [".js", ".mjs", ".ts", ".tsx", ".jsx", ".h", ".hpp"]) {
+          const withExt = cand + ext;
+          if (!seen.has(withExt)) {
+            seen.add(withExt);
+            paths.push(withExt);
+          }
+        }
+      }
+    }
+  }
+
+  // 1. C/C++ quoted includes: #include "..."
+  const incRegex = /^\s*#\s*include\s*"([^"]+)"/gm;
+  let m;
+  while ((m = incRegex.exec(fileContent)) !== null) {
+    addCandidate(m[1]);
+  }
+
+  // 2. JS/TS imports: import ... from "..." or require("...")
+  const importRegex = /(?:import\s+(?:[\s\S]*?from\s+)?|require\s*\(\s*)['"]([^'"]+)['"]/g;
+  while ((m = importRegex.exec(fileContent)) !== null) {
+    const spec = m[1];
+    if (spec.startsWith(".") || spec.startsWith("src/") || spec.startsWith("lib/") || spec.includes("/")) {
+      addCandidate(spec);
+    }
+  }
+
+  return paths;
+}
+
+/**
+ * 3-Tier Cross-File Symbol Resolver (Spec §2 Option A).
+ * Resolves unresolved callee symbols against PR changeSet siblings (Tier 2)
+ * and direct included headers / imports at exact HEAD (Tier 3).
+ *
+ * @param {string} symbol
+ * @param {string} targetFile
+ * @param {string} fileContent
+ * @param {object} candidate
+ * @param {object} [options={}]
+ * @returns {{ resolved: boolean, ambiguous?: boolean, count?: number, tier?: number, callee?: object }}
+ */
+export function resolveCrossFileSymbol(symbol, targetFile, fileContent, candidate, options = {}) {
+  const normTarget = normalizeCanonicalPath(targetFile);
+
+  // ----------------------------------------------------
+  // Tier 2: PR ChangeSet Sibling Resolution
+  // ----------------------------------------------------
+  const siblingFiles = Array.isArray(options.siblingFiles) ? options.siblingFiles : [];
+  const siblingMatches = [];
+
+  for (const sibling of siblingFiles) {
+    if (!sibling || !sibling.path || !sibling.content) continue;
+    const normSiblingPath = normalizeCanonicalPath(sibling.path);
+    if (normSiblingPath === normTarget) continue;
+
+    // Check if sibling definition was deleted by patch
+    const deletedInSibling = new Set();
+    if (sibling.diff && typeof sibling.diff === "string") {
+      const hLines = sibling.diff.split(/\r?\n/);
+      for (const hLine of hLines) {
+        if (hLine.startsWith("-") && !hLine.startsWith("---")) {
+          const deletedText = hLine.slice(1);
+          const delMatch = deletedText.match(/^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?function(?:\s+([a-zA-Z_][a-zA-Z0-9_]*))\s*\(/) ||
+            deletedText.match(/^\s*(?:export\s+)?(?:const|let|var)\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*(?:async\s*)?(?:\([^)]*\)|[a-zA-Z0-9_$]+)?\s*=>/) ||
+            deletedText.match(/^\s*(?:async\s+)?def\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/) ||
+            deletedText.match(/^\s*(?:(?:[a-zA-Z0-9_<>*&]|::)+\s+)+(?:[a-zA-Z0-9_]+::)?([a-zA-Z_][a-zA-Z0-9_]*)\s*(?:<[^()]+>)?\s*\(/) ||
+            deletedText.match(/^\s*#\s*define\s+([a-zA-Z_][a-zA-Z0-9_]*)\b/);
+          if (delMatch && delMatch[1]) {
+            deletedInSibling.add(delMatch[1]);
+          }
+        }
+      }
+    }
+
+    if (deletedInSibling.has(symbol)) {
+      continue;
+    }
+
+    const sLines = sibling.content.split(/\r?\n/);
+    const defs = findSymbolDefinitionsInSource(sLines, symbol, { allowSignature: false });
+    for (const d of defs) {
+      siblingMatches.push({
+        ...d,
+        file: sibling.path
+      });
+    }
+  }
+
+  if (siblingMatches.length > 1) {
+    return {
+      resolved: false,
+      ambiguous: true,
+      count: siblingMatches.length,
+      matches: siblingMatches
+    };
+  }
+
+  if (siblingMatches.length === 1) {
+    const match = siblingMatches[0];
+    return {
+      resolved: true,
+      tier: 2,
+      callee: {
+        symbol,
+        ...(candidate?.qualifier ? { qualifier: candidate.qualifier } : {}),
+        file: match.file,
+        callingFile: targetFile,
+        definition: match.snippet.definition,
+        lines: match.snippet.lines,
+        bytes: match.snippet.bytes,
+        startLine: match.startLine,
+        endLine: match.endLine,
+        extractionMode: match.snippet.extractionMode,
+        isSensitive: candidate?.isSensitive,
+        category: candidate?.category
+      }
+    };
+  }
+
+  // ----------------------------------------------------
+  // Tier 3: Direct Header / Import Resolution at HEAD
+  // ----------------------------------------------------
+  const repoRoot = options.repositoryRoot || null;
+  const headSha = options.headSha || null;
+  const includePaths = extractDirectIncludePaths(fileContent, targetFile);
+
+  const headerMatches = [];
+
+  for (const incPath of includePaths) {
+    let headerContent = options.fileContents?.[incPath] ?? null;
+
+    if (headerContent === null && headSha && repoRoot) {
+      headerContent = getExactHeadFileContent(repoRoot, headSha, incPath);
+    }
+
+    if (headerContent === null && repoRoot) {
+      const readRes = safeReadWorkingTreeFile(repoRoot, incPath);
+      if (readRes.ok && readRes.exists && readRes.content !== null) {
+        headerContent = readRes.content;
+      }
+    }
+
+    if (!headerContent || typeof headerContent !== "string") {
+      continue;
+    }
+
+    const hLines = headerContent.split(/\r?\n/);
+    const defs = findSymbolDefinitionsInSource(hLines, symbol, { allowSignature: true });
+    for (const d of defs) {
+      headerMatches.push({
+        ...d,
+        file: incPath
+      });
+    }
+  }
+
+  if (headerMatches.length > 1) {
+    return {
+      resolved: false,
+      ambiguous: true,
+      count: headerMatches.length,
+      matches: headerMatches
+    };
+  }
+
+  if (headerMatches.length === 1) {
+    const match = headerMatches[0];
+    return {
+      resolved: true,
+      tier: 3,
+      callee: {
+        symbol,
+        ...(candidate?.qualifier ? { qualifier: candidate.qualifier } : {}),
+        file: match.file,
+        callingFile: targetFile,
+        isHeaderCallee: true,
+        definition: match.snippet.definition,
+        lines: match.snippet.lines,
+        bytes: match.snippet.bytes,
+        startLine: match.startLine,
+        endLine: match.endLine,
+        extractionMode: match.snippet.extractionMode,
+        isSensitive: candidate?.isSensitive,
+        category: candidate?.category
+      }
+    };
+  }
+
+  return {
+    resolved: false,
+    ambiguous: false
+  };
+}
+
+/**
  * Extracts local callees and context gaps for a target file from exact-head source content.
  *
  * @param {string} fileContent - Source content at exact HEAD
@@ -2900,22 +3448,77 @@ export function extractLocalCalleeContext(fileContent, diffHunks, targetFile, op
       Boolean(candidate.qualifier && candidate.qualifier !== "this" && importedSymbols.has(candidate.qualifier));
 
     if (isImported) {
-      const unresolvedEntry = {
-        symbol: candidate.symbol,
-        ...(candidate.qualifier ? { qualifier: candidate.qualifier } : {}),
-        reason: "EXTERNAL_CALLEE_UNRESOLVED",
-        file: targetFile,
-        line: candidate.line
-      };
-      unresolvedCallees.push(unresolvedEntry);
-      if (candidate.isSensitive && isCandidateImpacted) {
-        contextGaps.push({
-          ...unresolvedEntry,
-          category: candidate.category || "input_validation",
-          impact: `External imported callee definition unavailable on sensitive execution path`
-        });
+      // Attempt Tier 2 / Tier 3 cross-file resolution if siblingFiles, repoRoot, or fileContents are supplied
+      let crossRes = { resolved: false, ambiguous: false };
+      if (options.siblingFiles || options.repositoryRoot || options.fileContents) {
+        crossRes = resolveCrossFileSymbol(candidate.symbol, targetFile, fileContent, candidate, options);
       }
-      continue;
+
+      if (crossRes.resolved && crossRes.callee) {
+        if (fileCalleesCount >= MAX_CALLEES_PER_FILE || runningTotal + callees.length >= MAX_CALLEES_TOTAL) {
+          if (candidate.isSensitive && isCandidateImpacted) {
+            contextGaps.push({
+              symbol: candidate.symbol,
+              ...(candidate.qualifier ? { qualifier: candidate.qualifier } : {}),
+              reason: "EXTRACTION_QUOTA_EXCEEDED",
+              category: candidate.category || "input_validation",
+              file: targetFile,
+              line: candidate.line,
+              impact: `Extraction quota exceeded; sensitive callee '${candidate.symbol}' on critical execution path not extracted.`
+            });
+          }
+          continue;
+        }
+        callees.push(crossRes.callee);
+        fileCalleesCount++;
+        const isHeaderSignature = crossRes.callee.isHeaderCallee === true && crossRes.callee.extractionMode === "signature";
+        if (!isHeaderSignature && crossRes.callee.extractionMode !== "full_body" && candidate.isSensitive) {
+          contextGaps.push({
+            symbol: candidate.symbol,
+            ...(candidate.qualifier ? { qualifier: candidate.qualifier } : {}),
+            reason: "CALLEE_TRUNCATED_ELIDED",
+            category: candidate.category || "input_validation",
+            file: crossRes.callee.file,
+            line: crossRes.callee.startLine,
+            impact: `Sensitive callee '${candidate.qualifier ? candidate.qualifier + "." : ""}${candidate.symbol}' body was truncated (${crossRes.callee.extractionMode}) due to budget limits; implementation completeness unverified on sensitive execution path`
+          });
+        }
+        continue;
+      } else if (crossRes.ambiguous) {
+        const unresolvedEntry = {
+          symbol: candidate.symbol,
+          ...(candidate.qualifier ? { qualifier: candidate.qualifier } : {}),
+          reason: "AMBIGUOUS_SYMBOL",
+          file: targetFile,
+          line: candidate.line
+        };
+        unresolvedCallees.push(unresolvedEntry);
+        if (candidate.isSensitive && isCandidateImpacted) {
+          contextGaps.push({
+            ...unresolvedEntry,
+            category: candidate.category || "input_validation",
+            impact: `Ambiguous overload (${crossRes.count} definitions found across files) on sensitive execution path`
+          });
+        }
+        continue;
+      } else {
+        const unresolvedEntry = {
+          symbol: candidate.symbol,
+          ...(candidate.qualifier ? { qualifier: candidate.qualifier } : {}),
+          reason: "EXTERNAL_CALLEE_UNRESOLVED",
+          file: targetFile,
+          line: candidate.line
+        };
+        unresolvedCallees.push(unresolvedEntry);
+        if (candidate.isSensitive && isCandidateImpacted) {
+          contextGaps.push({
+            ...unresolvedEntry,
+            category: candidate.category || "input_validation",
+            impact: `External imported callee definition unavailable on sensitive execution path`
+          });
+        }
+        continue;
+      }
     }
 
     if (fileCalleesCount >= MAX_CALLEES_PER_FILE || runningTotal + callees.length >= MAX_CALLEES_TOTAL) {
@@ -2974,6 +3577,48 @@ export function extractLocalCalleeContext(fileContent, diffHunks, targetFile, op
     }
 
     if (defMatches.length === 0) {
+      let crossRes = { resolved: false, ambiguous: false };
+      if (options.siblingFiles || options.repositoryRoot || options.fileContents) {
+        crossRes = resolveCrossFileSymbol(symbol, targetFile, fileContent, candidate, options);
+      }
+
+      if (crossRes.resolved && crossRes.callee) {
+        callees.push(crossRes.callee);
+        fileCalleesCount++;
+        const isHeaderSignature = crossRes.callee.isHeaderCallee === true && crossRes.callee.extractionMode === "signature";
+        if (!isHeaderSignature && crossRes.callee.extractionMode !== "full_body" && isSensitive) {
+          contextGaps.push({
+            symbol,
+            ...(candidate.qualifier ? { qualifier: candidate.qualifier } : {}),
+            reason: "CALLEE_TRUNCATED_ELIDED",
+            category: category || "input_validation",
+            file: crossRes.callee.file,
+            line: crossRes.callee.startLine,
+            impact: `Sensitive callee '${candidate.qualifier ? candidate.qualifier + "." : ""}${symbol}' body was truncated (${crossRes.callee.extractionMode}) due to budget limits; implementation completeness unverified on sensitive execution path`
+          });
+        }
+        continue;
+      }
+
+      if (crossRes.ambiguous) {
+        const unresolvedEntry = {
+          symbol,
+          ...(candidate.qualifier ? { qualifier: candidate.qualifier } : {}),
+          reason: "AMBIGUOUS_SYMBOL",
+          file: targetFile,
+          line
+        };
+        unresolvedCallees.push(unresolvedEntry);
+        if (isSensitive && isCandidateImpacted) {
+          contextGaps.push({
+            ...unresolvedEntry,
+            category: category || "input_validation",
+            impact: `Ambiguous overload (${crossRes.count} definitions found across files) on sensitive execution path`
+          });
+        }
+        continue;
+      }
+
       const isDynamic = Boolean(candidate.lineText && (candidate.lineText.includes(`->${symbol}`) || candidate.lineText.includes(`virtual`)));
       const reason = isDynamic
         ? "MACRO_OR_DYNAMIC"
@@ -3463,6 +4108,7 @@ export function buildContextPackage(changeSet, targetFile, options = {}) {
     let hasPathEscape = false;
     let pathEscapeReason = "";
 
+    const filesContextList = [];
     for (const f of rawFilesList) {
       const fileObj = typeof f === "object" ? f : { path: f };
       const actualFilePath = fileObj.path || f;
@@ -3561,37 +4207,63 @@ export function buildContextPackage(changeSet, targetFile, options = {}) {
         ? crypto.createHash("sha256").update(fileContent.replace(/\r\n/g, "\n")).digest("hex")
         : null;
 
-      const astEnc = isNonCodeOrTest
+      filesContextList.push({
+        fileObj,
+        actualFilePath,
+        normPath,
+        effectiveDiff,
+        changedSpans,
+        isNonCodeOrTest,
+        fileContent,
+        exactHeadUnavailable,
+        fileGaps,
+        sourceDigest
+      });
+    }
+
+    for (const item of filesContextList) {
+      const siblingFiles = filesContextList
+        .filter(other => other.normPath !== item.normPath)
+        .map(other => ({ path: other.actualFilePath, content: other.fileContent, diff: other.effectiveDiff }));
+
+      const fileOptions = {
+        ...options,
+        siblingFiles,
+        repositoryRoot: repoRoot,
+        headSha
+      };
+
+      const astEnc = item.isNonCodeOrTest
         ? { enclosingFunctions: [], enclosingClasses: [] }
-        : extractAstEnclosures(fileContent, changedSpans);
+        : extractAstEnclosures(item.fileContent, item.changedSpans);
       for (const fn of astEnc.enclosingFunctions) {
-        if (!fn.file) fn.file = actualFilePath;
+        if (!fn.file) fn.file = item.actualFilePath;
       }
       for (const cls of astEnc.enclosingClasses) {
-        if (!cls.file) cls.file = actualFilePath;
+        if (!cls.file) cls.file = item.actualFilePath;
       }
       enclosingFunctions.push(...astEnc.enclosingFunctions);
       enclosingClasses.push(...astEnc.enclosingClasses);
 
       const { callees, unresolvedCallees, contextGaps } = extractLocalCalleeContext(
-        fileContent,
-        effectiveDiff,
-        actualFilePath,
-        options
+        item.fileContent,
+        item.effectiveDiff,
+        item.actualFilePath,
+        fileOptions
       );
 
-      fileGaps.push(...contextGaps);
+      item.fileGaps.push(...contextGaps);
       aggregatedUnresolvedCallees.push(...unresolvedCallees);
 
       perFileData.push({
-        actualFilePath,
-        normPath,
-        isNonCodeOrTest,
-        exactHeadUnavailable,
+        actualFilePath: item.actualFilePath,
+        normPath: item.normPath,
+        isNonCodeOrTest: item.isNonCodeOrTest,
+        exactHeadUnavailable: item.exactHeadUnavailable,
         callees,
         unresolvedCallees,
-        fileGaps,
-        sourceDigest
+        fileGaps: item.fileGaps,
+        sourceDigest: item.sourceDigest
       });
     }
 
@@ -3890,11 +4562,60 @@ export function buildContextPackage(changeSet, targetFile, options = {}) {
       if (!cls.file) cls.file = actualFilePath;
     }
   }
+  let siblingFiles = options.siblingFiles;
+  if (!siblingFiles) {
+    siblingFiles = [];
+    if (Array.isArray(changeSet?.files)) {
+      for (const f of changeSet.files) {
+        const p = typeof f === "string" ? f : f?.path;
+        if (!p) continue;
+        let norm;
+        try {
+          norm = normalizeGitPath(p, repoRoot);
+        } catch {
+          norm = normalizeCanonicalPath(p);
+        }
+        if (norm !== normTarget) {
+          const sContent = options.fileContents?.[p] ??
+            options.fileContents?.[norm] ??
+            (isHeadInRepo ? getExactHeadFileContent(repoRoot, headSha, p) : null) ??
+            (repoRoot ? safeReadWorkingTreeFile(repoRoot, p).content : null) ??
+            null;
+          let sDiff = "";
+          if (rawDiffHunks) {
+            const fileDiffMap = splitDiffByFiles(rawDiffHunks, [norm, p]);
+            sDiff = fileDiffMap.get(norm) ?? fileDiffMap.get(p) ?? "";
+          }
+          siblingFiles.push({ path: p, content: sContent, diff: sDiff });
+        }
+      }
+    } else if (options.fileContents && typeof options.fileContents === "object") {
+      for (const [filePath, content] of Object.entries(options.fileContents)) {
+        let norm;
+        try {
+          norm = normalizeGitPath(filePath, repoRoot);
+        } catch {
+          norm = normalizeCanonicalPath(filePath);
+        }
+        if (norm !== normTarget) {
+          siblingFiles.push({ path: filePath, content });
+        }
+      }
+    }
+  }
+
+  const singleFileOptions = {
+    ...options,
+    siblingFiles: siblingFiles || [],
+    repositoryRoot: options.repositoryRoot || repoRoot,
+    headSha: options.headSha || headSha
+  };
+
   const { callees, unresolvedCallees, contextGaps } = extractLocalCalleeContext(
     fileContent,
     diffHunks,
     actualFilePath,
-    options
+    singleFileOptions
   );
 
   if (hasPathEscape) {

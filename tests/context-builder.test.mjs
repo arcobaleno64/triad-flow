@@ -22,11 +22,14 @@ import {
   MAX_SNIPPET_LINES,
   MAX_SNIPPET_BYTES,
   DEFAULT_BUDGET_CONFIG,
-  SAFE_ARGV_THRESHOLD_BYTES
+  SAFE_ARGV_THRESHOLD_BYTES,
+  findFunctionDeclarations,
+  findTypeDefinitions,
+  extractDirectIncludePaths
 } from "../src/core/context-builder.mjs";
 import { getExactHeadFileContent, clearExactHeadCache } from "../src/core/git-collector.mjs";
 import { buildEvidenceReviewPrompt, formatContextPackageXml, formatContextGaps } from "../src/adapters/review-prompts.mjs";
-import { buildVerificationPrompt, conductIndependentVerification } from "../src/core/independent-verifier.mjs";
+import { buildVerificationPrompt, conductIndependentVerification, validateContextPackageAuthenticity, evaluateContextPackageBinding } from "../src/core/independent-verifier.mjs";
 import { evaluateGateDecision, evaluatePostVerificationGate } from "../src/core/harness.mjs";
 import { isTrustedConsensus } from "../src/core/consensus-state.mjs";
 import { aggregateConsensus } from "../src/core/loop.mjs";
@@ -508,3 +511,401 @@ test("stripCommentsAndStrings: correctly strips regex literals with escaped slas
   const candidates = extractCandidateCallSymbols(`@@ -1,5 +1,5 @@\n+${line}`);
   assert.equal(candidates.some(c => c.symbol === "reasoning"), false);
 });
+
+test("Cross-File Symbol Extraction: Multi-file changeSet resolves callee in sibling file (Tier 2)", () => {
+  const serviceCode = [
+    `import { validateCredentials } from "./validator.js";`,
+    `export function login(user, pass) {`,
+    `  if (!validateCredentials(user, pass)) {`,
+    `    return false;`,
+    `  }`,
+    `  return true;`,
+    `}`
+  ].join("\n");
+
+  const validatorCode = [
+    `export function validateCredentials(user, pass) {`,
+    `  if (!user || !pass) {`,
+    `    return false;`,
+    `  }`,
+    `  return user.length >= 3 && pass.length >= 8;`,
+    `}`
+  ].join("\n");
+
+  const diffHunks = [
+    `diff --git a/src/auth/service.js b/src/auth/service.js`,
+    `--- a/src/auth/service.js`,
+    `+++ b/src/auth/service.js`,
+    `@@ -2,3 +2,4 @@`,
+    `+  if (!validateCredentials(user, pass)) {`,
+    `+    return false;`,
+    `+  }`
+  ].join("\n");
+
+  const changeSet = {
+    scopeMode: "working-tree",
+    files: [
+      { path: "src/auth/service.js", additions: 2, deletions: 0 },
+      { path: "src/auth/validator.js", additions: 0, deletions: 0 }
+    ],
+    diffHunks
+  };
+
+  const fileContents = {
+    "src/auth/service.js": serviceCode,
+    "src/auth/validator.js": validatorCode
+  };
+
+  const pkg = buildContextPackage(changeSet, undefined, { fileContents });
+
+  assert.ok(pkg.ok, "Context package build must succeed");
+  const callees = pkg.layers.layer1AstEnclosure.callees || [];
+  const resolved = callees.find(c => c.symbol === "validateCredentials");
+  assert.ok(resolved, "validateCredentials must be resolved from sibling file src/auth/validator.js");
+  assert.equal(resolved.file, "src/auth/validator.js");
+  assert.equal(resolved.callingFile, "src/auth/service.js");
+  assert.ok(resolved.definition.includes("export function validateCredentials"));
+  assert.equal(resolved.extractionMode, "full_body");
+
+  // Crucial: not promoted to contextGaps because it is fully resolved!
+  const gap = pkg.contextGaps.find(g => g.symbol === "validateCredentials");
+  assert.equal(gap, undefined, "Fully resolved callee must NOT be promoted to contextGaps");
+  assert.equal(pkg.contextGaps.length, 0, "Zero context gaps expected when all sensitive callees resolve");
+});
+
+test("Cross-File Symbol Extraction: Direct header include at HEAD resolves macro (Tier 3) without header in PR changeSet manifest", () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "triad-cross-header-"));
+  try {
+    execFileSync("git", ["init"], { cwd: tmpDir, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@triad.flow"], { cwd: tmpDir, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "Triad Tester"], { cwd: tmpDir, stdio: "ignore" });
+
+    const headerRelPath = "include/sec_defs.h";
+    const sourceRelPath = "src/session.c";
+
+    const headerFull = path.join(tmpDir, headerRelPath);
+    const sourceFull = path.join(tmpDir, sourceRelPath);
+    fs.mkdirSync(path.dirname(headerFull), { recursive: true });
+    fs.mkdirSync(path.dirname(sourceFull), { recursive: true });
+
+    const headerContent = [
+      `#ifndef SEC_DEFS_H`,
+      `#define SEC_DEFS_H`,
+      `#define ENFORCE_SESSION_AUTH(sess) ((sess) != NULL && (sess)->is_authenticated != 0)`,
+      `#endif`
+    ].join("\n");
+
+    const sourceContent = [
+      `#include "include/sec_defs.h"`,
+      `bool verifySession(Session *sess) {`,
+      `    if (!ENFORCE_SESSION_AUTH(sess)) {`,
+      `        return false;`,
+      `    }`,
+      `    return true;`,
+      `}`
+    ].join("\n");
+
+    fs.writeFileSync(headerFull, headerContent);
+    fs.writeFileSync(sourceFull, sourceContent);
+    execFileSync("git", ["add", headerRelPath, sourceRelPath], { cwd: tmpDir, stdio: "ignore" });
+    execFileSync("git", ["commit", "-m", "Initial commit with security header and session file"], { cwd: tmpDir, stdio: "ignore" });
+    const headSha = execFileSync("git", ["rev-parse", "HEAD"], { cwd: tmpDir, encoding: "utf8" }).trim();
+
+    // Modify working tree source file
+    fs.writeFileSync(sourceFull, sourceContent + "\n// modified\n");
+
+    const diffHunks = [
+      `diff --git a/src/session.c b/src/session.c`,
+      `--- a/src/session.c`,
+      `+++ b/src/session.c`,
+      `@@ -2,4 +2,5 @@`,
+      `+    if (!ENFORCE_SESSION_AUTH(sess)) {`,
+      `+        return false;`,
+      `+    }`
+    ].join("\n");
+
+    // PR ChangeSet only touches src/session.c! include/sec_defs.h is NOT in changeSet.files
+    const changeSet = {
+      scopeMode: "revision-range",
+      repository: { root: tmpDir, headSha },
+      files: [{ path: sourceRelPath, additions: 2, deletions: 0 }],
+      diffHunks
+    };
+
+    const pkg = buildContextPackage(changeSet, sourceRelPath, {
+      repositoryRoot: tmpDir,
+      headSha
+    });
+
+    assert.ok(pkg.ok, "Package build must succeed");
+    const callees = pkg.layers.layer1AstEnclosure.callees || [];
+    const macroCallee = callees.find(c => c.symbol === "ENFORCE_SESSION_AUTH");
+    assert.ok(macroCallee, "Macro ENFORCE_SESSION_AUTH must be extracted from exact HEAD header");
+    assert.equal(macroCallee.file, headerRelPath);
+    assert.equal(macroCallee.isHeaderCallee, true);
+    assert.ok(macroCallee.definition.includes("#define ENFORCE_SESSION_AUTH"));
+
+    // Gap is resolved!
+    const gap = pkg.contextGaps.find(g => g.symbol === "ENFORCE_SESSION_AUTH");
+    assert.equal(gap, undefined, "Header-resolved macro must not create a contextGap");
+
+    // Strict Set Equality preserved: manifest only contains PR files (src/session.c)
+    const binding = evaluateContextPackageBinding(pkg, changeSet, headSha);
+    assert.equal(binding.bound, true, "Package must bind strictly to changeSet without scope mismatch");
+
+    // Verifier authenticity succeeds against Git HEAD without header in manifest
+    const isAuthentic = validateContextPackageAuthenticity(pkg, {
+      repositoryRoot: tmpDir,
+      headSha,
+      changeSet
+    });
+    assert.equal(isAuthentic, true, "validateContextPackageAuthenticity must accept authentic header callee");
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("Cross-File Symbol Extraction: Truly non-existent symbol on sensitive path fails closed to UNRESOLVED_SYMBOL in contextGaps", () => {
+  const code = [
+    `#include "include/sec_defs.h"`,
+    `bool handleRequest(Request *req) {`,
+    `    return true;`,
+    `}`
+  ].join("\n");
+
+  const diffHunks = [
+    `@@ -2,3 +2,4 @@`,
+    `+ if (!validateUntrustedToken(req->token)) return false;`
+  ].join("\n");
+
+  const targetFile = "src/handler.c";
+  const changeSet = {
+    scopeMode: "working-tree",
+    files: [{ path: targetFile, additions: 1, deletions: 0 }],
+    diffHunks
+  };
+
+  const pkg = buildContextPackage(changeSet, targetFile, {
+    fileContents: { [targetFile]: code }
+  });
+
+  const unresolved = pkg.layers.layer1AstEnclosure.unresolvedCallees;
+  assert.ok(unresolved.some(u => u.symbol === "validateUntrustedToken" && u.reason === "UNRESOLVED_SYMBOL"));
+
+  const gap = pkg.contextGaps.find(g => g.symbol === "validateUntrustedToken");
+  assert.ok(gap, "Missing sensitive callee must fail closed into contextGaps");
+  assert.equal(gap.reason, "UNRESOLVED_SYMBOL");
+  assert.equal(gap.category, "input_validation");
+});
+
+test("Cross-File Symbol Extraction: Ambiguous cross-file definition fails closed to AMBIGUOUS_SYMBOL in contextGaps", () => {
+  const callerCode = [
+    `export function dispatch(req) {`,
+    `  if (!authenticate(req)) return null;`,
+    `  return "ok";`,
+    `}`
+  ].join("\n");
+
+  const sibling1Code = [
+    `export function authenticate(req) {`,
+    `  return req.headers.authorization !== undefined;`,
+    `}`
+  ].join("\n");
+
+  const sibling2Code = [
+    `export function authenticate(req) {`,
+    `  return req.session !== null;`,
+    `}`
+  ].join("\n");
+
+  const diffHunks = [
+    `diff --git a/src/dispatcher.js b/src/dispatcher.js`,
+    `--- a/src/dispatcher.js`,
+    `+++ b/src/dispatcher.js`,
+    `@@ -1,3 +1,4 @@`,
+    `+ if (!authenticate(req)) return null;`
+  ].join("\n");
+
+  const changeSet = {
+    scopeMode: "working-tree",
+    files: [
+      { path: "src/dispatcher.js", additions: 1, deletions: 0 },
+      { path: "src/auth_bearer.js", additions: 0, deletions: 0 },
+      { path: "src/auth_session.js", additions: 0, deletions: 0 }
+    ],
+    diffHunks
+  };
+
+  const fileContents = {
+    "src/dispatcher.js": callerCode,
+    "src/auth_bearer.js": sibling1Code,
+    "src/auth_session.js": sibling2Code
+  };
+
+  const pkg = buildContextPackage(changeSet, undefined, { fileContents });
+
+  const unresolved = pkg.layers.layer1AstEnclosure.unresolvedCallees;
+  assert.ok(unresolved.some(u => u.symbol === "authenticate" && u.reason === "AMBIGUOUS_SYMBOL"), "Must record AMBIGUOUS_SYMBOL");
+
+  const gap = pkg.contextGaps.find(g => g.symbol === "authenticate");
+  assert.ok(gap, "Ambiguous symbol must fail closed into contextGaps");
+  assert.equal(gap.reason, "AMBIGUOUS_SYMBOL");
+});
+
+test("Cross-File Symbol Extraction: Direct header include at HEAD resolves C/C++ function signature without CALLEE_TRUNCATED_ELIDED gap", () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "triad-header-signature-"));
+  try {
+    execFileSync("git", ["init"], { cwd: tmpDir, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@triad.flow"], { cwd: tmpDir, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "Triad Tester"], { cwd: tmpDir, stdio: "ignore" });
+
+    const headerRelPath = "include/auth_api.h";
+    const sourceRelPath = "src/service.c";
+
+    const headerFull = path.join(tmpDir, headerRelPath);
+    const sourceFull = path.join(tmpDir, sourceRelPath);
+    fs.mkdirSync(path.dirname(headerFull), { recursive: true });
+    fs.mkdirSync(path.dirname(sourceFull), { recursive: true });
+
+    const headerContent = [
+      `#ifndef AUTH_API_H`,
+      `#define AUTH_API_H`,
+      `bool validateUser(User *u);`,
+      `#endif`
+    ].join("\n");
+
+    const sourceContent = [
+      `#include "include/auth_api.h"`,
+      `bool handleLogin(User *u) {`,
+      `    if (!validateUser(u)) {`,
+      `        return false;`,
+      `    }`,
+      `    return true;`,
+      `}`
+    ].join("\n");
+
+    fs.writeFileSync(headerFull, headerContent, "utf8");
+    fs.writeFileSync(sourceFull, sourceContent, "utf8");
+    execFileSync("git", ["add", "."], { cwd: tmpDir, stdio: "ignore" });
+    execFileSync("git", ["commit", "-m", "Initial commit with header and source"], { cwd: tmpDir, stdio: "ignore" });
+
+    const headSha = execFileSync("git", ["rev-parse", "HEAD"], { cwd: tmpDir, encoding: "utf8" }).trim();
+
+    const diffHunks = [
+      `diff --git a/src/service.c b/src/service.c`,
+      `--- a/src/service.c`,
+      `+++ b/src/service.c`,
+      `@@ -2,4 +2,5 @@`,
+      `+    if (!validateUser(u)) {`,
+      `+        return false;`,
+      `+    }`
+    ].join("\n");
+
+    const changeSet = {
+      scopeMode: "revision-range",
+      repository: { root: tmpDir, headSha },
+      files: [{ path: sourceRelPath, additions: 2, deletions: 0 }],
+      diffHunks
+    };
+
+    const pkg = buildContextPackage(changeSet, sourceRelPath, {
+      repositoryRoot: tmpDir,
+      headSha
+    });
+
+    assert.ok(pkg.ok, "Package build must succeed");
+    const callees = pkg.layers.layer1AstEnclosure.callees || [];
+    const sigCallee = callees.find(c => c.symbol === "validateUser");
+    assert.ok(sigCallee, "Function signature validateUser must be extracted from header at HEAD");
+    assert.equal(sigCallee.file, headerRelPath);
+    assert.equal(sigCallee.isHeaderCallee, true);
+    assert.equal(sigCallee.extractionMode, "signature");
+    assert.ok(sigCallee.definition.includes("bool validateUser(User *u);"));
+
+    // Critical: zero context gaps! CALLEE_TRUNCATED_ELIDED must NOT be emitted
+    const gap = pkg.contextGaps.find(g => g.symbol === "validateUser");
+    assert.equal(gap, undefined, "Header-resolved signature must NOT emit CALLEE_TRUNCATED_ELIDED gap");
+    assert.equal(pkg.contextGaps.length, 0, "Expected zero context gaps");
+
+    // Authenticity validation passes with physical Git HEAD backing
+    const isAuthentic = validateContextPackageAuthenticity(pkg, {
+      repositoryRoot: tmpDir,
+      headSha,
+      changeSet
+    });
+    assert.equal(isAuthentic, true, "validateContextPackageAuthenticity must accept authentic header signature");
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("Cross-File Symbol Extraction: Multiline function signature in header preserves return type and accurate startLine", () => {
+  const headerContent = [
+    `#ifndef AUTH_H`,
+    `#define AUTH_H`,
+    `extern const char *`,
+    `validateToken(const char *raw_token);`,
+    `#endif`
+  ].join("\n");
+
+  const hLines = headerContent.split("\n");
+  const decls = findFunctionDeclarations(hLines, "validateToken");
+  assert.equal(decls.length, 1);
+  assert.equal(decls[0].startLine, 3);
+  assert.equal(decls[0].endLine, 4);
+  assert.ok(decls[0].snippet.definition.includes("extern const char *"));
+  assert.ok(decls[0].snippet.definition.includes("validateToken"));
+});
+
+test("Cross-File Symbol Extraction: Typedef struct and primitive typedef extraction", () => {
+  const cHeader = [
+    `typedef uint64_t EpochTimestamp;`,
+    ``,
+    `typedef struct {`,
+    `    int id;`,
+    `    char name[64];`,
+    `} UserRecord;`,
+    ``,
+    `typedef struct session_s {`,
+    `    UserRecord *user;`,
+    `    bool active;`,
+    `} Session;`
+  ].join("\n");
+
+  const lines = cHeader.split("\n");
+
+  const epochDef = findTypeDefinitions(lines, "EpochTimestamp");
+  assert.equal(epochDef.length, 1);
+  assert.ok(epochDef[0].snippet.definition.includes("typedef uint64_t EpochTimestamp;"));
+
+  const userDef = findTypeDefinitions(lines, "UserRecord");
+  assert.equal(userDef.length, 1);
+  assert.equal(userDef[0].startLine, 3);
+  assert.equal(userDef[0].endLine, 6);
+  assert.ok(userDef[0].snippet.definition.includes("typedef struct {"));
+  assert.ok(userDef[0].snippet.definition.includes("UserRecord;"));
+
+  const sessionDef = findTypeDefinitions(lines, "Session");
+  assert.equal(sessionDef.length, 1);
+  assert.equal(sessionDef[0].startLine, 8);
+  assert.equal(sessionDef[0].endLine, 11);
+  assert.ok(sessionDef[0].snippet.definition.includes("typedef struct session_s {"));
+  assert.ok(sessionDef[0].snippet.definition.includes("Session;"));
+});
+
+test("Cross-File Symbol Extraction: Include paths with backslashes and include/ directory convention", () => {
+  const fileContent = [
+    `#include "include\\sec_defs.h"`,
+    `#include "common.h"`,
+    `import { helper } from "src/utils/helper";`
+  ].join("\n");
+
+  const paths = extractDirectIncludePaths(fileContent, "src/worker.c");
+  assert.ok(paths.includes("include/sec_defs.h"), "Backslash paths must be normalized to forward slashes");
+  assert.ok(paths.includes("src/common.h"), "Must include candidate relative to calling dir");
+  assert.ok(paths.includes("common.h"), "Must include candidate relative to repo root");
+  assert.ok(paths.includes("include/common.h"), "Must include candidate in include/ subdirectory");
+  assert.ok(paths.includes("src/utils/helper") || paths.includes("src/utils/helper.js"), "Must include src/ paths");
+});
+
+
