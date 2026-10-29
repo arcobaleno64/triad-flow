@@ -219,3 +219,52 @@ test("runCli review emits JSON review-run report via --format=json and saves fil
 
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
+
+test("G5-P2-02: buildReviewRunReport preserves gate.advisoryFindings in canonical report with deep immutability", () => {
+  const advisoryFinding = {
+    title: "Non-blocking naming convention warning",
+    severity: "low",
+    file: "src/utils.js",
+    line_start: 42,
+    ruleId: "TF-STYLE-001"
+  };
+
+  // 1. Report preserves advisoryFindings array when provided in gate decision
+  const reportWithAdvisories = buildReviewRunReport({
+    runId: "run-advisory-123",
+    status: REVIEW_RUN_STATUS.REVIEWED_CLEAN,
+    gate: {
+      decision: "approve",
+      reason: "Approved with advisory findings",
+      advisoryFindings: [advisoryFinding]
+    }
+  });
+
+  assert.ok(reportWithAdvisories.gate);
+  assert.equal(reportWithAdvisories.gate.decision, "approve");
+  assert.equal(Array.isArray(reportWithAdvisories.gate.advisoryFindings), true);
+  assert.equal(reportWithAdvisories.gate.advisoryFindings.length, 1);
+  assert.deepEqual(reportWithAdvisories.gate.advisoryFindings[0], advisoryFinding);
+
+  // Security Invariant: advisoryFindings and elements are deeply frozen
+  assert.equal(Object.isFrozen(reportWithAdvisories.gate.advisoryFindings), true);
+  assert.equal(Object.isFrozen(reportWithAdvisories.gate.advisoryFindings[0]), true);
+  assert.throws(() => {
+    reportWithAdvisories.gate.advisoryFindings.push({ title: "tampered" });
+  });
+
+  // 2. Report defaults advisoryFindings to empty array when omitted in gate object
+  const reportWithoutAdvisories = buildReviewRunReport({
+    runId: "run-clean-456",
+    status: REVIEW_RUN_STATUS.REVIEWED_CLEAN,
+    gate: {
+      decision: "approve",
+      reason: "Clean pass"
+    }
+  });
+
+  assert.ok(reportWithoutAdvisories.gate);
+  assert.equal(Array.isArray(reportWithoutAdvisories.gate.advisoryFindings), true);
+  assert.equal(reportWithoutAdvisories.gate.advisoryFindings.length, 0);
+  assert.equal(Object.isFrozen(reportWithoutAdvisories.gate.advisoryFindings), true);
+});
