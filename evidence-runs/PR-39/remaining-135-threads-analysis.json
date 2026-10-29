@@ -1,0 +1,196 @@
+{
+  "total": 180,
+  "resolvedCount": 45,
+  "unresolvedCount": 135,
+  "currentUnresolvedCount": 25,
+  "outdatedUnresolvedCount": 110,
+  "currentSummary": {
+    "P1": 0,
+    "P2": 25,
+    "P3": 0,
+    "OTHER": 0
+  },
+  "outdatedSummary": {
+    "P1": 88,
+    "P2": 22,
+    "P3": 0,
+    "OTHER": 0
+  },
+  "currentThreads": [
+    {
+      "id": "PRRT_kwDOUWarIc6qo0ue",
+      "path": "src/core/context-builder.mjs",
+      "line": 2911,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  Enforce the AST ceiling after re"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6qo0uh",
+      "path": "src/core/context-builder.mjs",
+      "line": 3561,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  Isolate target-file hunks before"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6qwj_9",
+      "path": "scripts/dogfood-review.mjs",
+      "line": 592,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  Validate caller-supplied run IDs"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rTXZk",
+      "path": "src/core/context-builder.mjs",
+      "line": 590,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  Implement indentation-based extr"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rTXZl",
+      "path": "src/adapters/staged-review.mjs",
+      "line": 248,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  Keep sanitized checkpoint names "
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rTowo",
+      "path": "src/core/context-builder.mjs",
+      "line": 2347,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  Truncate oversized final lines i"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rY14D",
+      "path": "src/core/git-collector.mjs",
+      "line": 439,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  Partition exact-head cache entri"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6ra7kS",
+      "path": "src/core/context-builder.mjs",
+      "line": 1849,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  Reset lexical state at each disj"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rhwE0",
+      "path": "src/core/review-run-report.mjs",
+      "line": 130,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  Preserve verifier advisories in "
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rhwE4",
+      "path": "src/core/context-builder.mjs",
+      "line": 698,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  Bound Python definitions by inde"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rrHOb",
+      "path": "src/adapters/staged-review.mjs",
+      "line": 249,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  Keep sanitized checkpoint names "
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rrUDs",
+      "path": "src/core/git-collector.mjs",
+      "line": 32,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  Bound the exact-head content cac"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rte6b",
+      "path": "src/core/independent-verifier.mjs",
+      "line": 2212,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  Reserve input budget before appe"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rtv6N",
+      "path": "src/core/real-benchmark-runner.mjs",
+      "line": 210,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  Derive final gate blocking from "
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rtv6O",
+      "path": "src/core/independent-verifier.mjs",
+      "line": 2994,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  Preserve normalized omission rem"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rvWjN",
+      "path": "src/adapters/staged-review.mjs",
+      "line": 247,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  Preserve run-ID uniqueness in ch"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6r0R6m",
+      "path": "src/core/git-collector.mjs",
+      "line": 455,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  Do not cache failed exact-head l"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6r1BuM",
+      "path": "src/core/independent-verifier.mjs",
+      "line": 2927,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  Require reasoning before support"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6sMI66",
+      "path": "src/adapters/review-prompts.mjs",
+      "line": 375,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  Budget context before rendering "
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6sMI7U",
+      "path": "scripts/triage-pr39-threads.mjs",
+      "line": 605,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  Count the dual-visibility catego"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6sUDZa",
+      "path": "scripts/dogfood-review.mjs",
+      "line": 1505,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  Derive Clean Challenge provenanc"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6slANA",
+      "path": "src/core/git-collector.mjs",
+      "line": 32,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  Bound the exact-head content cac"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6slqmG",
+      "path": "src/core/real-benchmark-runner.mjs",
+      "line": 212,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  Keep all preliminary cases out o"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6tfxJj",
+      "path": "src/cli.mjs",
+      "line": 1251,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  Handle missing consensus when re"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6tfxJo",
+      "path": "src/adapters/cli-transport.mjs",
+      "line": 269,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  Prevent nested options from over"
+    }
+  ]
+}

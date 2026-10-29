@@ -1,0 +1,39 @@
+{
+  "tracked": {
+    "file": "pr39-r11-tracked.patch",
+    "bytes": 58871,
+    "sha256": "D9C113E341FF7F6C6865F2E7D8339A33F0C5A78FD49F5EA8779F4D07EEAA4652",
+    "files": {
+      "scripts/dogfood-review.mjs": {
+        "base": "23a98afcebf7ca00094e951a88535a4a476ef263",
+        "current": "ad40d564ef4e4efde13e59c39eea95731e859d51"
+      },
+      "src/adapters/review-prompts.mjs": {
+        "base": "6d8c183e466d835dcd3c5f43f84c717932207a7f",
+        "current": "f0c379d21d786eb39a92cc7e5453d6caec72abc0"
+      },
+      "src/cli.mjs": {
+        "base": "319c8e382989dbe6e30a322a950e55edb8ab6f82",
+        "current": "48498b888d2836d6412e509661d1163ee4c60cd2"
+      },
+      "src/core/context-builder.mjs": {
+        "base": "779d4462e4aef90950fb9d87f78cd74adfb5632b",
+        "current": "6e669a272eac612277f7c56c827694c1904d2af3"
+      },
+      "tests/adversarial-phase3-challenger.test.mjs": {
+        "base": "fffbd1db0a0708ad574c70526b707f3b1c16951d",
+        "current": "33eadc0804e7dc1ed523e0cea7e7e2670c2b1de2"
+      },
+      "tests/remediation-phase3-orchestrator-cli.test.mjs": {
+        "base": "6f554814e59c4cad3ef577279f1b73e5accaa588",
+        "current": "5ed7006539ca789290723931ff79571cfed6c48d"
+      }
+    }
+  },
+  "newTest": {
+    "file": "pr39-r11-new-test.patch",
+    "bytes": 54298,
+    "sha256": "6C9144645DA65CF07C9A0CF0F84018037D5EE872AC8CFBDECD3107A52CFB479F",
+    "blob": "8d1f4d4f54d38177358bd0baedb973bfbf57491c"
+  }
+}

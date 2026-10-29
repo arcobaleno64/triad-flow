@@ -1,0 +1,62 @@
+[
+  {
+    "index": 1,
+    "threadId": "PRRT_kwDOUWarIc6slAMv",
+    "shortId": "slAMv",
+    "cluster": "C1",
+    "commentId": "PRRC_kwDOUWarIc8AAAABBa5Fug",
+    "updatedAt": "2026-10-27T15:13:16Z",
+    "status": "UPDATED",
+    "updatedBody": "G4 remediation evidence\n\nReview finding: slAMv (Cluster C1: Multi-line block comment lexical state recovery at hunk boundaries)\n\nFix: In extractFunctionCallees and scanDiffForCallees within src/core/context-builder.mjs, evaluate physical fileContent across hunk boundaries using block comment state machine to reconstruct lexical state at hunk start; safely fall back to lexicalStateUncertain when fileContent is omitted.\n\nChanged file: src/core/context-builder.mjs\n\nCommit: 0fec4f97f46c892a8f5eee1d606660e07d130d54\n\nRegression test: SYSTEMIC-C01-HUNK-LEXICAL-STATE (Negative with fileContent & Fallback without fileContent) — PASS\n\nCI evidence: GitHub Actions Run 40521711216, macOS / Ubuntu / Windows: 3/3 PASS\n\nThe identified issue has been addressed in the referenced commit: physical fileContent is inspected to recover pre-hunk block comment state, while maintaining conservative fallback to lexicalStateUncertain when fileContent is absent. The corresponding regression tests passed in the cross-platform CI run.\n\nGovernance status: Remediation evidence updated per PR39-SCHEMA2-G4-THREAD-RESOLUTION-AUTHORIZATION-REVIEW-R1 for R2 adjudication. Thread resolution remains subject to authorization."
+  },
+  {
+    "index": 2,
+    "threadId": "PRRT_kwDOUWarIc6r1BuC",
+    "shortId": "r1BuC",
+    "cluster": "C6",
+    "commentId": "PRRC_kwDOUWarIc8AAAABBa5RIw",
+    "updatedAt": "2026-10-27T15:13:17Z",
+    "status": "UPDATED",
+    "updatedBody": "G4 remediation evidence\n\nReview finding: r1BuC (Cluster C6: Secondary candidate symbol extraction receiver sensitivity retention)\n\nFix: In candidate symbol extraction within src/core/context-builder.mjs, check receiver sensitivity prior to built-in method filtering, ensuring sensitive receiver calls (such as permissions.has(user) and auth.get(token)) are retained while non-sensitive collection calls are skipped.\n\nChanged file: src/core/context-builder.mjs\n\nCommit: 0fec4f97f46c892a8f5eee1d606660e07d130d54\n\nRegression test: SYSTEMIC-C06-BUILTIN-ON-SENSITIVE-RECEIVER — PASS\n\nCI evidence: GitHub Actions Run 40521711216, macOS / Ubuntu / Windows: 3/3 PASS\n\nThe identified issue has been addressed in the referenced commit: receiver sensitivity is evaluated with precedence across both primary and secondary candidate extraction sites, preserving critical calls on sensitive objects. The corresponding regression test passed in the cross-platform CI run.\n\nGovernance status: Remediation evidence updated per PR39-SCHEMA2-G4-THREAD-RESOLUTION-AUTHORIZATION-REVIEW-R1 for R2 adjudication. Thread resolution remains subject to authorization."
+  },
+  {
+    "index": 3,
+    "threadId": "PRRT_kwDOUWarIc6rfkYi",
+    "shortId": "rfkYi",
+    "cluster": "C11",
+    "commentId": "PRRC_kwDOUWarIc8AAAABBa5eEw",
+    "updatedAt": "2026-10-27T15:13:19Z",
+    "status": "UPDATED",
+    "updatedBody": "G4 remediation evidence\n\nReview finding: rfkYi (Cluster C11: File attribute inclusion in callee XML enclosure tags)\n\nFix: In formatContextPackageXml within src/adapters/review-prompts.mjs, compute conditional fileVal/fileAttr for <callee> XML tags: in multi-file mode, resolve authentic source file (c.file, c.path, c.sourceFile) excluding 'multi-file'; in single-file mode, emit file attribute only when differing from targetFile to prevent provenance spoofing.\n\nChanged file: src/adapters/review-prompts.mjs\n\nCommit: 0fec4f97f46c892a8f5eee1d606660e07d130d54\n\nRegression test: SYSTEMIC-C11-CALLEE-XML-FILE-ATTRIBUTE — PASS\n\nCI evidence: GitHub Actions Run 40521711216, macOS / Ubuntu / Windows: 3/3 PASS\n\nThe identified issue has been addressed in the referenced commit: callee XML enclosure computes conditional file attributes avoiding 'multi-file' fallback while preserving cross-file source provenance. The corresponding regression test passed in the cross-platform CI run.\n\nGovernance status: Remediation evidence updated per PR39-SCHEMA2-G4-THREAD-RESOLUTION-AUTHORIZATION-REVIEW-R1 for R2 adjudication. Thread resolution remains subject to authorization."
+  },
+  {
+    "index": 4,
+    "threadId": "PRRT_kwDOUWarIc6rvWjO",
+    "shortId": "rvWjO",
+    "cluster": "C12",
+    "commentId": "PRRC_kwDOUWarIc8AAAABBa5h6Q",
+    "updatedAt": "2026-10-27T15:13:20Z",
+    "status": "UPDATED",
+    "updatedBody": "G4 remediation evidence\n\nReview finding: rvWjO (Cluster C12: Single-file diff isolation and target-not-found fallback safety)\n\nFix: In buildContextPackage within src/core/context-builder.mjs, isolate file diff hunks using splitDiffByFiles to prevent single-file mode from leaking unrelated hunks, route 'multi-file' targets appropriately, and fail closed with context gaps when structured diff omits target file.\n\nChanged file: src/core/context-builder.mjs\n\nCommit: 0fec4f97f46c892a8f5eee1d606660e07d130d54\n\nRegression test: SYSTEMIC-C12-SINGLE-FILE-DIFF-ISOLATION (Primary Isolation) & SYSTEMIC-C12-DIFF-TARGET-NOT-FOUND — PASS\n\nCI evidence: GitHub Actions Run 40521711216, macOS / Ubuntu / Windows: 3/3 PASS\n\nThe identified issue has been addressed in the referenced commit: single-file diff isolation enforces strict hunk separation per target file, with full fail-closed context gap handling when targets are missing from structured diffs. The corresponding regression tests passed in the cross-platform CI run.\n\nGovernance status: Remediation evidence updated per PR39-SCHEMA2-G4-THREAD-RESOLUTION-AUTHORIZATION-REVIEW-R1 for R2 adjudication. Thread resolution remains subject to authorization."
+  },
+  {
+    "index": 5,
+    "threadId": "PRRT_kwDOUWarIc6tdsmT",
+    "shortId": "tdsmT",
+    "cluster": "C14",
+    "commentId": "PRRC_kwDOUWarIc8AAAABBa5lsg",
+    "updatedAt": "2026-10-27T15:13:21Z",
+    "status": "UPDATED",
+    "updatedBody": "G4 remediation evidence\n\nReview finding: tdsmT (Cluster C14: Workflow authority denial on unverified context package registration failure)\n\nFix: In scripts/dogfood-review.mjs, validate candidate ContextPackage authenticity against physical Git repository; upon registration or verification failure, immediately strip ContextPackage and emit EXACT_HEAD_CONTEXT_FAILED gap, denying workflow authority and failing closed.\n\nChanged file: scripts/dogfood-review.mjs\n\nCommit: 0fec4f97f46c892a8f5eee1d606660e07d130d54\n\nRegression test: SYSTEMIC-C14B-REGISTRATION-FAILURE-WORKFLOW-DENIAL (Primary Authority Denial) & SYSTEMIC-C14A-FORGED-CALLEE-REJECTION — PASS\n\nCI evidence: GitHub Actions Run 40521711216, macOS / Ubuntu / Windows: 3/3 PASS\n\nThe identified issue has been addressed in the referenced commit: unverified external context packages are stripped upon registration failure and denied workflow authority with fail-closed gate block. The corresponding regression tests passed in the cross-platform CI run.\n\nGovernance status: Remediation evidence updated per PR39-SCHEMA2-G4-THREAD-RESOLUTION-AUTHORIZATION-REVIEW-R1 for R2 adjudication. Thread resolution remains subject to authorization."
+  },
+  {
+    "index": 6,
+    "threadId": "PRRT_kwDOUWarIc6rxCha",
+    "shortId": "rxCha",
+    "cluster": "C14",
+    "commentId": "PRRC_kwDOUWarIc8AAAABBa5nhg",
+    "updatedAt": "2026-10-27T15:13:22Z",
+    "status": "UPDATED",
+    "updatedBody": "G4 remediation evidence\n\nReview finding: rxCha (Cluster C14: Callee authenticity validation against exact-head Git commit)\n\nFix: In scripts/dogfood-review.mjs, implement validateContextPackageAuthenticity to authenticate candidate ContextPackage against exact-head Git tree, matching physical file contents and rejecting fabricated callee definitions not manifested in repository.\n\nChanged file: scripts/dogfood-review.mjs\n\nCommit: 0fec4f97f46c892a8f5eee1d606660e07d130d54\n\nRegression test: SYSTEMIC-C14A-FORGED-CALLEE-REJECTION — PASS\n\nCI evidence: GitHub Actions Run 40521711216, macOS / Ubuntu / Windows: 3/3 PASS\n\nThe identified issue has been addressed in the referenced commit: all candidate callees are verified against physical Git repo blobs at exact HEAD, rejecting any unmanifested or forged callee definitions. The corresponding regression test passed in the cross-platform CI run.\n\nGovernance status: Remediation evidence updated per PR39-SCHEMA2-G4-THREAD-RESOLUTION-AUTHORIZATION-REVIEW-R1 for R2 adjudication. Thread resolution remains subject to authorization."
+  }
+]

@@ -1,0 +1,167 @@
+{
+  "headRefOid": "0fec4f97f46c892a8f5eee1d606660e07d130d54",
+  "state": "OPEN",
+  "allResolved": true,
+  "threads": [
+    {
+      "index": 1,
+      "shortId": "rte6z",
+      "threadId": "PRRT_kwDOUWarIc6rte6z",
+      "cluster": "C1",
+      "commentId": "PRRC_kwDOUWarIc8AAAABBa5D2w",
+      "isResolved": true
+    },
+    {
+      "index": 2,
+      "shortId": "slAMv",
+      "threadId": "PRRT_kwDOUWarIc6slAMv",
+      "cluster": "C1",
+      "commentId": "PRRC_kwDOUWarIc8AAAABBa5Fug",
+      "isResolved": true
+    },
+    {
+      "index": 3,
+      "shortId": "rvCBT",
+      "threadId": "PRRT_kwDOUWarIc6rvCBT",
+      "cluster": "C2",
+      "commentId": "PRRC_kwDOUWarIc8AAAABBa5HWA",
+      "isResolved": true
+    },
+    {
+      "index": 4,
+      "shortId": "sl1Ri",
+      "threadId": "PRRT_kwDOUWarIc6sl1Ri",
+      "cluster": "C3",
+      "commentId": "PRRC_kwDOUWarIc8AAAABBa5JRA",
+      "isResolved": true
+    },
+    {
+      "index": 5,
+      "shortId": "slAM6",
+      "threadId": "PRRT_kwDOUWarIc6slAM6",
+      "cluster": "C4",
+      "commentId": "PRRC_kwDOUWarIc8AAAABBa5K8w",
+      "isResolved": true
+    },
+    {
+      "index": 6,
+      "shortId": "r1BuI",
+      "threadId": "PRRT_kwDOUWarIc6r1BuI",
+      "cluster": "C5",
+      "commentId": "PRRC_kwDOUWarIc8AAAABBa5Mxw",
+      "isResolved": true
+    },
+    {
+      "index": 7,
+      "shortId": "rr-I6",
+      "threadId": "PRRT_kwDOUWarIc6rr-I6",
+      "cluster": "C6",
+      "commentId": "PRRC_kwDOUWarIc8AAAABBa5PEQ",
+      "isResolved": true
+    },
+    {
+      "index": 8,
+      "shortId": "r1BuC",
+      "threadId": "PRRT_kwDOUWarIc6r1BuC",
+      "cluster": "C6",
+      "commentId": "PRRC_kwDOUWarIc8AAAABBa5RIw",
+      "isResolved": true
+    },
+    {
+      "index": 9,
+      "shortId": "rsKCC",
+      "threadId": "PRRT_kwDOUWarIc6rsKCC",
+      "cluster": "C7",
+      "commentId": "PRRC_kwDOUWarIc8AAAABBa5S7g",
+      "isResolved": true
+    },
+    {
+      "index": 10,
+      "shortId": "slLWi",
+      "threadId": "PRRT_kwDOUWarIc6slLWi",
+      "cluster": "C7",
+      "commentId": "PRRC_kwDOUWarIc8AAAABBa5U0w",
+      "isResolved": true
+    },
+    {
+      "index": 11,
+      "shortId": "rsajc",
+      "threadId": "PRRT_kwDOUWarIc6rsajc",
+      "cluster": "C8",
+      "commentId": "PRRC_kwDOUWarIc8AAAABBa5W1g",
+      "isResolved": true
+    },
+    {
+      "index": 12,
+      "shortId": "rte6o",
+      "threadId": "PRRT_kwDOUWarIc6rte6o",
+      "cluster": "C9",
+      "commentId": "PRRC_kwDOUWarIc8AAAABBa5ZcA",
+      "isResolved": true
+    },
+    {
+      "index": 13,
+      "shortId": "rr-JC",
+      "threadId": "PRRT_kwDOUWarIc6rr-JC",
+      "cluster": "C10",
+      "commentId": "PRRC_kwDOUWarIc8AAAABBa5b1Q",
+      "isResolved": true
+    },
+    {
+      "index": 14,
+      "shortId": "rfkYi",
+      "threadId": "PRRT_kwDOUWarIc6rfkYi",
+      "cluster": "C11",
+      "commentId": "PRRC_kwDOUWarIc8AAAABBa5eEw",
+      "isResolved": true
+    },
+    {
+      "index": 15,
+      "shortId": "rrHOc",
+      "threadId": "PRRT_kwDOUWarIc6rrHOc",
+      "cluster": "C12",
+      "commentId": "PRRC_kwDOUWarIc8AAAABBa5ftw",
+      "isResolved": true
+    },
+    {
+      "index": 16,
+      "shortId": "rvWjO",
+      "threadId": "PRRT_kwDOUWarIc6rvWjO",
+      "cluster": "C12",
+      "commentId": "PRRC_kwDOUWarIc8AAAABBa5h6Q",
+      "isResolved": true
+    },
+    {
+      "index": 17,
+      "shortId": "tdsmP",
+      "threadId": "PRRT_kwDOUWarIc6tdsmP",
+      "cluster": "C13",
+      "commentId": "PRRC_kwDOUWarIc8AAAABBa5kBQ",
+      "isResolved": true
+    },
+    {
+      "index": 18,
+      "shortId": "tdsmT",
+      "threadId": "PRRT_kwDOUWarIc6tdsmT",
+      "cluster": "C14A",
+      "commentId": "PRRC_kwDOUWarIc8AAAABBa5lsg",
+      "isResolved": true
+    },
+    {
+      "index": 19,
+      "shortId": "rxCha",
+      "threadId": "PRRT_kwDOUWarIc6rxCha",
+      "cluster": "C14B",
+      "commentId": "PRRC_kwDOUWarIc8AAAABBa5nhg",
+      "isResolved": true
+    },
+    {
+      "index": 20,
+      "shortId": "rvCBW",
+      "threadId": "PRRT_kwDOUWarIc6rvCBW",
+      "cluster": "C14C",
+      "commentId": "PRRC_kwDOUWarIc8AAAABBa5pig",
+      "isResolved": true
+    }
+  ]
+}

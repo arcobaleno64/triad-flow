@@ -1,0 +1,1143 @@
+diff --git a/tests/remediation-twenty-p1-systemic.test.mjs b/tests/remediation-twenty-p1-systemic.test.mjs
+new file mode 100644
+index 0000000..e4ed664
+--- /dev/null
++++ b/tests/remediation-twenty-p1-systemic.test.mjs
+@@ -0,0 +1,1137 @@
++import test from "node:test";
++import assert from "node:assert/strict";
++import fs from "node:fs";
++import path from "node:path";
++import os from "node:os";
++import crypto from "node:crypto";
++import { execFileSync } from "node:child_process";
++
++import {
++  findFunctionDefinitions,
++  stripCommentsPreservingLayout,
++  classifySensitiveCategory,
++  stripCommentsAndStrings,
++  extractCandidateCallSymbols,
++  extractLocalCalleeContext,
++  buildContextPackage
++} from "../src/core/context-builder.mjs";
++import { formatContextPackageXml } from "../src/adapters/review-prompts.mjs";
++import { runCli, EXIT_CODES } from "../src/cli.mjs";
++import { evaluateGateDecision } from "../src/core/harness.mjs";
++import { aggregateConsensus } from "../src/core/loop.mjs";
++import {
++  conductIndependentVerification,
++  validateContextPackageAuthenticity,
++  registerTrustedContextPackage,
++  isTrustedContextPackage,
++  RunContext
++} from "../src/core/independent-verifier.mjs";
++
++// ============================================================================
++// Cluster C01: Hunk Lexical State (rte6z, slAMv)
++// ============================================================================
++
++test("SYSTEMIC-C01-HUNK-LEXICAL-STATE (Negative): Hunk starting inside block comment ignores commented code when fileContent is provided", () => {
++  const fileContent = [
++    "/*",
++    " * Multiline block comment starting at line 1",
++    " * continuing to line 149...",
++    " */",
++    "function realCode() {",
++    "  return 42;",
++    "}"
++  ].join("\n");
++
++  const diffHunks = [
++    "@@ -3,3 +3,3 @@",
++    " * Some context comment",
++    "+ * validateAccess(user);",
++    " * Other comment"
++  ].join("\n");
++
++  const candidates = extractCandidateCallSymbols(diffHunks, { fileContent });
++  assert.equal(candidates.length, 0, "Commented-out call inside hunk must not be extracted as candidate call");
++});
++
++test("SYSTEMIC-C01-HUNK-LEXICAL-STATE (Negative without fileContent): Emits lexicalStateUncertain when fileContent is absent", () => {
++  const diffHunks = [
++    "@@ -150,4 +150,4 @@",
++    " contextLine();",
++    "+validateAccess(user);",
++    " trailingContext();"
++  ].join("\n");
++
++  const candidates = extractCandidateCallSymbols(diffHunks);
++  const valCall = candidates.find(c => c.symbol === "validateAccess");
++  assert.ok(valCall, "Should extract validateAccess candidate");
++  assert.equal(valCall.lexicalStateUncertain, true, "Must flag lexicalStateUncertain when fileContent is absent at line > 1");
++});
++
++test("SYSTEMIC-C01-HUNK-LEXICAL-STATE (Positive): Hunk in regular executable code accurately extracts candidate calls", () => {
++  const fileContent = [
++    "function init() {",
++    "  const x = 1;",
++    "}"
++  ].join("\n");
++
++  const diffHunks = [
++    "@@ -1,3 +1,4 @@",
++    " function init() {",
++    "+  validateAccess(user);",
++    "   const x = 1;",
++    " }"
++  ].join("\n");
++
++  const candidates = extractCandidateCallSymbols(diffHunks, { fileContent });
++  assert.equal(candidates.length, 1);
++  assert.equal(candidates[0].symbol, "validateAccess");
++  assert.equal(candidates[0].lexicalStateUncertain, false);
++});
++
++// ============================================================================
++// Cluster C02: Commented-Out Function Definitions Exclusion (rvCBT)
++// ============================================================================
++
++test("SYSTEMIC-C02-COMMENTED-DEF-EXCLUSION (Negative): Commented-out function definitions in /* */ are strictly excluded", () => {
++  const lines = [
++    "/*",
++    "function validateAccess(user) {",
++    "  return true;",
++    "}",
++    "*/",
++    "const ok = false;"
++  ];
++
++  const defs = findFunctionDefinitions(lines, "validateAccess");
++  assert.equal(defs.length, 0, "findFunctionDefinitions must ignore definitions within block comments");
++});
++
++test("SYSTEMIC-C02-COMMENTED-DEF-EXCLUSION (Positive): Legitimate function preceded by comments is accurately found with line numbers preserved", () => {
++  const lines = [
++    "/* Header comment */",
++    "// Single line note",
++    "function validateAccess(user) {",
++    "  return user.isAdmin;",
++    "}"
++  ];
++
++  const defs = findFunctionDefinitions(lines, "validateAccess");
++  assert.equal(defs.length, 1);
++  assert.equal(defs[0].startLine, 3);
++  assert.equal(defs[0].endLine, 5);
++});
++
++// ============================================================================
++// Cluster C03: Delayed Brace on Bare Call Exclusion (sl1Ri)
++// ============================================================================
++
++test("SYSTEMIC-C03-DELAYED-BRACE-BARE-CALL (Negative): Bare call followed by delayed brace is strictly rejected", () => {
++  const lines = [
++    "validateAccess(user)",
++    "{",
++    "  fakeBody();",
++    "}"
++  ];
++
++  const defs = findFunctionDefinitions(lines, "validateAccess");
++  assert.equal(defs.length, 0, "Bare call statement before opening body brace must not be parsed as function definition");
++});
++
++test("SYSTEMIC-C03-DELAYED-BRACE-BARE-CALL (Negative Chained): Chained bare call followed by delayed brace is strictly rejected", () => {
++  const lines = [
++    "validateAccess(user)",
++    "chainedCallback()",
++    "{",
++    "  fakeBody();",
++    "}"
++  ];
++
++  const defs = findFunctionDefinitions(lines, "validateAccess");
++  assert.equal(defs.length, 0, "Chained bare call preceding brace must be rejected");
++});
++
++test("SYSTEMIC-C03-DELAYED-BRACE-BARE-CALL (Positive): Cross-line declaration with function keyword is preserved", () => {
++  const lines = [
++    "function validateAccess(user)",
++    "{",
++    "  return user.isAdmin;",
++    "}"
++  ];
++
++  const defs = findFunctionDefinitions(lines, "validateAccess");
++  assert.equal(defs.length, 1);
++  assert.equal(defs[0].startLine, 1);
++  assert.equal(defs[0].endLine, 4);
++});
++
++test("SYSTEMIC-C03-DELAYED-BRACE-BARE-CALL (Positive): Cross-line parameter list with function keyword is preserved", () => {
++  const lines = [
++    "function validateAccess(",
++    "  user,",
++    "  action",
++    ") {",
++    "  return true;",
++    "}"
++  ];
++
++  const defs = findFunctionDefinitions(lines, "validateAccess");
++  assert.equal(defs.length, 1);
++  assert.equal(defs[0].startLine, 1);
++  assert.equal(defs[0].endLine, 6);
++});
++
++// ============================================================================
++// Cluster C04: Access Control Vocabulary in classifySensitiveCategory (slAM6)
++// ============================================================================
++
++test("SYSTEMIC-C04-ACCESS-CONTROL-VOCAB: Policy, enforce, rbac, acl, and permission terms classify as security", () => {
++  const terms = ["policyCheck", "enforceAccess", "rbacRole", "aclVerifier", "hasPermission", "canAccess"];
++  for (const t of terms) {
++    const cat = classifySensitiveCategory(t);
++    assert.equal(cat, "security", `Term '${t}' must be classified as 'security', got '${cat}'`);
++  }
++});
++
++test("SYSTEMIC-C04-ACCESS-CONTROL-VOCAB: Receiver classification for policy.enforce() and acl.canAccess()", () => {
++  const diffHunks = [
++    "@@ -10,3 +10,4 @@",
++    " function check(ctx) {",
++    "+  policy.enforce(ctx.user);",
++    "+  acl.canAccess(ctx.resource);",
++    " }"
++  ].join("\n");
++
++  const candidates = extractCandidateCallSymbols(diffHunks);
++  assert.equal(candidates.length, 2);
++  const enforceCall = candidates.find(c => c.symbol === "enforce");
++  assert.ok(enforceCall, "Should extract enforce");
++  assert.equal(enforceCall.isSensitive, true);
++  assert.equal(enforceCall.category, "security");
++
++  const aclCall = candidates.find(c => c.symbol === "canAccess");
++  assert.ok(aclCall, "Should extract canAccess");
++  assert.equal(aclCall.isSensitive, true);
++  assert.equal(aclCall.category, "security");
++});
++
++// ============================================================================
++// Cluster C05: Division Chain vs Regex Literal Distinction (r1BuI)
++// ============================================================================
++
++test("SYSTEMIC-C05-DIVISION-CHAIN-PRESERVATION (Negative): Chained division operands are not swallowed as regex literals", () => {
++  const expr1 = "const res = total / parseLimit(input) / scale;";
++  const stripped1 = stripCommentsAndStrings(expr1);
++  assert.ok(stripped1.includes("parseLimit(input)"), "parseLimit must not be stripped");
++  assert.ok(stripped1.includes("scale"), "scale must not be stripped");
++
++  const expr2 = "const val = items[idx] / getDivisor(key) / factor;";
++  const stripped2 = stripCommentsAndStrings(expr2);
++  assert.ok(stripped2.includes("getDivisor(key)"), "getDivisor must not be stripped");
++  assert.ok(stripped2.includes("factor"), "factor must not be stripped");
++});
++
++test("SYSTEMIC-C05-DIVISION-CHAIN-PRESERVATION (Positive): True regex literals are correctly stripped", () => {
++  const expr = "const isMatch = /^[a-z]+$/g.test(input);";
++  const stripped = stripCommentsAndStrings(expr);
++  assert.ok(!stripped.includes("^[a-z]+$"), "Regex pattern content must be stripped");
++  assert.ok(stripped.includes(".test(input)"), "Method invocation after regex must be preserved");
++});
++
++// ============================================================================
++// Cluster C06: Built-in Methods on Sensitive Receivers (rr-I6, r1BuC)
++// ============================================================================
++
++test("SYSTEMIC-C06-BUILTIN-ON-SENSITIVE-RECEIVER: Retains sensitive receiver with builtin method name at both sites", () => {
++  const diffHunks = [
++    "@@ -5,4 +5,6 @@",
++    " function auth(user) {",
++    "+  permissions.has(user);",
++    "+  roles.has(",
++    "+    user.role",
++    "+  );",
++    " }"
++  ].join("\n");
++
++  const candidates = extractCandidateCallSymbols(diffHunks);
++  const permHas = candidates.find(c => c.symbol === "has" && (c.qualifier === "permissions" || c.qualifiers?.includes("permissions")));
++  assert.ok(permHas, "permissions.has must be retained because receiver is sensitive");
++  assert.equal(permHas.isSensitive, true);
++  assert.equal(permHas.category, "security");
++
++  const roleHas = candidates.find(c => c.symbol === "has" && (c.qualifier === "roles" || c.qualifiers?.includes("roles")));
++  assert.ok(roleHas, "roles.has must be retained because receiver is sensitive");
++  assert.equal(roleHas.isSensitive, true);
++  assert.equal(roleHas.category, "security");
++});
++
++test("SYSTEMIC-C06-BUILTIN-ON-SENSITIVE-RECEIVER (Non-sensitive skipped): Standard non-sensitive collection calls skipped", () => {
++  const diffHunks = [
++    "@@ -5,3 +5,4 @@",
++    " function process(data) {",
++    "+  items.has(key);",
++    " }"
++  ].join("\n");
++
++  const candidates = extractCandidateCallSymbols(diffHunks);
++  assert.equal(candidates.length, 0, "items.has with non-sensitive receiver must be skipped by built-in method filter");
++});
++
++// ============================================================================
++// Cluster C07: Truncated Callee Body Context Gap & Verifier UNCERTAIN (rsKCC, slLWi)
++// ============================================================================
++
++test("SYSTEMIC-C07-TRUNCATED-CALLEE-GAP: Emits CALLEE_TRUNCATED_ELIDED gap for oversized sensitive callee", () => {
++  const largeFn = [
++    "function validateUserCredentials(user) {",
++    ...Array.from({ length: 45 }, (_, i) => `  if (user.step${i}) return false;`),
++    "  return true;",
++    "}"
++  ].join("\n");
++
++  const diffHunks = [
++    "@@ -1,3 +1,4 @@",
++    " function handle() {",
++    "+  validateUserCredentials(currentUser);",
++    " }"
++  ].join("\n");
++
++  const res = extractLocalCalleeContext(largeFn, diffHunks, "src/auth.mjs");
++  assert.equal(res.callees.length, 1);
++  assert.notEqual(res.callees[0].extractionMode, "full_body", "Oversized function must not have full_body extractionMode");
++
++  const gap = res.contextGaps.find(g => g.reason === "CALLEE_TRUNCATED_ELIDED");
++  assert.ok(gap, "Must emit CALLEE_TRUNCATED_ELIDED contextGap for truncated sensitive callee");
++  assert.equal(gap.symbol, "validateUserCredentials");
++  assert.equal(gap.category, "input_validation");
++});
++
++test("SYSTEMIC-C07-TRUNCATED-CALLEE-GAP (Cross-layer): CALLEE_TRUNCATED_ELIDED gap forces Gate to block Clean Approval", () => {
++  const consensus = aggregateConsensus({
++    agy: { provider: "agy", executionStatus: "success", fileCoverageComplete: true, findings: [{ ruleId: "TEST-1", severity: "medium", title: "Test finding" }] },
++    claude: { provider: "claude", executionStatus: "success", fileCoverageComplete: true, findings: [{ ruleId: "TEST-1", severity: "medium", title: "Test finding" }] },
++    codex: { provider: "codex", executionStatus: "success", fileCoverageComplete: true, findings: [{ ruleId: "TEST-1", severity: "medium", title: "Test finding" }] }
++  }, { policy: "TRI_PARTY_HETEROGENEOUS", tier: 1 });
++
++  const gate = evaluateGateDecision(consensus, {
++    tier: 1,
++    strict: true,
++    contextGaps: [
++      {
++        symbol: "validateUserCredentials",
++        reason: "CALLEE_TRUNCATED_ELIDED",
++        category: "security",
++        impact: "Truncated sensitive callee"
++      }
++    ]
++  });
++
++  assert.equal(gate.decision, "block", "Unresolved security/sensitive context gap must block gate decision");
++  assert.ok(gate.reason.includes("context gap") || gate.reason.includes("CALLEE_TRUNCATED_ELIDED"));
++});
++
++test("SYSTEMIC-C07-TRUNCATED-CALLEE-GAP (Positive): Full body callee emits 0 gaps", () => {
++  const smallFn = [
++    "function validateUserCredentials(user) {",
++    "  return user.isAdmin;",
++    "}"
++  ].join("\n");
++
++  const diffHunks = [
++    "@@ -1,3 +1,4 @@",
++    " function handle() {",
++    "+  validateUserCredentials(currentUser);",
++    " }"
++  ].join("\n");
++
++  const res = extractLocalCalleeContext(smallFn, diffHunks, "src/auth.mjs");
++  assert.equal(res.callees.length, 1);
++  assert.equal(res.callees[0].extractionMode, "full_body");
++  const elidedGap = res.contextGaps.find(g => g.reason === "CALLEE_TRUNCATED_ELIDED");
++  assert.equal(elidedGap, undefined, "Full body snippet must not produce CALLEE_TRUNCATED_ELIDED gap");
++});
++
++// ============================================================================
++// Cluster C08: Import Alias Sensitivity Preservation (rsajc)
++// ============================================================================
++
++test("SYSTEMIC-C08-IMPORT-ALIAS-PRESERVATION: Import alias preserves original symbol sensitivity", () => {
++  const fileContent = [
++    "import { authorizeUser as run } from './auth.mjs';",
++    "export function execute(user) {",
++    "  return run(user);",
++    "}"
++  ].join("\n");
++
++  const diffHunks = [
++    "@@ -2,3 +2,4 @@",
++    " export function execute(user) {",
++    "+  run(user);",
++    "   return true;",
++    " }"
++  ].join("\n");
++
++  const res = extractLocalCalleeContext(fileContent, diffHunks, "src/service.mjs");
++  const gap = res.contextGaps.find(g => g.symbol === "run");
++  assert.ok(gap, "Sensitive call via import alias 'run' must generate a contextGap when external definition is unavailable");
++  assert.equal(gap.category, "security");
++});
++
++// ============================================================================
++// Cluster C09: Patch-Added Imports & Deleted Local Definitions (rte6o)
++// ============================================================================
++
++test("SYSTEMIC-C09-PATCH-ADDED-IMPORTS (Negative): Local definition deleted by patch is not treated as valid HEAD callee", () => {
++  const headContent = [
++    "function validateAccess(user) {",
++    "  return user.oldAccess;",
++    "}",
++    "export function run(user) {",
++    "  return validateAccess(user);",
++    "}"
++  ].join("\n");
++
++  const diffHunks = [
++    "@@ -1,6 +1,6 @@",
++    "+import { validateAccess } from './security.mjs';",
++    "-function validateAccess(user) {",
++    "-  return user.oldAccess;",
++    "-}",
++    " export function run(user) {",
++    "   return validateAccess(user);",
++    " }"
++  ].join("\n");
++
++  const res = extractLocalCalleeContext(headContent, diffHunks, "src/service.mjs");
++  assert.equal(res.callees.length, 0, "Deleted local definition must not be extracted as valid callee");
++  const gap = res.contextGaps.find(g => g.symbol === "validateAccess");
++  assert.ok(gap, "Deleted definition replaced by import must emit external callee gap");
++  assert.equal(gap.reason, "EXTERNAL_CALLEE_UNRESOLVED");
++});
++
++test("SYSTEMIC-C09-PATCH-ADDED-IMPORTS (Positive): Patch newly added import correctly recognized as external symbol", () => {
++  const headContent = "export function run(user) { return false; }";
++  const diffHunks = [
++    "@@ -1,1 +1,4 @@",
++    "+import { authorizeUser } from './auth.mjs';",
++    " export function run(user) {",
++    "+  authorizeUser(user);",
++    "   return false;",
++    " }"
++  ].join("\n");
++
++  const res = extractLocalCalleeContext(headContent, diffHunks, "src/service.mjs");
++  assert.equal(res.callees.length, 0);
++  const gap = res.contextGaps.find(g => g.symbol === "authorizeUser");
++  assert.ok(gap);
++  assert.equal(gap.reason, "EXTERNAL_CALLEE_UNRESOLVED");
++});
++
++// ============================================================================
++// Cluster C10: Changed Hunk Control Flow Sensitive Context Gaps (rr-JC)
++// ============================================================================
++
++test("SYSTEMIC-C10-CHANGED-HUNK-CONTEXT-GAPS (Negative): Context line call in hunk with modified control flow generates Context Gap", () => {
++  const headContent = [
++    "function handle(req) {",
++    "  validateToken(req.token);",
++    "  return true;",
++    "}"
++  ].join("\n");
++
++  const diffHunks = [
++    "@@ -1,4 +1,6 @@",
++    " function handle(req) {",
++    "+  if (!req.ready) {",
++    "+    return false;",
++    "+  }",
++    "   validateToken(req.token);",
++    "   return true;",
++    " }"
++  ].join("\n");
++
++  const res = extractLocalCalleeContext(headContent, diffHunks, "src/controller.mjs");
++  const gap = res.contextGaps.find(g => g.symbol === "validateToken");
++  assert.ok(gap, "Sensitive call on context line whose surrounding control flow changed must emit Context Gap");
++  assert.ok(gap.category, "Must have sensitive category");
++});
++
++test("SYSTEMIC-C10-CHANGED-HUNK-CONTEXT-GAPS (Positive): Context line call without control flow alterations in hunk", () => {
++  const headContent = [
++    "function handle(req) {",
++    "  validateToken(req.token);",
++    "  const x = 1;",
++    "}"
++  ].join("\n");
++
++  const diffHunks = [
++    "@@ -1,4 +1,4 @@",
++    " function handle(req) {",
++    "   validateToken(req.token);",
++    "-  const x = 1;",
++    "+  const x = 2;",
++    " }"
++  ].join("\n");
++
++  const candidates = extractCandidateCallSymbols(diffHunks, { fileContent: headContent });
++  const valToken = candidates.find(c => c.symbol === "validateToken");
++  assert.ok(valToken);
++  assert.equal(valToken.isControlFlowModified, false);
++});
++
++// ============================================================================
++// Cluster C11: Callee XML Enclosure file Attribute (rfkYi)
++// ============================================================================
++
++test("SYSTEMIC-C11-CALLEE-XML-FILE-ATTRIBUTE: XML enclosure contains genuine file attribute without multi-file counterfeiting", () => {
++  const pkg = {
++    targetFile: "multi-file",
++    layers: {
++      layer1AstEnclosure: {
++        callees: [
++          {
++            symbol: "validateAccess",
++            file: "src/security/auth.mjs",
++            startLine: 10,
++            endLine: 25,
++            lines: 16,
++            bytes: 350,
++            definition: "function validateAccess(user) { return true; }"
++          }
++        ]
++      }
++    }
++  };
++
++  const xml = formatContextPackageXml(pkg);
++  assert.ok(xml.includes('<callee symbol="validateAccess" file="src/security/auth.mjs"'), "XML callee tag must render genuine file attribute");
++  assert.ok(!xml.includes('<callee file="multi-file"'), "Must never use 'multi-file' as file attribute on callee tag");
++});
++
++// ============================================================================
++// Cluster C12: Single-File Diff Isolation and Schema v2 Routing (rrHOc, rvWjO)
++// ============================================================================
++
++test("SYSTEMIC-C12-SINGLE-FILE-DIFF-ISOLATION: Multi-file diff is strictly isolated in single-file mode", () => {
++  const changeSet = {
++    headSha: "1111111111111111111111111111111111111111",
++    files: [
++      { path: "src/a.mjs", additions: 1, deletions: 0 },
++      { path: "src/b.mjs", additions: 1, deletions: 0 }
++    ],
++    diffHunks: [
++      "diff --git a/src/a.mjs b/src/a.mjs",
++      "--- a/src/a.mjs",
++      "+++ b/src/a.mjs",
++      "@@ -1,3 +1,4 @@",
++      " function a() {",
++      "+  callA();",
++      " }",
++      "diff --git a/src/b.mjs b/src/b.mjs",
++      "--- a/src/b.mjs",
++      "+++ b/src/b.mjs",
++      "@@ -1,3 +1,4 @@",
++      " function b() {",
++      "+  callB();",
++      " }"
++    ].join("\n")
++  };
++
++  const singlePkg = buildContextPackage(changeSet, "src/a.mjs", {
++    fileContents: {
++      "src/a.mjs": "function a() { return true; }"
++    }
++  });
++
++  assert.equal(singlePkg.targetFile, "src/a.mjs");
++  const rawHunks = singlePkg.layers?.layer0Diff?.rawHunks || "";
++  assert.ok(rawHunks.includes("callA()"), "Isolated diff for src/a.mjs must contain callA");
++  assert.ok(!rawHunks.includes("callB()"), "Isolated diff for src/a.mjs must NOT contain callB from src/b.mjs");
++});
++
++test("SYSTEMIC-C12-SCHEMA2-ROUTING: targetFile 'multi-file' routes to multi-file logic without mutual exclusion error", () => {
++  const changeSet = {
++    headSha: "2222222222222222222222222222222222222222",
++    files: [
++      { path: "src/a.mjs", additions: 1, deletions: 0 },
++      { path: "src/b.mjs", additions: 1, deletions: 0 }
++    ],
++    diffHunks: "diff --git a/src/a.mjs b/src/a.mjs\n@@ -1 +1 @@\n+x\ndiff --git a/src/b.mjs b/src/b.mjs\n@@ -1 +1 @@\n+y"
++  };
++
++  const multiPkg = buildContextPackage(changeSet, "multi-file");
++  assert.equal(multiPkg.targetFile, "multi-file");
++  assert.ok(Array.isArray(multiPkg.fileCoverageManifest), "Multi-file context package must contain fileCoverageManifest");
++});
++
++test("SYSTEMIC-C12-DIFF-TARGET-NOT-FOUND (Negative): Structured diff omitting target file rejects raw diff fallback and emits context gap", () => {
++  const changeSet = {
++    headSha: "1111111111111111111111111111111111111111",
++    files: [
++      { path: "src/b.mjs", additions: 1, deletions: 0 }
++    ],
++    diffHunks: [
++      "diff --git a/src/b.mjs b/src/b.mjs",
++      "--- a/src/b.mjs",
++      "+++ b/src/b.mjs",
++      "@@ -1,3 +1,4 @@",
++      " function b() {",
++      "+  callB();",
++      " }"
++    ].join("\n")
++  };
++
++  const singlePkg = buildContextPackage(changeSet, "src/a.mjs", {
++    fileContents: {
++      "src/a.mjs": "function a() { return true; }"
++    }
++  });
++
++  assert.equal(singlePkg.targetFile, "src/a.mjs");
++  const rawHunks = singlePkg.layers?.layer0Diff?.rawHunks || "";
++  assert.equal(rawHunks, "", "Missing target file in structured diff must yield empty rawHunks, rejecting fallback to b.mjs diff");
++  const gap = singlePkg.contextGaps?.find(g => g.code === "DIFF_TARGET_FILE_NOT_FOUND");
++  assert.ok(gap, "Must emit DIFF_TARGET_FILE_NOT_FOUND context gap when target file is missing from structured diff");
++});
++
++// ============================================================================
++// Cluster C13: CLI Missing Repository Root Fail-Closed (tdsmP)
++// ============================================================================
++
++test("SYSTEMIC-C13-CLI-NO-REPO-FAIL-CLOSED (Negative): CLI Clean Challenge without reliable repository root fails closed with EXACT_HEAD_CONTEXT_FAILED", async () => {
++  const io = {
++    stdout: { write: () => {} },
++    stderr: { write: () => {} }
++  };
++
++  const tmpNonGit = fs.mkdtempSync(path.join(os.tmpdir(), "c13-non-git-"));
++  try {
++    const changeSet = {
++      ok: true,
++      headSha: "3333333333333333333333333333333333333333",
++      files: [{ path: "src/auth.mjs" }],
++      diffHunks: "@@ -1 +1 @@\n+const x = 1;"
++    };
++
++    const mockAdapters = {
++      macro: {
++        providerName: "agy",
++        modelName: "gemini-3.8-flash",
++        executeReview: async (ctx) => ({
++          ok: true,
++          status: "SUCCESS",
++          findings: [],
++          coverage: { coveredFiles: (ctx.changeSet?.files || []).map(f => typeof f === "string" ? f : f.path), omittedFiles: [] },
++          usage: { promptTokens: 10, completionTokens: 10, totalTokens: 20 }
++        })
++      },
++      micro: {
++        providerName: "claude",
++        modelName: "claude-5.5-sonnet",
++        executeReview: async (ctx) => ({
++          ok: true,
++          status: "SUCCESS",
++          findings: [],
++          coverage: { coveredFiles: (ctx.changeSet?.files || []).map(f => typeof f === "string" ? f : f.path), omittedFiles: [] },
++          usage: { promptTokens: 10, completionTokens: 10, totalTokens: 20 }
++        })
++      }
++    };
++
++    const exitCode = await runCli([
++      "review",
++      "--verify-with=claude"
++    ], io, {
++      getChangeSet: () => changeSet,
++      repoRoot: tmpNonGit,
++      cwd: tmpNonGit,
++      reviewAdapters: mockAdapters,
++      verifierExecFn: async () => ({ stdout: JSON.stringify({ verdict: "APPROVE", overallStatus: "CLEAN" }) }),
++      strict: true
++    });
++
++    assert.equal(exitCode, EXIT_CODES.GATE_BLOCKED, "Invalid repository root in Clean Challenge must block gate and exit GATE_BLOCKED");
++
++    // Also assert missing (null) targetRepo fails closed
++    const exitCodeNullRepo = await runCli([
++      "review",
++      "--verify-with=claude"
++    ], io, {
++      getChangeSet: () => changeSet,
++      repoRoot: null,
++      cwd: null,
++      reviewAdapters: mockAdapters,
++      verifierExecFn: async () => ({ stdout: JSON.stringify({ verdict: "APPROVE", overallStatus: "CLEAN" }) }),
++      strict: true
++    });
++
++    assert.equal(exitCodeNullRepo, EXIT_CODES.GATE_BLOCKED, "Missing (null) repository root in Clean Challenge must block gate and exit GATE_BLOCKED");
++
++    // Also assert completely omitted repository root fails closed (F-R3-03)
++    const exitCodeOmittedRepo = await runCli([
++      "review",
++      "--verify-with=claude"
++    ], io, {
++      getChangeSet: () => changeSet,
++      reviewAdapters: mockAdapters,
++      verifierExecFn: async () => ({ stdout: JSON.stringify({ verdict: "APPROVE", overallStatus: "CLEAN" }) }),
++      strict: true
++    });
++
++    assert.equal(exitCodeOmittedRepo, EXIT_CODES.GATE_BLOCKED, "Completely omitted repository root in Clean Challenge must block gate and exit GATE_BLOCKED");
++
++    // F-R4-01 (C13): Verify that --strict passed ONLY via argv (without options.strict) cannot bypass repo root check
++    let verifierGapsViaArgvStrict = null;
++    const argvStrictVerifier = {
++      providerName: "claude",
++      modelName: "claude-5.5-sonnet",
++      executeVerification: async (input) => {
++        verifierGapsViaArgvStrict = input.contextGaps;
++        return {
++          ok: true,
++          executionStatus: "SUCCESS",
++          overallStatus: "CLEAN",
++          evaluations: [],
++          omissions: []
++        };
++      }
++    };
++
++    const changeSetSingle = {
++      ok: true,
++      headSha: "3333333333333333333333333333333333333333",
++      files: [{ path: "src/sample.mjs", additions: 5, deletions: 1 }],
++      diffHunks: "@@ -1 +1 @@\n+const x = 1;"
++    };
++
++    const exitCodeArgvStrict = await runCli([
++      "review",
++      "--strict",
++      "--verify-with=claude"
++    ], io, {
++      getChangeSet: () => changeSetSingle,
++      reviewAdapters: mockAdapters,
++      verifierAdapter: argvStrictVerifier
++      // Note: options.strict is completely omitted
++      // options.repoRoot and options.cwd are completely omitted
++    });
++
++    assert.equal(exitCodeArgvStrict, EXIT_CODES.GATE_BLOCKED, "Command line --strict without options.strict must fail closed with GATE_BLOCKED (1)");
++    assert.ok(
++      Array.isArray(verifierGapsViaArgvStrict) && verifierGapsViaArgvStrict.some(g => g.code === "EXACT_HEAD_CONTEXT_FAILED"),
++      "Clean challenge verifier must receive EXACT_HEAD_CONTEXT_FAILED gap when --strict is passed via argv without repository root"
++    );
++
++    // R6 C13-TEST-1: Non-strict, no Root, injected formal adapter must fail closed with EXACT_HEAD_CONTEXT_FAILED
++    let verifierGapsNonStrictNoRepo = null;
++    let verifierPkgNonStrictNoRepo = "UNSET";
++    const nonStrictFormalVerifier = {
++      providerName: "claude",
++      modelName: "claude-5.5-sonnet",
++      executeVerification: async (input) => {
++        verifierGapsNonStrictNoRepo = input.contextGaps;
++        verifierPkgNonStrictNoRepo = input.contextPackage;
++        return {
++          ok: true,
++          executionStatus: "SUCCESS",
++          overallStatus: "CLEAN",
++          evaluations: [],
++          omissions: []
++        };
++      }
++    };
++
++    const exitCodeNonStrictNoRepo = await runCli([
++      "review",
++      "--verify-with=claude"
++    ], io, {
++      getChangeSet: () => changeSetSingle,
++      reviewAdapters: mockAdapters,
++      verifierAdapter: nonStrictFormalVerifier
++      // non-strict: options.strict is omitted, no --strict in argv
++      // no Root: options.repoRoot and options.cwd are omitted
++    });
++
++    assert.equal(exitCodeNonStrictNoRepo, EXIT_CODES.GATE_BLOCKED, "Non-strict review --verify-with without repo root must fail closed with GATE_BLOCKED (1)");
++    assert.ok(
++      Array.isArray(verifierGapsNonStrictNoRepo) && verifierGapsNonStrictNoRepo.some(g => g.code === "EXACT_HEAD_CONTEXT_FAILED"),
++      "Clean challenge verifier must receive EXACT_HEAD_CONTEXT_FAILED gap in non-strict invocation without repo root"
++    );
++
++    // R6 C13-TEST-2: Strict, no Root, pre-supplied candidate contextPackage must not bypass origin verification
++    let verifierGapsPreSuppliedPkg = null;
++    let verifierPkgPreSuppliedPkg = "UNSET";
++    const preSuppliedPkgVerifier = {
++      providerName: "claude",
++      modelName: "claude-5.5-sonnet",
++      executeVerification: async (input) => {
++        verifierGapsPreSuppliedPkg = input.contextGaps;
++        verifierPkgPreSuppliedPkg = input.contextPackage;
++        return {
++          ok: true,
++          executionStatus: "SUCCESS",
++          overallStatus: "CLEAN",
++          evaluations: [],
++          omissions: []
++        };
++      }
++    };
++
++    const unverifiedCandidatePkg = {
++      schemaVersion: "2.0.0",
++      headSha: "3333333333333333333333333333333333333333",
++      targetFile: "src/sample.mjs",
++      mutationSnapshotHash: "unverified-hash-1234",
++      fileCoverageManifest: [
++        { file: "src/sample.mjs", exactHeadAvailable: true, inspected: true, calleesExtracted: [] }
++      ]
++    };
++
++    const exitCodePreSuppliedPkg = await runCli([
++      "review",
++      "--strict",
++      "--verify-with=claude"
++    ], io, {
++      getChangeSet: () => changeSetSingle,
++      reviewAdapters: mockAdapters,
++      verifierAdapter: preSuppliedPkgVerifier,
++      contextPackage: unverifiedCandidatePkg
++      // strict: --strict in argv
++      // no Root: options.repoRoot and options.cwd omitted
++    });
++
++    assert.equal(exitCodePreSuppliedPkg, EXIT_CODES.GATE_BLOCKED, "Pre-supplied candidate contextPackage without repo root must fail closed with GATE_BLOCKED (1)");
++    assert.equal(verifierPkgPreSuppliedPkg, null, "Verifier must receive null contextPackage when pre-supplied package cannot be verified against physical Git");
++    assert.ok(
++      Array.isArray(verifierGapsPreSuppliedPkg) && verifierGapsPreSuppliedPkg.some(g => g.code === "EXACT_HEAD_CONTEXT_FAILED"),
++      "Clean challenge verifier must receive EXACT_HEAD_CONTEXT_FAILED gap when pre-supplied package lacks repository root"
++    );
++  } finally {
++    fs.rmSync(tmpNonGit, { recursive: true, force: true });
++  }
++});
++
++// ============================================================================
++// Cluster C14A: Dogfood Callee Authenticity & Verification (tdsmT)
++// ============================================================================
++
++test("SYSTEMIC-C14A-FORGED-CALLEE-REJECTION (Negative): Rejects external ContextPackage containing callee not present in exact-head commit", async () => {
++  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "c14a-test-"));
++  try {
++    execFileSync("git", ["init"], { cwd: tmpDir, stdio: "ignore" });
++    execFileSync("git", ["config", "user.name", "Test"], { cwd: tmpDir, stdio: "ignore" });
++    execFileSync("git", ["config", "user.email", "test@test.com"], { cwd: tmpDir, stdio: "ignore" });
++
++    const testFile = path.join(tmpDir, "src", "service.mjs");
++    fs.mkdirSync(path.dirname(testFile), { recursive: true });
++    fs.writeFileSync(testFile, "export function realFunction() { return 1; }\n");
++    execFileSync("git", ["add", "."], { cwd: tmpDir, stdio: "ignore" });
++    execFileSync("git", ["commit", "-m", "init"], { cwd: tmpDir, stdio: "ignore" });
++    const headSha = execFileSync("git", ["rev-parse", "HEAD"], { cwd: tmpDir, encoding: "utf8" }).trim();
++
++    const diffHunks = "@@ -1 +1 @@\n+const x = 1;\n";
++    const contentDigest = crypto.createHash("sha256").update(diffHunks, "utf8").digest("hex");
++    const sourceDigest = crypto.createHash("sha256").update("export function realFunction() { return 1; }\n", "utf8").digest("hex");
++
++    // 1. Structure baseline: verify that a valid package passes all structure and Git source checks (F-R4-02)
++    const validBaselinePkg = {
++      ok: true,
++      schemaVersion: "2.0.0",
++      headSha,
++      repositoryRoot: tmpDir,
++      targetFile: "src/service.mjs",
++      contentDigest,
++      budgetAccounting: {
++        totalBudgetBytes: 8192,
++        consumedBytes: 500,
++        remainingBytes: 7692,
++        retainedCalleesCount: 1,
++        evictedCalleesCount: 0,
++        evictedCallees: []
++      },
++      fileCoverageManifest: [
++        {
++          file: "src/service.mjs",
++          inspected: true,
++          exactHeadAvailable: true,
++          sourceDigest,
++          calleesExtracted: ["realFunction"]
++        }
++      ],
++      layers: {
++        layer0Diff: { rawHunks: diffHunks },
++        layer1AstEnclosure: {
++          callees: [
++            {
++              symbol: "realFunction",
++              file: "src/service.mjs",
++              definition: "export function realFunction() { return 1; }"
++            }
++          ]
++        }
++      }
++    };
++
++    const validCheck = validateContextPackageAuthenticity(validBaselinePkg, {
++      repositoryRoot: tmpDir,
++      headSha,
++      diffHunks
++    });
++    assert.equal(validCheck, true, "Authentic package with genuine exact-head callee must pass structural and authenticity validation");
++
++    // 2. Forged package: same structure, but contains forged callee not present in exact-head git commit
++    const forgedPkg = {
++      ...validBaselinePkg,
++      layers: {
++        layer0Diff: { rawHunks: diffHunks },
++        layer1AstEnclosure: {
++          callees: [
++            {
++              symbol: "forgedFunction",
++              file: "src/service.mjs",
++              definition: "function forgedFunction() { doMaliciousThings(); }"
++            }
++          ]
++        }
++      }
++    };
++
++    // Prove that forgedPkg fails authenticity strictly at the Git source comparison step
++    const forgedCheck = validateContextPackageAuthenticity(forgedPkg, {
++      repositoryRoot: tmpDir,
++      headSha,
++      diffHunks
++    });
++    assert.equal(forgedCheck, false, "Forged callee must fail authenticity solely at the physical Git HEAD callee verification step");
++
++    const changeSet = {
++      headSha,
++      files: [{ path: "src/service.mjs" }],
++      diffHunks
++    };
++
++    const runContext = new RunContext({
++      runId: crypto.randomUUID(),
++      headSha,
++      contentDigest: "aaaa",
++      patchObjective: "test"
++    });
++
++    let verifierPromptCaptured = "";
++    const mockVerifier = {
++      providerName: "claude",
++      modelName: "claude-5.5-sonnet",
++      executeVerification: async (input) => {
++        verifierPromptCaptured = JSON.stringify(input);
++        return {
++          rawOutput: JSON.stringify({ verdict: "APPROVE", overallStatus: "CONFIRMED" }),
++          executionStatus: "success"
++        };
++      }
++    };
++
++    const res = await conductIndependentVerification(
++      changeSet,
++      [],
++      mockVerifier,
++      {
++        verificationMode: "clean_challenge",
++        headSha,
++        repositoryRoot: tmpDir,
++        contextPackage: forgedPkg,
++        runContext
++      }
++    );
++
++    assert.ok(!verifierPromptCaptured.includes("forgedFunction"), "Verifier prompt must not contain unauthenticated forged callee");
++    const gap = res.contextGaps?.find(g => g.code === "EXACT_HEAD_CONTEXT_FAILED");
++    assert.ok(gap, "Forged context package must trigger EXACT_HEAD_CONTEXT_FAILED gap");
++  } finally {
++    fs.rmSync(tmpDir, { recursive: true, force: true });
++  }
++});
++
++// ============================================================================
++// Cluster C14B: Registration Failure Workflow Authority Denial (rxCha)
++// ============================================================================
++
++test("SYSTEMIC-C14B-REGISTRATION-FAILURE-WORKFLOW-DENIAL (Negative): Failed context package registration denies workflow authority and causes Dogfood caller fail-closed", async () => {
++  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "c14b-dogfood-"));
++  try {
++    execFileSync("git", ["init"], { cwd: tmpDir, stdio: "ignore" });
++    execFileSync("git", ["config", "user.name", "Dogfood Tester"], { cwd: tmpDir, stdio: "ignore" });
++    execFileSync("git", ["config", "user.email", "dogfood@test.com"], { cwd: tmpDir, stdio: "ignore" });
++
++    const serviceFile = path.join(tmpDir, "src", "service.mjs");
++    fs.mkdirSync(path.dirname(serviceFile), { recursive: true });
++    fs.writeFileSync(serviceFile, "export function realAuthService() { return true; }\n");
++    execFileSync("git", ["add", "."], { cwd: tmpDir, stdio: "ignore" });
++    execFileSync("git", ["commit", "-m", "init"], { cwd: tmpDir, stdio: "ignore" });
++    const headSha = execFileSync("git", ["rev-parse", "HEAD"], { cwd: tmpDir, encoding: "utf8" }).trim();
++
++    const diffHunks = "@@ -1 +1 @@\n+const token = 1;\n";
++    const contentDigest = crypto.createHash("sha256").update(diffHunks, "utf8").digest("hex");
++    const sourceDigest = crypto.createHash("sha256").update("export function realAuthService() { return true; }\n", "utf8").digest("hex");
++
++    // 1. Direct registry validation: package with fabricated/stale mutationSnapshotHash returns null on registration
++    const staleSnapshotPkg = {
++      ok: true,
++      schemaVersion: "2.0.0",
++      headSha,
++      repositoryRoot: tmpDir,
++      targetFile: "src/service.mjs",
++      contentDigest,
++      mutationSnapshotHash: "stale-fabricated-snapshot-hash-that-fails-registration",
++      budgetAccounting: { totalBudgetBytes: 8192, consumedBytes: 100, remainingBytes: 8092, retainedCalleesCount: 1, evictedCalleesCount: 0, evictedCallees: [] },
++      fileCoverageManifest: [
++        {
++          file: "src/service.mjs",
++          inspected: true,
++          exactHeadAvailable: true,
++          sourceDigest,
++          calleesExtracted: ["realAuthService"]
++        }
++      ],
++      layers: {
++        layer0Diff: { rawHunks: diffHunks },
++        layer1AstEnclosure: {
++          callees: [
++            { symbol: "realAuthService", file: "src/service.mjs", definition: "export function realAuthService() { return true; }" }
++          ]
++        }
++      }
++    };
++
++    const regResult = registerTrustedContextPackage(staleSnapshotPkg, {
++      repositoryRoot: tmpDir,
++      headSha,
++      diffHunks,
++      verifiedBy: "dogfood-review"
++    });
++
++    assert.equal(regResult, null, "Registration of package with mismatched mutationSnapshotHash must return null");
++    assert.equal(isTrustedContextPackage(staleSnapshotPkg), false, "Unregistered package must not acquire trusted registration status");
++    assert.equal(staleSnapshotPkg.workflowAuthority, undefined, "Unverified package must not acquire workflowAuthority");
++
++    // 2. End-to-end Dogfood caller behavior when registerTrustedContextPackage returns null (F-R3-01 / F-R4-03)
++    const { runDogfoodReview } = await import("../scripts/dogfood-review.mjs");
++    let sentryReceivedPkg = "uncalled";
++    let sentryReceivedGaps = null;
++    const createMockAdapter = (name) => ({
++      providerName: name,
++      modelName: "test-model",
++      executeReview: async (input) => {
++        sentryReceivedPkg = input.contextPackage;
++        sentryReceivedGaps = input.contextGaps;
++        return {
++          ok: true,
++          executionStatus: "success",
++          findings: [],
++          coverage: { coveredFiles: ["src/service.mjs"], omittedFiles: [] }
++        };
++      }
++    });
++
++    let verifierReceivedPkg = "uncalled";
++    let verifierReceivedGaps = null;
++    const mockVerifier = {
++      providerName: "claude",
++      modelName: "claude-5.5-sonnet",
++      executeVerification: async (input) => {
++        verifierReceivedPkg = input.contextPackage;
++        verifierReceivedGaps = input.contextGaps;
++        return {
++          ok: true,
++          executionStatus: "SUCCESS",
++          overallStatus: "CLEAN",
++          evaluations: [],
++          omissions: []
++        };
++      }
++    };
++
++    const tmpOut = path.join(tmpDir, `dogfood-c14b-out.json`);
++    const report = await runDogfoodReview({
++      repository: "arcobaleno64/triad-flow",
++      repoRoot: tmpDir,
++      cwd: tmpDir,
++      head: headSha,
++      changeSet: {
++        ok: true,
++        repository: { root: tmpDir },
++        headSha,
++        commitSha: headSha,
++        files: [{ path: "src/service.mjs" }],
++        diffHunks
++      },
++      contextPackage: staleSnapshotPkg,
++      reviewAdapters: {
++        agy: createMockAdapter("agy"),
++        claude: createMockAdapter("claude"),
++        codex: createMockAdapter("codex")
++      },
++      verifierAdapter: mockVerifier,
++      out: tmpOut,
++      log: false
++    });
++
++    // Assert that Dogfood caller strips untrusted package and injects EXACT_HEAD_CONTEXT_FAILED gap
++    assert.equal(sentryReceivedPkg, null, "Sentry adapters must NOT receive unverified contextPackage when registration returns null");
++    assert.equal(verifierReceivedPkg, null, "Clean Challenge verifier must NOT receive unverified contextPackage when registration returns null");
++    assert.ok(
++      Array.isArray(sentryReceivedGaps) && sentryReceivedGaps.some(g => g.code === "EXACT_HEAD_CONTEXT_FAILED"),
++      "Sentry adapters must receive EXACT_HEAD_CONTEXT_FAILED gap when registration fails"
++    );
++    assert.ok(
++      Array.isArray(verifierReceivedGaps) && verifierReceivedGaps.some(g => g.code === "EXACT_HEAD_CONTEXT_FAILED"),
++      "Clean Challenge verifier must receive EXACT_HEAD_CONTEXT_FAILED gap when registration fails"
++    );
++    assert.notEqual(report.gate?.decision, "approve", "Dogfood review must block Clean Approval when registration returns null");
++  } finally {
++    fs.rmSync(tmpDir, { recursive: true, force: true });
++  }
++});
++
++// ============================================================================
++// Cluster C14C: Sentry Complete File Coverage Requirement (rvCBW)
++// ============================================================================
++
++test("SYSTEMIC-C14C-SENTRY-COVERAGE-INCOMPLETE-GATE-BLOCK (Negative): Sentry reporting omitted files blocks Clean Approval", () => {
++  const consensus = aggregateConsensus({
++    agy: { provider: "agy", executionStatus: "success", fileCoverageComplete: true, findings: [{ ruleId: "TEST-1", severity: "medium", title: "Test finding" }] },
++    claude: { provider: "claude", executionStatus: "success", fileCoverageComplete: true, findings: [{ ruleId: "TEST-1", severity: "medium", title: "Test finding" }] },
++    codex: { provider: "codex", executionStatus: "success", fileCoverageComplete: true, findings: [{ ruleId: "TEST-1", severity: "medium", title: "Test finding" }] }
++  }, { policy: "TRI_PARTY_HETEROGENEOUS", tier: 1 });
++
++  const gate = evaluateGateDecision(consensus, {
++    tier: 1,
++    strict: true,
++    contextGaps: [
++      {
++        code: "INSUFFICIENT_PRODUCER_COVERAGE",
++        symbol: "sentry-coverage",
++        reason: "Sentry codex reported omittedFiles: ['src/security.mjs']",
++        category: "security"
++      }
++    ]
++  });
++
++  assert.equal(gate.decision, "block", "Incomplete sentry file coverage must block Clean Approval");
++  assert.ok(gate.reason.includes("INSUFFICIENT_PRODUCER_COVERAGE") || gate.reason.includes("context gap"));
++});
++
++test("SYSTEMIC-C14C-SENTRY-COVERAGE-COMPLETE (Positive): Complete sentry coverage without omissions permits Clean Approval", () => {
++  const consensus = aggregateConsensus({
++    agy: { provider: "agy", executionStatus: "success", fileCoverageComplete: true, findings: [] },
++    claude: { provider: "claude", executionStatus: "success", fileCoverageComplete: true, findings: [] },
++    codex: { provider: "codex", executionStatus: "success", fileCoverageComplete: true, findings: [] }
++  }, { policy: "TRI_PARTY_HETEROGENEOUS", tier: 2 });
++
++  const gate = evaluateGateDecision(consensus, {
++    tier: 2,
++    preliminary: true,
++    contextGaps: []
++  });
++
++  assert.equal(gate.decision, "approve", "Complete coverage without omissions permits Clean Approval");
++});
++

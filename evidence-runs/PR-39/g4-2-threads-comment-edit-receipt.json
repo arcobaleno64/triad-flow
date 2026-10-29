@@ -1,0 +1,22 @@
+[
+  {
+    "index": 1,
+    "threadId": "PRRT_kwDOUWarIc6slAMv",
+    "shortId": "slAMv",
+    "cluster": "C1",
+    "commentId": "PRRC_kwDOUWarIc8AAAABBa5Fug",
+    "updatedAt": "2026-10-27T15:21:12Z",
+    "status": "UPDATED",
+    "updatedBody": "G4 remediation evidence\n\nReview finding: slAMv (Cluster C1: Multi-line block comment lexical state recovery at hunk boundaries)\n\nFix: In extractCandidateCallSymbols within src/core/context-builder.mjs, reconstruct lexical state at each diff hunk boundary using fileContent and stripCommentsAndStrings; conservatively mark lexicalStateUncertain when the required source context is unavailable.\n\nChanged file: src/core/context-builder.mjs\n\nCommit: 0fec4f97f46c892a8f5eee1d606660e07d130d54\n\nRegression test: SYSTEMIC-C01-HUNK-LEXICAL-STATE (Negative with fileContent & Fallback without fileContent) — PASS\n\nCI evidence: GitHub Actions Run 40521711216, macOS / Ubuntu / Windows: 3/3 PASS\n\nThe identified issue has been addressed in the referenced commit: physical fileContent is inspected to recover pre-hunk block comment state, while maintaining conservative fallback to lexicalStateUncertain when fileContent is absent. The corresponding regression tests passed in the cross-platform CI run.\n\nGovernance status: Remediation evidence updated per PR39-SCHEMA2-G4-THREAD-RESOLUTION-AUTHORIZATION-REVIEW-R2 for R3 adjudication. Thread resolution remains subject to authorization."
+  },
+  {
+    "index": 2,
+    "threadId": "PRRT_kwDOUWarIc6rxCha",
+    "shortId": "rxCha",
+    "cluster": "C14",
+    "commentId": "PRRC_kwDOUWarIc8AAAABBa5nhg",
+    "updatedAt": "2026-10-27T15:21:13Z",
+    "status": "UPDATED",
+    "updatedBody": "G4 remediation evidence\n\nReview finding: rxCha (Cluster C14: Callee authenticity validation against exact-head Git commit)\n\nFix: In scripts/dogfood-review.mjs, verify supplied ContextPackage callee definitions and snippets against physical exact-head Git content before trusted registration. Reject mismatches and fail closed; the related authenticity validation contract is exercised by SYSTEMIC-C14A-FORGED-CALLEE-REJECTION.\n\nChanged file: scripts/dogfood-review.mjs\n\nCommit: 0fec4f97f46c892a8f5eee1d606660e07d130d54\n\nRegression test: SYSTEMIC-C14A-FORGED-CALLEE-REJECTION — PASS\n\nCI evidence: GitHub Actions Run 40521711216, macOS / Ubuntu / Windows: 3/3 PASS\n\nThe identified issue has been addressed in the referenced commit: all candidate callees are verified against physical Git repo blobs at exact HEAD, rejecting any unmanifested or forged callee definitions. The corresponding regression test passed in the cross-platform CI run.\n\nGovernance status: Remediation evidence updated per PR39-SCHEMA2-G4-THREAD-RESOLUTION-AUTHORIZATION-REVIEW-R2 for R3 adjudication. Thread resolution remains subject to authorization."
+  }
+]
