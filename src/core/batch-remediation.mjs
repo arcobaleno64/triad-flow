@@ -194,6 +194,10 @@ export class BatchRemediationSession {
       const session = new ControlledRemediationSession(f.id, targetFiles, {
         producer: f.producer || options.producer || { providerName: "unknown", modelName: "unknown" }
       });
+      session.finding = f;
+      if (f.testRunner) {
+        session.testRunner = f.testRunner;
+      }
       this.sessions.set(f.id, session);
     }
   }
@@ -267,8 +271,9 @@ export class BatchRemediationSession {
     const runner = testRunner || testRunnerFn;
     const isFunction = typeof runner === "function";
     const isTypedCommand = Boolean(runner && typeof runner === "object" && typeof runner.command === "string" && runner.command.trim().length > 0);
+    const hasPerFindingRunners = this.findings.some(f => f.testRunner || this.sessions.get(f.id)?.testRunner);
 
-    if (!isFunction && !isTypedCommand) {
+    if (!isFunction && !isTypedCommand && !hasPerFindingRunners) {
       throw new BatchValidationError(
         "executeBatchInJailWorktree requires a valid 'testRunner' (callback function or typed command object { command, args })."
       );
@@ -348,12 +353,16 @@ export class BatchRemediationSession {
           continue;
         }
 
-        // Run deterministic test runner in jail
+        // Run deterministic test runner in jail (prioritizing per-finding runner if specified)
+        const activeRunner = session.testRunner || session.finding?.testRunner || runner;
+        const activeIsFunction = typeof activeRunner === "function";
+        const activeIsTypedCommand = Boolean(activeRunner && typeof activeRunner === "object" && typeof activeRunner.command === "string" && activeRunner.command.trim().length > 0);
+
         let testRes;
         try {
           if (driver.name === "container") {
-            const cmd = runner.command;
-            const args = Array.isArray(runner.args) ? runner.args : [];
+            const cmd = activeRunner?.command;
+            const args = Array.isArray(activeRunner?.args) ? activeRunner.args : [];
             const containerRes = jail.runInContainer([cmd, ...args]);
             testRes = {
               testCommand: `${cmd} ${args.join(" ")}`.trim(),
@@ -364,11 +373,13 @@ export class BatchRemediationSession {
               runner: "container-runner",
               executionEnvironment: "container"
             };
-          } else if (isTypedCommand) {
-            const cmd = runner.command;
-            const args = Array.isArray(runner.args) ? runner.args : [];
+          } else if (activeIsTypedCommand) {
+            const cmd = activeRunner.command;
+            const args = Array.isArray(activeRunner.args) ? activeRunner.args : [];
+            const rawCwd = activeRunner.cwd ? path.resolve(jail.jailPath, activeRunner.cwd) : jail.jailPath;
+            const runnerCwd = rawCwd.startsWith(jail.jailPath) ? rawCwd : jail.jailPath;
             const hostRes = spawnSync(cmd, args, {
-              cwd: jail.jailPath,
+              cwd: runnerCwd,
               encoding: "utf8",
               windowsHide: true,
               shell: process.platform === "win32"
@@ -382,18 +393,29 @@ export class BatchRemediationSession {
               runner: "worktree-runner",
               executionEnvironment: "host"
             };
-          } else {
-            testRes = runner(jail.jailPath, {
+          } else if (activeIsFunction) {
+            testRes = activeRunner(jail.jailPath, {
               findingId,
               session,
               runInContainer: jail.runInContainer || null,
               driver,
               capabilities: this.jailCapabilities
             });
+          } else {
+            testRes = {
+              testCommand: "missing-runner",
+              exitCode: 1,
+              passedCount: 0,
+              failedCount: 1,
+              regressionDetected: true,
+              error: `No test runner available for finding '${findingId}'`,
+              runner: "worktree-runner",
+              executionEnvironment: "host"
+            };
           }
         } catch (err) {
           testRes = {
-            testCommand: isTypedCommand ? `${runner.command} ${(runner.args || []).join(" ")}`.trim() : "custom-testRunnerFn",
+            testCommand: activeIsTypedCommand ? `${activeRunner.command} ${(activeRunner.args || []).join(" ")}`.trim() : "custom-testRunnerFn",
             exitCode: 1,
             passedCount: 0,
             failedCount: 1,
