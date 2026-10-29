@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { runCli, EXIT_CODES } from "../src/cli.mjs";
+import { runCli, EXIT_CODES, formatHelp } from "../src/cli.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT_DIR = path.resolve(__dirname, "..");
@@ -877,5 +877,63 @@ test("runCli 'remediate --batch --report=audit-report.json' parses findings and 
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 });
+
+test("runCli '--help' and '-h' print top-level usage and exit 0", async () => {
+  const stdout1 = new MockStream();
+  const stderr1 = new MockStream();
+  const code1 = await runCli(["--help"], { stdout: stdout1, stderr: stderr1 });
+  assert.equal(code1, EXIT_CODES.SUCCESS);
+  assert.match(stdout1.buffer, /Commands:/i);
+  assert.match(stdout1.buffer, /doctor.*Probe environment/i);
+  assert.match(stdout1.buffer, /review.*Run multi-agent security review/i);
+  assert.match(stdout1.buffer, /Global Options:/i);
+  assert.equal(stderr1.buffer, "");
+
+  const stdout2 = new MockStream();
+  const stderr2 = new MockStream();
+  const code2 = await runCli(["-h"], { stdout: stdout2, stderr: stderr2 });
+  assert.equal(code2, EXIT_CODES.SUCCESS);
+  assert.match(stdout2.buffer, /Commands:/i);
+  assert.equal(stderr2.buffer, "");
+});
+
+test("runCli '<subcommand> --help' prints subcommand-specific options and exits 0", async () => {
+  const subcommands = ["doctor", "review", "benchmark", "remediate", "demo", "factory"];
+  for (const sub of subcommands) {
+    const stdout = new MockStream();
+    const stderr = new MockStream();
+    const code = await runCli([sub, "--help"], { stdout, stderr });
+    assert.equal(code, EXIT_CODES.SUCCESS);
+    assert.match(stdout.buffer, new RegExp(`Usage:\\s+triad-flow\\s+${sub}`, "i"));
+    assert.equal(stderr.buffer, "");
+  }
+});
+
+test("runCli 'help <subcommand>' and 'help' print formatted usage and exit 0", async () => {
+  const stdout1 = new MockStream();
+  const stderr1 = new MockStream();
+  const code1 = await runCli(["help", "review"], { stdout: stdout1, stderr: stderr1 });
+  assert.equal(code1, EXIT_CODES.SUCCESS);
+  assert.match(stdout1.buffer, /Usage:\s+triad-flow\s+review/i);
+
+  const stdout2 = new MockStream();
+  const stderr2 = new MockStream();
+  const code2 = await runCli(["help"], { stdout: stdout2, stderr: stderr2 });
+  assert.equal(code2, EXIT_CODES.SUCCESS);
+  assert.match(stdout2.buffer, /Commands:/i);
+});
+
+test("formatHelp produces expected usage documentation for all commands", () => {
+  assert.match(formatHelp(), /Triad-Flow/i);
+  assert.match(formatHelp("unknown-cmd"), /Triad-Flow/i);
+  assert.match(formatHelp("review"), /--verify-with/i);
+  assert.match(formatHelp("doctor"), /--live/i);
+  assert.match(formatHelp("benchmark"), /--corpus/i);
+  assert.match(formatHelp("bench"), /--corpus/i);
+  assert.match(formatHelp("remediate"), /--sandbox/i);
+  assert.match(formatHelp("demo"), /offline simulation/i);
+  assert.match(formatHelp("factory"), /pipeline/i);
+});
+
 
 
