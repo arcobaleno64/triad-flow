@@ -2007,6 +2007,45 @@ export const UTILITY_CALLEE_SYMBOLS = new Set([
   "includes"
 ]);
 
+export const STANDARD_LIBRARY_CALLEE_SYMBOLS = new Set([
+  // C / C++ Standard Library & POSIX
+  "memcmp", "memcpy", "memset", "memmove", "memchr", "strlen", "strcmp", "strncmp",
+  "strcasecmp", "strncasecmp", "strcpy", "strncpy", "strcat", "strncat", "strchr",
+  "strrchr", "strstr", "strspn", "strcspn", "strpbrk", "strtok", "strdup", "strndup", "strerror",
+  "malloc", "free", "calloc", "realloc", "reallocarray", "abort", "exit", "_exit", "_Exit",
+  "quick_exit", "atexit", "at_quick_exit", "getenv", "setenv", "unsetenv", "system",
+  "bsearch", "qsort", "abs", "labs", "llabs", "div", "ldiv", "lldiv",
+  "atoi", "atol", "atoll", "strtol", "strtoll", "strtoul", "strtoull", "strtof", "strtod", "strtold",
+  "rand", "srand", "printf", "sprintf", "snprintf", "fprintf", "vsnprintf", "vprintf", "vfprintf", "vsprintf",
+  "scanf", "sscanf", "fscanf", "puts", "fputs", "fputc", "putchar", "getchar", "fgetc", "fgets",
+  "getc", "putc", "ungetc", "fread", "fwrite", "fopen", "fdopen", "freopen", "fclose", "fflush",
+  "fseek", "fseeko", "ftell", "ftello", "rewind", "fgetpos", "fsetpos", "feof", "ferror", "clearerr",
+  "perror", "remove", "rename", "tmpfile", "tmpnam", "assert",
+  "isalnum", "isalpha", "islower", "isupper", "isdigit", "isxdigit", "iscntrl", "isgraph",
+  "isspace", "isblank", "isprint", "ispunct", "tolower", "toupper",
+  "sin", "cos", "tan", "asin", "acos", "atan", "atan2", "sinh", "cosh", "tanh",
+  "exp", "log", "log10", "log2", "pow", "sqrt", "cbrt", "ceil", "floor", "trunc", "round",
+  "fmod", "remainder", "copysign", "nan", "fmax", "fmin", "fdim", "fabs",
+  "open", "close", "read", "write", "pread", "pwrite", "lseek", "stat", "fstat", "lstat",
+  "unlink", "mkdir", "rmdir", "pipe", "dup", "dup2", "fork", "execve", "execvp",
+  "wait", "waitpid", "sleep", "usleep", "nanosleep", "select", "poll",
+  "epoll_create", "epoll_create1", "epoll_ctl", "epoll_wait",
+  "socket", "bind", "listen", "accept", "connect", "send", "recv", "sendto", "recvfrom",
+  "mmap", "munmap", "mprotect", "brk", "sbrk",
+  // Go builtins & runtime
+  "len", "cap", "make", "new", "append", "copy", "close", "delete", "panic", "recover",
+  "print", "println", "complex", "real", "imag", "clear",
+  // Python builtins
+  "range", "enumerate", "isinstance", "issubclass", "getattr", "setattr", "hasattr", "delattr",
+  "repr", "iter", "next", "min", "max", "sum", "all", "any", "zip", "sorted", "reversed",
+  "super", "type", "id", "hash", "dir", "vars", "callable", "format", "chr", "ord", "hex", "oct", "bin",
+  "divmod", "input",
+  // Rust core / std prelude & macros
+  "drop", "clone", "default", "into", "from", "as_ref", "as_mut", "unwrap", "expect",
+  "is_some", "is_none", "is_ok", "is_err", "todo", "unimplemented", "unreachable",
+  "assert_eq", "assert_ne", "debug_assert", "debug_assert_eq", "vec", "eprintln", "eprint"
+]);
+
 /**
  * Scans a line of code for function call invocations, supporting both standard calls
  * and conservative generic type arguments (e.g. auth.authorize<Session>(user), authorizeUser<Session>(user)).
@@ -2234,7 +2273,7 @@ export function extractCandidateCallSymbols(diffHunks, options = {}) {
           continue;
         }
       }
-      if (UTILITY_CALLEE_SYMBOLS.has(sym)) {
+      if (UTILITY_CALLEE_SYMBOLS.has(sym) || STANDARD_LIBRARY_CALLEE_SYMBOLS.has(sym)) {
         continue;
       }
 
@@ -2348,7 +2387,7 @@ export function extractCandidateCallSymbols(diffHunks, options = {}) {
               skip = true;
             }
           }
-          if (UTILITY_CALLEE_SYMBOLS.has(sym)) {
+          if (UTILITY_CALLEE_SYMBOLS.has(sym) || STANDARD_LIBRARY_CALLEE_SYMBOLS.has(sym)) {
             skip = true;
           }
 
@@ -3399,6 +3438,9 @@ export function extractLocalCalleeContext(fileContent, diffHunks, targetFile, op
   }
 
   for (const candidate of candidateCalls) {
+    if (UTILITY_CALLEE_SYMBOLS.has(candidate.symbol) || STANDARD_LIBRARY_CALLEE_SYMBOLS.has(candidate.symbol)) {
+      continue;
+    }
     // Preserve sensitivity from import aliases (C8)
     const originalSymbol = importAliases.get(candidate.symbol) || candidate.symbol;
     if (!candidate.isSensitive) {

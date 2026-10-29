@@ -908,4 +908,45 @@ test("Cross-File Symbol Extraction: Include paths with backslashes and include/ 
   assert.ok(paths.includes("src/utils/helper") || paths.includes("src/utils/helper.js"), "Must include src/ paths");
 });
 
+test("Standard Library Callee Symbols: memcmp, memcpy, strlen are exempted from UNRESOLVED_SYMBOL and contextGaps", () => {
+  const cCode = [
+    `#include <string.h>`,
+    `#include <stdlib.h>`,
+    `bool compareTokens(const char *a, const char *b, size_t n) {`,
+    `    if (memcmp(a, b, n) == 0) return true;`,
+    `    void *buf = malloc(n);`,
+    `    if (!buf) return false;`,
+    `    memcpy(buf, a, n);`,
+    `    free(buf);`,
+    `    return false;`,
+    `}`
+  ].join("\n");
+
+  const diffHunks = [
+    `@@ -10,10 +10,10 @@`,
+    `+    if (memcmp(a, b, n) == 0) return true;`,
+    `+    void *buf = malloc(n);`,
+    `+    memcpy(buf, a, n);`,
+    `+    free(buf);`
+  ].join("\n");
+
+  const targetFile = "src/crypto_utils.c";
+  const changeSet = {
+    scopeMode: "working-tree",
+    files: [{ path: targetFile, additions: 4, deletions: 0 }],
+    diffHunks
+  };
+
+  const fileContents = { [targetFile]: cCode };
+  const pkg = buildContextPackage(changeSet, targetFile, { fileContents });
+
+  assert.equal(pkg.contextGaps.length, 0, "Standard library functions (memcmp, malloc, memcpy, free) must not enter contextGaps");
+  const unres = pkg.layers.layer1AstEnclosure?.unresolvedCallees || [];
+  assert.ok(!unres.some(u => u.symbol === "memcmp"), "memcmp must not be marked UNRESOLVED_SYMBOL");
+  assert.ok(!unres.some(u => u.symbol === "malloc"), "malloc must not be marked UNRESOLVED_SYMBOL");
+  assert.ok(!unres.some(u => u.symbol === "memcpy"), "memcpy must not be marked UNRESOLVED_SYMBOL");
+  assert.ok(!unres.some(u => u.symbol === "free"), "free must not be marked UNRESOLVED_SYMBOL");
+});
+
+
 
