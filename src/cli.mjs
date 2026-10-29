@@ -62,6 +62,129 @@ export const EXIT_CODES = {
   SYSTEM_FAILURE: 3
 };
 
+export function formatHelp(subcommand = null) {
+  const normSub = subcommand ? subcommand.toLowerCase().trim() : null;
+  switch (normSub) {
+    case "doctor":
+      return `Usage: triad-flow doctor [options]
+
+Probe local environment, installed frontier CLIs (agy, claude, codex), and quorum readiness.
+
+Options:
+  --live                      Execute live probes against external provider CLIs
+  --format=<format>           Output format: text, json (default: text)
+  --timeout=<ms>              Probe timeout in milliseconds
+  -h, --help                  Show this doctor help message
+`;
+    case "review":
+      return `Usage: triad-flow review [options]
+
+Run deterministic multi-agent security review with tri-party consensus and adaptive routing.
+
+Options:
+  --base=<ref>                Base commit/branch reference for git diff
+  --head=<ref>                Head commit/branch reference for git diff
+  --staged                    Review staged git changes instead of entire working tree
+  --format=<format>           Output format: text, json, sarif (default: text)
+  --strict                    Treat any advisory or warning findings as gate-blocking
+  --report=<file>             Write canonical review-run JSON report to specified file
+  --receipt=<file>            Generate cryptographic audit receipt
+  --manifest[=<file>]         Generate immutable manifest bundle
+  --verify-with=<cmd>         Run independent verification pass with specified verifier
+  --verification-report=<f>   Save independent verifier report to file
+  --macro-cmd=<cmd>           Macro sentry provider command (default: agy)
+  --micro-cmd=<cmd>           Micro arbiter provider command (default: claude)
+  --macro-args=<csv>          Additional arguments for macro sentry
+  --micro-args=<csv>          Additional arguments for micro arbiter
+  --tier=<1|2|3|4>            Force specific scale/risk tier (1=critical, 4=minimal)
+  --plan-only                 Generate review plan without invoking models
+  --timeout=<ms>              Execution timeout in milliseconds
+  -h, --help                  Show this review help message
+`;
+    case "benchmark":
+    case "bench":
+      return `Usage: triad-flow benchmark [options]
+
+Run reproducible benchmark suites against golden CWE cases and real-world OSS vulnerabilities.
+
+Options:
+  --corpus=<v0|oss>           Corpus suite to evaluate: v0 (TF-RBC-v0) or oss (TF-OSS-v1) (default: v0)
+  --mode=<mode>               Execution mode: single, batch, parallel (default: single)
+  --case=<id>                 Run only a single benchmark case by ID
+  --cases=<ids>               Comma-separated list of case IDs to evaluate
+  --limit=<n>                 Limit the number of benchmark cases evaluated
+  --live                      Execute real provider models (requires physical workspace)
+  --virtual                   Use virtual in-memory mock fixtures (default)
+  --format=<format>           Output format: text, json (default: text)
+  --report=<file>             Save benchmark evaluation report to file
+  --timeout=<ms>              Per-case evaluation timeout in milliseconds
+  -h, --help                  Show this benchmark help message
+`;
+    case "remediate":
+      return `Usage: triad-flow remediate [options]
+
+Execute controlled autonomous patch synthesis and verification sandbox loop.
+
+Options:
+  --case=<id>                 Target benchmark case ID to remediate
+  --cases=<ids>               Comma-separated case IDs for batch remediation
+  --batch                     Run batch remediation mode across multiple cases
+  --report=<file>             Input findings report to remediate
+  --diff=<file>               Candidate patch diff file to verify
+  --sandbox=<driver>          Sandbox driver: worktree or container (default: worktree)
+  --synthesizer=<provider>    Provider to generate patch candidate
+  --authorizer=<id>           Authorized human or gate entity ID
+  --receipt=<file>            Save cryptographic remediation receipt
+  --strict                    Require CLOSED status for zero-defect gate pass
+  -h, --help                  Show this remediation help message
+`;
+    case "demo":
+      return `Usage: triad-flow demo [options]
+
+Run offline simulation demo demonstrating routing, consensus, and gate decisions.
+
+Options:
+  --format=<format>           Output format: text, json (default: text)
+  -h, --help                  Show this demo help message
+`;
+    case "factory":
+      return `Usage: triad-flow factory [options]
+
+Continuous security verification and promotion pipeline (stub).
+
+Options:
+  -h, --help                  Show this factory help message
+`;
+    default:
+      return `=======================================================
+  Triad-Flow • Multi-Agent Consensus & Adaptive Control Core
+=======================================================
+
+Usage:
+  triad-flow <command> [options]
+  triad-flow [options]
+
+Commands:
+  doctor       Probe environment capabilities, provider CLIs, and quorum readiness (default)
+  review       Run multi-agent security review on working tree, staged diff, or commit range
+  benchmark    Execute deterministic benchmark evaluation suite (TF-RBC-v0 or TF-OSS-v1)
+  remediate    Run controlled autonomous patch synthesis and verification loop
+  demo         Run offline simulation demo demonstrating routing, consensus, and gate decisions
+  factory      Continuous security verification and promotion pipeline (stub)
+  help         Display help information for a command
+
+Global Options:
+  -h, --help                  Show help information
+  --format=<format>           Output format: text, json, sarif (default: text)
+  --strict                    Enforce strict fail-closed gating on warnings/advisories
+  --report=<file>             Save review-run or benchmark JSON report to file
+  --timeout=<ms>              Command timeout in milliseconds
+
+Run 'triad-flow <command> --help' for command-specific options and details.
+`;
+  }
+}
+
 function printBanner(io, title) {
   io.stderr.write("\n=======================================================\n");
   io.stderr.write(`  ${title}\n`);
@@ -156,7 +279,9 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
 
   const consumedArgsIndices = new Set();
   const isTriadFlag = (arg) => {
-    if (!arg || typeof arg !== "string" || !arg.startsWith("--")) return false;
+    if (!arg || typeof arg !== "string") return false;
+    if (arg === "-h" || arg === "--help") return true;
+    if (!arg.startsWith("--")) return false;
     const name = arg.split("=")[0];
     return [
       "--format",
@@ -187,7 +312,8 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
       "--plan-only",
       "--batch",
       "--sandbox",
-      "--corpus"
+      "--corpus",
+      "--help"
     ].includes(name);
   };
 
@@ -223,7 +349,7 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
     }
   }
 
-  const positionalArgs = argv.filter((a, idx) => !a.startsWith("--") && !consumedArgsIndices.has(idx));
+  const positionalArgs = argv.filter((a, idx) => !a.startsWith("-") && !consumedArgsIndices.has(idx));
   const command = positionalArgs[0] || "doctor";
 
   let formatArg = "text";
@@ -606,13 +732,28 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
     if (arg.startsWith("--sandbox=") || arg === "--sandbox") return true;
     if (arg.startsWith("--corpus=") || arg === "--corpus") return true;
     if (arg === "--live" || arg === "--virtual") return true;
+    if (arg === "--help" || arg === "-h") return true;
     return false;
   };
 
-  const unknownFlags = argv.filter((a, idx) => a.startsWith("--") && !consumedArgsIndices.has(idx) && !isRecognizedArg(a));
+  const unknownFlags = argv.filter((a, idx) => a.startsWith("-") && !consumedArgsIndices.has(idx) && !isRecognizedArg(a));
   if (unknownFlags.length > 0) {
     io.stderr.write(`✖ [USAGE ERROR] Unsupported option(s): ${unknownFlags.join(", ")}\n`);
     return EXIT_CODES.USAGE_ERROR;
+  }
+
+  const isHelpRequested = argv.includes("--help") || argv.includes("-h") || positionalArgs[0] === "help";
+  if (isHelpRequested) {
+    let targetSub = null;
+    if (positionalArgs[0] === "help") {
+      targetSub = positionalArgs[1] || null;
+    } else if (positionalArgs[0] && positionalArgs[0] !== "doctor") {
+      targetSub = positionalArgs[0];
+    } else if (argv.includes("doctor")) {
+      targetSub = "doctor";
+    }
+    io.stdout.write(formatHelp(targetSub));
+    return EXIT_CODES.SUCCESS;
   }
 
   if (argv.some(a => a === "--format" || a === "--format=") && (!formatArg || (argv.includes("--format") && (!argv[argv.indexOf("--format") + 1] || argv[argv.indexOf("--format") + 1].startsWith("--"))))) {
