@@ -1433,15 +1433,20 @@ export async function runDogfoodReview(userOptions = {}) {
     verifierTimedOut = true;
   });
 
-  const activeVerifierName = verifierAdapter?.providerName || verifierAdapter?.provider || "claude";
-  const activeVerifierModel = verifierAdapter?.modelName || verifierAdapter?.model || (typeof verifierAdapter?.actualModel === "object" ? verifierAdapter?.actualModel?.value : verifierAdapter?.actualModel) || "claude-5.5-sonnet";
-  const activeActualModel = verifierAdapter?.actualModel
-    ? (typeof verifierAdapter.actualModel === "object"
-      ? { ...verifierAdapter.actualModel }
-      : { value: String(verifierAdapter.actualModel), source: "reported" })
-    : (activeVerifierName === "claude"
-      ? { value: "claude-5.5-sonnet (independent_verifier_stage)", source: "reported" }
-      : null);
+  const hasInjectedVerifier = Boolean(userOptions.verifierAdapter && typeof userOptions.verifierAdapter === "object");
+  const activeVerifierName = hasInjectedVerifier
+    ? (verifierAdapter?.providerName || verifierAdapter?.provider || "claude")
+    : "claude";
+  const activeVerifierModel = hasInjectedVerifier
+    ? (verifierAdapter?.modelName || verifierAdapter?.model || (typeof verifierAdapter?.actualModel === "object" ? verifierAdapter?.actualModel?.value : verifierAdapter?.actualModel) || "claude-5.5-sonnet")
+    : "claude-5.5-sonnet";
+  const activeActualModel = hasInjectedVerifier
+    ? (userOptions.verifierAdapter.actualModel
+      ? (typeof userOptions.verifierAdapter.actualModel === "object"
+        ? { ...userOptions.verifierAdapter.actualModel }
+        : { value: String(userOptions.verifierAdapter.actualModel), source: "reported" })
+      : { value: `${activeVerifierModel} (independent_verifier_stage)`, source: "reported" })
+    : { value: "claude-5.5-sonnet (independent_verifier_stage)", source: "reported" };
 
   if (findings.length > 0 && !isStructuralFailure) {
     cleanChallengeAttempted = false;
