@@ -24,6 +24,13 @@ import {
   getOssCaseById,
   listOssCases
 } from "../../tests/fixtures/real-oss-fixtures.mjs";
+import {
+  TF_OSS_CORPUS_V2_CASES,
+  createOssV2CaseWorkspace,
+  createMockOssV2Adapters,
+  getOssV2CaseById,
+  listOssV2Cases
+} from "../../tests/fixtures/real-oss-v2-fixtures.mjs";
 import { orchestrateBenchmarkEvaluation } from "../adapters/review-orchestrator.mjs";
 import { verifyHeldOutBaseline } from "./scoring.mjs";
 import { deduplicateBenchmarkFindings } from "./benchmark-pilot.mjs";
@@ -48,10 +55,14 @@ export function __bindBenchmarkRunnerCapability(minter) {
 
 export const BENCHMARK_FRAMEWORK_NAME = "Triad-Flow Real Benchmark Corpus v0 (TF-RBC-v0)";
 export const OSS_BENCHMARK_FRAMEWORK_NAME = "Triad-Flow Real-World OSS Corpus v1 (TF-OSS-v1)";
+export const OSS_V2_BENCHMARK_FRAMEWORK_NAME = "Triad-Flow Real-World Multi-Language OSS Corpus v2 (TF-OSS-v2)";
 
 export const CORPUS_NAMES = Object.freeze({
   V0: "v0",
-  OSS: "oss"
+  OSS: "oss",
+  OSS_V1: "oss-v1",
+  OSS_V2: "oss-v2",
+  V2: "v2"
 });
 
 /**
@@ -75,9 +86,11 @@ export async function evaluateCorpusCase(caseDef, adapters = {}, options = {}) {
   const timeoutMs = options.timeoutMs || 30000;
 
   // 1. Create isolated disposable workspace (or zero-spawn virtual workspace)
-  const workspace = caseDef.id?.startsWith("TF-OSS")
-    ? createOssCaseWorkspace(caseDef, { virtual: Boolean(options.virtual) })
-    : createCorpusCaseWorkspace(caseDef, { virtual: Boolean(options.virtual) });
+  const workspace = caseDef.id?.startsWith("TF-OSS-2")
+    ? createOssV2CaseWorkspace(caseDef, { virtual: Boolean(options.virtual) })
+    : (caseDef.id?.startsWith("TF-OSS")
+      ? createOssCaseWorkspace(caseDef, { virtual: Boolean(options.virtual) })
+      : createCorpusCaseWorkspace(caseDef, { virtual: Boolean(options.virtual) }));
   try {
     // 2. Pre-execution immutability check
     workspace.assertImmutability();
@@ -280,30 +293,37 @@ export async function evaluateCorpusCase(caseDef, adapters = {}, options = {}) {
  */
 export async function evaluateCorpusSuite(corpus = null, adapters = null, options = {}) {
   const mode = options.mode || "single";
-  const isOss = options.corpus === "oss" || corpus === TF_OSS_CORPUS_V1_CASES || (Array.isArray(corpus) && corpus[0]?.id?.startsWith("TF-OSS"));
-  const defaultCorpus = isOss ? TF_OSS_CORPUS_V1_CASES : TF_RBC_V0_CASES;
+  const isV2 = options.corpus === "v2" || options.corpus === "oss-v2" || corpus === TF_OSS_CORPUS_V2_CASES || (Array.isArray(corpus) && corpus[0]?.id?.startsWith("TF-OSS-2"));
+  const isOss = !isV2 && (options.corpus === "oss" || options.corpus === "oss-v1" || options.corpus === "real-oss" || corpus === TF_OSS_CORPUS_V1_CASES || (Array.isArray(corpus) && corpus[0]?.id?.startsWith("TF-OSS")));
+  const defaultCorpus = isV2 ? TF_OSS_CORPUS_V2_CASES : (isOss ? TF_OSS_CORPUS_V1_CASES : TF_RBC_V0_CASES);
   const activeCorpus = corpus || defaultCorpus;
 
   // Delegate 3-way comparison if mode is "all"
   if (mode === "all") {
-    return runThreeWayRealComparison(activeCorpus, adapters, { ...options, corpus: isOss ? "oss" : "v0" });
+    return runThreeWayRealComparison(activeCorpus, adapters, { ...options, corpus: isV2 ? "v2" : (isOss ? "oss" : "v0") });
   }
 
   // Use high-fidelity mock adapters if adapters are not explicitly provided and not in live mode
-  const activeAdapters = adapters || (isOss
-    ? createMockOssAdapters(options.mockOptions || {})
-    : createMockCorpusAdapters(options.mockOptions || {}));
+  const activeAdapters = adapters || (isV2
+    ? createMockOssV2Adapters(options.mockOptions || {})
+    : (isOss
+      ? createMockOssAdapters(options.mockOptions || {})
+      : createMockCorpusAdapters(options.mockOptions || {})));
 
   // Case filtering
   let cases = Array.isArray(activeCorpus) ? [...activeCorpus] : [...defaultCorpus];
   if (options.case) {
-    const single = isOss ? getOssCaseById(options.case) : getCorpusCaseById(options.case);
+    const single = isV2
+      ? getOssV2CaseById(options.case)
+      : (isOss ? getOssCaseById(options.case) : getCorpusCaseById(options.case));
     if (!single) {
       throw new Error(`Corpus case '${options.case}' not found.`);
     }
     cases = [single];
   } else if (options.filter) {
-    cases = isOss ? listOssCases(options.filter) : listCorpusCases(options.filter);
+    cases = isV2
+      ? listOssV2Cases(options.filter)
+      : (isOss ? listOssCases(options.filter) : listCorpusCases(options.filter));
   }
 
   if (options.limit && Number.isFinite(options.limit) && options.limit > 0) {
@@ -396,7 +416,7 @@ export async function evaluateCorpusSuite(corpus = null, adapters = null, option
   const workspaceMode = Boolean(options.virtual) ? "virtual" : "physical";
 
   const identity = createCorpusIdentity(activeCorpus, {
-    corpusVersion: isOss ? "TF-OSS-v1" : (options.corpusVersion || undefined)
+    corpusVersion: isV2 ? "TF-OSS-v2" : (isOss ? "TF-OSS-v1" : (options.corpusVersion || undefined))
   });
 
   let commitSha = "unknown";
@@ -503,8 +523,8 @@ export async function evaluateCorpusSuite(corpus = null, adapters = null, option
   const finalGatePassedCount = caseResults.filter(r => r.finalGatePassed === true).length;
 
   return {
-    framework: isOss ? OSS_BENCHMARK_FRAMEWORK_NAME : BENCHMARK_FRAMEWORK_NAME,
-    corpus: isOss ? "oss" : "v0",
+    framework: isV2 ? OSS_V2_BENCHMARK_FRAMEWORK_NAME : (isOss ? OSS_BENCHMARK_FRAMEWORK_NAME : BENCHMARK_FRAMEWORK_NAME),
+    corpus: isV2 ? "v2" : (isOss ? "oss" : "v0"),
     mode,
     executionMode,
     workspaceMode,
@@ -576,13 +596,15 @@ export async function evaluateCorpusSuite(corpus = null, adapters = null, option
  * @returns {Promise<object>}
  */
 export async function runThreeWayRealComparison(corpus = null, adapters = null, options = {}) {
-  const isOss = options.corpus === "oss" || corpus === TF_OSS_CORPUS_V1_CASES || (Array.isArray(corpus) && corpus[0]?.id?.startsWith("TF-OSS"));
-  const defaultCorpus = isOss ? TF_OSS_CORPUS_V1_CASES : TF_RBC_V0_CASES;
+  const isV2 = options.corpus === "v2" || options.corpus === "oss-v2" || corpus === TF_OSS_CORPUS_V2_CASES || (Array.isArray(corpus) && corpus[0]?.id?.startsWith("TF-OSS-2"));
+  const isOss = !isV2 && (options.corpus === "oss" || options.corpus === "oss-v1" || options.corpus === "real-oss" || corpus === TF_OSS_CORPUS_V1_CASES || (Array.isArray(corpus) && corpus[0]?.id?.startsWith("TF-OSS")));
+  const defaultCorpus = isV2 ? TF_OSS_CORPUS_V2_CASES : (isOss ? TF_OSS_CORPUS_V1_CASES : TF_RBC_V0_CASES);
   const activeCorpus = corpus || defaultCorpus;
 
-  const single = await evaluateCorpusSuite(activeCorpus, adapters, { ...options, mode: "single", corpus: isOss ? "oss" : "v0" });
-  const dual = await evaluateCorpusSuite(activeCorpus, adapters, { ...options, mode: "dual", corpus: isOss ? "oss" : "v0" });
-  const riskRouted = await evaluateCorpusSuite(activeCorpus, adapters, { ...options, mode: "risk-routed", corpus: isOss ? "oss" : "v0" });
+  const corpusParam = isV2 ? "v2" : (isOss ? "oss" : "v0");
+  const single = await evaluateCorpusSuite(activeCorpus, adapters, { ...options, mode: "single", corpus: corpusParam });
+  const dual = await evaluateCorpusSuite(activeCorpus, adapters, { ...options, mode: "dual", corpus: corpusParam });
+  const riskRouted = await evaluateCorpusSuite(activeCorpus, adapters, { ...options, mode: "risk-routed", corpus: corpusParam });
 
   const tokensAvailable = Boolean(
     single.metrics.tokens?.available &&
@@ -625,7 +647,7 @@ export async function runThreeWayRealComparison(corpus = null, adapters = null, 
   const workspaceMode = Boolean(options.virtual) ? "virtual" : "physical";
 
   const comparisonIdentity = createCorpusIdentity(activeCorpus, {
-    corpusVersion: isOss ? "TF-OSS-v1" : (options.corpusVersion || undefined)
+    corpusVersion: isV2 ? "TF-OSS-v2" : (isOss ? "TF-OSS-v1" : (options.corpusVersion || undefined))
   });
   const comparisonReceipt = buildAuditReceipt({
     identity: comparisonIdentity,
@@ -649,8 +671,8 @@ export async function runThreeWayRealComparison(corpus = null, adapters = null, 
   });
 
   return {
-    framework: isOss ? OSS_BENCHMARK_FRAMEWORK_NAME : BENCHMARK_FRAMEWORK_NAME,
-    corpus: isOss ? "oss" : "v0",
+    framework: isV2 ? OSS_V2_BENCHMARK_FRAMEWORK_NAME : (isOss ? OSS_BENCHMARK_FRAMEWORK_NAME : BENCHMARK_FRAMEWORK_NAME),
+    corpus: isV2 ? "v2" : (isOss ? "oss" : "v0"),
     mode: "all",
     executionMode,
     workspaceMode,

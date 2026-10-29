@@ -31,6 +31,8 @@ import {
 } from "../src/core/real-benchmark-runner.mjs";
 import { generateManifestBundle } from "../src/core/manifest-bundle.mjs";
 import { createMockCorpusAdapters, getCorpusCaseById, buildSynthesizedChangeSet } from "../tests/fixtures/real-corpus-fixtures.mjs";
+import { createMockOssAdapters } from "../tests/fixtures/real-oss-fixtures.mjs";
+import { createMockOssV2Adapters } from "../tests/fixtures/real-oss-v2-fixtures.mjs";
 import {
   conductIndependentVerification,
   validateVerifierCommand,
@@ -41,6 +43,7 @@ import {
 } from "../src/core/independent-verifier.mjs";
 
 const optionsConfig = {
+  corpus: { type: "string", default: "v0" },
   mode: { type: "string", default: "single" },
   "macro-cmd": { type: "string", default: "agy" },
   "micro-cmd": { type: "string", default: "claude" },
@@ -178,22 +181,28 @@ async function main() {
   const reportPath = values.report ? path.resolve(values.report) : null;
   const additionalArtifacts = {};
 
-  console.log(`[TF-RBC-v0] Starting benchmark run... (mode: ${mode}, live: ${isLive}, virtual: ${isVirtual})`);
+  const corpusArg = values.corpus || "v0";
+  const isV2 = corpusArg === "v2" || corpusArg === "oss-v2";
+  const isOss = !isV2 && (corpusArg === "oss" || corpusArg === "real-oss" || corpusArg === "v1" || corpusArg === "oss-v1");
+  const resolvedCorpus = isV2 ? "v2" : (isOss ? "oss" : "v0");
+
+  console.log(`[TF-BENCHMARK] Starting benchmark run... (corpus: ${resolvedCorpus}, mode: ${mode}, live: ${isLive}, virtual: ${isVirtual})`);
 
   let adapters;
   if (isLive) {
-    console.log(`[TF-RBC-v0] Initializing live provider adapters: macro='${macroCmd}', micro='${microCmd}'`);
+    console.log(`[TF-BENCHMARK] Initializing live provider adapters: macro='${macroCmd}', micro='${microCmd}'`);
     adapters = {
       macro: new CliReviewAdapter({ command: macroCmd }),
       micro: new CliReviewAdapter({ command: microCmd })
     };
   } else {
-    console.log("[TF-RBC-v0] Using high-fidelity offline mock adapters (< 2s execution).");
-    adapters = createMockCorpusAdapters();
+    console.log(`[TF-BENCHMARK] Using high-fidelity offline mock adapters for ${resolvedCorpus} (< 2s execution).`);
+    adapters = isV2 ? createMockOssV2Adapters() : (isOss ? createMockOssAdapters() : createMockCorpusAdapters());
   }
 
   const suiteOptions = {
     mode,
+    corpus: resolvedCorpus,
     live: isLive,
     executionMode: isLive ? "live" : "mock",
     virtual: isVirtual,
