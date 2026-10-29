@@ -1,0 +1,66 @@
+{
+  "schemaVersion": "1.0.0",
+  "verifiedAt": "2026-10-29T08:04:35.109Z",
+  "changeSetDigest": "sha256:d5e9b95dafdbcf9d675d6dbf94043cbf1c0465667a7ef081adc2b7c42d3ec280",
+  "verificationMode": "producer_verification",
+  "overallStatus": "DEFECTS_FOUND",
+  "producer": {
+    "providerName": "tri-party-quorum",
+    "findingsCount": 1,
+    "findings": [
+      {
+        "title": "Detected use-after-free (CWE-416) in curl",
+        "severity": "medium",
+        "file": "lib/cookie.c",
+        "line_start": 14,
+        "line_end": 14,
+        "cwe": "CWE-416",
+        "type": "use-after-free",
+        "recommendation": "Pointer to cookie list remains active after Curl_cookie_cleanup frees parent structure",
+        "sources": [
+          "claude",
+          "codex"
+        ],
+        "corroborations": 2
+      }
+    ]
+  },
+  "verifier": {
+    "providerName": "claude",
+    "modelName": "claude-mock",
+    "actualModel": {
+      "source": "runtime",
+      "value": "claude-mock-v1"
+    },
+    "usage": {
+      "completionTokens": 50,
+      "promptTokens": 100,
+      "totalTokens": 150,
+      "usageSource": "authoritative"
+    }
+  },
+  "evaluations": [
+    {
+      "findingId": "finding-1",
+      "verdict": "SUPPORTED",
+      "classification": "SUPPORTED",
+      "locatorAccurate": true,
+      "typeAccurate": true,
+      "severityAccurate": true,
+      "objectiveImpact": "NOT_ASSESSED",
+      "reasoning": "Offline mock verifier verified finding 'finding-1' against changeSet diff.",
+      "dissent": null
+    }
+  ],
+  "verifierOmissions": [],
+  "disagreementLedger": [],
+  "summary": {
+    "totalEvaluated": 1,
+    "supportedCount": 1,
+    "partiallySupportedCount": 0,
+    "contestedCount": 0,
+    "insufficientEvidenceCount": 0,
+    "omissionsCount": 0
+  },
+  "ok": true
+}

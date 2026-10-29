@@ -1,0 +1,184 @@
+{
+  "schemaVersion": "1.0.0",
+  "verifiedAt": "2026-10-29T08:04:35.120Z",
+  "producer": {
+    "providerName": "tri-party-quorum",
+    "runId": "run-oss-v2.8-TF-EVIDENCE-0011-1793261075103",
+    "commitSha": "1abd39ebd70e1ad64a33355f51ecd08c8a9af528"
+  },
+  "verifier": {
+    "providerName": "claude",
+    "modelName": "claude-5.5-sonnet"
+  },
+  "summary": {
+    "totalCases": 10,
+    "totalEvaluated": 10,
+    "supportedCount": 10,
+    "partiallySupportedCount": 0,
+    "contestedCount": 0,
+    "insufficientEvidenceCount": 0,
+    "omissionsCount": 0
+  },
+  "ledger": [
+    {
+      "caseId": "TF-OSS-202",
+      "type": "VENDOR_DIVERGENCE",
+      "finding": "Detected use-after-free (CWE-416) in curl",
+      "severity": "medium",
+      "vendorSplit": {
+        "agy": "clean",
+        "claude": "vulnerable",
+        "codex": "vulnerable"
+      },
+      "disposition": "BLOCK",
+      "rationale": "2-of-3 majority corroborated finding, satisfying corroboration quorum."
+    },
+    {
+      "caseId": "TF-OSS-203",
+      "type": "VENDOR_DIVERGENCE",
+      "finding": "Detected cryptographic-nonce-reuse (CWE-323) in rustls",
+      "severity": "high",
+      "vendorSplit": {
+        "agy": "vulnerable",
+        "claude": "vulnerable",
+        "codex": "clean"
+      },
+      "disposition": "BLOCK",
+      "rationale": "2-of-3 majority corroborated finding, satisfying corroboration quorum."
+    },
+    {
+      "caseId": "TF-OSS-204",
+      "type": "SOLITARY_BLOCKER_VETO",
+      "sentry": "codex",
+      "finding": "Detected infinite-loop (CWE-835) in hyper",
+      "severity": "high",
+      "vendorSplit": {
+        "agy": "clean",
+        "claude": "clean",
+        "codex": "vulnerable"
+      },
+      "disposition": "BLOCK",
+      "rationale": "OpenAI Codex uniquely caught vulnerability. Solitary blocker veto enforced by RFC-027-02."
+    },
+    {
+      "caseId": "TF-OSS-206",
+      "type": "VENDOR_DIVERGENCE",
+      "finding": "Detected improper-input-validation (CWE-20) in cpython",
+      "severity": "high",
+      "vendorSplit": {
+        "agy": "clean",
+        "claude": "vulnerable",
+        "codex": "vulnerable"
+      },
+      "disposition": "BLOCK",
+      "rationale": "2-of-3 majority corroborated finding, satisfying corroboration quorum."
+    },
+    {
+      "caseId": "TF-OSS-207",
+      "type": "VENDOR_DIVERGENCE",
+      "finding": "Detected improper-exception-handling (CWE-755) in node",
+      "severity": "medium",
+      "vendorSplit": {
+        "agy": "vulnerable",
+        "claude": "clean",
+        "codex": "vulnerable"
+      },
+      "disposition": "BLOCK",
+      "rationale": "2-of-3 majority corroborated finding, satisfying corroboration quorum."
+    },
+    {
+      "caseId": "TF-OSS-209",
+      "type": "VENDOR_DIVERGENCE",
+      "finding": "Detected uncontrolled-resource-consumption (CWE-400) in nats-server",
+      "severity": "high",
+      "vendorSplit": {
+        "agy": "clean",
+        "claude": "vulnerable",
+        "codex": "vulnerable"
+      },
+      "disposition": "BLOCK",
+      "rationale": "2-of-3 majority corroborated finding, satisfying corroboration quorum."
+    }
+  ],
+  "triPartyEntries": [
+    {
+      "caseId": "TF-OSS-202",
+      "type": "VENDOR_DIVERGENCE",
+      "finding": "Detected use-after-free (CWE-416) in curl",
+      "severity": "medium",
+      "vendorSplit": {
+        "agy": "clean",
+        "claude": "vulnerable",
+        "codex": "vulnerable"
+      },
+      "disposition": "BLOCK",
+      "rationale": "2-of-3 majority corroborated finding, satisfying corroboration quorum."
+    },
+    {
+      "caseId": "TF-OSS-203",
+      "type": "VENDOR_DIVERGENCE",
+      "finding": "Detected cryptographic-nonce-reuse (CWE-323) in rustls",
+      "severity": "high",
+      "vendorSplit": {
+        "agy": "vulnerable",
+        "claude": "vulnerable",
+        "codex": "clean"
+      },
+      "disposition": "BLOCK",
+      "rationale": "2-of-3 majority corroborated finding, satisfying corroboration quorum."
+    },
+    {
+      "caseId": "TF-OSS-204",
+      "type": "SOLITARY_BLOCKER_VETO",
+      "sentry": "codex",
+      "finding": "Detected infinite-loop (CWE-835) in hyper",
+      "severity": "high",
+      "vendorSplit": {
+        "agy": "clean",
+        "claude": "clean",
+        "codex": "vulnerable"
+      },
+      "disposition": "BLOCK",
+      "rationale": "OpenAI Codex uniquely caught vulnerability. Solitary blocker veto enforced by RFC-027-02."
+    },
+    {
+      "caseId": "TF-OSS-206",
+      "type": "VENDOR_DIVERGENCE",
+      "finding": "Detected improper-input-validation (CWE-20) in cpython",
+      "severity": "high",
+      "vendorSplit": {
+        "agy": "clean",
+        "claude": "vulnerable",
+        "codex": "vulnerable"
+      },
+      "disposition": "BLOCK",
+      "rationale": "2-of-3 majority corroborated finding, satisfying corroboration quorum."
+    },
+    {
+      "caseId": "TF-OSS-207",
+      "type": "VENDOR_DIVERGENCE",
+      "finding": "Detected improper-exception-handling (CWE-755) in node",
+      "severity": "medium",
+      "vendorSplit": {
+        "agy": "vulnerable",
+        "claude": "clean",
+        "codex": "vulnerable"
+      },
+      "disposition": "BLOCK",
+      "rationale": "2-of-3 majority corroborated finding, satisfying corroboration quorum."
+    },
+    {
+      "caseId": "TF-OSS-209",
+      "type": "VENDOR_DIVERGENCE",
+      "finding": "Detected uncontrolled-resource-consumption (CWE-400) in nats-server",
+      "severity": "high",
+      "vendorSplit": {
+        "agy": "clean",
+        "claude": "vulnerable",
+        "codex": "vulnerable"
+      },
+      "disposition": "BLOCK",
+      "rationale": "2-of-3 majority corroborated finding, satisfying corroboration quorum."
+    }
+  ]
+}

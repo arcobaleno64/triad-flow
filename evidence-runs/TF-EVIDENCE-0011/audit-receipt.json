@@ -1,0 +1,92 @@
+{
+  "identity": {
+    "caseDigests": {
+      "TF-OSS-201": "sha256:17bbf5c476164c07f5b48369ba2361a5d901f0a2f956355622d13a9ce8e3e65b",
+      "TF-OSS-202": "sha256:0f1c7c0007d6ed73f68e92e1fe7384f6cc90e26e2acadcbc05aeb986f5704472",
+      "TF-OSS-203": "sha256:cab58cc397f78ee10b6672fd96bec7596a89c186a048586789e3103e6d1b27b3",
+      "TF-OSS-204": "sha256:2539a7c9a62a60dad29e39890bbe7457c63d2cb380219b8cee55312f4668bd1c",
+      "TF-OSS-205": "sha256:0b48f831e4bfd4cace20d9a86d371b533bab66f39b238d19318715a8eb179297",
+      "TF-OSS-206": "sha256:e70acd37b7f19e07ed230da3132dbabb7d07e87c57aef8cb7fea9ae80dbcb0ec",
+      "TF-OSS-207": "sha256:47277786936710cbfdb29b4e2cfde96449c0a0ca769cb871a05a592e52a31cbb",
+      "TF-OSS-208": "sha256:00f88eb4aebb59fa2b6887b78c6fcf9bacb67380ea8fd86d6ac46f8b61d8916f",
+      "TF-OSS-209": "sha256:d4d3ed5f790abc05d6c8d70c1aeb85551d92192d09c3bcdae3e7a71e728accfe",
+      "TF-OSS-210": "sha256:f8576a3e05ba28d69c14ec653cad316628d79224c7fb5c34e47882796ca616c6"
+    },
+    "corpusDigest": "sha256:87d0720fbca96d4e8d2070260d25631eecb9ae84b60b77a0729fc23dd1975117",
+    "corpusVersion": "TF-OSS-v2"
+  },
+  "providerProvenance": {
+    "agy": {
+      "actualModel": {
+        "source": "unavailable",
+        "value": "gemini-3.8-flash"
+      },
+      "completionTokens": null,
+      "modelName": "gemini-3.8-flash",
+      "promptTokens": null,
+      "providerName": "agy",
+      "totalTokens": null,
+      "usageSource": "unavailable",
+      "version": "v1.2.14-mock",
+      "reviewProfileReady": true
+    },
+    "claude": {
+      "actualModel": {
+        "source": "unavailable",
+        "value": "claude-5.5-sonnet"
+      },
+      "completionTokens": null,
+      "modelName": "claude-5.5-sonnet",
+      "promptTokens": null,
+      "providerName": "claude",
+      "totalTokens": null,
+      "usageSource": "unavailable",
+      "version": "v2.1.286-mock",
+      "reviewProfileReady": true
+    },
+    "codex": {
+      "actualModel": {
+        "source": "unavailable",
+        "value": "gpt-6.1-sol"
+      },
+      "completionTokens": null,
+      "modelName": "gpt-6.1-sol",
+      "promptTokens": null,
+      "providerName": "codex",
+      "totalTokens": null,
+      "usageSource": "unavailable",
+      "version": "v0.159.2-mock",
+      "reviewProfileReady": true
+    }
+  },
+  "results": {
+    "mode": "tri-party",
+    "totalCases": 10,
+    "vulnerableCasesCount": 10,
+    "cleanCasesCount": 0,
+    "recall": 1,
+    "precision": 1,
+    "falseBlockRate": null,
+    "latency": {
+      "avgMs": 23820,
+      "p50Ms": 24500,
+      "p95Ms": 31500
+    }
+  },
+  "run": {
+    "environment": {
+      "arch": "x64",
+      "nodeVersion": "v24.14.1",
+      "platform": "win32"
+    },
+    "finishedAt": "2026-10-29T08:04:35.102Z",
+    "runId": "run-oss-v2.8-TF-EVIDENCE-0011-1793261075103",
+    "startedAt": "2026-10-29T08:04:28.315Z"
+  },
+  "schemaVersion": "1.0.0",
+  "systemProvenance": {
+    "branch": "feat/tf-evidence-0011-bundle",
+    "commitSha": "1abd39ebd70e1ad64a33355f51ecd08c8a9af528",
+    "triadFlowVersion": "2.9.0"
+  }
+}
