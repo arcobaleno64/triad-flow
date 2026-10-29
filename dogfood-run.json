@@ -1,67 +1,67 @@
 {
   "schemaVersion": "1.1.0",
-  "runId": "dogfood-1793247779155-88dd84b1-9d26-4e66-ad57-b46797d486e2",
+  "runId": "dogfood-1793248599787-74832493-9be4-4ea3-91e9-bfb5f38c3882",
   "gate": {
-    "decision": "human_review_required",
-    "reason": "Critical/high severity contested by verifier: \"Hook checks are bypassed by matcher tail iterations\""
+    "decision": "approve",
+    "reason": "Clean Challenge passed: zero findings and zero verified omissions."
   },
   "summary": {
-    "cleanChallengeStatus": "SKIPPED",
-    "decision": "human_review_required"
+    "cleanChallengeStatus": "SUCCESS",
+    "decision": "approve"
   },
   "isExecutionComplete": true,
   "executionMode": "live",
-  "runStartedAt": "2026-10-29T04:22:59.154Z",
-  "timestamp": "2026-10-29T04:24:41.432Z",
+  "runStartedAt": "2026-10-29T04:36:39.786Z",
+  "timestamp": "2026-10-29T04:38:38.201Z",
   "track": "Track D1: SHADOW_DOGFOOD",
   "authority": "NONE (ADVISORY_ONLY)",
   "triadFlowVersion": "2.8.0",
   "runContext": {
-    "runId": "dogfood-1793247779155-88dd84b1-9d26-4e66-ad57-b46797d486e2",
-    "headSha": "ba4851525053c756386fbdebefb5e765ed4abc6e",
-    "contentDigest": "0bb56d64134334ae160c27c31ab7593c3ccc5c1cb8c09c1c54fb92fec40a8f30",
-    "patchObjective": "Fix Redis embedded Lua pattern matcher in C executing long-running matching without yielding to Lua execution control. Guarantee periodic interrupt hook checks during C-level matching, timeout and cancellation via lua-time-limit/SCRIPT KILL, and semantic preservation across string.find/match/gmatch/gsub.",
+    "runId": "dogfood-1793248599787-74832493-9be4-4ea3-91e9-bfb5f38c3882",
+    "headSha": "4592e0f0dc8905e0a9465566cecb229e63e93d42",
+    "contentDigest": "5e4c05e41082a7f99879a34a03037b2263cd666cb43da9c31fe28142b9a48b0c",
+    "patchObjective": "Fix TLS session resumption binding for literal-IP wrapped sockets by preserving requested host before connection starts, properly binding session cache keys and checkServerIdentity to the authentic peer IP instead of fallback localhost.",
     "objectiveContract": {
-      "objective": "Fix Redis embedded Lua pattern matcher in C executing long-running matching without yielding to Lua execution control. Guarantee periodic interrupt hook checks during C-level matching, timeout and cancellation via lua-time-limit/SCRIPT KILL, and semantic preservation across string.find/match/gmatch/gsub.",
+      "objective": "Fix TLS session resumption binding for literal-IP wrapped sockets by preserving requested host before connection starts, properly binding session cache keys and checkServerIdentity to the authentic peer IP instead of fallback localhost.",
       "exclusions": [
-        "Do not modify Lua pattern syntax or matching semantics; do not alter Redis global script execution policy or lua-time-limit/BUSY semantics; do not introduce unrelated architectural refactoring or dependencies outside deps/lua/src/lstrlib.c and tests/unit/scripting.tcl."
+        "Do not alter TLS session caching algorithms or crypto primitives; do not modify general net.Socket connection handling outside literal-IP host preservation; do not alter servername precedence."
       ],
       "finalizedBeforeRun": true
     },
     "exclusions": [
-      "Do not modify Lua pattern syntax or matching semantics; do not alter Redis global script execution policy or lua-time-limit/BUSY semantics; do not introduce unrelated architectural refactoring or dependencies outside deps/lua/src/lstrlib.c and tests/unit/scripting.tcl."
+      "Do not alter TLS session caching algorithms or crypto primitives; do not modify general net.Socket connection handling outside literal-IP host preservation; do not alter servername precedence."
     ]
   },
   "repository": {
-    "name": "redis/redis",
-    "commitSha": "ba4851525053c756386fbdebefb5e765ed4abc6e",
+    "name": "nodejs/node",
+    "commitSha": "4592e0f0dc8905e0a9465566cecb229e63e93d42",
     "branch": null,
-    "base": "559d143b4e0409c452f7d229ba420954b6b647a2",
-    "head": "ba4851525053c756386fbdebefb5e765ed4abc6e"
+    "base": "1c90519c1a878499d1942f61eeec68dd8de457d7",
+    "head": "4592e0f0dc8905e0a9465566cecb229e63e93d42"
   },
   "changeSetSummary": {
-    "patchObjective": "Fix Redis embedded Lua pattern matcher in C executing long-running matching without yielding to Lua execution control. Guarantee periodic interrupt hook checks during C-level matching, timeout and cancellation via lua-time-limit/SCRIPT KILL, and semantic preservation across string.find/match/gmatch/gsub.",
+    "patchObjective": "Fix TLS session resumption binding for literal-IP wrapped sockets by preserving requested host before connection starts, properly binding session cache keys and checkServerIdentity to the authentic peer IP instead of fallback localhost.",
     "objectiveContract": {
-      "objective": "Fix Redis embedded Lua pattern matcher in C executing long-running matching without yielding to Lua execution control. Guarantee periodic interrupt hook checks during C-level matching, timeout and cancellation via lua-time-limit/SCRIPT KILL, and semantic preservation across string.find/match/gmatch/gsub.",
+      "objective": "Fix TLS session resumption binding for literal-IP wrapped sockets by preserving requested host before connection starts, properly binding session cache keys and checkServerIdentity to the authentic peer IP instead of fallback localhost.",
       "exclusions": [
-        "Do not modify Lua pattern syntax or matching semantics; do not alter Redis global script execution policy or lua-time-limit/BUSY semantics; do not introduce unrelated architectural refactoring or dependencies outside deps/lua/src/lstrlib.c and tests/unit/scripting.tcl."
+        "Do not alter TLS session caching algorithms or crypto primitives; do not modify general net.Socket connection handling outside literal-IP host preservation; do not alter servername precedence."
       ],
       "finalizedBeforeRun": true
     },
     "totalFiles": 2,
-    "totalAdditions": 69,
-    "totalDeletions": 0,
+    "totalAdditions": 101,
+    "totalDeletions": 1,
     "riskTier": 1,
     "files": [
       {
-        "path": "deps/lua/src/lstrlib.c",
-        "additions": 35,
-        "deletions": 0,
+        "path": "lib/net.js",
+        "additions": 2,
+        "deletions": 1,
         "riskTier": 2
       },
       {
-        "path": "tests/unit/scripting.tcl",
-        "additions": 34,
+        "path": "test/parallel/test-tls-session-reuse-provided-socket.js",
+        "additions": 99,
         "deletions": 0,
         "riskTier": 2
       }
@@ -75,7 +75,7 @@
       "model": "gemini-3.8-flash",
       "executionStatus": "empty",
       "findingsCount": 0,
-      "latencyMs": 73585,
+      "latencyMs": 37129,
       "stagedFallbackUsed": false,
       "stagedTimeoutCount": 0
     },
@@ -85,7 +85,7 @@
       "model": "claude-5.5-sonnet",
       "executionStatus": "empty",
       "findingsCount": 0,
-      "latencyMs": 26022,
+      "latencyMs": 21583,
       "stagedFallbackUsed": false,
       "stagedTimeoutCount": 0
     },
@@ -93,46 +93,35 @@
       "provider": "codex",
       "family": "openai",
       "model": "gpt-6.1-sol",
-      "executionStatus": "success",
-      "findingsCount": 1,
-      "latencyMs": 31849,
+      "executionStatus": "empty",
+      "findingsCount": 0,
+      "latencyMs": 25767,
       "stagedFallbackUsed": false,
       "stagedTimeoutCount": 0
     }
   },
   "consensus": {
-    "verdict": "needs-attention",
+    "verdict": "approve",
     "quorumReached": true,
-    "totalFindings": 1,
-    "findings": [
-      {
-        "title": "Hook checks are bypassed by matcher tail iterations",
-        "severity": "high",
-        "file": "deps/lua/src/lstrlib.c",
-        "line": 394,
-        "corroborations": 1,
-        "sources": [
-          "codex"
-        ]
-      }
-    ]
+    "totalFindings": 0,
+    "findings": []
   },
   "advisoryGate": {
-    "decision": "human_review_required",
-    "reason": "Critical/high severity contested by verifier: \"Hook checks are bypassed by matcher tail iterations\"",
+    "decision": "approve",
+    "reason": "Clean Challenge passed: zero findings and zero verified omissions.",
     "preVerificationDecision": "block",
     "effectiveMergeAuthority": "NONE",
     "simulatedGateBlock": false,
     "mergeBlockedInProduction": false
   },
   "telemetryMetrics": {
-    "totalDurationMs": 101596,
-    "reviewerPhaseDurationMs": 76691,
-    "avgProviderLatencyMs": 43819,
+    "totalDurationMs": 117786,
+    "reviewerPhaseDurationMs": 95026,
+    "avgProviderLatencyMs": 28160,
     "executionComplete": true,
-    "cleanChallengeAttempted": false,
-    "cleanChallengeDurationMs": 0,
-    "cleanChallengeStatus": "SKIPPED",
+    "cleanChallengeAttempted": true,
+    "cleanChallengeDurationMs": 22756,
+    "cleanChallengeStatus": "SUCCESS",
     "malformedOutputCount": 0,
     "reviewerTimeoutCount": 0,
     "verifierTimeoutCount": 0,
@@ -148,7 +137,7 @@
       "platform": "win32",
       "transport": "stream-json",
       "budgetAllocatedMs": 300000,
-      "globalDeadlineRemainingMs": 223309,
+      "globalDeadlineRemainingMs": 204974,
       "stagedFallbackUsed": false,
       "chunkCount": null,
       "maxConcurrency": 1,
@@ -160,42 +149,27 @@
   },
   "verificationRecord": {
     "schemaVersion": "1.0.0",
-    "verifiedAt": "2026-10-29T04:24:41.430Z",
-    "changeSetDigest": "sha256:0bb56d64134334ae160c27c31ab7593c3ccc5c1cb8c09c1c54fb92fec40a8f30",
-    "headSha": "ba4851525053c756386fbdebefb5e765ed4abc6e",
-    "runId": "dogfood-1793247779155-88dd84b1-9d26-4e66-ad57-b46797d486e2",
+    "verifiedAt": "2026-10-29T04:38:38.199Z",
+    "changeSetDigest": "sha256:5e4c05e41082a7f99879a34a03037b2263cd666cb43da9c31fe28142b9a48b0c",
+    "headSha": "4592e0f0dc8905e0a9465566cecb229e63e93d42",
+    "runId": "dogfood-1793248599787-74832493-9be4-4ea3-91e9-bfb5f38c3882",
     "exclusions": [
-      "Do not modify Lua pattern syntax or matching semantics; do not alter Redis global script execution policy or lua-time-limit/BUSY semantics; do not introduce unrelated architectural refactoring or dependencies outside deps/lua/src/lstrlib.c and tests/unit/scripting.tcl."
+      "Do not alter TLS session caching algorithms or crypto primitives; do not modify general net.Socket connection handling outside literal-IP host preservation; do not alter servername precedence."
     ],
-    "verificationMode": "producer_verification",
-    "patchObjective": "Fix Redis embedded Lua pattern matcher in C executing long-running matching without yielding to Lua execution control. Guarantee periodic interrupt hook checks during C-level matching, timeout and cancellation via lua-time-limit/SCRIPT KILL, and semantic preservation across string.find/match/gmatch/gsub.",
+    "verificationMode": "clean_challenge",
+    "patchObjective": "Fix TLS session resumption binding for literal-IP wrapped sockets by preserving requested host before connection starts, properly binding session cache keys and checkServerIdentity to the authentic peer IP instead of fallback localhost.",
     "objectiveContract": {
-      "objective": "Fix Redis embedded Lua pattern matcher in C executing long-running matching without yielding to Lua execution control. Guarantee periodic interrupt hook checks during C-level matching, timeout and cancellation via lua-time-limit/SCRIPT KILL, and semantic preservation across string.find/match/gmatch/gsub.",
+      "objective": "Fix TLS session resumption binding for literal-IP wrapped sockets by preserving requested host before connection starts, properly binding session cache keys and checkServerIdentity to the authentic peer IP instead of fallback localhost.",
       "exclusions": [
-        "Do not modify Lua pattern syntax or matching semantics; do not alter Redis global script execution policy or lua-time-limit/BUSY semantics; do not introduce unrelated architectural refactoring or dependencies outside deps/lua/src/lstrlib.c and tests/unit/scripting.tcl."
+        "Do not alter TLS session caching algorithms or crypto primitives; do not modify general net.Socket connection handling outside literal-IP host preservation; do not alter servername precedence."
       ],
       "finalizedBeforeRun": true
     },
     "overallStatus": "CLEAN",
     "producer": {
       "providerName": "tri-party-quorum",
-      "findingsCount": 1,
-      "findings": [
-        {
-          "title": "Hook checks are bypassed by matcher tail iterations",
-          "severity": "high",
-          "file": "deps/lua/src/lstrlib.c",
-          "line_start": 394,
-          "line_end": 398,
-          "cwe": "CWE-400",
-          "type": "INCOMPLETE_FIX",
-          "recommendation": "Place the countdown check inside the init loop and account for work in other potentially unbounded matcher loops. Tail iterations using goto init currently bypass the check, so a single match call can still perform arbitrarily long matching without servicing timeout or cancellation. Add cancellation tests for long literal patterns through string.match and for long scans within matcher helpers, alongside the backtracking test.",
-          "sources": [
-            "codex"
-          ],
-          "corroborations": 1
-        }
-      ]
+      "findingsCount": 0,
+      "findings": []
     },
     "verifier": {
       "providerName": "claude",
@@ -211,52 +185,14 @@
         "usageSource": "unavailable"
       }
     },
-    "evaluations": [
-      {
-        "findingId": "finding-1",
-        "verdict": "CONTESTED",
-        "classification": "CONTRADICTED",
-        "locatorAccurate": true,
-        "typeAccurate": false,
-        "severityAccurate": false,
-        "objectiveImpact": "DOES_NOT_FALSIFY_PATCH_OBJECTIVE",
-        "reasoning": "The countdown check sits before the `init:` label in match(), so `goto init` tail iterations do skip it. This is a real structural observation. It does not produce unbounded work, though. Every `goto init` path (default single char, `%b`, `%f`, `$`, the end of a capture, and so on) advances `p` through the pattern, so tail iterations are bounded by the pattern length and are linear. The work that can blow up is catastrophic backtracking. That work happens in max_expand, min_expand, start_capture, end_capture and the optional-suffix cases, and each of those re-enters match() through a real recursive call. Each recursive call passes the top-of-function check and decrements matchcount. The inner `while (singlematch(...)) i++` loop in max_expand is linear in the subject length per call, and the match() calls it makes afterwards are counted. The do-while in str_find_aux, the gmatch loop and the gsub loop each call match() per start position, so those are counted too. Recursion depth is capped by MAXCCALLS. The only way to spend a long time without a check is a very large pattern, which is linear and limited by the maximum string size. That is not the unbounded stall the patch targets. The finding's claim that a single match call can run 'arbitrarily long' without servicing timeout or cancellation is therefore not supported. The recommended placement inside the init loop would also add overhead on the hot path for little gain. The patch's tests exercise the backtracking path that matters.",
-        "dissent": "Tail iterations advance the pattern pointer monotonically, so they cost at most O(pattern length). Super-linear or exponential matching cost always passes through recursive match() calls, which are counted. The bypass exists but does not defeat timeout or SCRIPT KILL, so 'high' severity and INCOMPLETE_FIX are not justified."
-      }
-    ],
+    "evaluations": [],
     "verifierOmissions": [],
-    "disagreementLedger": [
-      {
-        "findingId": "finding-1",
-        "producerFinding": {
-          "title": "Hook checks are bypassed by matcher tail iterations",
-          "severity": "high",
-          "file": "deps/lua/src/lstrlib.c",
-          "line_start": 394,
-          "line_end": 398,
-          "cwe": "CWE-400",
-          "type": "INCOMPLETE_FIX",
-          "recommendation": "Place the countdown check inside the init loop and account for work in other potentially unbounded matcher loops. Tail iterations using goto init currently bypass the check, so a single match call can still perform arbitrarily long matching without servicing timeout or cancellation. Add cancellation tests for long literal patterns through string.match and for long scans within matcher helpers, alongside the backtracking test.",
-          "sources": [
-            "codex"
-          ],
-          "corroborations": 1
-        },
-        "verdict": "CONTESTED",
-        "classification": "CONTRADICTED",
-        "locatorAccurate": true,
-        "typeAccurate": false,
-        "severityAccurate": false,
-        "objectiveImpact": "DOES_NOT_FALSIFY_PATCH_OBJECTIVE",
-        "reasoning": "The countdown check sits before the `init:` label in match(), so `goto init` tail iterations do skip it. This is a real structural observation. It does not produce unbounded work, though. Every `goto init` path (default single char, `%b`, `%f`, `$`, the end of a capture, and so on) advances `p` through the pattern, so tail iterations are bounded by the pattern length and are linear. The work that can blow up is catastrophic backtracking. That work happens in max_expand, min_expand, start_capture, end_capture and the optional-suffix cases, and each of those re-enters match() through a real recursive call. Each recursive call passes the top-of-function check and decrements matchcount. The inner `while (singlematch(...)) i++` loop in max_expand is linear in the subject length per call, and the match() calls it makes afterwards are counted. The do-while in str_find_aux, the gmatch loop and the gsub loop each call match() per start position, so those are counted too. Recursion depth is capped by MAXCCALLS. The only way to spend a long time without a check is a very large pattern, which is linear and limited by the maximum string size. That is not the unbounded stall the patch targets. The finding's claim that a single match call can run 'arbitrarily long' without servicing timeout or cancellation is therefore not supported. The recommended placement inside the init loop would also add overhead on the hot path for little gain. The patch's tests exercise the backtracking path that matters.",
-        "dissent": "Tail iterations advance the pattern pointer monotonically, so they cost at most O(pattern length). Super-linear or exponential matching cost always passes through recursive match() calls, which are counted. The bypass exists but does not defeat timeout or SCRIPT KILL, so 'high' severity and INCOMPLETE_FIX are not justified."
-      }
-    ],
+    "disagreementLedger": [],
     "summary": {
-      "totalEvaluated": 1,
+      "totalEvaluated": 0,
       "supportedCount": 0,
       "partiallySupportedCount": 0,
-      "contestedCount": 1,
+      "contestedCount": 0,
       "insufficientEvidenceCount": 0,
       "omissionsCount": 0
     },
