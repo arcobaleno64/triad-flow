@@ -1433,6 +1433,21 @@ export async function runDogfoodReview(userOptions = {}) {
     verifierTimedOut = true;
   });
 
+  const hasInjectedVerifier = Boolean(userOptions.verifierAdapter && typeof userOptions.verifierAdapter === "object");
+  const activeVerifierName = hasInjectedVerifier
+    ? (verifierAdapter?.providerName || verifierAdapter?.provider || "claude")
+    : "claude";
+  const activeVerifierModel = hasInjectedVerifier
+    ? (verifierAdapter?.modelName || verifierAdapter?.model || (typeof verifierAdapter?.actualModel === "object" ? verifierAdapter?.actualModel?.value : verifierAdapter?.actualModel) || "claude-5.5-sonnet")
+    : "claude-5.5-sonnet";
+  const activeActualModel = hasInjectedVerifier
+    ? (userOptions.verifierAdapter.actualModel
+      ? (typeof userOptions.verifierAdapter.actualModel === "object"
+        ? { ...userOptions.verifierAdapter.actualModel }
+        : { value: String(userOptions.verifierAdapter.actualModel), source: "reported" })
+      : { value: `${activeVerifierModel} (independent_verifier_stage)`, source: "reported" })
+    : { value: "claude-5.5-sonnet (independent_verifier_stage)", source: "reported" };
+
   if (findings.length > 0 && !isStructuralFailure) {
     cleanChallengeAttempted = false;
     cleanChallengeDurationMs = 0;
@@ -1444,8 +1459,9 @@ export async function runDogfoodReview(userOptions = {}) {
       {
         producerName: "tri-party-quorum",
         producerModel: "agy+claude+codex",
-        verifierName: "claude",
-        verifierModel: "claude-5.5-sonnet",
+        verifierName: activeVerifierName,
+        verifierModel: activeVerifierModel,
+        ...(activeActualModel ? { actualModel: activeActualModel } : {}),
         changeSetDigest: changeSet.contentDigest,
         patchObjective: userOptions.patchObjective || null,
         objectiveContract,
@@ -1497,12 +1513,9 @@ export async function runDogfoodReview(userOptions = {}) {
         {
           producerName: "tri-party-quorum",
           producerModel: "agy+claude+codex",
-          verifierName: "claude",
-          verifierModel: "claude-5.5-sonnet",
-          actualModel: {
-            value: "claude-5.5-sonnet (independent_verifier_stage)",
-            source: "reported"
-          },
+          verifierName: activeVerifierName,
+          verifierModel: activeVerifierModel,
+          ...(activeActualModel ? { actualModel: activeActualModel } : {}),
           changeSetDigest: changeSet.contentDigest,
           patchObjective: userOptions.patchObjective || null,
           objectiveContract,
