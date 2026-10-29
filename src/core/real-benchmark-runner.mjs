@@ -204,12 +204,20 @@ export async function evaluateCorpusCase(caseDef, adapters = {}, options = {}) {
     // Preliminary Passed reflects 3-point check under preliminary review conditions
     const preliminaryPassed = Boolean(detectionPass && preliminaryGatePolicyPass && executionComplete);
 
-    // Final Gate Assessment:
-    // At the final governance gate, clean cases without independent verification (clean_challenge) FAIL-CLOSED (BLOCK).
-    // Therefore, preliminary approval of clean cases does NOT translate to final gate approval.
-    const finalGateDecision = isClean ? "block" : actualGateDecision;
-    const finalGatePolicyPass = finalGateDecision === caseDef.expectedGateDecision;
-    const finalGatePassed = Boolean(detectionPass && finalGatePolicyPass && executionComplete);
+    // Final Gate Assessment (Threads ra7k3, rtv6N, slqmG):
+    // At the final governance gate, any run without independent verification (Clean Challenge)
+    // fails closed to BLOCK (whether zero-finding consensus or caught blocking findings).
+    // Therefore, derive final gate decision based on observed findings and verification state,
+    // never on ground-truth category (Thread rtv6N).
+    // In preliminary mode without independent verification, no case can pass final gate policy
+    // or be scored as finalGatePassed: true (Thread slqmG).
+    const finalGateDecision = isPreliminary ? "block" : actualGateDecision;
+    const finalGatePolicyPass = isPreliminary
+      ? false
+      : (finalGateDecision === caseDef.expectedGateDecision);
+    const finalGatePassed = isPreliminary
+      ? false
+      : Boolean(detectionPass && finalGatePolicyPass && executionComplete);
 
     // Promotion Eligibility:
     // In accordance with governance invariant (Thread 43), preliminary benchmark passes are strictly decoupled
