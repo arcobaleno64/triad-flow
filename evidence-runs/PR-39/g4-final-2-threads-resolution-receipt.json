@@ -1,0 +1,22 @@
+[
+  {
+    "index": 1,
+    "threadId": "PRRT_kwDOUWarIc6slAMv",
+    "shortId": "slAMv",
+    "cluster": "C1",
+    "commentId": "PRRC_kwDOUWarIc8AAAABBa5Fug",
+    "databaseId": 4390274490,
+    "isResolved": true,
+    "status": "RESOLVED"
+  },
+  {
+    "index": 2,
+    "threadId": "PRRT_kwDOUWarIc6rxCha",
+    "shortId": "rxCha",
+    "cluster": "C14B",
+    "commentId": "PRRC_kwDOUWarIc8AAAABBa5nhg",
+    "databaseId": 4390283142,
+    "isResolved": true,
+    "status": "RESOLVED"
+  }
+]

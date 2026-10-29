@@ -1,0 +1,31 @@
+{
+  "tracked": {
+    "file": "pr39-r8-tracked.patch",
+    "bytes": 44445,
+    "sha256": "26069A6B6BBCA179D5D9040B41EFBADE6D8E3FA9D4A71965A93D6924ADCEF58B",
+    "files": {
+      "scripts/dogfood-review.mjs": {
+        "base": "23a98afcebf7ca00094e951a88535a4a476ef263",
+        "current": "ad40d564ef4e4efde13e59c39eea95731e859d51"
+      },
+      "src/adapters/review-prompts.mjs": {
+        "base": "6d8c183e466d835dcd3c5f43f84c717932207a7f",
+        "current": "f0c379d21d786eb39a92cc7e5453d6caec72abc0"
+      },
+      "src/cli.mjs": {
+        "base": "319c8e382989dbe6e30a322a950e55edb8ab6f82",
+        "current": "3c64bdb7d046bd7350b5385847cd33623b54bde1"
+      },
+      "src/core/context-builder.mjs": {
+        "base": "779d4462e4aef90950fb9d87f78cd74adfb5632b",
+        "current": "6e669a272eac612277f7c56c827694c1904d2af3"
+      }
+    }
+  },
+  "newTest": {
+    "file": "pr39-r8-new-test.patch",
+    "bytes": 49777,
+    "sha256": "9B495B716DF0887C6B2965AEB4EF668944F5BBC54466E7D6078ABC9D396B2634",
+    "blob": "d0642ea4852febe4e6b297f88e1ef9154410950d"
+  }
+}

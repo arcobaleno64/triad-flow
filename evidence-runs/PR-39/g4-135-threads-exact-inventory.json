@@ -1,0 +1,1356 @@
+{
+  "currentP2": [
+    {
+      "id": "PRRT_kwDOUWarIc6qo0ue",
+      "shortId": "qo0ue",
+      "badge": "P2",
+      "path": "src/core/context-builder.mjs",
+      "line": 2911,
+      "originalLine": 811,
+      "commentId": 4226422263,
+      "title": "Enforce the AST ceiling after retaining unresolved callees"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6qo0uh",
+      "shortId": "qo0uh",
+      "badge": "P2",
+      "path": "src/core/context-builder.mjs",
+      "line": 3561,
+      "originalLine": 891,
+      "commentId": 4226422268,
+      "title": "Isolate target-file hunks before extracting callees"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6qwj_9",
+      "shortId": "qwj_9",
+      "badge": "P2",
+      "path": "scripts/dogfood-review.mjs",
+      "line": 592,
+      "originalLine": 569,
+      "commentId": 4229596206,
+      "title": "Validate caller-supplied run IDs before using them in checkpoints"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rTXZk",
+      "shortId": "rTXZk",
+      "badge": "P2",
+      "path": "src/core/context-builder.mjs",
+      "line": 590,
+      "originalLine": 267,
+      "commentId": 4243995532,
+      "title": "Implement indentation-based extraction for Python definitions"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rTXZl",
+      "shortId": "rTXZl",
+      "badge": "P2",
+      "path": "src/adapters/staged-review.mjs",
+      "line": 248,
+      "originalLine": 237,
+      "commentId": 4243995535,
+      "title": "Keep sanitized checkpoint names collision-free"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rTowo",
+      "shortId": "rTowo",
+      "badge": "P2",
+      "path": "src/core/context-builder.mjs",
+      "line": 2347,
+      "originalLine": 520,
+      "commentId": 4244107366,
+      "title": "Truncate oversized final lines in bounded snippets"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rY14D",
+      "shortId": "rY14D",
+      "badge": "P2",
+      "path": "src/core/git-collector.mjs",
+      "line": 439,
+      "originalLine": 49,
+      "commentId": 4246211380,
+      "title": "Partition exact-head cache entries by repository"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6ra7kS",
+      "shortId": "ra7kS",
+      "badge": "P2",
+      "path": "src/core/context-builder.mjs",
+      "line": 1849,
+      "originalLine": 529,
+      "commentId": 4247059201,
+      "title": "Reset lexical state at each disjoint diff hunk"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rhwE0",
+      "shortId": "rhwE0",
+      "badge": "P2",
+      "path": "src/core/review-run-report.mjs",
+      "line": 130,
+      "originalLine": 130,
+      "commentId": 4249835352,
+      "title": "Preserve verifier advisories in review reports"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rhwE4",
+      "shortId": "rhwE4",
+      "badge": "P2",
+      "path": "src/core/context-builder.mjs",
+      "line": 698,
+      "originalLine": 359,
+      "commentId": 4249835361,
+      "title": "Bound Python definitions by indentation instead of braces"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rrHOb",
+      "shortId": "rrHOb",
+      "badge": "P2",
+      "path": "src/adapters/staged-review.mjs",
+      "line": 249,
+      "originalLine": 238,
+      "commentId": 4253760330,
+      "title": "Keep sanitized checkpoint names collision-resistant"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rrUDs",
+      "shortId": "rrUDs",
+      "badge": "P2",
+      "path": "src/core/git-collector.mjs",
+      "line": 32,
+      "originalLine": 32,
+      "commentId": 4253845247,
+      "title": "Bound the exact-head content cache"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rte6b",
+      "shortId": "rte6b",
+      "badge": "P2",
+      "path": "src/core/independent-verifier.mjs",
+      "line": 2212,
+      "originalLine": 856,
+      "commentId": 4254759588,
+      "title": "Reserve input budget before appending context"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rtv6N",
+      "shortId": "rtv6N",
+      "badge": "P2",
+      "path": "src/core/real-benchmark-runner.mjs",
+      "line": 210,
+      "originalLine": 191,
+      "commentId": 4254871024,
+      "title": "Derive final gate blocking from observed findings"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rtv6O",
+      "shortId": "rtv6O",
+      "badge": "P2",
+      "path": "src/core/independent-verifier.mjs",
+      "line": 2994,
+      "originalLine": 1447,
+      "commentId": 4254871027,
+      "title": "Preserve normalized omission remediation metadata"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rvWjN",
+      "shortId": "rvWjN",
+      "badge": "P2",
+      "path": "src/adapters/staged-review.mjs",
+      "line": 247,
+      "originalLine": 236,
+      "commentId": 4255528805,
+      "title": "Preserve run-ID uniqueness in checkpoint filenames"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6r0R6m",
+      "shortId": "r0R6m",
+      "badge": "P2",
+      "path": "src/core/git-collector.mjs",
+      "line": 455,
+      "originalLine": 65,
+      "commentId": 4257548085,
+      "title": "Do not cache failed exact-head lookups"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6r1BuM",
+      "shortId": "r1BuM",
+      "badge": "P2",
+      "path": "src/core/independent-verifier.mjs",
+      "line": 2927,
+      "originalLine": 1443,
+      "commentId": 4257856839,
+      "title": "Require reasoning before supporting an omission"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6sMI66",
+      "shortId": "sMI66",
+      "badge": "P2",
+      "path": "src/adapters/review-prompts.mjs",
+      "line": 375,
+      "originalLine": 365,
+      "commentId": 4267490683,
+      "title": "Budget context before rendering reviewer prompts"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6sMI7U",
+      "shortId": "sMI7U",
+      "badge": "P2",
+      "path": "scripts/triage-pr39-threads.mjs",
+      "line": 605,
+      "originalLine": 420,
+      "commentId": 4267490713,
+      "title": "Count the dual-visibility category in the JSON ledger"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6sUDZa",
+      "shortId": "sUDZa",
+      "badge": "P2",
+      "path": "scripts/dogfood-review.mjs",
+      "line": 1505,
+      "originalLine": 1291,
+      "commentId": 4270758757,
+      "title": "Derive Clean Challenge provenance from the active verifier"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6slANA",
+      "shortId": "slANA",
+      "badge": "P2",
+      "path": "src/core/git-collector.mjs",
+      "line": 32,
+      "originalLine": 32,
+      "commentId": 4277864200,
+      "title": "Bound the exact-head content cache"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6slqmG",
+      "shortId": "slqmG",
+      "badge": "P2",
+      "path": "src/core/real-benchmark-runner.mjs",
+      "line": 212,
+      "originalLine": 193,
+      "commentId": 4278137710,
+      "title": "Keep all preliminary cases out of final-gate scores"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6tfxJj",
+      "shortId": "tfxJj",
+      "badge": "P2",
+      "path": "src/cli.mjs",
+      "line": 1251,
+      "originalLine": 1157,
+      "commentId": 4302511354,
+      "title": "Handle missing consensus when rendering SARIF"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6tfxJo",
+      "shortId": "tfxJo",
+      "badge": "P2",
+      "path": "src/adapters/cli-transport.mjs",
+      "line": 269,
+      "originalLine": 182,
+      "commentId": 4302511361,
+      "title": "Prevent nested options from overriding canonical prompt bindings"
+    }
+  ],
+  "outdated": [
+    {
+      "id": "PRRT_kwDOUWarIc6qo0uL",
+      "shortId": "qo0uL",
+      "badge": "P1",
+      "path": "src/core/harness.mjs",
+      "line": null,
+      "originalLine": 372,
+      "commentId": 4226422237,
+      "title": "Require clean verification in the default gate path"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6qo0uP",
+      "shortId": "qo0uP",
+      "badge": "P1",
+      "path": "src/core/independent-verifier.mjs",
+      "line": null,
+      "originalLine": 244,
+      "commentId": 4226422242,
+      "title": "Keep verification capability minting private"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6qo0uZ",
+      "shortId": "qo0uZ",
+      "badge": "P1",
+      "path": "src/core/independent-verifier.mjs",
+      "line": null,
+      "originalLine": 317,
+      "commentId": 4226422253,
+      "title": "Validate counterexample content before granting support"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6qo0uk",
+      "shortId": "qo0uk",
+      "badge": "P1",
+      "path": "src/core/harness.mjs",
+      "line": null,
+      "originalLine": 345,
+      "commentId": 4226422271,
+      "title": "Bind objective exclusions when validating the run context"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6qo0un",
+      "shortId": "qo0un",
+      "badge": "P1",
+      "path": "src/core/harness.mjs",
+      "line": null,
+      "originalLine": 361,
+      "commentId": 4226422275,
+      "title": "Require clean-challenge mode for zero-finding records"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6qo0ur",
+      "shortId": "qo0ur",
+      "badge": "P1",
+      "path": "src/core/independent-verifier.mjs",
+      "line": null,
+      "originalLine": 927,
+      "commentId": 4226422280,
+      "title": "Require explicit omission line locators"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6qo0uv",
+      "shortId": "qo0uv",
+      "badge": "P2",
+      "path": "src/core/context-builder.mjs",
+      "line": null,
+      "originalLine": 343,
+      "commentId": 4226422285,
+      "title": "Detect sensitive terms inside camelCase symbols"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6qo0u0",
+      "shortId": "qo0u0",
+      "badge": "P2",
+      "path": "src/core/independent-verifier.mjs",
+      "line": null,
+      "originalLine": 1616,
+      "commentId": 4226422291,
+      "title": "Prefer observed verifier identity over caller metadata"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6qwj_j",
+      "shortId": "qwj_j",
+      "badge": "P1",
+      "path": "src/core/context-builder.mjs",
+      "line": null,
+      "originalLine": 560,
+      "commentId": 4229596162,
+      "title": "Preserve sensitive gaps after reaching the callee limit"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6qwj_p",
+      "shortId": "qwj_p",
+      "badge": "P1",
+      "path": "src/core/independent-verifier.mjs",
+      "line": null,
+      "originalLine": 1060,
+      "commentId": 4229596174,
+      "title": "Reject verification responses without a valid overall status"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6qwj_t",
+      "shortId": "qwj_t",
+      "badge": "P1",
+      "path": "scripts/dogfood-review.mjs",
+      "line": null,
+      "originalLine": 729,
+      "commentId": 4229596183,
+      "title": "Keep the verifier real when live reviewers are injected"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6qwj_0",
+      "shortId": "qwj_0",
+      "badge": "P2",
+      "path": "src/core/context-builder.mjs",
+      "line": null,
+      "originalLine": 412,
+      "commentId": 4229596194,
+      "title": "Exclude comments and string literals from callee discovery"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rTXZd",
+      "shortId": "rTXZd",
+      "badge": "P1",
+      "path": "src/core/context-builder.mjs",
+      "line": null,
+      "originalLine": 295,
+      "commentId": 4243995524,
+      "title": "Skip parameter braces when locating function bodies"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rTXZh",
+      "shortId": "rTXZh",
+      "badge": "P1",
+      "path": "src/core/context-builder.mjs",
+      "line": null,
+      "originalLine": 798,
+      "commentId": 4243995529,
+      "title": "Record uncertainty when byte-budget eviction drops callees"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rTXZn",
+      "shortId": "rTXZn",
+      "badge": "P1",
+      "path": "src/core/independent-verifier.mjs",
+      "line": null,
+      "originalLine": 991,
+      "commentId": 4243995537,
+      "title": "Reject omissions that lack an evidence-support verdict"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rTowe",
+      "shortId": "rTowe",
+      "badge": "P1",
+      "path": "src/core/independent-verifier.mjs",
+      "line": null,
+      "originalLine": 261,
+      "commentId": 4244107351,
+      "title": "Keep the remaining verification issuer private"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rTowi",
+      "shortId": "rTowi",
+      "badge": "P2",
+      "path": "src/core/context-builder.mjs",
+      "line": null,
+      "originalLine": 888,
+      "commentId": 4244107357,
+      "title": "Distinguish an empty blob from a failed exact-head lookup"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rTowl",
+      "shortId": "rTowl",
+      "badge": "P1",
+      "path": "src/core/independent-verifier.mjs",
+      "line": null,
+      "originalLine": 1853,
+      "commentId": 4244107361,
+      "title": "Preserve verifier uncertainty over caller overrides"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rTowq",
+      "shortId": "rTowq",
+      "badge": "P1",
+      "path": "src/core/context-builder.mjs",
+      "line": null,
+      "originalLine": 266,
+      "commentId": 4244107369,
+      "title": "Reject call sites when locating callee definitions"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rVNc1",
+      "shortId": "rVNc1",
+      "badge": "P1",
+      "path": "src/core/independent-verifier.mjs",
+      "line": null,
+      "originalLine": 1288,
+      "commentId": 4244747736,
+      "title": "Propagate every sensitive context gap to uncertainty"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rY13u",
+      "shortId": "rY13u",
+      "badge": "P1",
+      "path": "src/core/independent-verifier.mjs",
+      "line": null,
+      "originalLine": 1886,
+      "commentId": 4246211349,
+      "title": "Keep recorded exclusions identical to verifier scope"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rY131",
+      "shortId": "rY131",
+      "badge": "P2",
+      "path": "src/core/independent-verifier.mjs",
+      "line": null,
+      "originalLine": 1164,
+      "commentId": 4246211357,
+      "title": "Verify omission locators against the reviewed diff"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rY139",
+      "shortId": "rY139",
+      "badge": "P1",
+      "path": "src/core/independent-verifier.mjs",
+      "line": null,
+      "originalLine": 1241,
+      "commentId": 4246211371,
+      "title": "Reject Clean Challenge evaluations without producer findings"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6ra7kH",
+      "shortId": "ra7kH",
+      "badge": "P1",
+      "path": "src/adapters/review-orchestrator.mjs",
+      "line": null,
+      "originalLine": 238,
+      "commentId": 4247059187,
+      "title": "Bind supplied records to the current ChangeSet"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6ra7ki",
+      "shortId": "ra7ki",
+      "badge": "P2",
+      "path": "scripts/dogfood-review.mjs",
+      "line": null,
+      "originalLine": 972,
+      "commentId": 4247059224,
+      "title": "Build callee context before invoking primary reviewers"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6ra7kt",
+      "shortId": "ra7kt",
+      "badge": "P1",
+      "path": "src/adapters/review-prompts.mjs",
+      "line": null,
+      "originalLine": 222,
+      "commentId": 4247059249,
+      "title": "Escape callee source before embedding prompt markup"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6ra7k3",
+      "shortId": "ra7k3",
+      "badge": "P1",
+      "path": "src/core/real-benchmark-runner.mjs",
+      "line": null,
+      "originalLine": 94,
+      "commentId": 4247059262,
+      "title": "Do not score preliminary approvals as final gate passes"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6re305",
+      "shortId": "re305",
+      "badge": "P1",
+      "path": "src/adapters/review-orchestrator.mjs",
+      "line": null,
+      "originalLine": 78,
+      "commentId": 4248658394,
+      "title": "Derive the binding digest from ChangeSet contents"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6re31A",
+      "shortId": "re31A",
+      "badge": "P1",
+      "path": "src/core/context-builder.mjs",
+      "line": null,
+      "originalLine": 528,
+      "commentId": 4248658403,
+      "title": "Track qualified sensitive calls during callee discovery"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6re31E",
+      "shortId": "re31E",
+      "badge": "P1",
+      "path": "src/core/context-builder.mjs",
+      "line": null,
+      "originalLine": 197,
+      "commentId": 4248658410,
+      "title": "Preserve string state across lines during brace matching"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6re31K",
+      "shortId": "re31K",
+      "badge": "P1",
+      "path": "scripts/dogfood-review.mjs",
+      "line": 1416,
+      "originalLine": 984,
+      "commentId": 4248658421,
+      "title": "Fail closed when context-package extraction throws"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6re31P",
+      "shortId": "re31P",
+      "badge": "P1",
+      "path": "src/core/harness.mjs",
+      "line": null,
+      "originalLine": 686,
+      "commentId": 4248658426,
+      "title": "Reject unexplained DEFECTS_FOUND statuses"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6re31W",
+      "shortId": "re31W",
+      "badge": "P1",
+      "path": "src/core/independent-verifier.mjs",
+      "line": null,
+      "originalLine": 484,
+      "commentId": 4248658435,
+      "title": "Do not accept remediation advice as a counterexample"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rfkYK",
+      "shortId": "rfkYK",
+      "badge": "P1",
+      "path": "scripts/dogfood-review.mjs",
+      "line": null,
+      "originalLine": 970,
+      "commentId": 4248945495,
+      "title": "Fail closed when supplied changesets lack repository roots"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rfkYW",
+      "shortId": "rfkYW",
+      "badge": "P2",
+      "path": "src/core/context-builder.mjs",
+      "line": null,
+      "originalLine": 1173,
+      "commentId": 4248945511,
+      "title": "Do not report deleted files as unavailable context"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rfkYc",
+      "shortId": "rfkYc",
+      "badge": "P2",
+      "path": "src/core/independent-verifier.mjs",
+      "line": null,
+      "originalLine": 1122,
+      "commentId": 4248945519,
+      "title": "Reject non-boolean omission locator verdicts"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rhwEt",
+      "shortId": "rhwEt",
+      "badge": "P1",
+      "path": "src/adapters/review-orchestrator.mjs",
+      "line": null,
+      "originalLine": 347,
+      "commentId": 4249835342,
+      "title": "Forward the risk tier into the authoritative gate"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rhwEx",
+      "shortId": "rhwEx",
+      "badge": "P2",
+      "path": "src/core/context-builder.mjs",
+      "line": null,
+      "originalLine": 866,
+      "commentId": 4249835348,
+      "title": "Resolve newly added local definitions before declaring a gap"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6riPTk",
+      "shortId": "riPTk",
+      "badge": "P1",
+      "path": "src/core/harness.mjs",
+      "line": null,
+      "originalLine": 656,
+      "commentId": 4250035808,
+      "title": "Bind verifier records to the current finding set"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6riPTp",
+      "shortId": "riPTp",
+      "badge": "P1",
+      "path": "src/core/context-builder.mjs",
+      "line": null,
+      "originalLine": 637,
+      "commentId": 4250035813,
+      "title": "Preserve receiver identity when deduplicating callees"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6riPTv",
+      "shortId": "riPTv",
+      "badge": "P2",
+      "path": "src/core/harness.mjs",
+      "line": null,
+      "originalLine": 341,
+      "commentId": 4250035818,
+      "title": "Convert invalid run contexts into fail-closed decisions"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6riPT0",
+      "shortId": "riPT0",
+      "badge": "P1",
+      "path": "scripts/dogfood-review.mjs",
+      "line": null,
+      "originalLine": 969,
+      "commentId": 4250035828,
+      "title": "Bind supplied context packages to the reviewed ChangeSet"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rrHOT",
+      "shortId": "rrHOT",
+      "badge": "P1",
+      "path": "src/core/harness.mjs",
+      "line": null,
+      "originalLine": 550,
+      "commentId": 4253760320,
+      "title": "Compare the complete finding when binding records"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rrHOW",
+      "shortId": "rrHOW",
+      "badge": "P1",
+      "path": "src/core/context-builder.mjs",
+      "line": null,
+      "originalLine": 543,
+      "commentId": 4253760323,
+      "title": "Recognize optional-call syntax during callee discovery"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rrHOY",
+      "shortId": "rrHOY",
+      "badge": "P2",
+      "path": "src/core/context-builder.mjs",
+      "line": null,
+      "originalLine": 1252,
+      "commentId": 4253760326,
+      "title": "Read renamed files from their HEAD-side path"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rrUDl",
+      "shortId": "rrUDl",
+      "badge": "P1",
+      "path": "src/core/context-builder.mjs",
+      "line": null,
+      "originalLine": 988,
+      "commentId": 4253845240,
+      "title": "Resolve `this` callees only against the owning class"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rrUDp",
+      "shortId": "rrUDp",
+      "badge": "P1",
+      "path": "src/core/independent-verifier.mjs",
+      "line": null,
+      "originalLine": 1510,
+      "commentId": 4253845244,
+      "title": "Enforce verifier output-size limits while streaming"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rr-JA",
+      "shortId": "rr-JA",
+      "badge": "P1",
+      "path": "src/core/independent-verifier.mjs",
+      "line": null,
+      "originalLine": 1932,
+      "commentId": 4254122981,
+      "title": "Preserve package gaps when explicit gaps are empty"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rr-JF",
+      "shortId": "rr-JF",
+      "badge": "P1",
+      "path": "src/adapters/review-orchestrator.mjs",
+      "line": null,
+      "originalLine": 200,
+      "commentId": 4254122987,
+      "title": "Bind canonical context to the current orchestration run"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rsKB4",
+      "shortId": "rsKB4",
+      "badge": "P1",
+      "path": "src/core/context-builder.mjs",
+      "line": null,
+      "originalLine": 618,
+      "commentId": 4254203247,
+      "title": "Scan calls whose parenthesis starts on the next line"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rsKB6",
+      "shortId": "rsKB6",
+      "badge": "P1",
+      "path": "scripts/dogfood-review.mjs",
+      "line": null,
+      "originalLine": 1024,
+      "commentId": 4254203252,
+      "title": "Verify package digests only against recomputed diff hashes"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rsKB8",
+      "shortId": "rsKB8",
+      "badge": "P1",
+      "path": "src/core/harness.mjs",
+      "line": null,
+      "originalLine": 235,
+      "commentId": 4254203256,
+      "title": "Namespace provider-local finding IDs before verification"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rsKB_",
+      "shortId": "rsKB_",
+      "badge": "P1",
+      "path": "src/core/harness.mjs",
+      "line": null,
+      "originalLine": 415,
+      "commentId": 4254203261,
+      "title": "Preserve case when binding excluded paths"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rsajY",
+      "shortId": "rsajY",
+      "badge": "P1",
+      "path": "src/core/context-builder.mjs",
+      "line": null,
+      "originalLine": 700,
+      "commentId": 4254309580,
+      "title": "Treat namespace-scoped calls as qualified"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rsajd",
+      "shortId": "rsajd",
+      "badge": "P2",
+      "path": "scripts/dogfood-review.mjs",
+      "line": null,
+      "originalLine": 970,
+      "commentId": 4254309588,
+      "title": "Build exact-head context before invoking primary sentries"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rte6t",
+      "shortId": "rte6t",
+      "badge": "P1",
+      "path": "src/core/context-builder.mjs",
+      "line": null,
+      "originalLine": 642,
+      "commentId": 4254759607,
+      "title": "Recognize computed member calls during discovery"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rtv6E",
+      "shortId": "rtv6E",
+      "badge": "P1",
+      "path": "scripts/dogfood-review.mjs",
+      "line": null,
+      "originalLine": 976,
+      "commentId": 4254871012,
+      "title": "Treat an omitted repository root as extraction failure"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rtv6M",
+      "shortId": "rtv6M",
+      "badge": "P1",
+      "path": "scripts/dogfood-review.mjs",
+      "line": null,
+      "originalLine": 1084,
+      "commentId": 4254871021,
+      "title": "Reject manifests that lack exact-head coverage"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rvCBG",
+      "shortId": "rvCBG",
+      "badge": "P1",
+      "path": "src/core/harness.mjs",
+      "line": null,
+      "originalLine": 355,
+      "commentId": 4255397307,
+      "title": "Reject malformed RunContext bindings instead of dropping them"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rvCBL",
+      "shortId": "rvCBL",
+      "badge": "P1",
+      "path": "src/core/harness.mjs",
+      "line": null,
+      "originalLine": 559,
+      "commentId": 4255397313,
+      "title": "Encode finding signatures without delimiter collisions"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rxChi",
+      "shortId": "rxChi",
+      "badge": "P2",
+      "path": "src/core/independent-verifier.mjs",
+      "line": null,
+      "originalLine": 1769,
+      "commentId": 4256218594,
+      "title": "Enforce the verifier output-size limit while streaming"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6r0R6i",
+      "shortId": "r0R6i",
+      "badge": "P1",
+      "path": "src/core/context-builder.mjs",
+      "line": null,
+      "originalLine": 364,
+      "commentId": 4257548077,
+      "title": "Parse regex literals before bounding callee bodies"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6r1Bt0",
+      "shortId": "r1Bt0",
+      "badge": "P1",
+      "path": "src/adapters/review-orchestrator.mjs",
+      "line": null,
+      "originalLine": 73,
+      "commentId": 4257856802,
+      "title": "Preserve terminal whitespace in diff bindings"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6r1Bt4",
+      "shortId": "r1Bt4",
+      "badge": "P2",
+      "path": "src/core/independent-verifier.mjs",
+      "line": null,
+      "originalLine": 1375,
+      "commentId": 4257856809,
+      "title": "Require an explicit boolean omission locator flag"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6r1Bt9",
+      "shortId": "r1Bt9",
+      "badge": "P1",
+      "path": "src/core/context-builder.mjs",
+      "line": null,
+      "originalLine": 714,
+      "commentId": 4257856818,
+      "title": "Preserve qualifiers across optional chaining"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6sL8VK",
+      "shortId": "sL8VK",
+      "badge": "P1",
+      "path": "src/adapters/review-orchestrator.mjs",
+      "line": null,
+      "originalLine": 199,
+      "commentId": 4267410092,
+      "title": "Bind records to the orchestrator's generated run ID"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6sL8VO",
+      "shortId": "sL8VO",
+      "badge": "P1",
+      "path": "src/core/independent-verifier.mjs",
+      "line": null,
+      "originalLine": 2211,
+      "commentId": 4267410098,
+      "title": "Validate gaps from the effective context package"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6sL8VV",
+      "shortId": "sL8VV",
+      "badge": "P1",
+      "path": "src/cli.mjs",
+      "line": null,
+      "originalLine": 830,
+      "commentId": 4267410109,
+      "title": "Run the Clean Challenge in the review command"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6sL8VY",
+      "shortId": "sL8VY",
+      "badge": "P1",
+      "path": "src/core/harness.mjs",
+      "line": null,
+      "originalLine": 419,
+      "commentId": 4267410113,
+      "title": "Preserve case when binding exclusions"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6sMI60",
+      "shortId": "sMI60",
+      "badge": "P1",
+      "path": "src/core/context-builder.mjs",
+      "line": null,
+      "originalLine": 1579,
+      "commentId": 4267490674,
+      "title": "Mark absent exact-head metadata as unavailable"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6sMI7C",
+      "shortId": "sMI7C",
+      "badge": "P1",
+      "path": "src/adapters/cli-transport.mjs",
+      "line": null,
+      "originalLine": 181,
+      "commentId": 4267490693,
+      "title": "Prevent nested options from overriding the bound objective"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6sMI7L",
+      "shortId": "sMI7L",
+      "badge": "P1",
+      "path": "src/core/independent-verifier.mjs",
+      "line": null,
+      "originalLine": 1546,
+      "commentId": 4267490703,
+      "title": "Require overallStatus even when omissions are present"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6sMI7c",
+      "shortId": "sMI7c",
+      "badge": "P1",
+      "path": "scripts/dogfood-review.mjs",
+      "line": null,
+      "originalLine": 1072,
+      "commentId": 4267490725,
+      "title": "Preserve context gaps in staged fallback prompts"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6sPGEP",
+      "shortId": "sPGEP",
+      "badge": "P2",
+      "path": "src/core/harness.mjs",
+      "line": null,
+      "originalLine": 699,
+      "commentId": 4268718712,
+      "title": "Reject unknown producer verification modes"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6sPGEb",
+      "shortId": "sPGEb",
+      "badge": "P1",
+      "path": "src/core/git-collector.mjs",
+      "line": null,
+      "originalLine": 394,
+      "commentId": 4268718727,
+      "title": "Do not label the base commit as the working-tree head"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6sPGEl",
+      "shortId": "sPGEl",
+      "badge": "P1",
+      "path": "src/adapters/staged-review.mjs",
+      "line": null,
+      "originalLine": 551,
+      "commentId": 4268718737,
+      "title": "Treat null context packages as absent in staged review"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6sPmwl",
+      "shortId": "sPmwl",
+      "badge": "P1",
+      "path": "src/core/context-builder.mjs",
+      "line": null,
+      "originalLine": 196,
+      "commentId": 4268930117,
+      "title": "Track multiline template literals while scanning braces"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6sPmwt",
+      "shortId": "sPmwt",
+      "badge": "P2",
+      "path": "src/core/context-builder.mjs",
+      "line": null,
+      "originalLine": 1363,
+      "commentId": 4268930127,
+      "title": "Treat deleted files as valid target-head absences"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6sPmwz",
+      "shortId": "sPmwz",
+      "badge": "P2",
+      "path": "scripts/dogfood-review.mjs",
+      "line": null,
+      "originalLine": 1105,
+      "commentId": 4268930136,
+      "title": "Track staged fallback separately for each provider"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6sUDZJ",
+      "shortId": "sUDZJ",
+      "badge": "P1",
+      "path": "src/core/context-builder.mjs",
+      "line": null,
+      "originalLine": 322,
+      "commentId": 4270758731,
+      "title": "Bound Python functions by indentation rather than braces"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6sUDZV",
+      "shortId": "sUDZV",
+      "badge": "P1",
+      "path": "src/core/context-builder.mjs",
+      "line": null,
+      "originalLine": 1012,
+      "commentId": 4270758747,
+      "title": "Resolve this/self calls within the enclosing class"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6sU7ZB",
+      "shortId": "sU7ZB",
+      "badge": "P1",
+      "path": "src/core/context-builder.mjs",
+      "line": null,
+      "originalLine": 425,
+      "commentId": 4271120424,
+      "title": "Make qualified class scope scanning string-aware"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6sU7ZH",
+      "shortId": "sU7ZH",
+      "badge": "P2",
+      "path": "src/core/independent-verifier.mjs",
+      "line": null,
+      "originalLine": 1442,
+      "commentId": 4271120433,
+      "title": "Reject omission locators beyond the target file"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6sU7ZN",
+      "shortId": "sU7ZN",
+      "badge": "P1",
+      "path": "src/core/harness.mjs",
+      "line": null,
+      "originalLine": 347,
+      "commentId": 4271120443,
+      "title": "Require a RunContext for every verification record"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6slAMk",
+      "shortId": "slAMk",
+      "badge": "P1",
+      "path": "src/adapters/staged-review.mjs",
+      "line": null,
+      "originalLine": 422,
+      "commentId": 4277864161,
+      "title": "Bind caller context packages to the reviewed change set"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6slAMq",
+      "shortId": "slAMq",
+      "badge": "P1",
+      "path": "src/adapters/staged-review.mjs",
+      "line": null,
+      "originalLine": 323,
+      "commentId": 4277864167,
+      "title": "Merge change-set gaps with explicitly supplied staged gaps"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6slAMz",
+      "shortId": "slAMz",
+      "badge": "P2",
+      "path": "scripts/triage-pr39-threads.mjs",
+      "line": null,
+      "originalLine": 5,
+      "commentId": 4277864184,
+      "title": "Point the evidence ledger at a commit containing its fixes"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6slLWc",
+      "shortId": "slLWc",
+      "badge": "P1",
+      "path": "src/adapters/review-orchestrator.mjs",
+      "line": null,
+      "originalLine": 177,
+      "commentId": 4277939992,
+      "title": "Reject objective overrides that conflict with RunContext"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6slql5",
+      "shortId": "slql5",
+      "badge": "P1",
+      "path": "src/cli.mjs",
+      "line": null,
+      "originalLine": 830,
+      "commentId": 4278137692,
+      "title": "Execute the clean challenge from the review CLI"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6slql7",
+      "shortId": "slql7",
+      "badge": "P1",
+      "path": "src/core/harness.mjs",
+      "line": null,
+      "originalLine": 420,
+      "commentId": 4278137696,
+      "title": "Preserve case when binding excluded paths"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6slqmD",
+      "shortId": "slqmD",
+      "badge": "P2",
+      "path": "src/core/independent-verifier.mjs",
+      "line": null,
+      "originalLine": 1375,
+      "commentId": 4278137704,
+      "title": "Reject non-boolean omission accuracy values"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6sl1Rc",
+      "shortId": "sl1Rc",
+      "badge": "P1",
+      "path": "src/core/independent-verifier.mjs",
+      "line": null,
+      "originalLine": 2211,
+      "commentId": 4278208839,
+      "title": "Include ChangeSet package gaps in verifier validation"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6sl1Rd",
+      "shortId": "sl1Rd",
+      "badge": "P1",
+      "path": "src/adapters/staged-review.mjs",
+      "line": null,
+      "originalLine": 510,
+      "commentId": 4278208843,
+      "title": "Wrap the path normalizer passed to Array.map"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6sl1Rg",
+      "shortId": "sl1Rg",
+      "badge": "P1",
+      "path": "src/core/independent-verifier.mjs",
+      "line": null,
+      "originalLine": 2134,
+      "commentId": 4278208849,
+      "title": "Honor objectives bound in RunContext and ChangeSet"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6tdsmQ",
+      "shortId": "tdsmQ",
+      "badge": "P1",
+      "path": "src/adapters/review-orchestrator.mjs",
+      "line": null,
+      "originalLine": 239,
+      "commentId": 4301647688,
+      "title": "Reject conflicting exclusion bindings"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6tdsmS",
+      "shortId": "tdsmS",
+      "badge": "P1",
+      "path": "src/adapters/staged-review.mjs",
+      "line": null,
+      "originalLine": 530,
+      "commentId": 4301647690,
+      "title": "Require manifests to cover every staged-review file"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6tdsmV",
+      "shortId": "tdsmV",
+      "badge": "P1",
+      "path": "src/core/independent-verifier.mjs",
+      "line": null,
+      "originalLine": 1817,
+      "commentId": 4301647697,
+      "title": "Confine omission locator reads to the reviewed repository"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6tdsmY",
+      "shortId": "tdsmY",
+      "badge": "P1",
+      "path": "src/core/git-collector.mjs",
+      "line": null,
+      "originalLine": 491,
+      "commentId": 4301647701,
+      "title": "Do not label working-tree diffs with the base HEAD"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6td7cI",
+      "shortId": "td7cI",
+      "badge": "P1",
+      "path": "src/core/harness.mjs",
+      "line": null,
+      "originalLine": 465,
+      "commentId": 4301745326,
+      "title": "Bind corroboration metadata in finding signatures"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6tfxJh",
+      "shortId": "tfxJh",
+      "badge": "P1",
+      "path": "src/adapters/review-orchestrator.mjs",
+      "line": null,
+      "originalLine": 311,
+      "commentId": 4302511351,
+      "title": "Recompute risk before accepting a supplied review plan"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6tfxJn",
+      "shortId": "tfxJn",
+      "badge": "P1",
+      "path": "src/adapters/review-orchestrator.mjs",
+      "line": null,
+      "originalLine": 548,
+      "commentId": 4302511358,
+      "title": "Forward objective bindings to every review adapter"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6tfxJq",
+      "shortId": "tfxJq",
+      "badge": "P1",
+      "path": "src/core/context-builder.mjs",
+      "line": null,
+      "originalLine": 729,
+      "commentId": 4302511365,
+      "title": "Preserve receivers for optional-chaining calls"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6tfxJr",
+      "shortId": "tfxJr",
+      "badge": "P2",
+      "path": "src/adapters/review-prompts.mjs",
+      "line": null,
+      "originalLine": 257,
+      "commentId": 4302511367,
+      "title": "Validate callee definitions before formatting context"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6tgXSK",
+      "shortId": "tgXSK",
+      "badge": "P1",
+      "path": "src/core/context-builder.mjs",
+      "line": null,
+      "originalLine": 1581,
+      "commentId": 4302762541,
+      "title": "Confine working-tree context reads to the repository"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6tgXSN",
+      "shortId": "tgXSN",
+      "badge": "P1",
+      "path": "src/core/context-builder.mjs",
+      "line": null,
+      "originalLine": 764,
+      "commentId": 4302762546,
+      "title": "Parse call expressions that span added lines"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6tgXSQ",
+      "shortId": "tgXSQ",
+      "badge": "P1",
+      "path": "src/core/context-builder.mjs",
+      "line": null,
+      "originalLine": 463,
+      "commentId": 4302762550,
+      "title": "Start brace matching at the actual function body"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6tm8Kl",
+      "shortId": "tm8Kl",
+      "badge": "P1",
+      "path": "src/core/context-builder.mjs",
+      "line": null,
+      "originalLine": 599,
+      "commentId": 4305563444,
+      "title": "Resolve the receiver before matching a PascalCase class"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6tm8Ko",
+      "shortId": "tm8Ko",
+      "badge": "P1",
+      "path": "src/core/independent-verifier.mjs",
+      "line": null,
+      "originalLine": 3439,
+      "commentId": 4305563450,
+      "title": "Authenticate context before issuing a verification record"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6tm8Kq",
+      "shortId": "tm8Kq",
+      "badge": "P2",
+      "path": "src/cli.mjs",
+      "line": null,
+      "originalLine": 550,
+      "commentId": 4305563452,
+      "title": "Reject malformed tier flags instead of dropping them"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6tqhHk",
+      "shortId": "tqhHk",
+      "badge": "P1",
+      "path": "src/core/independent-verifier.mjs",
+      "line": null,
+      "originalLine": 448,
+      "commentId": 4307057210,
+      "title": "Bind multi-file context packages to their manifests"
+    }
+  ]
+}

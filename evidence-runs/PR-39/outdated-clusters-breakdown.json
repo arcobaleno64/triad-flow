@@ -1,0 +1,907 @@
+{
+  "SCHEMA1_LEGACY": [
+    {
+      "id": "PRRT_kwDOUWarIc6sL8VV",
+      "path": "src/cli.mjs",
+      "line": null,
+      "originalLine": 830,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Run the Clea"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6sMI7C",
+      "path": "src/adapters/cli-transport.mjs",
+      "line": null,
+      "originalLine": 181,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Prevent nest"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6slql5",
+      "path": "src/cli.mjs",
+      "line": null,
+      "originalLine": 830,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Execute the "
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6tm8Kq",
+      "path": "src/cli.mjs",
+      "line": null,
+      "originalLine": 550,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  Reject malfo"
+    }
+  ],
+  "HISTORICAL_CONTEXT_BUILDER": [
+    {
+      "id": "PRRT_kwDOUWarIc6qo0uv",
+      "path": "src/core/context-builder.mjs",
+      "line": null,
+      "originalLine": 343,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  Detect sensi"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6qwj_j",
+      "path": "src/core/context-builder.mjs",
+      "line": null,
+      "originalLine": 560,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Preserve sen"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6qwj_0",
+      "path": "src/core/context-builder.mjs",
+      "line": null,
+      "originalLine": 412,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  Exclude comm"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rTXZd",
+      "path": "src/core/context-builder.mjs",
+      "line": null,
+      "originalLine": 295,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Skip paramet"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rTXZh",
+      "path": "src/core/context-builder.mjs",
+      "line": null,
+      "originalLine": 798,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Record uncer"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rTowi",
+      "path": "src/core/context-builder.mjs",
+      "line": null,
+      "originalLine": 888,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  Distinguish "
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rTowq",
+      "path": "src/core/context-builder.mjs",
+      "line": null,
+      "originalLine": 266,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Reject call "
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6re31A",
+      "path": "src/core/context-builder.mjs",
+      "line": null,
+      "originalLine": 528,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Track qualif"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6re31E",
+      "path": "src/core/context-builder.mjs",
+      "line": null,
+      "originalLine": 197,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Preserve str"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rfkYW",
+      "path": "src/core/context-builder.mjs",
+      "line": null,
+      "originalLine": 1173,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  Do not repor"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rhwEx",
+      "path": "src/core/context-builder.mjs",
+      "line": null,
+      "originalLine": 866,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  Resolve newl"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6riPTp",
+      "path": "src/core/context-builder.mjs",
+      "line": null,
+      "originalLine": 637,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Preserve rec"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rrHOW",
+      "path": "src/core/context-builder.mjs",
+      "line": null,
+      "originalLine": 543,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Recognize op"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rrHOY",
+      "path": "src/core/context-builder.mjs",
+      "line": null,
+      "originalLine": 1252,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  Read renamed"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rrUDl",
+      "path": "src/core/context-builder.mjs",
+      "line": null,
+      "originalLine": 988,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Resolve `thi"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rsKB4",
+      "path": "src/core/context-builder.mjs",
+      "line": null,
+      "originalLine": 618,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Scan calls w"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rsajY",
+      "path": "src/core/context-builder.mjs",
+      "line": null,
+      "originalLine": 700,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Treat namesp"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rte6t",
+      "path": "src/core/context-builder.mjs",
+      "line": null,
+      "originalLine": 642,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Recognize co"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6r0R6i",
+      "path": "src/core/context-builder.mjs",
+      "line": null,
+      "originalLine": 364,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Parse regex "
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6r1Bt9",
+      "path": "src/core/context-builder.mjs",
+      "line": null,
+      "originalLine": 714,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Preserve qua"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6sMI60",
+      "path": "src/core/context-builder.mjs",
+      "line": null,
+      "originalLine": 1579,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Mark absent "
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6sPmwl",
+      "path": "src/core/context-builder.mjs",
+      "line": null,
+      "originalLine": 196,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Track multil"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6sPmwt",
+      "path": "src/core/context-builder.mjs",
+      "line": null,
+      "originalLine": 1363,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  Treat delete"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6sUDZJ",
+      "path": "src/core/context-builder.mjs",
+      "line": null,
+      "originalLine": 322,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Bound Python"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6sUDZV",
+      "path": "src/core/context-builder.mjs",
+      "line": null,
+      "originalLine": 1012,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Resolve this"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6sU7ZB",
+      "path": "src/core/context-builder.mjs",
+      "line": null,
+      "originalLine": 425,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Make qualifi"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6tfxJq",
+      "path": "src/core/context-builder.mjs",
+      "line": null,
+      "originalLine": 729,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Preserve rec"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6tgXSK",
+      "path": "src/core/context-builder.mjs",
+      "line": null,
+      "originalLine": 1581,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Confine work"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6tgXSN",
+      "path": "src/core/context-builder.mjs",
+      "line": null,
+      "originalLine": 764,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Parse call e"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6tgXSQ",
+      "path": "src/core/context-builder.mjs",
+      "line": null,
+      "originalLine": 463,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Start brace "
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6tm8Kl",
+      "path": "src/core/context-builder.mjs",
+      "line": null,
+      "originalLine": 599,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Resolve the "
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6tqhHo",
+      "path": "src/core/context-builder.mjs",
+      "line": null,
+      "originalLine": 1525,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Recognize op"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6trycg",
+      "path": "src/core/context-builder.mjs",
+      "line": null,
+      "originalLine": 1525,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Parse generi"
+    }
+  ],
+  "EARLY_VERIFIER_HARNESS": [
+    {
+      "id": "PRRT_kwDOUWarIc6qo0uL",
+      "path": "src/core/harness.mjs",
+      "line": null,
+      "originalLine": 372,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Require clea"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6qo0uP",
+      "path": "src/core/independent-verifier.mjs",
+      "line": null,
+      "originalLine": 244,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Keep verific"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6qo0uZ",
+      "path": "src/core/independent-verifier.mjs",
+      "line": null,
+      "originalLine": 317,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Validate cou"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6qo0uk",
+      "path": "src/core/harness.mjs",
+      "line": null,
+      "originalLine": 345,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Bind objecti"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6qo0un",
+      "path": "src/core/harness.mjs",
+      "line": null,
+      "originalLine": 361,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Require clea"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6qo0ur",
+      "path": "src/core/independent-verifier.mjs",
+      "line": null,
+      "originalLine": 927,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Require expl"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6qo0u0",
+      "path": "src/core/independent-verifier.mjs",
+      "line": null,
+      "originalLine": 1616,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  Prefer obser"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6qwj_p",
+      "path": "src/core/independent-verifier.mjs",
+      "line": null,
+      "originalLine": 1060,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Reject verif"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rTXZn",
+      "path": "src/core/independent-verifier.mjs",
+      "line": null,
+      "originalLine": 991,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Reject omiss"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rTowe",
+      "path": "src/core/independent-verifier.mjs",
+      "line": null,
+      "originalLine": 261,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Keep the rem"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rTowl",
+      "path": "src/core/independent-verifier.mjs",
+      "line": null,
+      "originalLine": 1853,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Preserve ver"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rVNc1",
+      "path": "src/core/independent-verifier.mjs",
+      "line": null,
+      "originalLine": 1288,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Propagate ev"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rY13u",
+      "path": "src/core/independent-verifier.mjs",
+      "line": null,
+      "originalLine": 1886,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Keep recorde"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rY131",
+      "path": "src/core/independent-verifier.mjs",
+      "line": null,
+      "originalLine": 1164,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  Verify omiss"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rY139",
+      "path": "src/core/independent-verifier.mjs",
+      "line": null,
+      "originalLine": 1241,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Reject Clean"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6re31P",
+      "path": "src/core/harness.mjs",
+      "line": null,
+      "originalLine": 686,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Reject unexp"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6re31W",
+      "path": "src/core/independent-verifier.mjs",
+      "line": null,
+      "originalLine": 484,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Do not accep"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rfkYc",
+      "path": "src/core/independent-verifier.mjs",
+      "line": null,
+      "originalLine": 1122,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  Reject non-b"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6riPTk",
+      "path": "src/core/harness.mjs",
+      "line": null,
+      "originalLine": 656,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Bind verifie"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6riPTv",
+      "path": "src/core/harness.mjs",
+      "line": null,
+      "originalLine": 341,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  Convert inva"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rrHOT",
+      "path": "src/core/harness.mjs",
+      "line": null,
+      "originalLine": 550,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Compare the "
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rrUDp",
+      "path": "src/core/independent-verifier.mjs",
+      "line": null,
+      "originalLine": 1510,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Enforce veri"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rr-JA",
+      "path": "src/core/independent-verifier.mjs",
+      "line": null,
+      "originalLine": 1932,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Preserve pac"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rsKB8",
+      "path": "src/core/harness.mjs",
+      "line": null,
+      "originalLine": 235,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Namespace pr"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rsKB_",
+      "path": "src/core/harness.mjs",
+      "line": null,
+      "originalLine": 415,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Preserve cas"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rvCBG",
+      "path": "src/core/harness.mjs",
+      "line": null,
+      "originalLine": 355,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Reject malfo"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rvCBL",
+      "path": "src/core/harness.mjs",
+      "line": null,
+      "originalLine": 559,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Encode findi"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rxChi",
+      "path": "src/core/independent-verifier.mjs",
+      "line": null,
+      "originalLine": 1769,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  Enforce the "
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6r1Bt4",
+      "path": "src/core/independent-verifier.mjs",
+      "line": null,
+      "originalLine": 1375,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  Require an e"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6sL8VO",
+      "path": "src/core/independent-verifier.mjs",
+      "line": null,
+      "originalLine": 2211,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Validate gap"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6sL8VY",
+      "path": "src/core/harness.mjs",
+      "line": null,
+      "originalLine": 419,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Preserve cas"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6sMI7L",
+      "path": "src/core/independent-verifier.mjs",
+      "line": null,
+      "originalLine": 1546,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Require over"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6sPGEP",
+      "path": "src/core/harness.mjs",
+      "line": null,
+      "originalLine": 699,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  Reject unkno"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6sU7ZH",
+      "path": "src/core/independent-verifier.mjs",
+      "line": null,
+      "originalLine": 1442,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  Reject omiss"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6sU7ZN",
+      "path": "src/core/harness.mjs",
+      "line": null,
+      "originalLine": 347,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Require a Ru"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6slql7",
+      "path": "src/core/harness.mjs",
+      "line": null,
+      "originalLine": 420,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Preserve cas"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6slqmD",
+      "path": "src/core/independent-verifier.mjs",
+      "line": null,
+      "originalLine": 1375,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  Reject non-b"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6sl1Rc",
+      "path": "src/core/independent-verifier.mjs",
+      "line": null,
+      "originalLine": 2211,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Include Chan"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6sl1Rg",
+      "path": "src/core/independent-verifier.mjs",
+      "line": null,
+      "originalLine": 2134,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Honor object"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6tdsmV",
+      "path": "src/core/independent-verifier.mjs",
+      "line": null,
+      "originalLine": 1817,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Confine omis"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6td7cI",
+      "path": "src/core/harness.mjs",
+      "line": null,
+      "originalLine": 465,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Bind corrobo"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6tm8Ko",
+      "path": "src/core/independent-verifier.mjs",
+      "line": null,
+      "originalLine": 3439,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Authenticate"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6tqhHk",
+      "path": "src/core/independent-verifier.mjs",
+      "line": null,
+      "originalLine": 448,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Bind multi-f"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6tqhHn",
+      "path": "src/core/independent-verifier.mjs",
+      "line": null,
+      "originalLine": 3297,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Do not accep"
+    }
+  ],
+  "OLD_TEST_FIXTURES": [],
+  "OTHER_OBSOLETE_DIFFS": [
+    {
+      "id": "PRRT_kwDOUWarIc6qwj_t",
+      "path": "scripts/dogfood-review.mjs",
+      "line": null,
+      "originalLine": 729,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Keep the ver"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6ra7kH",
+      "path": "src/adapters/review-orchestrator.mjs",
+      "line": null,
+      "originalLine": 238,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Bind supplie"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6ra7ki",
+      "path": "scripts/dogfood-review.mjs",
+      "line": null,
+      "originalLine": 972,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  Build callee"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6ra7kt",
+      "path": "src/adapters/review-prompts.mjs",
+      "line": null,
+      "originalLine": 222,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Escape calle"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6ra7k3",
+      "path": "src/core/real-benchmark-runner.mjs",
+      "line": null,
+      "originalLine": 94,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Do not score"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6re305",
+      "path": "src/adapters/review-orchestrator.mjs",
+      "line": null,
+      "originalLine": 78,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Derive the b"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6re31K",
+      "path": "scripts/dogfood-review.mjs",
+      "line": 1394,
+      "originalLine": 984,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Fail closed "
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rfkYK",
+      "path": "scripts/dogfood-review.mjs",
+      "line": null,
+      "originalLine": 970,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Fail closed "
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rhwEt",
+      "path": "src/adapters/review-orchestrator.mjs",
+      "line": null,
+      "originalLine": 347,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Forward the "
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6riPT0",
+      "path": "scripts/dogfood-review.mjs",
+      "line": null,
+      "originalLine": 969,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Bind supplie"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rr-JF",
+      "path": "src/adapters/review-orchestrator.mjs",
+      "line": null,
+      "originalLine": 200,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Bind canonic"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rsKB6",
+      "path": "scripts/dogfood-review.mjs",
+      "line": null,
+      "originalLine": 1024,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Verify packa"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rsajd",
+      "path": "scripts/dogfood-review.mjs",
+      "line": null,
+      "originalLine": 970,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  Build exact-"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rtv6E",
+      "path": "scripts/dogfood-review.mjs",
+      "line": null,
+      "originalLine": 976,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Treat an omi"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6rtv6M",
+      "path": "scripts/dogfood-review.mjs",
+      "line": null,
+      "originalLine": 1084,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Reject manif"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6r1Bt0",
+      "path": "src/adapters/review-orchestrator.mjs",
+      "line": null,
+      "originalLine": 73,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Preserve ter"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6sL8VK",
+      "path": "src/adapters/review-orchestrator.mjs",
+      "line": null,
+      "originalLine": 199,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Bind records"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6sMI7c",
+      "path": "scripts/dogfood-review.mjs",
+      "line": null,
+      "originalLine": 1072,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Preserve con"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6sPGEb",
+      "path": "src/core/git-collector.mjs",
+      "line": null,
+      "originalLine": 394,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Do not label"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6sPGEl",
+      "path": "src/adapters/staged-review.mjs",
+      "line": null,
+      "originalLine": 551,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Treat null c"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6sPmwz",
+      "path": "scripts/dogfood-review.mjs",
+      "line": null,
+      "originalLine": 1105,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  Track staged"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6slAMk",
+      "path": "src/adapters/staged-review.mjs",
+      "line": null,
+      "originalLine": 422,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Bind caller "
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6slAMq",
+      "path": "src/adapters/staged-review.mjs",
+      "line": null,
+      "originalLine": 323,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Merge change"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6slAMz",
+      "path": "scripts/triage-pr39-threads.mjs",
+      "line": null,
+      "originalLine": 5,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  Point the ev"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6slLWc",
+      "path": "src/adapters/review-orchestrator.mjs",
+      "line": null,
+      "originalLine": 177,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Reject objec"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6sl1Rd",
+      "path": "src/adapters/staged-review.mjs",
+      "line": null,
+      "originalLine": 510,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Wrap the pat"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6tdsmQ",
+      "path": "src/adapters/review-orchestrator.mjs",
+      "line": null,
+      "originalLine": 239,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Reject confl"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6tdsmS",
+      "path": "src/adapters/staged-review.mjs",
+      "line": null,
+      "originalLine": 530,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Require mani"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6tdsmY",
+      "path": "src/core/git-collector.mjs",
+      "line": null,
+      "originalLine": 491,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Do not label"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6tfxJh",
+      "path": "src/adapters/review-orchestrator.mjs",
+      "line": null,
+      "originalLine": 311,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Recompute ri"
+    },
+    {
+      "id": "PRRT_kwDOUWarIc6tfxJn",
+      "path": "src/adapters/review-orchestrator.mjs",
+      "line": null,
+      "originalLine": 548,
+      "author": "chatgpt-codex-connector",
+      "snippet": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Forward obje"
+    }
+  ]
+}
