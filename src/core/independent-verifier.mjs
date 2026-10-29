@@ -744,6 +744,17 @@ export function validateContextPackageAuthenticity(pkg, evidence = {}) {
         if (!calleeFile) return false;
         const manifestEntry = manifestMap.get(calleeFile);
         if (!manifestEntry || manifestEntry.exactHeadAvailable !== true || manifestEntry.exactHeadUnavailable === true) {
+          if (callee.isHeaderCallee === true) {
+            continue;
+          }
+          if (callee.callingFile && manifestMap.has(normalizeCanonicalPath(callee.callingFile))) {
+            const csFiles = new Set(
+              (evidence?.changeSet?.files || []).map(f => normalizeCanonicalPath(typeof f === "string" ? f : f?.path || f?.file || ""))
+            );
+            if (csFiles.has(calleeFile)) {
+              continue;
+            }
+          }
           return false;
         }
       }
@@ -1001,11 +1012,15 @@ export function validateContextPackageAuthenticity(pkg, evidence = {}) {
               allExactHeadFilesPhysicallyExist = false;
               break;
             }
-            const bodyStart = findHeaderBodyStart(exactLines, callee.startLine - 1);
-            const maxCalleeEnd = computeAuthenticBraceScopeEnd(exactLines, bodyStart.lineIdx, bodyStart.charIdx);
-            if (callee.endLine > maxCalleeEnd) {
-              allExactHeadFilesPhysicallyExist = false;
-              break;
+            const isMacroOrType = (callee.definition && (/^\s*#\s*define\b/.test(callee.definition) || /^\s*(?:typedef|struct|class|enum|interface)\b/.test(callee.definition))) ||
+              callee.extractionMode === "signature";
+            if (!isMacroOrType) {
+              const bodyStart = findHeaderBodyStart(exactLines, callee.startLine - 1);
+              const maxCalleeEnd = computeAuthenticBraceScopeEnd(exactLines, bodyStart.lineIdx, bodyStart.charIdx);
+              if (callee.endLine > maxCalleeEnd) {
+                allExactHeadFilesPhysicallyExist = false;
+                break;
+              }
             }
             const calleeSliceText = exactLines.slice(callee.startLine - 1, callee.endLine).join("\n");
             const firstSnippetLine = snippet.split("\n")[0].trim();
@@ -1327,6 +1342,60 @@ export function validateContextPackageAuthenticity(pkg, evidence = {}) {
       } else {
         allExactHeadFilesPhysicallyExist = false;
         break;
+      }
+    }
+    if (allExactHeadFilesPhysicallyExist) {
+      const externalCallees = (pkg.layers?.layer1AstEnclosure?.callees || []).filter(
+        c => c && (c.isHeaderCallee === true || (c.callingFile && getEnclosureFile(c) !== normalizeCanonicalPath(c.callingFile) && !manifestMap.has(getEnclosureFile(c))))
+      );
+      for (const callee of externalCallees) {
+        const calleeFile = getEnclosureFile(callee);
+        if (!calleeFile) {
+          allExactHeadFilesPhysicallyExist = false;
+          break;
+        }
+        const exactCalleeContent = getExactHeadFileContent(repoRoot, headSha, calleeFile) ??
+          getExactHeadFileContent(repoRoot, headSha, callee.file) ??
+          null;
+        if (exactCalleeContent === null) {
+          allExactHeadFilesPhysicallyExist = false;
+          break;
+        }
+        const normExactCallee = exactCalleeContent.replace(/\r\n/g, "\n");
+        const exactCalleeLines = normExactCallee.split("\n");
+        const sym = (typeof callee.symbol === "string" && callee.symbol.trim()) ||
+          (typeof callee.name === "string" && callee.name.trim()) || "";
+        const snippet = (callee.definition || callee.snippet || "").replace(/\r\n/g, "\n").trim();
+        if (!sym || !snippet || !snippet.includes(sym)) {
+          allExactHeadFilesPhysicallyExist = false;
+          break;
+        }
+        if (callee.startLine !== undefined || callee.endLine !== undefined) {
+          if (
+            !Number.isInteger(callee.startLine) ||
+            callee.startLine < 1 ||
+            !Number.isInteger(callee.endLine) ||
+            callee.endLine < callee.startLine ||
+            callee.endLine > exactCalleeLines.length
+          ) {
+            allExactHeadFilesPhysicallyExist = false;
+            break;
+          }
+          const sliceText = exactCalleeLines.slice(callee.startLine - 1, callee.endLine).join("\n");
+          const firstLine = snippet.split("\n")[0].trim();
+          const isElided = snippet.includes("elided for context bounds") || snippet.includes("... elided ...");
+          if (!sliceText.includes(snippet) && (!isElided || !firstLine || !sliceText.includes(firstLine))) {
+            allExactHeadFilesPhysicallyExist = false;
+            break;
+          }
+        } else if (!normExactCallee.includes(snippet)) {
+          const firstLine = snippet.split("\n")[0].trim();
+          const isElided = snippet.includes("elided for context bounds") || snippet.includes("... elided ...");
+          if (!isElided || !firstLine || !normExactCallee.includes(firstLine)) {
+            allExactHeadFilesPhysicallyExist = false;
+            break;
+          }
+        }
       }
     }
     if (allExactHeadFilesPhysicallyExist && pkg.fileCoverageManifest.length > 0) {
