@@ -966,6 +966,19 @@ test("C Pointer Return Types: unsigned char *func is matched as definition and n
   assert.equal(calls.length, 0, "Function declaration header line must not be treated as a call to itself");
 });
 
+test("Call Invocations with Statements: return func() and throw func() are treated as calls, not function declarations", () => {
+  const diff = [
+    "+ return helperValidation(req);",
+    "+ throw createCustomError(msg);",
+    "+ if (checkAccess(user)) {"
+  ].join("\n");
+  const calls = extractCandidateCallSymbols(diff);
+  assert.equal(calls.length, 3, "All function calls in control statements must be extracted");
+  assert.ok(calls.some(c => c.symbol === "helperValidation"));
+  assert.ok(calls.some(c => c.symbol === "createCustomError"));
+  assert.ok(calls.some(c => c.symbol === "checkAccess"));
+});
+
 
 
 

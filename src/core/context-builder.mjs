@@ -2239,7 +2239,10 @@ export function extractCandidateCallSymbols(diffHunks, options = {}) {
 
     const fnDeclMatch = cleanLine.match(/^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?function(?:\s+([a-zA-Z_][a-zA-Z0-9_]*))?(?:\s*<[^()]+>)?\s*\(/);
     const pyDeclMatch = cleanLine.match(/^\s*def\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/);
-    const cDeclMatch = cleanLine.match(/^(?:\s*(?:[a-zA-Z0-9_<>*&]|::)+[\s*&]+)+(?:[a-zA-Z0-9_]+::)?([a-zA-Z_][a-zA-Z0-9_]*)\s*(?:<[^()]+>)?\s*\(/);
+    const isControlOrStmt = /^\s*(?:if|while|for|switch|catch|with|return|throw|delete|typeof|sizeof|case|else|yield|await|goto)\b/.test(cleanLine);
+    const cDeclMatch = !isControlOrStmt
+      ? cleanLine.match(/^(?:\s*(?:[a-zA-Z0-9_<>*&]|::)+[\s*&]+)+(?:[a-zA-Z0-9_]+::)?([a-zA-Z_][a-zA-Z0-9_]*)\s*(?:<[^()]+>)?\s*\(/)
+      : null;
     const macroDeclMatch = cleanLine.match(/^\s*#\s*define\s+([a-zA-Z_][a-zA-Z0-9_]*)\b/);
     const declaredFn = fnDeclMatch ? fnDeclMatch[1] : (pyDeclMatch ? pyDeclMatch[1] : (cDeclMatch ? cDeclMatch[1] : (macroDeclMatch ? macroDeclMatch[1] : null)));
 
