@@ -883,7 +883,7 @@ export function findFunctionDefinitions(lines, symbol) {
 
   const HAS_EXPLICIT_DECL_HEADER = new RegExp(
     `(?:` +
-    `^(?:\\s*(?:[a-zA-Z0-9_<>*&]|::)+\\s+)+(?:[a-zA-Z0-9_]+::)?${escapedSym}\\s*(?:<[^()]+>\\s*)?\\(|` +
+    `^(?:\\s*(?:[a-zA-Z0-9_<>*&]|::)+[\\s*&]+)+(?:[a-zA-Z0-9_]+::)?${escapedSym}\\s*(?:<[^()]+>\\s*)?\\(|` +
     `^\\s*(?:export\\s+)?(?:default\\s+)?(?:async\\s+)?function(?:\\s+${escapedSym})?\\s*(?:<[^()]+>\\s*)?\\(|` +
     `^\\s*(?:(?:static|async|public|private|protected|virtual|inline|override)\\s+)+${escapedSym}\\s*(?:<[^()]+>\\s*)?\\(|` +
     `^\\s*(?:export\\s+)?(?:const|let|var)?\\s*${escapedSym}\\s*=\\s*(?:async\\s*)?(?:<[^()]+>\\s*)?(?:\\([^)]*\\)|[a-zA-Z0-9_$]+)?\\s*(?:=>|function)|` +
@@ -893,7 +893,7 @@ export function findFunctionDefinitions(lines, symbol) {
 
   const DEF_REGEX = new RegExp(
     `(?:` +
-    `^(?:\\s*(?:[a-zA-Z0-9_<>*&]|::)+\\s+)+(?:[a-zA-Z0-9_]+::)?${escapedSym}\\s*(?:<[^()]+>\\s*)?\\(|` +
+    `^(?:\\s*(?:[a-zA-Z0-9_<>*&]|::)+[\\s*&]+)+(?:[a-zA-Z0-9_]+::)?${escapedSym}\\s*(?:<[^()]+>\\s*)?\\(|` +
     `^\\s*(?:export\\s+)?(?:default\\s+)?(?:async\\s+)?function(?:\\s+${escapedSym})?\\s*(?:<[^()]+>\\s*)?\\(|` +
     `^\\s*(?:static\\s+)?(?:async\\s+)?${escapedSym}\\s*(?:<[^()]+>\\s*)?\\(|` +
     `^\\s*(?:export\\s+)?(?:const|let|var)?\\s*${escapedSym}\\s*=\\s*(?:async\\s*)?(?:<[^()]+>\\s*)?(?:\\([^)]*\\)|[a-zA-Z0-9_$]+)?\\s*(?:=>|function)|` +
@@ -1634,7 +1634,7 @@ export function findQualifiedFunctionDefinitions(lines, qualifier, symbol, optio
 
   // 1. Explicit C++ scope definitions: Class::method(...)
   const CPP_SCOPE_DEF_REGEX = new RegExp(
-    `^(?:\\s*(?:[a-zA-Z0-9_<>*&]|::)+\\s+)+${escapedQual}::${escapedSym}\\s*(?:<[^()]+>\\s*)?\\(`
+    `^(?:\\s*(?:[a-zA-Z0-9_<>*&]|::)+[\\s*&]+)+${escapedQual}::${escapedSym}\\s*(?:<[^()]+>\\s*)?\\(`
   );
 
   for (let i = 0; i < cleanLines.length; i++) {
@@ -2239,7 +2239,9 @@ export function extractCandidateCallSymbols(diffHunks, options = {}) {
 
     const fnDeclMatch = cleanLine.match(/^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?function(?:\s+([a-zA-Z_][a-zA-Z0-9_]*))?(?:\s*<[^()]+>)?\s*\(/);
     const pyDeclMatch = cleanLine.match(/^\s*def\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/);
-    const declaredFn = fnDeclMatch ? fnDeclMatch[1] : (pyDeclMatch ? pyDeclMatch[1] : null);
+    const cDeclMatch = cleanLine.match(/^(?:\s*(?:[a-zA-Z0-9_<>*&]|::)+[\s*&]+)+(?:[a-zA-Z0-9_]+::)?([a-zA-Z_][a-zA-Z0-9_]*)\s*(?:<[^()]+>)?\s*\(/);
+    const macroDeclMatch = cleanLine.match(/^\s*#\s*define\s+([a-zA-Z_][a-zA-Z0-9_]*)\b/);
+    const declaredFn = fnDeclMatch ? fnDeclMatch[1] : (pyDeclMatch ? pyDeclMatch[1] : (cDeclMatch ? cDeclMatch[1] : (macroDeclMatch ? macroDeclMatch[1] : null)));
 
     const invokedCalls = findCallInvocations(cleanLine);
     for (const call of invokedCalls) {
@@ -2798,23 +2800,28 @@ export function findFunctionDeclarations(lines, symbol) {
 
   const DECL_START = new RegExp(
     `(?:` +
-    `^(?:\\s*(?:[a-zA-Z0-9_<>*&]|::)+\\s+)+(?:[a-zA-Z0-9_]+::)?${escaped}\\s*(?:<[^()]+>\\s*)?\\(|` +
+    `^(?:\\s*(?:[a-zA-Z0-9_<>*&]|::)+[\\s*&]+)+(?:[a-zA-Z0-9_]+::)?${escaped}\\s*(?:<[^()]+>\\s*)?\\(|` +
     `^\\s*(?:(?:extern|static|virtual|inline)\\s+)+.*\\b${escaped}\\s*(?:<[^()]+>\\s*)?\\(|` +
     `^\\s*declare\\s+function\\s+${escaped}\\s*\\(` +
     `)`
   );
 
+  const WORD_REGEX = new RegExp(`\\b${escaped}\\b`);
   const CONTROL_START = /^\s*(?:if|while|for|switch|catch|with|return|throw|delete|typeof|sizeof|case|else\s+if)\b/;
 
   for (let i = 0; i < cleanLines.length; i++) {
     const line = cleanLines[i];
-    if (!line.includes(symbol)) continue;
+    if (!WORD_REGEX.test(line)) continue;
     if (CONTROL_START.test(line)) continue;
 
     let hasStart = DECL_START.test(line);
     let startIdx = i;
     if (!hasStart && i > 0) {
       for (let prev = i - 1; prev >= Math.max(0, i - 2); prev--) {
+        const prevTrim = cleanLines[prev].trim();
+        if (prevTrim.endsWith(";") || prevTrim.endsWith("}") || prevTrim.endsWith("{")) {
+          break;
+        }
         const prefix = cleanLines.slice(prev, i).map(l => l.trim()).join(" ");
         if (prefix && DECL_START.test(`${prefix} ${line.trim()}`)) {
           hasStart = true;
@@ -2869,6 +2876,7 @@ export function findFunctionDeclarations(lines, symbol) {
           extractionMode: "signature"
         }
       });
+      i = endIdx;
     }
   }
 

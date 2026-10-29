@@ -948,5 +948,24 @@ test("Standard Library Callee Symbols: memcmp, memcpy, strlen are exempted from 
   assert.ok(!unres.some(u => u.symbol === "free"), "free must not be marked UNRESOLVED_SYMBOL");
 });
 
+test("C Pointer Return Types: unsigned char *func is matched as definition and not call", () => {
+  const code = [
+    `unsigned char *lpUpgradeCompactBacklen(unsigned char *lp, size_t *size) {`,
+    `    return lp;`,
+    `}`
+  ].join("\n");
+
+  const lines = code.split("\n");
+  const defs = findFunctionDefinitions(lines, "lpUpgradeCompactBacklen");
+  assert.equal(defs.length, 1, "Must find definition with pointer return type");
+  assert.equal(defs[0].startLine, 1);
+  assert.equal(defs[0].endLine, 3);
+
+  const diff = "+ unsigned char *lpUpgradeCompactBacklen(unsigned char *lp, size_t *size) {";
+  const calls = extractCandidateCallSymbols(diff);
+  assert.equal(calls.length, 0, "Function declaration header line must not be treated as a call to itself");
+});
+
+
 
 
