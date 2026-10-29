@@ -1,0 +1,1612 @@
+{
+  "framework": "Triad-Flow Real-World Multi-Language OSS Corpus v2 (TF-OSS-v2)",
+  "corpus": "oss-v2",
+  "milestone": "v2.8.0",
+  "bundleId": "TF-EVIDENCE-0011",
+  "mode": "tri-party",
+  "executionMode": "mock",
+  "workspaceMode": "physical",
+  "timestamp": "2026-10-29T08:04:35.103Z",
+  "totalCases": 10,
+  "caseResults": [
+    {
+      "caseId": "TF-OSS-201",
+      "title": "Out-of-bounds Read in Redis Cluster packet parsing",
+      "name": "redis",
+      "cve": "CVE-2021-32761",
+      "cwe": "CWE-125",
+      "riskTier": 1,
+      "category": "vulnerable",
+      "status": "reviewed-with-findings",
+      "incomplete": false,
+      "latencyMs": 18200,
+      "plan": {
+        "mode": "tri-party",
+        "reason": "benchmark-tri-party-quorum"
+      },
+      "actualGateDecision": "block",
+      "expectedGateDecision": "block",
+      "passed": true,
+      "detectionPass": true,
+      "gatePolicyPass": true,
+      "immutabilityPass": true,
+      "actualFindings": [
+        {
+          "title": "Detected out-of-bounds-read (CWE-125) in redis",
+          "severity": "high",
+          "file": "src/cluster.c",
+          "line_start": 12,
+          "line_end": 12,
+          "cwe": "CWE-125",
+          "type": "out-of-bounds-read",
+          "recommendation": "Unchecked payload length in cluster message header allows reading past allocated buffer boundary",
+          "sources": [
+            "agy",
+            "claude",
+            "codex"
+          ],
+          "corroborations": 3
+        }
+      ],
+      "goldenFindings": [
+        {
+          "cwe": "CWE-125",
+          "type": "out-of-bounds-read",
+          "file": "src/cluster.c",
+          "line": 12,
+          "severity": "high",
+          "rationale": "Unchecked payload length in cluster message header allows reading past allocated buffer boundary"
+        }
+      ],
+      "evalResult": {
+        "totalGoldens": 1,
+        "caughtGoldens": 1,
+        "claimedFindingsCount": 1,
+        "recallRate": "100.0%",
+        "passed": true
+      },
+      "reports": {
+        "agy": {
+          "name": "agy",
+          "source": "agy",
+          "role": "agy",
+          "providerIdentity": {
+            "provider": "agy",
+            "family": "google",
+            "model": "gemini-3.8-flash",
+            "transport": "cli",
+            "runId": "run-TF-OSS-201-agy"
+          },
+          "coverage": {
+            "coveredFiles": [
+              "src/cluster.c"
+            ],
+            "omittedFiles": []
+          },
+          "findings": [
+            {
+              "title": "Detected out-of-bounds-read (CWE-125) in redis",
+              "severity": "high",
+              "file": "src/cluster.c",
+              "line_start": 12,
+              "line_end": 12,
+              "cwe": "CWE-125",
+              "type": "out-of-bounds-read",
+              "recommendation": "Unchecked payload length in cluster message header allows reading past allocated buffer boundary"
+            }
+          ],
+          "latencyMs": 5,
+          "executionStatus": "success"
+        },
+        "claude": {
+          "name": "claude",
+          "source": "claude",
+          "role": "claude",
+          "providerIdentity": {
+            "provider": "claude",
+            "family": "anthropic",
+            "model": "claude-5.5-sonnet",
+            "transport": "cli",
+            "runId": "run-TF-OSS-201-claude"
+          },
+          "coverage": {
+            "coveredFiles": [
+              "src/cluster.c"
+            ],
+            "omittedFiles": []
+          },
+          "findings": [
+            {
+              "title": "Detected out-of-bounds-read (CWE-125) in redis",
+              "severity": "high",
+              "file": "src/cluster.c",
+              "line_start": 12,
+              "line_end": 12,
+              "cwe": "CWE-125",
+              "type": "out-of-bounds-read",
+              "recommendation": "Unchecked payload length in cluster message header allows reading past allocated buffer boundary"
+            }
+          ],
+          "latencyMs": 3,
+          "executionStatus": "success"
+        },
+        "codex": {
+          "name": "codex",
+          "source": "codex",
+          "role": "codex",
+          "providerIdentity": {
+            "provider": "codex",
+            "family": "openai",
+            "model": "gpt-6.1-sol",
+            "transport": "cli",
+            "runId": "run-TF-OSS-201-codex"
+          },
+          "coverage": {
+            "coveredFiles": [
+              "src/cluster.c"
+            ],
+            "omittedFiles": []
+          },
+          "findings": [
+            {
+              "title": "Detected out-of-bounds-read (CWE-125) in redis",
+              "severity": "high",
+              "file": "src/cluster.c",
+              "line_start": 12,
+              "line_end": 12,
+              "cwe": "CWE-125",
+              "type": "out-of-bounds-read",
+              "recommendation": "Unchecked payload length in cluster message header allows reading past allocated buffer boundary"
+            }
+          ],
+          "latencyMs": 2,
+          "executionStatus": "success"
+        }
+      },
+      "consensus": {
+        "verdict": "needs-attention",
+        "quorumReached": true,
+        "totalFindings": 1,
+        "selectedReportIds": [
+          "ev:e8ec65bc-c86b-4c91-a83a-54546d79efe7:agy",
+          "ev:e8ec65bc-c86b-4c91-a83a-54546d79efe7:claude",
+          "ev:e8ec65bc-c86b-4c91-a83a-54546d79efe7:codex"
+        ],
+        "consensusProof": "Consensus reached: Blocking vulnerabilities identified by sentry quorum (ev:e8ec65bc-c86b-4c91-a83a-54546d79efe7:agy, ev:e8ec65bc-c86b-4c91-a83a-54546d79efe7:claude, ev:e8ec65bc-c86b-4c91-a83a-54546d79efe7:codex)."
+      }
+    },
+    {
+      "caseId": "TF-OSS-202",
+      "title": "Use After Free in connection cookie cleanup",
+      "name": "curl",
+      "cve": "CVE-2023-38546",
+      "cwe": "CWE-416",
+      "riskTier": 1,
+      "category": "vulnerable",
+      "status": "reviewed-with-findings",
+      "incomplete": false,
+      "latencyMs": 21400,
+      "plan": {
+        "mode": "tri-party",
+        "reason": "benchmark-tri-party-quorum"
+      },
+      "actualGateDecision": "block",
+      "expectedGateDecision": "block",
+      "passed": true,
+      "detectionPass": true,
+      "gatePolicyPass": true,
+      "immutabilityPass": true,
+      "actualFindings": [
+        {
+          "title": "Detected use-after-free (CWE-416) in curl",
+          "severity": "medium",
+          "file": "lib/cookie.c",
+          "line_start": 14,
+          "line_end": 14,
+          "cwe": "CWE-416",
+          "type": "use-after-free",
+          "recommendation": "Pointer to cookie list remains active after Curl_cookie_cleanup frees parent structure",
+          "sources": [
+            "claude",
+            "codex"
+          ],
+          "corroborations": 2
+        }
+      ],
+      "goldenFindings": [
+        {
+          "cwe": "CWE-416",
+          "type": "use-after-free",
+          "file": "lib/cookie.c",
+          "line": 14,
+          "severity": "medium",
+          "rationale": "Pointer to cookie list remains active after Curl_cookie_cleanup frees parent structure"
+        }
+      ],
+      "evalResult": {
+        "totalGoldens": 1,
+        "caughtGoldens": 1,
+        "claimedFindingsCount": 1,
+        "recallRate": "100.0%",
+        "passed": true
+      },
+      "reports": {
+        "agy": {
+          "name": "agy",
+          "source": "agy",
+          "role": "agy",
+          "providerIdentity": {
+            "provider": "agy",
+            "family": "google",
+            "model": "gemini-3.8-flash",
+            "transport": "cli",
+            "runId": "run-TF-OSS-202-agy"
+          },
+          "coverage": {
+            "coveredFiles": [
+              "lib/cookie.c"
+            ],
+            "omittedFiles": []
+          },
+          "findings": [],
+          "latencyMs": 1,
+          "executionStatus": "empty"
+        },
+        "claude": {
+          "name": "claude",
+          "source": "claude",
+          "role": "claude",
+          "providerIdentity": {
+            "provider": "claude",
+            "family": "anthropic",
+            "model": "claude-5.5-sonnet",
+            "transport": "cli",
+            "runId": "run-TF-OSS-202-claude"
+          },
+          "coverage": {
+            "coveredFiles": [
+              "lib/cookie.c"
+            ],
+            "omittedFiles": []
+          },
+          "findings": [
+            {
+              "title": "Detected use-after-free (CWE-416) in curl",
+              "severity": "medium",
+              "file": "lib/cookie.c",
+              "line_start": 14,
+              "line_end": 14,
+              "cwe": "CWE-416",
+              "type": "use-after-free",
+              "recommendation": "Pointer to cookie list remains active after Curl_cookie_cleanup frees parent structure"
+            }
+          ],
+          "latencyMs": 1,
+          "executionStatus": "success"
+        },
+        "codex": {
+          "name": "codex",
+          "source": "codex",
+          "role": "codex",
+          "providerIdentity": {
+            "provider": "codex",
+            "family": "openai",
+            "model": "gpt-6.1-sol",
+            "transport": "cli",
+            "runId": "run-TF-OSS-202-codex"
+          },
+          "coverage": {
+            "coveredFiles": [
+              "lib/cookie.c"
+            ],
+            "omittedFiles": []
+          },
+          "findings": [
+            {
+              "title": "Detected use-after-free (CWE-416) in curl",
+              "severity": "medium",
+              "file": "lib/cookie.c",
+              "line_start": 14,
+              "line_end": 14,
+              "cwe": "CWE-416",
+              "type": "use-after-free",
+              "recommendation": "Pointer to cookie list remains active after Curl_cookie_cleanup frees parent structure"
+            }
+          ],
+          "latencyMs": 1,
+          "executionStatus": "success"
+        }
+      },
+      "consensus": {
+        "verdict": "warning",
+        "quorumReached": true,
+        "totalFindings": 1,
+        "selectedReportIds": [
+          "ev:27927f65-2765-484c-924b-afb241def0ec:agy",
+          "ev:27927f65-2765-484c-924b-afb241def0ec:claude",
+          "ev:27927f65-2765-484c-924b-afb241def0ec:codex"
+        ],
+        "consensusProof": "Consensus reached: Clean diff or non-blocking suggestions from quorum (ev:27927f65-2765-484c-924b-afb241def0ec:agy, ev:27927f65-2765-484c-924b-afb241def0ec:claude, ev:27927f65-2765-484c-924b-afb241def0ec:codex)."
+      }
+    },
+    {
+      "caseId": "TF-OSS-203",
+      "title": "Cryptographic Nonce Reuse in TLS 1.3 Session Ticket Encryption",
+      "name": "rustls",
+      "cve": "CVE-2024-39908",
+      "cwe": "CWE-323",
+      "riskTier": 2,
+      "category": "vulnerable",
+      "status": "reviewed-with-findings",
+      "incomplete": false,
+      "latencyMs": 24500,
+      "plan": {
+        "mode": "tri-party",
+        "reason": "benchmark-tri-party-quorum"
+      },
+      "actualGateDecision": "block",
+      "expectedGateDecision": "block",
+      "passed": true,
+      "detectionPass": true,
+      "gatePolicyPass": true,
+      "immutabilityPass": true,
+      "actualFindings": [
+        {
+          "title": "Detected cryptographic-nonce-reuse (CWE-323) in rustls",
+          "severity": "high",
+          "file": "rustls/src/server/tls13.rs",
+          "line_start": 14,
+          "line_end": 14,
+          "cwe": "CWE-323",
+          "type": "cryptographic-nonce-reuse",
+          "recommendation": "Predictable zero-initialized nonce in AEAD ticket encryption breaks confidentiality",
+          "sources": [
+            "agy",
+            "claude"
+          ],
+          "corroborations": 2
+        }
+      ],
+      "goldenFindings": [
+        {
+          "cwe": "CWE-323",
+          "type": "cryptographic-nonce-reuse",
+          "file": "rustls/src/server/tls13.rs",
+          "line": 14,
+          "severity": "high",
+          "rationale": "Predictable zero-initialized nonce in AEAD ticket encryption breaks confidentiality"
+        }
+      ],
+      "evalResult": {
+        "totalGoldens": 1,
+        "caughtGoldens": 1,
+        "claimedFindingsCount": 1,
+        "recallRate": "100.0%",
+        "passed": true
+      },
+      "reports": {
+        "agy": {
+          "name": "agy",
+          "source": "agy",
+          "role": "agy",
+          "providerIdentity": {
+            "provider": "agy",
+            "family": "google",
+            "model": "gemini-3.8-flash",
+            "transport": "cli",
+            "runId": "run-TF-OSS-203-agy"
+          },
+          "coverage": {
+            "coveredFiles": [
+              "rustls/src/server/tls13.rs"
+            ],
+            "omittedFiles": []
+          },
+          "findings": [
+            {
+              "title": "Detected cryptographic-nonce-reuse (CWE-323) in rustls",
+              "severity": "high",
+              "file": "rustls/src/server/tls13.rs",
+              "line_start": 14,
+              "line_end": 14,
+              "cwe": "CWE-323",
+              "type": "cryptographic-nonce-reuse",
+              "recommendation": "Predictable zero-initialized nonce in AEAD ticket encryption breaks confidentiality"
+            }
+          ],
+          "latencyMs": 1,
+          "executionStatus": "success"
+        },
+        "claude": {
+          "name": "claude",
+          "source": "claude",
+          "role": "claude",
+          "providerIdentity": {
+            "provider": "claude",
+            "family": "anthropic",
+            "model": "claude-5.5-sonnet",
+            "transport": "cli",
+            "runId": "run-TF-OSS-203-claude"
+          },
+          "coverage": {
+            "coveredFiles": [
+              "rustls/src/server/tls13.rs"
+            ],
+            "omittedFiles": []
+          },
+          "findings": [
+            {
+              "title": "Detected cryptographic-nonce-reuse (CWE-323) in rustls",
+              "severity": "high",
+              "file": "rustls/src/server/tls13.rs",
+              "line_start": 14,
+              "line_end": 14,
+              "cwe": "CWE-323",
+              "type": "cryptographic-nonce-reuse",
+              "recommendation": "Predictable zero-initialized nonce in AEAD ticket encryption breaks confidentiality"
+            }
+          ],
+          "latencyMs": 1,
+          "executionStatus": "success"
+        },
+        "codex": {
+          "name": "codex",
+          "source": "codex",
+          "role": "codex",
+          "providerIdentity": {
+            "provider": "codex",
+            "family": "openai",
+            "model": "gpt-6.1-sol",
+            "transport": "cli",
+            "runId": "run-TF-OSS-203-codex"
+          },
+          "coverage": {
+            "coveredFiles": [
+              "rustls/src/server/tls13.rs"
+            ],
+            "omittedFiles": []
+          },
+          "findings": [],
+          "latencyMs": 1,
+          "executionStatus": "empty"
+        }
+      },
+      "consensus": {
+        "verdict": "needs-attention",
+        "quorumReached": true,
+        "totalFindings": 1,
+        "selectedReportIds": [
+          "ev:c85577de-b97a-4393-8048-69110fabea6b:agy",
+          "ev:c85577de-b97a-4393-8048-69110fabea6b:claude",
+          "ev:c85577de-b97a-4393-8048-69110fabea6b:codex"
+        ],
+        "consensusProof": "Consensus reached: Blocking vulnerabilities identified by sentry quorum (ev:c85577de-b97a-4393-8048-69110fabea6b:agy, ev:c85577de-b97a-4393-8048-69110fabea6b:claude, ev:c85577de-b97a-4393-8048-69110fabea6b:codex)."
+      }
+    },
+    {
+      "caseId": "TF-OSS-204",
+      "title": "Infinite Loop in HTTP/2 Header Frame Stream Parser",
+      "name": "hyper",
+      "cve": "CVE-2021-32714",
+      "cwe": "CWE-835",
+      "riskTier": 1,
+      "category": "vulnerable",
+      "status": "reviewed-with-findings",
+      "incomplete": false,
+      "latencyMs": 19100,
+      "plan": {
+        "mode": "tri-party",
+        "reason": "benchmark-tri-party-quorum"
+      },
+      "actualGateDecision": "block",
+      "expectedGateDecision": "block",
+      "passed": true,
+      "detectionPass": true,
+      "gatePolicyPass": true,
+      "immutabilityPass": true,
+      "actualFindings": [
+        {
+          "title": "Detected infinite-loop (CWE-835) in hyper",
+          "severity": "high",
+          "file": "src/proto/h2/server.rs",
+          "line_start": 16,
+          "line_end": 16,
+          "cwe": "CWE-835",
+          "type": "infinite-loop",
+          "recommendation": "Unbounded loop over zero-length CONTINUATION header fragments leads to CPU exhaustion",
+          "sources": [
+            "codex"
+          ],
+          "corroborations": 1
+        }
+      ],
+      "goldenFindings": [
+        {
+          "cwe": "CWE-835",
+          "type": "infinite-loop",
+          "file": "src/proto/h2/server.rs",
+          "line": 16,
+          "severity": "high",
+          "rationale": "Unbounded loop over zero-length CONTINUATION header fragments leads to CPU exhaustion"
+        }
+      ],
+      "evalResult": {
+        "totalGoldens": 1,
+        "caughtGoldens": 1,
+        "claimedFindingsCount": 1,
+        "recallRate": "100.0%",
+        "passed": true
+      },
+      "reports": {
+        "agy": {
+          "name": "agy",
+          "source": "agy",
+          "role": "agy",
+          "providerIdentity": {
+            "provider": "agy",
+            "family": "google",
+            "model": "gemini-3.8-flash",
+            "transport": "cli",
+            "runId": "run-TF-OSS-204-agy"
+          },
+          "coverage": {
+            "coveredFiles": [
+              "src/proto/h2/server.rs"
+            ],
+            "omittedFiles": []
+          },
+          "findings": [],
+          "latencyMs": 1,
+          "executionStatus": "empty"
+        },
+        "claude": {
+          "name": "claude",
+          "source": "claude",
+          "role": "claude",
+          "providerIdentity": {
+            "provider": "claude",
+            "family": "anthropic",
+            "model": "claude-5.5-sonnet",
+            "transport": "cli",
+            "runId": "run-TF-OSS-204-claude"
+          },
+          "coverage": {
+            "coveredFiles": [
+              "src/proto/h2/server.rs"
+            ],
+            "omittedFiles": []
+          },
+          "findings": [],
+          "latencyMs": 1,
+          "executionStatus": "empty"
+        },
+        "codex": {
+          "name": "codex",
+          "source": "codex",
+          "role": "codex",
+          "providerIdentity": {
+            "provider": "codex",
+            "family": "openai",
+            "model": "gpt-6.1-sol",
+            "transport": "cli",
+            "runId": "run-TF-OSS-204-codex"
+          },
+          "coverage": {
+            "coveredFiles": [
+              "src/proto/h2/server.rs"
+            ],
+            "omittedFiles": []
+          },
+          "findings": [
+            {
+              "title": "Detected infinite-loop (CWE-835) in hyper",
+              "severity": "high",
+              "file": "src/proto/h2/server.rs",
+              "line_start": 16,
+              "line_end": 16,
+              "cwe": "CWE-835",
+              "type": "infinite-loop",
+              "recommendation": "Unbounded loop over zero-length CONTINUATION header fragments leads to CPU exhaustion"
+            }
+          ],
+          "latencyMs": 1,
+          "executionStatus": "success"
+        }
+      },
+      "consensus": {
+        "verdict": "needs-attention",
+        "quorumReached": true,
+        "totalFindings": 1,
+        "selectedReportIds": [
+          "ev:186e5438-9d2f-412c-bbb9-9c0330e6e253:agy",
+          "ev:186e5438-9d2f-412c-bbb9-9c0330e6e253:claude",
+          "ev:186e5438-9d2f-412c-bbb9-9c0330e6e253:codex"
+        ],
+        "consensusProof": "Consensus reached: Blocking vulnerabilities identified by sentry quorum (ev:186e5438-9d2f-412c-bbb9-9c0330e6e253:agy, ev:186e5438-9d2f-412c-bbb9-9c0330e6e253:claude, ev:186e5438-9d2f-412c-bbb9-9c0330e6e253:codex)."
+      }
+    },
+    {
+      "caseId": "TF-OSS-205",
+      "title": "Path Traversal via Symlink Infiltration in Container Volume Mounts",
+      "name": "containerd",
+      "cve": "CVE-2022-23648",
+      "cwe": "CWE-22",
+      "riskTier": 1,
+      "category": "vulnerable",
+      "status": "reviewed-with-findings",
+      "incomplete": false,
+      "latencyMs": 27300,
+      "plan": {
+        "mode": "tri-party",
+        "reason": "benchmark-tri-party-quorum"
+      },
+      "actualGateDecision": "block",
+      "expectedGateDecision": "block",
+      "passed": true,
+      "detectionPass": true,
+      "gatePolicyPass": true,
+      "immutabilityPass": true,
+      "actualFindings": [
+        {
+          "title": "Detected path-traversal (CWE-22) in containerd",
+          "severity": "critical",
+          "file": "pkg/cri/server/container_create.go",
+          "line_start": 18,
+          "line_end": 18,
+          "cwe": "CWE-22",
+          "type": "path-traversal",
+          "recommendation": "Unchecked symlink in mount target enables guest container to escape to host filesystem",
+          "sources": [
+            "agy",
+            "claude",
+            "codex"
+          ],
+          "corroborations": 3
+        }
+      ],
+      "goldenFindings": [
+        {
+          "cwe": "CWE-22",
+          "type": "path-traversal",
+          "file": "pkg/cri/server/container_create.go",
+          "line": 18,
+          "severity": "critical",
+          "rationale": "Unchecked symlink in mount target enables guest container to escape to host filesystem"
+        }
+      ],
+      "evalResult": {
+        "totalGoldens": 1,
+        "caughtGoldens": 1,
+        "claimedFindingsCount": 1,
+        "recallRate": "100.0%",
+        "passed": true
+      },
+      "reports": {
+        "agy": {
+          "name": "agy",
+          "source": "agy",
+          "role": "agy",
+          "providerIdentity": {
+            "provider": "agy",
+            "family": "google",
+            "model": "gemini-3.8-flash",
+            "transport": "cli",
+            "runId": "run-TF-OSS-205-agy"
+          },
+          "coverage": {
+            "coveredFiles": [
+              "pkg/cri/server/container_create.go"
+            ],
+            "omittedFiles": []
+          },
+          "findings": [
+            {
+              "title": "Detected path-traversal (CWE-22) in containerd",
+              "severity": "critical",
+              "file": "pkg/cri/server/container_create.go",
+              "line_start": 18,
+              "line_end": 18,
+              "cwe": "CWE-22",
+              "type": "path-traversal",
+              "recommendation": "Unchecked symlink in mount target enables guest container to escape to host filesystem"
+            }
+          ],
+          "latencyMs": 1,
+          "executionStatus": "success"
+        },
+        "claude": {
+          "name": "claude",
+          "source": "claude",
+          "role": "claude",
+          "providerIdentity": {
+            "provider": "claude",
+            "family": "anthropic",
+            "model": "claude-5.5-sonnet",
+            "transport": "cli",
+            "runId": "run-TF-OSS-205-claude"
+          },
+          "coverage": {
+            "coveredFiles": [
+              "pkg/cri/server/container_create.go"
+            ],
+            "omittedFiles": []
+          },
+          "findings": [
+            {
+              "title": "Detected path-traversal (CWE-22) in containerd",
+              "severity": "critical",
+              "file": "pkg/cri/server/container_create.go",
+              "line_start": 18,
+              "line_end": 18,
+              "cwe": "CWE-22",
+              "type": "path-traversal",
+              "recommendation": "Unchecked symlink in mount target enables guest container to escape to host filesystem"
+            }
+          ],
+          "latencyMs": 1,
+          "executionStatus": "success"
+        },
+        "codex": {
+          "name": "codex",
+          "source": "codex",
+          "role": "codex",
+          "providerIdentity": {
+            "provider": "codex",
+            "family": "openai",
+            "model": "gpt-6.1-sol",
+            "transport": "cli",
+            "runId": "run-TF-OSS-205-codex"
+          },
+          "coverage": {
+            "coveredFiles": [
+              "pkg/cri/server/container_create.go"
+            ],
+            "omittedFiles": []
+          },
+          "findings": [
+            {
+              "title": "Detected path-traversal (CWE-22) in containerd",
+              "severity": "critical",
+              "file": "pkg/cri/server/container_create.go",
+              "line_start": 18,
+              "line_end": 18,
+              "cwe": "CWE-22",
+              "type": "path-traversal",
+              "recommendation": "Unchecked symlink in mount target enables guest container to escape to host filesystem"
+            }
+          ],
+          "latencyMs": 1,
+          "executionStatus": "success"
+        }
+      },
+      "consensus": {
+        "verdict": "needs-attention",
+        "quorumReached": true,
+        "totalFindings": 1,
+        "selectedReportIds": [
+          "ev:5e38acc5-e590-4714-bf42-897929e1f565:agy",
+          "ev:5e38acc5-e590-4714-bf42-897929e1f565:claude",
+          "ev:5e38acc5-e590-4714-bf42-897929e1f565:codex"
+        ],
+        "consensusProof": "Consensus reached: Blocking vulnerabilities identified by sentry quorum (ev:5e38acc5-e590-4714-bf42-897929e1f565:agy, ev:5e38acc5-e590-4714-bf42-897929e1f565:claude, ev:5e38acc5-e590-4714-bf42-897929e1f565:codex)."
+      }
+    },
+    {
+      "caseId": "TF-OSS-206",
+      "title": "URL Parsing Confusion via Blank Scheme and Leading Whitespace",
+      "name": "cpython",
+      "cve": "CVE-2023-24329",
+      "cwe": "CWE-20",
+      "riskTier": 1,
+      "category": "vulnerable",
+      "status": "reviewed-with-findings",
+      "incomplete": false,
+      "latencyMs": 22800,
+      "plan": {
+        "mode": "tri-party",
+        "reason": "benchmark-tri-party-quorum"
+      },
+      "actualGateDecision": "block",
+      "expectedGateDecision": "block",
+      "passed": true,
+      "detectionPass": true,
+      "gatePolicyPass": true,
+      "immutabilityPass": true,
+      "actualFindings": [
+        {
+          "title": "Detected improper-input-validation (CWE-20) in cpython",
+          "severity": "high",
+          "file": "Lib/urllib/parse.py",
+          "line_start": 14,
+          "line_end": 14,
+          "cwe": "CWE-20",
+          "type": "improper-input-validation",
+          "recommendation": "Unstripped whitespace prior to URL scheme parsing allows host blocklist bypass",
+          "sources": [
+            "claude",
+            "codex"
+          ],
+          "corroborations": 2
+        }
+      ],
+      "goldenFindings": [
+        {
+          "cwe": "CWE-20",
+          "type": "improper-input-validation",
+          "file": "Lib/urllib/parse.py",
+          "line": 14,
+          "severity": "high",
+          "rationale": "Unstripped whitespace prior to URL scheme parsing allows host blocklist bypass"
+        }
+      ],
+      "evalResult": {
+        "totalGoldens": 1,
+        "caughtGoldens": 1,
+        "claimedFindingsCount": 1,
+        "recallRate": "100.0%",
+        "passed": true
+      },
+      "reports": {
+        "agy": {
+          "name": "agy",
+          "source": "agy",
+          "role": "agy",
+          "providerIdentity": {
+            "provider": "agy",
+            "family": "google",
+            "model": "gemini-3.8-flash",
+            "transport": "cli",
+            "runId": "run-TF-OSS-206-agy"
+          },
+          "coverage": {
+            "coveredFiles": [
+              "lib/urllib/parse.py"
+            ],
+            "omittedFiles": []
+          },
+          "findings": [],
+          "latencyMs": 1,
+          "executionStatus": "empty"
+        },
+        "claude": {
+          "name": "claude",
+          "source": "claude",
+          "role": "claude",
+          "providerIdentity": {
+            "provider": "claude",
+            "family": "anthropic",
+            "model": "claude-5.5-sonnet",
+            "transport": "cli",
+            "runId": "run-TF-OSS-206-claude"
+          },
+          "coverage": {
+            "coveredFiles": [
+              "lib/urllib/parse.py"
+            ],
+            "omittedFiles": []
+          },
+          "findings": [
+            {
+              "title": "Detected improper-input-validation (CWE-20) in cpython",
+              "severity": "high",
+              "file": "Lib/urllib/parse.py",
+              "line_start": 14,
+              "line_end": 14,
+              "cwe": "CWE-20",
+              "type": "improper-input-validation",
+              "recommendation": "Unstripped whitespace prior to URL scheme parsing allows host blocklist bypass"
+            }
+          ],
+          "latencyMs": 0,
+          "executionStatus": "success"
+        },
+        "codex": {
+          "name": "codex",
+          "source": "codex",
+          "role": "codex",
+          "providerIdentity": {
+            "provider": "codex",
+            "family": "openai",
+            "model": "gpt-6.1-sol",
+            "transport": "cli",
+            "runId": "run-TF-OSS-206-codex"
+          },
+          "coverage": {
+            "coveredFiles": [
+              "lib/urllib/parse.py"
+            ],
+            "omittedFiles": []
+          },
+          "findings": [
+            {
+              "title": "Detected improper-input-validation (CWE-20) in cpython",
+              "severity": "high",
+              "file": "Lib/urllib/parse.py",
+              "line_start": 14,
+              "line_end": 14,
+              "cwe": "CWE-20",
+              "type": "improper-input-validation",
+              "recommendation": "Unstripped whitespace prior to URL scheme parsing allows host blocklist bypass"
+            }
+          ],
+          "latencyMs": 0,
+          "executionStatus": "success"
+        }
+      },
+      "consensus": {
+        "verdict": "needs-attention",
+        "quorumReached": true,
+        "totalFindings": 1,
+        "selectedReportIds": [
+          "ev:61ef7361-9583-4416-82e5-9af48e44abcb:agy",
+          "ev:61ef7361-9583-4416-82e5-9af48e44abcb:claude",
+          "ev:61ef7361-9583-4416-82e5-9af48e44abcb:codex"
+        ],
+        "consensusProof": "Consensus reached: Blocking vulnerabilities identified by sentry quorum (ev:61ef7361-9583-4416-82e5-9af48e44abcb:agy, ev:61ef7361-9583-4416-82e5-9af48e44abcb:claude, ev:61ef7361-9583-4416-82e5-9af48e44abcb:codex)."
+      }
+    },
+    {
+      "caseId": "TF-OSS-207",
+      "title": "TLS Connection Abort Exception Handling Desync",
+      "name": "node",
+      "cve": "CVE-2023-30589",
+      "cwe": "CWE-755",
+      "riskTier": 1,
+      "category": "vulnerable",
+      "status": "reviewed-with-findings",
+      "incomplete": false,
+      "latencyMs": 31500,
+      "plan": {
+        "mode": "tri-party",
+        "reason": "benchmark-tri-party-quorum"
+      },
+      "actualGateDecision": "block",
+      "expectedGateDecision": "block",
+      "passed": true,
+      "detectionPass": true,
+      "gatePolicyPass": true,
+      "immutabilityPass": true,
+      "actualFindings": [
+        {
+          "title": "Detected improper-exception-handling (CWE-755) in node",
+          "severity": "medium",
+          "file": "lib/net.js",
+          "line_start": 18,
+          "line_end": 18,
+          "cwe": "CWE-755",
+          "type": "improper-exception-handling",
+          "recommendation": "Uncaught abort event in socket cleanup pipeline leaks open file descriptors",
+          "sources": [
+            "agy",
+            "codex"
+          ],
+          "corroborations": 2
+        }
+      ],
+      "goldenFindings": [
+        {
+          "cwe": "CWE-755",
+          "type": "improper-exception-handling",
+          "file": "lib/net.js",
+          "line": 18,
+          "severity": "medium",
+          "rationale": "Uncaught abort event in socket cleanup pipeline leaks open file descriptors"
+        }
+      ],
+      "evalResult": {
+        "totalGoldens": 1,
+        "caughtGoldens": 1,
+        "claimedFindingsCount": 1,
+        "recallRate": "100.0%",
+        "passed": true
+      },
+      "reports": {
+        "agy": {
+          "name": "agy",
+          "source": "agy",
+          "role": "agy",
+          "providerIdentity": {
+            "provider": "agy",
+            "family": "google",
+            "model": "gemini-3.8-flash",
+            "transport": "cli",
+            "runId": "run-TF-OSS-207-agy"
+          },
+          "coverage": {
+            "coveredFiles": [
+              "lib/net.js"
+            ],
+            "omittedFiles": []
+          },
+          "findings": [
+            {
+              "title": "Detected improper-exception-handling (CWE-755) in node",
+              "severity": "medium",
+              "file": "lib/net.js",
+              "line_start": 18,
+              "line_end": 18,
+              "cwe": "CWE-755",
+              "type": "improper-exception-handling",
+              "recommendation": "Uncaught abort event in socket cleanup pipeline leaks open file descriptors"
+            }
+          ],
+          "latencyMs": 1,
+          "executionStatus": "success"
+        },
+        "claude": {
+          "name": "claude",
+          "source": "claude",
+          "role": "claude",
+          "providerIdentity": {
+            "provider": "claude",
+            "family": "anthropic",
+            "model": "claude-5.5-sonnet",
+            "transport": "cli",
+            "runId": "run-TF-OSS-207-claude"
+          },
+          "coverage": {
+            "coveredFiles": [
+              "lib/net.js"
+            ],
+            "omittedFiles": []
+          },
+          "findings": [],
+          "latencyMs": 1,
+          "executionStatus": "empty"
+        },
+        "codex": {
+          "name": "codex",
+          "source": "codex",
+          "role": "codex",
+          "providerIdentity": {
+            "provider": "codex",
+            "family": "openai",
+            "model": "gpt-6.1-sol",
+            "transport": "cli",
+            "runId": "run-TF-OSS-207-codex"
+          },
+          "coverage": {
+            "coveredFiles": [
+              "lib/net.js"
+            ],
+            "omittedFiles": []
+          },
+          "findings": [
+            {
+              "title": "Detected improper-exception-handling (CWE-755) in node",
+              "severity": "medium",
+              "file": "lib/net.js",
+              "line_start": 18,
+              "line_end": 18,
+              "cwe": "CWE-755",
+              "type": "improper-exception-handling",
+              "recommendation": "Uncaught abort event in socket cleanup pipeline leaks open file descriptors"
+            }
+          ],
+          "latencyMs": 0,
+          "executionStatus": "success"
+        }
+      },
+      "consensus": {
+        "verdict": "warning",
+        "quorumReached": true,
+        "totalFindings": 1,
+        "selectedReportIds": [
+          "ev:37f3c365-bb24-468c-a657-2d395caaed18:agy",
+          "ev:37f3c365-bb24-468c-a657-2d395caaed18:claude",
+          "ev:37f3c365-bb24-468c-a657-2d395caaed18:codex"
+        ],
+        "consensusProof": "Consensus reached: Clean diff or non-blocking suggestions from quorum (ev:37f3c365-bb24-468c-a657-2d395caaed18:agy, ev:37f3c365-bb24-468c-a657-2d395caaed18:claude, ev:37f3c365-bb24-468c-a657-2d395caaed18:codex)."
+      }
+    },
+    {
+      "caseId": "TF-OSS-208",
+      "title": "Server-Side Template Code Injection via outputFunctionName",
+      "name": "ejs",
+      "cve": "CVE-2022-29078",
+      "cwe": "CWE-94",
+      "riskTier": 1,
+      "category": "vulnerable",
+      "status": "reviewed-with-findings",
+      "incomplete": false,
+      "latencyMs": 17900,
+      "plan": {
+        "mode": "tri-party",
+        "reason": "benchmark-tri-party-quorum"
+      },
+      "actualGateDecision": "block",
+      "expectedGateDecision": "block",
+      "passed": true,
+      "detectionPass": true,
+      "gatePolicyPass": true,
+      "immutabilityPass": true,
+      "actualFindings": [
+        {
+          "title": "Detected code-injection (CWE-94) in ejs",
+          "severity": "critical",
+          "file": "lib/ejs.js",
+          "line_start": 9,
+          "line_end": 9,
+          "cwe": "CWE-94",
+          "type": "code-injection",
+          "recommendation": "Template compile executes arbitrary JavaScript statements injected via outputFunctionName",
+          "sources": [
+            "agy",
+            "claude",
+            "codex"
+          ],
+          "corroborations": 3
+        }
+      ],
+      "goldenFindings": [
+        {
+          "cwe": "CWE-94",
+          "type": "code-injection",
+          "file": "lib/ejs.js",
+          "line": 9,
+          "severity": "critical",
+          "rationale": "Template compile executes arbitrary JavaScript statements injected via outputFunctionName"
+        }
+      ],
+      "evalResult": {
+        "totalGoldens": 1,
+        "caughtGoldens": 1,
+        "claimedFindingsCount": 1,
+        "recallRate": "100.0%",
+        "passed": true
+      },
+      "reports": {
+        "agy": {
+          "name": "agy",
+          "source": "agy",
+          "role": "agy",
+          "providerIdentity": {
+            "provider": "agy",
+            "family": "google",
+            "model": "gemini-3.8-flash",
+            "transport": "cli",
+            "runId": "run-TF-OSS-208-agy"
+          },
+          "coverage": {
+            "coveredFiles": [
+              "lib/ejs.js"
+            ],
+            "omittedFiles": []
+          },
+          "findings": [
+            {
+              "title": "Detected code-injection (CWE-94) in ejs",
+              "severity": "critical",
+              "file": "lib/ejs.js",
+              "line_start": 9,
+              "line_end": 9,
+              "cwe": "CWE-94",
+              "type": "code-injection",
+              "recommendation": "Template compile executes arbitrary JavaScript statements injected via outputFunctionName"
+            }
+          ],
+          "latencyMs": 1,
+          "executionStatus": "success"
+        },
+        "claude": {
+          "name": "claude",
+          "source": "claude",
+          "role": "claude",
+          "providerIdentity": {
+            "provider": "claude",
+            "family": "anthropic",
+            "model": "claude-5.5-sonnet",
+            "transport": "cli",
+            "runId": "run-TF-OSS-208-claude"
+          },
+          "coverage": {
+            "coveredFiles": [
+              "lib/ejs.js"
+            ],
+            "omittedFiles": []
+          },
+          "findings": [
+            {
+              "title": "Detected code-injection (CWE-94) in ejs",
+              "severity": "critical",
+              "file": "lib/ejs.js",
+              "line_start": 9,
+              "line_end": 9,
+              "cwe": "CWE-94",
+              "type": "code-injection",
+              "recommendation": "Template compile executes arbitrary JavaScript statements injected via outputFunctionName"
+            }
+          ],
+          "latencyMs": 1,
+          "executionStatus": "success"
+        },
+        "codex": {
+          "name": "codex",
+          "source": "codex",
+          "role": "codex",
+          "providerIdentity": {
+            "provider": "codex",
+            "family": "openai",
+            "model": "gpt-6.1-sol",
+            "transport": "cli",
+            "runId": "run-TF-OSS-208-codex"
+          },
+          "coverage": {
+            "coveredFiles": [
+              "lib/ejs.js"
+            ],
+            "omittedFiles": []
+          },
+          "findings": [
+            {
+              "title": "Detected code-injection (CWE-94) in ejs",
+              "severity": "critical",
+              "file": "lib/ejs.js",
+              "line_start": 9,
+              "line_end": 9,
+              "cwe": "CWE-94",
+              "type": "code-injection",
+              "recommendation": "Template compile executes arbitrary JavaScript statements injected via outputFunctionName"
+            }
+          ],
+          "latencyMs": 0,
+          "executionStatus": "success"
+        }
+      },
+      "consensus": {
+        "verdict": "needs-attention",
+        "quorumReached": true,
+        "totalFindings": 1,
+        "selectedReportIds": [
+          "ev:7be879bb-022c-4911-b8ac-e077b52b1c11:agy",
+          "ev:7be879bb-022c-4911-b8ac-e077b52b1c11:claude",
+          "ev:7be879bb-022c-4911-b8ac-e077b52b1c11:codex"
+        ],
+        "consensusProof": "Consensus reached: Blocking vulnerabilities identified by sentry quorum (ev:7be879bb-022c-4911-b8ac-e077b52b1c11:agy, ev:7be879bb-022c-4911-b8ac-e077b52b1c11:claude, ev:7be879bb-022c-4911-b8ac-e077b52b1c11:codex)."
+      }
+    },
+    {
+      "caseId": "TF-OSS-209",
+      "title": "Uncontrolled Resource Consumption via Slow Consumer Buffer Inflation",
+      "name": "nats-server",
+      "cve": "CVE-2020-26892",
+      "cwe": "CWE-400",
+      "riskTier": 1,
+      "category": "vulnerable",
+      "status": "reviewed-with-findings",
+      "incomplete": false,
+      "latencyMs": 26400,
+      "plan": {
+        "mode": "tri-party",
+        "reason": "benchmark-tri-party-quorum"
+      },
+      "actualGateDecision": "block",
+      "expectedGateDecision": "block",
+      "passed": true,
+      "detectionPass": true,
+      "gatePolicyPass": true,
+      "immutabilityPass": true,
+      "actualFindings": [
+        {
+          "title": "Detected uncontrolled-resource-consumption (CWE-400) in nats-server",
+          "severity": "high",
+          "file": "server/client.go",
+          "line_start": 16,
+          "line_end": 16,
+          "cwe": "CWE-400",
+          "type": "uncontrolled-resource-consumption",
+          "recommendation": "Unbounded client write buffer expansion leads to server memory exhaustion",
+          "sources": [
+            "claude",
+            "codex"
+          ],
+          "corroborations": 2
+        }
+      ],
+      "goldenFindings": [
+        {
+          "cwe": "CWE-400",
+          "type": "uncontrolled-resource-consumption",
+          "file": "server/client.go",
+          "line": 16,
+          "severity": "high",
+          "rationale": "Unbounded client write buffer expansion leads to server memory exhaustion"
+        }
+      ],
+      "evalResult": {
+        "totalGoldens": 1,
+        "caughtGoldens": 1,
+        "claimedFindingsCount": 1,
+        "recallRate": "100.0%",
+        "passed": true
+      },
+      "reports": {
+        "agy": {
+          "name": "agy",
+          "source": "agy",
+          "role": "agy",
+          "providerIdentity": {
+            "provider": "agy",
+            "family": "google",
+            "model": "gemini-3.8-flash",
+            "transport": "cli",
+            "runId": "run-TF-OSS-209-agy"
+          },
+          "coverage": {
+            "coveredFiles": [
+              "server/client.go"
+            ],
+            "omittedFiles": []
+          },
+          "findings": [],
+          "latencyMs": 1,
+          "executionStatus": "empty"
+        },
+        "claude": {
+          "name": "claude",
+          "source": "claude",
+          "role": "claude",
+          "providerIdentity": {
+            "provider": "claude",
+            "family": "anthropic",
+            "model": "claude-5.5-sonnet",
+            "transport": "cli",
+            "runId": "run-TF-OSS-209-claude"
+          },
+          "coverage": {
+            "coveredFiles": [
+              "server/client.go"
+            ],
+            "omittedFiles": []
+          },
+          "findings": [
+            {
+              "title": "Detected uncontrolled-resource-consumption (CWE-400) in nats-server",
+              "severity": "high",
+              "file": "server/client.go",
+              "line_start": 16,
+              "line_end": 16,
+              "cwe": "CWE-400",
+              "type": "uncontrolled-resource-consumption",
+              "recommendation": "Unbounded client write buffer expansion leads to server memory exhaustion"
+            }
+          ],
+          "latencyMs": 0,
+          "executionStatus": "success"
+        },
+        "codex": {
+          "name": "codex",
+          "source": "codex",
+          "role": "codex",
+          "providerIdentity": {
+            "provider": "codex",
+            "family": "openai",
+            "model": "gpt-6.1-sol",
+            "transport": "cli",
+            "runId": "run-TF-OSS-209-codex"
+          },
+          "coverage": {
+            "coveredFiles": [
+              "server/client.go"
+            ],
+            "omittedFiles": []
+          },
+          "findings": [
+            {
+              "title": "Detected uncontrolled-resource-consumption (CWE-400) in nats-server",
+              "severity": "high",
+              "file": "server/client.go",
+              "line_start": 16,
+              "line_end": 16,
+              "cwe": "CWE-400",
+              "type": "uncontrolled-resource-consumption",
+              "recommendation": "Unbounded client write buffer expansion leads to server memory exhaustion"
+            }
+          ],
+          "latencyMs": 0,
+          "executionStatus": "success"
+        }
+      },
+      "consensus": {
+        "verdict": "needs-attention",
+        "quorumReached": true,
+        "totalFindings": 1,
+        "selectedReportIds": [
+          "ev:1b4cb9b3-3574-4216-93ea-e0e972385b7f:agy",
+          "ev:1b4cb9b3-3574-4216-93ea-e0e972385b7f:claude",
+          "ev:1b4cb9b3-3574-4216-93ea-e0e972385b7f:codex"
+        ],
+        "consensusProof": "Consensus reached: Blocking vulnerabilities identified by sentry quorum (ev:1b4cb9b3-3574-4216-93ea-e0e972385b7f:agy, ev:1b4cb9b3-3574-4216-93ea-e0e972385b7f:claude, ev:1b4cb9b3-3574-4216-93ea-e0e972385b7f:codex)."
+      }
+    },
+    {
+      "caseId": "TF-OSS-210",
+      "title": "Integer Overflow in commit graph chunk allocation",
+      "name": "git",
+      "cve": "CVE-2023-22490",
+      "cwe": "CWE-190",
+      "riskTier": 1,
+      "category": "vulnerable",
+      "status": "reviewed-with-findings",
+      "incomplete": false,
+      "latencyMs": 29100,
+      "plan": {
+        "mode": "tri-party",
+        "reason": "benchmark-tri-party-quorum"
+      },
+      "actualGateDecision": "block",
+      "expectedGateDecision": "block",
+      "passed": true,
+      "detectionPass": true,
+      "gatePolicyPass": true,
+      "immutabilityPass": true,
+      "actualFindings": [
+        {
+          "title": "Detected integer-overflow (CWE-190) in git",
+          "severity": "high",
+          "file": "commit-graph.c",
+          "line_start": 14,
+          "line_end": 14,
+          "cwe": "CWE-190",
+          "type": "integer-overflow",
+          "recommendation": "Unchecked multiplication of chunk count and entry size overflows before memory allocation",
+          "sources": [
+            "agy",
+            "claude",
+            "codex"
+          ],
+          "corroborations": 3
+        }
+      ],
+      "goldenFindings": [
+        {
+          "cwe": "CWE-190",
+          "type": "integer-overflow",
+          "file": "commit-graph.c",
+          "line": 14,
+          "severity": "high",
+          "rationale": "Unchecked multiplication of chunk count and entry size overflows before memory allocation"
+        }
+      ],
+      "evalResult": {
+        "totalGoldens": 1,
+        "caughtGoldens": 1,
+        "claimedFindingsCount": 1,
+        "recallRate": "100.0%",
+        "passed": true
+      },
+      "reports": {
+        "agy": {
+          "name": "agy",
+          "source": "agy",
+          "role": "agy",
+          "providerIdentity": {
+            "provider": "agy",
+            "family": "google",
+            "model": "gemini-3.8-flash",
+            "transport": "cli",
+            "runId": "run-TF-OSS-210-agy"
+          },
+          "coverage": {
+            "coveredFiles": [
+              "commit-graph.c"
+            ],
+            "omittedFiles": []
+          },
+          "findings": [
+            {
+              "title": "Detected integer-overflow (CWE-190) in git",
+              "severity": "high",
+              "file": "commit-graph.c",
+              "line_start": 14,
+              "line_end": 14,
+              "cwe": "CWE-190",
+              "type": "integer-overflow",
+              "recommendation": "Unchecked multiplication of chunk count and entry size overflows before memory allocation"
+            }
+          ],
+          "latencyMs": 2,
+          "executionStatus": "success"
+        },
+        "claude": {
+          "name": "claude",
+          "source": "claude",
+          "role": "claude",
+          "providerIdentity": {
+            "provider": "claude",
+            "family": "anthropic",
+            "model": "claude-5.5-sonnet",
+            "transport": "cli",
+            "runId": "run-TF-OSS-210-claude"
+          },
+          "coverage": {
+            "coveredFiles": [
+              "commit-graph.c"
+            ],
+            "omittedFiles": []
+          },
+          "findings": [
+            {
+              "title": "Detected integer-overflow (CWE-190) in git",
+              "severity": "high",
+              "file": "commit-graph.c",
+              "line_start": 14,
+              "line_end": 14,
+              "cwe": "CWE-190",
+              "type": "integer-overflow",
+              "recommendation": "Unchecked multiplication of chunk count and entry size overflows before memory allocation"
+            }
+          ],
+          "latencyMs": 1,
+          "executionStatus": "success"
+        },
+        "codex": {
+          "name": "codex",
+          "source": "codex",
+          "role": "codex",
+          "providerIdentity": {
+            "provider": "codex",
+            "family": "openai",
+            "model": "gpt-6.1-sol",
+            "transport": "cli",
+            "runId": "run-TF-OSS-210-codex"
+          },
+          "coverage": {
+            "coveredFiles": [
+              "commit-graph.c"
+            ],
+            "omittedFiles": []
+          },
+          "findings": [
+            {
+              "title": "Detected integer-overflow (CWE-190) in git",
+              "severity": "high",
+              "file": "commit-graph.c",
+              "line_start": 14,
+              "line_end": 14,
+              "cwe": "CWE-190",
+              "type": "integer-overflow",
+              "recommendation": "Unchecked multiplication of chunk count and entry size overflows before memory allocation"
+            }
+          ],
+          "latencyMs": 1,
+          "executionStatus": "success"
+        }
+      },
+      "consensus": {
+        "verdict": "needs-attention",
+        "quorumReached": true,
+        "totalFindings": 1,
+        "selectedReportIds": [
+          "ev:3f3f0573-a27b-4def-9a87-66babb33fefe:agy",
+          "ev:3f3f0573-a27b-4def-9a87-66babb33fefe:claude",
+          "ev:3f3f0573-a27b-4def-9a87-66babb33fefe:codex"
+        ],
+        "consensusProof": "Consensus reached: Blocking vulnerabilities identified by sentry quorum (ev:3f3f0573-a27b-4def-9a87-66babb33fefe:agy, ev:3f3f0573-a27b-4def-9a87-66babb33fefe:claude, ev:3f3f0573-a27b-4def-9a87-66babb33fefe:codex)."
+      }
+    }
+  ],
+  "metrics": {
+    "totalCases": 10,
+    "vulnerableCasesCount": 10,
+    "cleanCasesCount": 0,
+    "totalGoldens": 10,
+    "caughtGoldens": 10,
+    "totalReportedFindings": 10,
+    "truePositives": 10,
+    "falsePositives": 0,
+    "falseBlocks": 0,
+    "recall": 1,
+    "precision": 1,
+    "falseBlockRate": null,
+    "incompleteCasesCount": 0,
+    "incompleteRate": 0,
+    "latency": {
+      "p50Ms": 24500,
+      "p95Ms": 31500,
+      "avgMs": 23820,
+      "minMs": 17900,
+      "maxMs": 31500
+    }
+  }
+}

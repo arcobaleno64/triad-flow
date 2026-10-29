@@ -1,0 +1,67 @@
+{
+  "schemaVersion": "1.0.0",
+  "verifiedAt": "2026-10-29T08:04:35.116Z",
+  "changeSetDigest": "sha256:0bfe05f55978c06b3347c41bd671008dfbf08b5a68fab9576ed74e447d266ef2",
+  "verificationMode": "producer_verification",
+  "overallStatus": "DEFECTS_FOUND",
+  "producer": {
+    "providerName": "tri-party-quorum",
+    "findingsCount": 1,
+    "findings": [
+      {
+        "title": "Detected code-injection (CWE-94) in ejs",
+        "severity": "critical",
+        "file": "lib/ejs.js",
+        "line_start": 9,
+        "line_end": 9,
+        "cwe": "CWE-94",
+        "type": "code-injection",
+        "recommendation": "Template compile executes arbitrary JavaScript statements injected via outputFunctionName",
+        "sources": [
+          "agy",
+          "claude",
+          "codex"
+        ],
+        "corroborations": 3
+      }
+    ]
+  },
+  "verifier": {
+    "providerName": "claude",
+    "modelName": "claude-mock",
+    "actualModel": {
+      "source": "runtime",
+      "value": "claude-mock-v1"
+    },
+    "usage": {
+      "completionTokens": 50,
+      "promptTokens": 100,
+      "totalTokens": 150,
+      "usageSource": "authoritative"
+    }
+  },
+  "evaluations": [
+    {
+      "findingId": "finding-1",
+      "verdict": "SUPPORTED",
+      "classification": "SUPPORTED",
+      "locatorAccurate": true,
+      "typeAccurate": true,
+      "severityAccurate": true,
+      "objectiveImpact": "NOT_ASSESSED",
+      "reasoning": "Offline mock verifier verified finding 'finding-1' against changeSet diff.",
+      "dissent": null
+    }
+  ],
+  "verifierOmissions": [],
+  "disagreementLedger": [],
+  "summary": {
+    "totalEvaluated": 1,
+    "supportedCount": 1,
+    "partiallySupportedCount": 0,
+    "contestedCount": 0,
+    "insufficientEvidenceCount": 0,
+    "omissionsCount": 0
+  },
+  "ok": true
+}

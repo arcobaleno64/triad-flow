@@ -1,0 +1,66 @@
+{
+  "schemaVersion": "1.0.0",
+  "verifiedAt": "2026-10-29T08:04:35.114Z",
+  "changeSetDigest": "sha256:8b2271f1d156b8e6043fdf733cbe68effeab506b1f109aa1731f8796ff9f3fa4",
+  "verificationMode": "producer_verification",
+  "overallStatus": "DEFECTS_FOUND",
+  "producer": {
+    "providerName": "tri-party-quorum",
+    "findingsCount": 1,
+    "findings": [
+      {
+        "title": "Detected improper-input-validation (CWE-20) in cpython",
+        "severity": "high",
+        "file": "Lib/urllib/parse.py",
+        "line_start": 14,
+        "line_end": 14,
+        "cwe": "CWE-20",
+        "type": "improper-input-validation",
+        "recommendation": "Unstripped whitespace prior to URL scheme parsing allows host blocklist bypass",
+        "sources": [
+          "claude",
+          "codex"
+        ],
+        "corroborations": 2
+      }
+    ]
+  },
+  "verifier": {
+    "providerName": "claude",
+    "modelName": "claude-mock",
+    "actualModel": {
+      "source": "runtime",
+      "value": "claude-mock-v1"
+    },
+    "usage": {
+      "completionTokens": 50,
+      "promptTokens": 100,
+      "totalTokens": 150,
+      "usageSource": "authoritative"
+    }
+  },
+  "evaluations": [
+    {
+      "findingId": "finding-1",
+      "verdict": "SUPPORTED",
+      "classification": "SUPPORTED",
+      "locatorAccurate": true,
+      "typeAccurate": true,
+      "severityAccurate": true,
+      "objectiveImpact": "NOT_ASSESSED",
+      "reasoning": "Offline mock verifier verified finding 'finding-1' against changeSet diff.",
+      "dissent": null
+    }
+  ],
+  "verifierOmissions": [],
+  "disagreementLedger": [],
+  "summary": {
+    "totalEvaluated": 1,
+    "supportedCount": 1,
+    "partiallySupportedCount": 0,
+    "contestedCount": 0,
+    "insufficientEvidenceCount": 0,
+    "omissionsCount": 0
+  },
+  "ok": true
+}

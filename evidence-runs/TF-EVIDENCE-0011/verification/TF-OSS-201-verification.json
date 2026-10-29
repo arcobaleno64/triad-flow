@@ -1,0 +1,67 @@
+{
+  "schemaVersion": "1.0.0",
+  "verifiedAt": "2026-10-29T08:04:35.107Z",
+  "changeSetDigest": "sha256:076c1af56e6ad6254a68f305d1374cf3af47cf9152421657801d9d2dd8f2a77c",
+  "verificationMode": "producer_verification",
+  "overallStatus": "DEFECTS_FOUND",
+  "producer": {
+    "providerName": "tri-party-quorum",
+    "findingsCount": 1,
+    "findings": [
+      {
+        "title": "Detected out-of-bounds-read (CWE-125) in redis",
+        "severity": "high",
+        "file": "src/cluster.c",
+        "line_start": 12,
+        "line_end": 12,
+        "cwe": "CWE-125",
+        "type": "out-of-bounds-read",
+        "recommendation": "Unchecked payload length in cluster message header allows reading past allocated buffer boundary",
+        "sources": [
+          "agy",
+          "claude",
+          "codex"
+        ],
+        "corroborations": 3
+      }
+    ]
+  },
+  "verifier": {
+    "providerName": "claude",
+    "modelName": "claude-mock",
+    "actualModel": {
+      "source": "runtime",
+      "value": "claude-mock-v1"
+    },
+    "usage": {
+      "completionTokens": 50,
+      "promptTokens": 100,
+      "totalTokens": 150,
+      "usageSource": "authoritative"
+    }
+  },
+  "evaluations": [
+    {
+      "findingId": "finding-1",
+      "verdict": "SUPPORTED",
+      "classification": "SUPPORTED",
+      "locatorAccurate": true,
+      "typeAccurate": true,
+      "severityAccurate": true,
+      "objectiveImpact": "NOT_ASSESSED",
+      "reasoning": "Offline mock verifier verified finding 'finding-1' against changeSet diff.",
+      "dissent": null
+    }
+  ],
+  "verifierOmissions": [],
+  "disagreementLedger": [],
+  "summary": {
+    "totalEvaluated": 1,
+    "supportedCount": 1,
+    "partiallySupportedCount": 0,
+    "contestedCount": 0,
+    "insufficientEvidenceCount": 0,
+    "omissionsCount": 0
+  },
+  "ok": true
+}

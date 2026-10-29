@@ -1,0 +1,66 @@
+{
+  "schemaVersion": "1.0.0",
+  "verifiedAt": "2026-10-29T08:04:35.110Z",
+  "changeSetDigest": "sha256:583c392a6a6ecceeca5e1eb7bb98918bb3630419a02bf7d1b7f78b84c6a6897a",
+  "verificationMode": "producer_verification",
+  "overallStatus": "DEFECTS_FOUND",
+  "producer": {
+    "providerName": "tri-party-quorum",
+    "findingsCount": 1,
+    "findings": [
+      {
+        "title": "Detected cryptographic-nonce-reuse (CWE-323) in rustls",
+        "severity": "high",
+        "file": "rustls/src/server/tls13.rs",
+        "line_start": 14,
+        "line_end": 14,
+        "cwe": "CWE-323",
+        "type": "cryptographic-nonce-reuse",
+        "recommendation": "Predictable zero-initialized nonce in AEAD ticket encryption breaks confidentiality",
+        "sources": [
+          "agy",
+          "claude"
+        ],
+        "corroborations": 2
+      }
+    ]
+  },
+  "verifier": {
+    "providerName": "claude",
+    "modelName": "claude-mock",
+    "actualModel": {
+      "source": "runtime",
+      "value": "claude-mock-v1"
+    },
+    "usage": {
+      "completionTokens": 50,
+      "promptTokens": 100,
+      "totalTokens": 150,
+      "usageSource": "authoritative"
+    }
+  },
+  "evaluations": [
+    {
+      "findingId": "finding-1",
+      "verdict": "SUPPORTED",
+      "classification": "SUPPORTED",
+      "locatorAccurate": true,
+      "typeAccurate": true,
+      "severityAccurate": true,
+      "objectiveImpact": "NOT_ASSESSED",
+      "reasoning": "Offline mock verifier verified finding 'finding-1' against changeSet diff.",
+      "dissent": null
+    }
+  ],
+  "verifierOmissions": [],
+  "disagreementLedger": [],
+  "summary": {
+    "totalEvaluated": 1,
+    "supportedCount": 1,
+    "partiallySupportedCount": 0,
+    "contestedCount": 0,
+    "insufficientEvidenceCount": 0,
+    "omissionsCount": 0
+  },
+  "ok": true
+}
