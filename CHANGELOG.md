@@ -5,6 +5,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.10.0] - 2026-10-29
+
+### Added
+- **Real-World Multi-Language Benchmark Suite (TF-OSS-v2)**:
+  - 10 curated human-adjudicated real-world OSS repository cases spanning 5 languages (C, Rust, Go, Python, JavaScript) and 8 CWE families:
+    • `TF-OSS-201` (`redis/redis`): C / CWE-125 Out-of-bounds Read (CVE-2021-32761)
+    • `TF-OSS-202` (`curl/curl`): C / CWE-416 Use After Free (CVE-2023-38546)
+    • `TF-OSS-203` (`rustls/rustls`): Rust / CWE-323 Nonce Reuse (CVE-2024-39908)
+    • `TF-OSS-204` (`hyperium/hyper`): Rust / CWE-835 Infinite Loop (CVE-2021-32714)
+    • `TF-OSS-205` (`containerd/containerd`): Go / CWE-22 Path Traversal (CVE-2022-23648)
+    • `TF-OSS-206` (`python/cpython`): Python / CWE-20 Improper Input Validation (CVE-2023-24329)
+    • `TF-OSS-207` (`nodejs/node`): C++/JS / CWE-755 Exception Handling Desync (CVE-2023-30589)
+    • `TF-OSS-208` (`mde/ejs`): JS / CWE-94 Code Injection (CVE-2022-29078)
+    • `TF-OSS-209` (`nats-io/nats-server`): Go / CWE-400 Uncontrolled Resource Consumption (CVE-2020-26892)
+    • `TF-OSS-210` (`git/git`): C / CWE-190 Integer Overflow (CVE-2023-22490)
+  - Cryptographically frozen corpus digest: `sha256:87d0720fbca96d4e8d2070260d25631eecb9ae84b60b77a0729fc23dd1975117`.
+  - CLI support for `--corpus=v2` and `-v2` flags across benchmark runners.
+- **Empirical Evaluation Evidence Bundle (TF-EVIDENCE-0011)**:
+  - Assembled 29 cryptographically verified artifacts sealed via `artifact-manifest.json`.
+  - Achieved 100% recall (10/10 caught goldens), zero incomplete runs (0/10), and 100% gate policy correctness (10/10 BLOCK).
+  - Recorded solitary blocker veto for `TF-OSS-204` and vendor divergence profiles in `disagreement-ledger.json`.
+- **CLI Subcommand Manuals & Documentation**:
+  - Comprehensive `--help` and `-h` support with per-subcommand usage manuals for `doctor`, `demo`, `review`, `factory`, and `benchmark`.
+
+## [2.9.0] - 2026-10-29
+
+### Added
+- **3-Tier Cross-File Symbol Resolution & Standard Library Exemption**:
+  - Tier 1 exact export index, Tier 2 ast-grep semantic search, and Tier 3 repo-wide regex fallback.
+  - Standard library built-in exemption for Node.js, C, Go, Python, and Rust core symbols.
+- **Track D1 50-Cycle Dogfood Governance Closure**:
+  - All 50 dogfood audit cycles completed and archived with zero unhandled livelocks.
+
 ## [2.7.0] - 2026-10-02
 
 ### Added
