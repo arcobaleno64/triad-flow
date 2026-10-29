@@ -1,6 +1,6 @@
 {
   "name": "@arcobaleno64/triad-flow",
-  "version": "2.9.0",
+  "version": "2.10.0",
   "description": "Deterministic Multi-Agent Consensus & Adaptive Control Core",
   "type": "module",
   "main": "src/cli.mjs",
@@ -37,7 +37,8 @@
     "evidence:0007": "node scripts/assemble-evidence-0007.mjs",
     "evidence:0008": "node scripts/assemble-evidence-0008.mjs",
     "evidence:0009": "node scripts/assemble-evidence-0009.mjs",
-    "evidence:0010": "node scripts/assemble-evidence-0010.mjs"
+    "evidence:0010": "node scripts/assemble-evidence-0010.mjs",
+    "evidence:0011": "node scripts/assemble-evidence-0011.mjs"
   },
   "keywords": [
     "multi-agent",
