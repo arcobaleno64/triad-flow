@@ -93,8 +93,8 @@ export const TF_OSS_CORPUS_V2_CASES = Object.freeze([
         ""
       ].join("\n"),
       "test/test.js": [
-        "import fs from 'node:fs';",
-        "import assert from 'node:assert';",
+        "const fs = require('node:fs');",
+        "const assert = require('node:assert');",
         "",
         "const src = fs.readFileSync('src/cluster.c', 'utf8');",
         "const hasSafeCheck = src.includes('explen < sizeof(clusterMsg)') && src.includes('explen > buflen');",
@@ -178,8 +178,8 @@ export const TF_OSS_CORPUS_V2_CASES = Object.freeze([
         ""
       ].join("\n"),
       "test/test.js": [
-        "import fs from 'node:fs';",
-        "import assert from 'node:assert';",
+        "const fs = require('node:fs');",
+        "const assert = require('node:assert');",
         "",
         "const src = fs.readFileSync('lib/cookie.c', 'utf8');",
         "const hasNulling = src.includes('c->filename = NULL;');",
@@ -264,8 +264,8 @@ export const TF_OSS_CORPUS_V2_CASES = Object.freeze([
         ""
       ].join("\n"),
       "test/test.js": [
-        "import fs from 'node:fs';",
-        "import assert from 'node:assert';",
+        "const fs = require('node:fs');",
+        "const assert = require('node:assert');",
         "",
         "const src = fs.readFileSync('rustls/src/server/tls13.rs', 'utf8');",
         "const hasDynamicNonce = src.includes('generate_random_nonce()');",
@@ -352,8 +352,8 @@ export const TF_OSS_CORPUS_V2_CASES = Object.freeze([
         ""
       ].join("\n"),
       "test/test.js": [
-        "import fs from 'node:fs';",
-        "import assert from 'node:assert';",
+        "const fs = require('node:fs');",
+        "const assert = require('node:assert');",
         "",
         "const src = fs.readFileSync('src/proto/h2/server.rs', 'utf8');",
         "const hasGuard = src.includes('MAX_EMPTY_CONTINUATIONS');",
@@ -437,8 +437,8 @@ export const TF_OSS_CORPUS_V2_CASES = Object.freeze([
         ""
       ].join("\n"),
       "test/test.js": [
-        "import fs from 'node:fs';",
-        "import assert from 'node:assert';",
+        "const fs = require('node:fs');",
+        "const assert = require('node:assert');",
         "",
         "const src = fs.readFileSync('pkg/cri/server/container_create.go', 'utf8');",
         "const hasSecureJoin = src.includes('SecureJoin(rootfs, containerPath)');",
@@ -515,8 +515,8 @@ export const TF_OSS_CORPUS_V2_CASES = Object.freeze([
         ""
       ].join("\n"),
       "test/test.js": [
-        "import fs from 'node:fs';",
-        "import assert from 'node:assert';",
+        "const fs = require('node:fs');",
+        "const assert = require('node:assert');",
         "",
         "const src = fs.readFileSync('Lib/urllib/parse.py', 'utf8');",
         "const hasStrip = src.includes('url = url.lstrip()');",
@@ -598,8 +598,8 @@ export const TF_OSS_CORPUS_V2_CASES = Object.freeze([
         ""
       ].join("\n"),
       "test/test.js": [
-        "import fs from 'node:fs';",
-        "import assert from 'node:assert';",
+        "const fs = require('node:fs');",
+        "const assert = require('node:assert');",
         "",
         "const src = fs.readFileSync('lib/net.js', 'utf8');",
         "const hasHandleDestroy = src.includes('this._handle.destroyed = true;');",
@@ -678,8 +678,8 @@ export const TF_OSS_CORPUS_V2_CASES = Object.freeze([
         ""
       ].join("\n"),
       "test/test.js": [
-        "import fs from 'node:fs';",
-        "import assert from 'node:assert';",
+        "const fs = require('node:fs');",
+        "const assert = require('node:assert');",
         "",
         "const src = fs.readFileSync('lib/ejs.js', 'utf8');",
         "const hasIdentifierValidation = src.includes('_JS_IDENTIFIER.test(opts.outputFunctionName)');",
@@ -760,8 +760,8 @@ export const TF_OSS_CORPUS_V2_CASES = Object.freeze([
         ""
       ].join("\n"),
       "test/test.js": [
-        "import fs from 'node:fs';",
-        "import assert from 'node:assert';",
+        "const fs = require('node:fs');",
+        "const assert = require('node:assert');",
         "",
         "const src = fs.readFileSync('server/client.go', 'utf8');",
         "const hasMaxPendingCheck = src.includes('MaxPendingBytes');",
@@ -840,8 +840,8 @@ export const TF_OSS_CORPUS_V2_CASES = Object.freeze([
         ""
       ].join("\n"),
       "test/test.js": [
-        "import fs from 'node:fs';",
-        "import assert from 'node:assert';",
+        "const fs = require('node:fs');",
+        "const assert = require('node:assert');",
         "",
         "const src = fs.readFileSync('commit-graph.c', 'utf8');",
         "const hasCheckedMult = src.includes('st_mult(chunk_count, entry_size)');",
@@ -869,19 +869,19 @@ export const TF_OSS_CORPUS_V2_CASES = Object.freeze([
 /**
  * Pinned Expected Cryptographic Digests for TF-OSS-v2 (Exact Pinning Invariant)
  */
-export const TF_OSS_V2_EXPECTED_CORPUS_DIGEST = "sha256:187968405d656094def91a3c1c77d410eb1c612a1fee2cefa70e9d206a2da8f4";
+export const TF_OSS_V2_EXPECTED_CORPUS_DIGEST = "sha256:87d0720fbca96d4e8d2070260d25631eecb9ae84b60b77a0729fc23dd1975117";
 
 export const TF_OSS_V2_EXPECTED_CASE_DIGESTS = Object.freeze({
-  "TF-OSS-201": "sha256:9a07ebde483dfb4596d0fff9349f71fe7606e54cdd841d2601922a172cea3aed",
-  "TF-OSS-202": "sha256:c20384a0d7a9a12dd621d2647bdc67e85794231c67f12b758d39586e52ef0425",
-  "TF-OSS-203": "sha256:9a5bfa846b4da53abd2a77518568dbb163df214eca4d22458650673b6da95c4e",
-  "TF-OSS-204": "sha256:b1542db8aa7422cf5080c9e006a69663351631bb1b083d4cb7c4101d6b5a3ade",
-  "TF-OSS-205": "sha256:455e0f13a067bc984c32a0b9eecef83cb78325beb880129a9b54a5eb8a7226ea",
-  "TF-OSS-206": "sha256:818fedba79d95e3d1d61d2f0be0f0d5ee424645afc58c2581bfaadcfa1f0f8bf",
-  "TF-OSS-207": "sha256:6e70f19488eb7fbc3c04e8543dd419822af9610fcbef5fea5a1673ae14974df1",
-  "TF-OSS-208": "sha256:6e266269fd3a04e1d200839ffdfd1a7f50c1e572a636c3decfd19f71548e1cf4",
-  "TF-OSS-209": "sha256:83a3261dc18259275dbd10a3bbb41ef6d3e532a093357b774883120178b61e8d",
-  "TF-OSS-210": "sha256:8c0ba3483c74e9c5a612d7b043e17db4aed767cbab827f42849381f61026ecef"
+  "TF-OSS-201": "sha256:17bbf5c476164c07f5b48369ba2361a5d901f0a2f956355622d13a9ce8e3e65b",
+  "TF-OSS-202": "sha256:0f1c7c0007d6ed73f68e92e1fe7384f6cc90e26e2acadcbc05aeb986f5704472",
+  "TF-OSS-203": "sha256:cab58cc397f78ee10b6672fd96bec7596a89c186a048586789e3103e6d1b27b3",
+  "TF-OSS-204": "sha256:2539a7c9a62a60dad29e39890bbe7457c63d2cb380219b8cee55312f4668bd1c",
+  "TF-OSS-205": "sha256:0b48f831e4bfd4cace20d9a86d371b533bab66f39b238d19318715a8eb179297",
+  "TF-OSS-206": "sha256:e70acd37b7f19e07ed230da3132dbabb7d07e87c57aef8cb7fea9ae80dbcb0ec",
+  "TF-OSS-207": "sha256:47277786936710cbfdb29b4e2cfde96449c0a0ca769cb871a05a592e52a31cbb",
+  "TF-OSS-208": "sha256:00f88eb4aebb59fa2b6887b78c6fcf9bacb67380ea8fd86d6ac46f8b61d8916f",
+  "TF-OSS-209": "sha256:d4d3ed5f790abc05d6c8d70c1aeb85551d92192d09c3bcdae3e7a71e728accfe",
+  "TF-OSS-210": "sha256:f8576a3e05ba28d69c14ec653cad316628d79224c7fb5c34e47882796ca616c6"
 });
 
 /**

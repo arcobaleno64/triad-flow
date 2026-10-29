@@ -188,7 +188,7 @@ test("Contract 5: BatchRemediationSession executes non-conflicting multi-languag
       ...case2.baseFiles,
       ...case3.baseFiles,
       "test/multi-test.js": [
-        "import assert from 'node:assert';",
+        "const assert = require('node:assert');",
         "console.log('MULTI PASS');",
         ""
       ].join("\n")
