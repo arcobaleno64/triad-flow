@@ -29,7 +29,67 @@ function gitExec(repoRoot, args, options = {}) {
   });
 }
 
-const exactHeadContentCache = new Map();
+export class ExactHeadLruCache {
+  constructor(options = {}) {
+    this.maxEntries = options.maxEntries || 128;
+    this.maxBytes = options.maxBytes || 32 * 1024 * 1024; // 32 MiB
+    this.currentBytes = 0;
+    this.cache = new Map();
+  }
+
+  has(key) {
+    return this.cache.has(key);
+  }
+
+  get(key) {
+    const entry = this.cache.get(key);
+    if (!entry) return undefined;
+    this.cache.delete(key);
+    this.cache.set(key, entry);
+    return entry.content;
+  }
+
+  set(key, content) {
+    if (content === null || content === undefined) return;
+    const bytes = Buffer.isBuffer(content)
+      ? content.byteLength
+      : Buffer.byteLength(String(content), "utf8");
+    if (bytes > this.maxBytes) return;
+
+    if (this.cache.has(key)) {
+      this.currentBytes -= this.cache.get(key).bytes;
+      this.cache.delete(key);
+    }
+
+    while (
+      (this.cache.size >= this.maxEntries || (this.currentBytes + bytes > this.maxBytes)) &&
+      this.cache.size > 0
+    ) {
+      const oldestKey = this.cache.keys().next().value;
+      const oldestEntry = this.cache.get(oldestKey);
+      this.currentBytes -= oldestEntry.bytes;
+      this.cache.delete(oldestKey);
+    }
+
+    this.cache.set(key, { content, bytes });
+    this.currentBytes += bytes;
+  }
+
+  clear() {
+    this.cache.clear();
+    this.currentBytes = 0;
+  }
+
+  get size() {
+    return this.cache.size;
+  }
+
+  get bytes() {
+    return this.currentBytes;
+  }
+}
+
+export const exactHeadContentCache = new ExactHeadLruCache();
 
 /**
  * Normalizes scope mode string to canonical form (IMP-F05).
@@ -451,7 +511,6 @@ export function getExactHeadFileContent(repoRoot, headSha, filePath) {
     exactHeadContentCache.set(cacheKey, content);
     return content;
   } catch (_err) {
-    exactHeadContentCache.set(cacheKey, null);
     return null;
   }
 }
