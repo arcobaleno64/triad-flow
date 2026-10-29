@@ -61,53 +61,118 @@ export class BaseAstAdapter {
 }
 
 /**
- * Regex patterns identifying assertions in JavaScript/TypeScript.
+ * Regex patterns identifying assertions across languages (JS/TS, Python, Rust, Go, C/C++).
  */
-const ASSERTION_PATTERNS = [
+export const ASSERTION_PATTERNS = [
+  // JavaScript / TypeScript assertions
   /\bassert(?:\.[a-zA-Z0-9_]+)?\s*\(/,
   /\bexpect\s*\(.*?\)\s*\.[a-zA-Z0-9_]+/,
   /\bshould(?:\.[a-zA-Z0-9_]+)+/,
-  /\b(?:rejects|resolves)\.[a-zA-Z0-9_]+/
+  /\b(?:rejects|resolves)\.[a-zA-Z0-9_]+/,
+
+  // Python assertions
+  /\bassert\s+[^=]/,
+  /\bself\.assert[a-zA-Z0-9_]+\s*\(/,
+  /\bpytest\.(?:fail|raises)\s*\(/,
+
+  // Rust assertions and panic invariants
+  /\b(?:assert|assert_eq|assert_ne|debug_assert|debug_assert_eq|debug_assert_ne)!\s*\(?/,
+  /\bpanic!\s*\(?/,
+
+  // Go assertions
+  /\bt\.(?:Error|Errorf|Fatal|Fatalf|FailNow)\s*\(/,
+  /\b(?:assert|require)\.[a-zA-Z0-9_]+\s*\(/,
+
+  // C / C++ assertions
+  /\bassert\s*\(/,
+  /\bassert_true\s*\(/,
+  /\bCU_ASSERT\s*\(/
 ];
 
 /**
- * Regex patterns identifying security validation and authorization gates.
+ * Regex patterns identifying security validation and authorization gates across languages.
  */
-const SECURITY_CHECK_PATTERNS = [
+export const SECURITY_CHECK_PATTERNS = [
+  // JS/TS security checks
   /\bif\s*\(.*!(?:valid|auth|verified|allowed|permitted|token|signature|session|permission|isAdmin|csrf|exists|check)\b.*?\)\s*(?:throw|return|process\.exit)/i,
   /\bjwt\.verify\s*\(/i,
   /\bcrypto\.timingSafeEqual\s*\(/i,
   /\bsanitize(?:Html|Input|Url|Path)?\s*\(/i,
   /\bescape(?:Html|Sql|Xml)?\s*\(/i,
-  /\bvalidate(?:Token|Schema|Input|Signature|Path)?\s*\(/i
+  /\bvalidate(?:Token|Schema|Input|Signature|Path)?\s*\(/i,
+
+  // Python security checks
+  /\bif\s+not\s+(?:valid|auth|token|verified|allowed|csrf|exists|check)\b.*?:/i,
+  /\bhmac\.compare_digest\s*\(/i,
+
+  // Rust security checks
+  /\bif\s+!(?:valid|auth|verified|token|signature|check)\b/i,
+  /\bconstant_time_eq\s*\(/i,
+
+  // Go security checks
+  /\bif\s+!(?:valid|auth|verified|check)\b/i,
+  /\bsubtle\.ConstantTimeCompare\s*\(/i,
+
+  // C / C++ bounds and security checks
+  /\bif\s*\(\s*!(?:valid|auth|check)\s*\)/i,
+  /\bif\s*\(\s*explen\s*<\s*sizeof/i
 ];
 
 /**
  * Patterns in added lines indicating trivial constant branch bypass or empty error swallowing.
  */
-const CONSTANT_BYPASS_PATTERNS = [
+export const CONSTANT_BYPASS_PATTERNS = [
+  // JS / TS / C / C++ if (true / 1)
   {
-    pattern: /\bif\s*\(\s*(?:true|1|!0)\s*\)\s*(?:return\b|throw\b|process\.exit)/i,
+    pattern: /\bif\s*\(\s*(?:true|1|!0)\s*\)\s*(?:return\b|throw\b|process\.exit|exit\b|break\b)/i,
     description: "Patch introduces unconditional early exit via 'if (true)'"
   },
+  // Go / Rust if true {
+  {
+    pattern: /\bif\s+true\s*\{/i,
+    description: "Patch introduces unconditional branch via 'if true {'"
+  },
+  // Python if True:
+  {
+    pattern: /\bif\s+(?:True|1)\s*:\s*(?:return\b|raise\b|exit\b)/,
+    description: "Patch introduces unconditional early exit via 'if True:'"
+  },
+  // JS / C dead branch if (false / 0)
   {
     pattern: /\bif\s*\(\s*(?:false|0|!1)\s*\)\s*\{/i,
     description: "Patch hides logic inside dead branch 'if (false)'"
   },
+  // Go / Rust dead branch if false {
+  {
+    pattern: /\bif\s+false\s*\{/i,
+    description: "Patch hides logic inside dead branch 'if false {'"
+  },
+  // Python dead branch if False:
+  {
+    pattern: /\bif\s+(?:False|0)\s*:/,
+    description: "Patch hides logic inside dead branch 'if False:'"
+  },
+  // while (false)
   {
     pattern: /\bwhile\s*\(\s*(?:false|0|!1)\s*\)/i,
     description: "Patch wraps logic in non-executing 'while (false)'"
   },
+  // JS empty catch block
   {
     pattern: /\bcatch\s*(?:\([^)]*\))?\s*\{\s*\}/,
     description: "Patch swallows errors silently with empty catch block"
+  },
+  // Python empty except: pass block
+  {
+    pattern: /\bexcept(?:\s+[a-zA-Z0-9_.]+)?\s*:\s*(?:pass|\.\.\.)\b/,
+    description: "Patch swallows errors silently with 'except: pass'"
   }
 ];
 
 /**
- * Legacy anti-degradation patterns.
+ * Legacy anti-degradation and test suppression patterns across languages.
  */
-const LEGACY_ANTI_DEGRADATION_PATTERNS = [
+export const LEGACY_ANTI_DEGRADATION_PATTERNS = [
   {
     type: EVASION_VIOLATION_TYPES.TEST_SKIPPING,
     pattern: /(?:^|\s)(?:it|test|describe)\.skip\b/,
@@ -117,6 +182,26 @@ const LEGACY_ANTI_DEGRADATION_PATTERNS = [
     type: EVASION_VIOLATION_TYPES.TEST_SKIPPING_X,
     pattern: /(?:^|\s)(?:xit|xdescribe)\b/,
     description: "Patch disables test execution using xit/xdescribe"
+  },
+  {
+    type: EVASION_VIOLATION_TYPES.TEST_SKIPPING,
+    pattern: /@pytest\.mark\.skip\b/,
+    description: "Patch skips Python test execution using @pytest.mark.skip"
+  },
+  {
+    type: EVASION_VIOLATION_TYPES.TEST_SKIPPING,
+    pattern: /@unittest\.skip\b/,
+    description: "Patch skips Python test execution using @unittest.skip"
+  },
+  {
+    type: EVASION_VIOLATION_TYPES.TEST_SKIPPING,
+    pattern: /#\[ignore\b/,
+    description: "Patch skips Rust test execution using #[ignore]"
+  },
+  {
+    type: EVASION_VIOLATION_TYPES.TEST_SKIPPING,
+    pattern: /\bt\.Skip(?:f)?\s*\(/,
+    description: "Patch skips Go test execution using t.Skip"
   },
   {
     type: EVASION_VIOLATION_TYPES.TS_SUPPRESS,
