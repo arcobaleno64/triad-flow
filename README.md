@@ -105,7 +105,7 @@ node bin/triad-flow.mjs remediate --case=BENCH-REAL-001 --sandbox=worktree      
 - **SARIF 2.1.0**: Standardized JSON report generation with deduplicated driver rules and URI-safe artifact locations.
 - **OWASP Top 10 for LLM**:
   - `LLM02: Sensitive Info Disclosure` — Multi-pattern redaction (Google, OpenAI, Anthropic, GitHub, AWS, JWT, PEM keys).
-  - `LLM06: Excessive Agency` — `OodaLoopController` 3-iteration livelock, Jaccard semantic stagnation detection, and patch cycle circuit breaker.
+  - `LLM06: Excessive Agency` — `OodaLoopController` 3-iteration livelock, Jaccard semantic stagnation detection, and patch cycle circuit breaker. **Note: not yet wired into the production review path; `aggregateConsensus` is used in production, and `OodaLoopController` is exercised by tests only.**
 - **NIST SSDF (SP 800-218) & OpenSSF**: Physical symlink and sibling path traversal defense with Quorum-enforced Fail-Closed gates.
 - **IEEE 352 / N-Version**: Heterogeneous multi-model consensus defense against Common-Mode Failures.
 
