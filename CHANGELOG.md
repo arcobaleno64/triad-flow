@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.11.0] - 2026-11-11
+
+### Added
+- **Container Sandbox Isolation Driver (ContainerDriver)**:
+  - First-class Docker and rootless Podman execution engine in `src/core/sandbox-driver.mjs` with strict ephemeral container boundaries.
+  - Cross-platform mount path normalization (POSIX format), preventing parameter parsing corruptions on Windows hosts.
+  - Automatic SELinux volume relabeling (`:z`) support for rootless Podman.
+  - Monorepo and multi-component subproject CWD forwarding (`-w /jail/<cwd>`) with strict path traversal guards.
+  - Active egress denial probes across Node.js, Python, and Shell/POSIX environments with automatic runtime selection.
+  - Sandbox execution timeout protection with exit code 124 and `timedOut: true` telemetry.
+  - Comprehensive CLI integration: `--test-cmd`, `--container-image`, `--container-runtime`, and `--pinned-image-digest`.
+- **Phase 5 Multi-Language Remediation & Container Dispatch Alignment**:
+  - Dynamic container image resolution across 7 language ecosystems (`python:3.11-slim`, `rust:1.75-slim`, `golang:1.22-alpine`, `gcc:13`, `node:20-slim`) via `DEFAULT_LANGUAGE_CONTAINER_IMAGES` and `resolveLanguageContainerImage`.
+  - Heterogeneous batch container execution support when all batch findings provide typed command runners (`allFindingsHaveTypedCommand`).
+  - Dynamic per-finding container image resolution in `BatchRemediationSession.executeBatchInJailWorktree`.
+  - Automated build tool runner detection (`detectLanguageTestRunner` auto-detecting `Makefile`, `package.json`, `Cargo.toml`, etc.).
+- **Deterministic Offline Provider CLI Mock Sandbox & Fault Injection**:
+  - `src/adapters/mock-provider-sandbox.mjs` providing deterministic offline mock sentries and fault injection for reproducible multi-provider tests.
+- **Multi-Language Patch Synthesis & Anti-Evasion**:
+  - Synthesize unified diffs with guaranteed leading-space context lines across C, Rust, Go, Python, and JavaScript/TypeScript.
+  - Multi-language assertion stripping, constant branch bypass, and test suppression detection.
+
+### Fixed
+- **AST Context-Builder Precision & Budget Optimization**:
+  - High-precision AST security candidate filtering requiring security category for built-in object methods, preventing context budget exhaustion.
+  - Callee extraction and global function call handling hardening.
+  - ES6 class method detection in `findFunctionDefinitions`.
+
 ## [2.10.0] - 2026-10-29
 
 ### Added
