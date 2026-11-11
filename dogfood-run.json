@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.1.0",
-  "runId": "dogfood-1794368816379-94ce870f-873e-4380-ae7b-5f4d96880b6e",
+  "runId": "dogfood-1794368972522-189bab14-601b-4029-ac47-abb83977aecd",
   "gate": {
     "decision": "approve",
     "reason": "Clean Challenge passed: zero findings and zero verified omissions."
@@ -11,14 +11,14 @@
   },
   "isExecutionComplete": true,
   "executionMode": "mock",
-  "runStartedAt": "2026-11-11T03:46:56.378Z",
-  "timestamp": "2026-11-11T03:46:58.432Z",
+  "runStartedAt": "2026-11-11T03:49:32.522Z",
+  "timestamp": "2026-11-11T03:49:34.450Z",
   "track": "Track D1: SHADOW_DOGFOOD",
   "authority": "NONE (ADVISORY_ONLY)",
   "triadFlowVersion": "2.10.0",
   "runContext": {
-    "runId": "dogfood-1794368816379-94ce870f-873e-4380-ae7b-5f4d96880b6e",
-    "headSha": "c980fa474988e6baa67dda7797aaa259fb91cb18",
+    "runId": "dogfood-1794368972522-189bab14-601b-4029-ac47-abb83977aecd",
+    "headSha": "ef17d8dd5f1e903fe744d7296d53f4008daba3ee",
     "contentDigest": "38e7bd5df2c0a71f524e2fa4dacc19ec03b3c7f50218e9362762b0b464090002",
     "patchObjective": "",
     "objectiveContract": null,
@@ -26,8 +26,8 @@
   },
   "repository": {
     "name": "arcobaleno64/triad-flow",
-    "commitSha": "c980fa474988e6baa67dda7797aaa259fb91cb18",
-    "branch": "feat/patch-jail-container-driver-hardening",
+    "commitSha": "ef17d8dd5f1e903fe744d7296d53f4008daba3ee",
+    "branch": "main",
     "base": "971855c",
     "head": "HEAD"
   },
@@ -68,7 +68,9 @@
         "riskTier": 2
       }
     ],
-    "excludedFiles": []
+    "excludedFiles": [
+      "dogfood-run.json"
+    ]
   },
   "providerTelemetry": {
     "agy": {
@@ -117,8 +119,8 @@
     "mergeBlockedInProduction": false
   },
   "telemetryMetrics": {
-    "totalDurationMs": 1147,
-    "reviewerPhaseDurationMs": 1133,
+    "totalDurationMs": 1040,
+    "reviewerPhaseDurationMs": 1026,
     "avgProviderLatencyMs": 3,
     "executionComplete": true,
     "cleanChallengeAttempted": true,
@@ -139,7 +141,7 @@
       "platform": "win32",
       "transport": "argv",
       "budgetAllocatedMs": 30000,
-      "globalDeadlineRemainingMs": 28867,
+      "globalDeadlineRemainingMs": 28974,
       "stagedFallbackUsed": false,
       "chunkCount": null,
       "maxConcurrency": 1,
@@ -151,10 +153,10 @@
   },
   "verificationRecord": {
     "schemaVersion": "1.0.0",
-    "verifiedAt": "2026-11-11T03:46:58.430Z",
+    "verifiedAt": "2026-11-11T03:49:34.448Z",
     "changeSetDigest": "sha256:38e7bd5df2c0a71f524e2fa4dacc19ec03b3c7f50218e9362762b0b464090002",
-    "headSha": "c980fa474988e6baa67dda7797aaa259fb91cb18",
-    "runId": "dogfood-1794368816379-94ce870f-873e-4380-ae7b-5f4d96880b6e",
+    "headSha": "ef17d8dd5f1e903fe744d7296d53f4008daba3ee",
+    "runId": "dogfood-1794368972522-189bab14-601b-4029-ac47-abb83977aecd",
     "exclusions": [],
     "verificationMode": "clean_challenge",
     "overallStatus": "CLEAN",
