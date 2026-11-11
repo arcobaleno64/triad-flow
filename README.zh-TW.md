@@ -105,7 +105,7 @@ node bin/triad-flow.mjs remediate --case=BENCH-REAL-001 --sandbox=worktree      
 - **SARIF 2.1.0**：標準化 JSON 報表生成，支援 Driver Rules 去重與 URI 安全路徑編碼。
 - **OWASP Top 10 for LLM**：
   - `LLM02: Sensitive Info Disclosure` — 多重機密正則遮蔽（Google、OpenAI、Anthropic、GitHub、AWS、JWT、PEM 金鑰）。
-  - `LLM06: Excessive Agency` — `OodaLoopController` 3 輪自愈上限、Jaccard 語意停滯檢測與補丁循環熔斷。
+  - `LLM06: Excessive Agency` — `OodaLoopController` 3 輪自愈上限、Jaccard 語意停滯檢測與補丁循環熔斷。**注意：目前未接入正式審查路徑；正式流程使用 `aggregateConsensus`，`OodaLoopController` 僅由測試呼叫。**
 - **NIST SSDF (SP 800-218) & OpenSSF**：符號連結與同級路徑穿越沙盒防禦，嚴格 Quorum Fail-Closed 門禁。
 - **IEEE 352 / N-Version**：異質多模型共識防禦，消除單一模型共模失效 (Common-Mode Failures)。
 
