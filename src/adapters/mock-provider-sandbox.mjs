@@ -407,6 +407,7 @@ export class MockProviderSandbox {
     this.defaultScenario = options.defaultScenario || MOCK_SCENARIOS.CLEAN_PASS;
     this.strictSafetyArgs = options.strictSafetyArgs !== false;
 
+    this._isCustomBaseDir = Boolean(options.baseDir);
     this.sandboxDir = options.baseDir || fs.mkdtempSync(path.join(os.tmpdir(), "tf-mock-provider-sandbox-"));
     this.binDir = path.join(this.sandboxDir, "bin");
     this.stateFile = path.join(this.sandboxDir, "state.json");
@@ -478,14 +479,25 @@ export class MockProviderSandbox {
   }
 
   /**
+   * Validates provider key to prevent prototype pollution or invalid identifiers.
+   * @param {string} provider
+   */
+  _validateProviderKey(provider) {
+    if (!provider || typeof provider !== "string" || ["__proto__", "prototype", "constructor"].includes(provider.trim())) {
+      throw new Error(`Invalid or dangerous provider name: '${provider}'`);
+    }
+  }
+
+  /**
    * Updates the active scenario for a provider.
    * @param {string} provider
    * @param {string} scenario
    * @param {object} [options={}]
    */
   setScenario(provider, scenario, options = {}) {
+    this._validateProviderKey(provider);
     const state = this.getState();
-    if (!state.providers[provider]) {
+    if (!Object.prototype.hasOwnProperty.call(state.providers, provider)) {
       state.providers[provider] = { scenario: this.defaultScenario, sequence: [], customPayload: null };
     }
     state.providers[provider].scenario = scenario;
@@ -501,8 +513,9 @@ export class MockProviderSandbox {
    * @param {string[]} scenarios
    */
   setSequence(provider, scenarios = []) {
+    this._validateProviderKey(provider);
     const state = this.getState();
-    if (!state.providers[provider]) {
+    if (!Object.prototype.hasOwnProperty.call(state.providers, provider)) {
       state.providers[provider] = { scenario: this.defaultScenario, sequence: [], customPayload: null };
     }
     state.providers[provider].sequence = [...scenarios];
@@ -515,8 +528,9 @@ export class MockProviderSandbox {
    * @param {object|string} payload
    */
   setCustomPayload(provider, payload) {
+    this._validateProviderKey(provider);
     const state = this.getState();
-    if (!state.providers[provider]) {
+    if (!Object.prototype.hasOwnProperty.call(state.providers, provider)) {
       state.providers[provider] = { scenario: this.defaultScenario, sequence: [], customPayload: null };
     }
     state.providers[provider].customPayload = payload;
@@ -744,13 +758,26 @@ export class MockProviderSandbox {
 
   /**
    * Destroys sandbox directory and restores environment.
+   * If caller provided a custom baseDir, only cleans sandbox artifacts and preserves caller directory.
    */
   cleanup() {
     this.deactivateEnvironment();
-    if (fs.existsSync(this.sandboxDir)) {
-      try {
-        fs.rmSync(this.sandboxDir, { recursive: true, force: true });
-      } catch {}
+    if (this._isCustomBaseDir) {
+      const artifacts = [this.stateFile, this.ledgerFile, this.dispatcherScript];
+      for (const file of artifacts) {
+        if (fs.existsSync(file)) {
+          try { fs.unlinkSync(file); } catch {}
+        }
+      }
+      if (fs.existsSync(this.binDir)) {
+        try { fs.rmSync(this.binDir, { recursive: true, force: true }); } catch {}
+      }
+    } else {
+      if (fs.existsSync(this.sandboxDir)) {
+        try {
+          fs.rmSync(this.sandboxDir, { recursive: true, force: true });
+        } catch {}
+      }
     }
   }
 }

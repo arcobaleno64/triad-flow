@@ -1099,6 +1099,20 @@ export class ControlledRemediationSession {
       );
     }
 
+    if (isTypedCommand) {
+      const cmd = runner.command.trim();
+      if (/[\s;&|`$><\r\n\t%^]/.test(cmd)) {
+        throw new RemediationValidationError(`testRunner command contains forbidden shell metacharacters: '${cmd}'`);
+      }
+      if (Array.isArray(runner.args)) {
+        for (const arg of runner.args) {
+          if (typeof arg !== "string" || /[;&|`$><\r\n\t\0%^]/.test(arg)) {
+            throw new RemediationValidationError(`testRunner argument contains forbidden shell metacharacters: '${arg}'`);
+          }
+        }
+      }
+    }
+
     const driver = sandboxDriver
       ? (typeof sandboxDriver === "string" ? resolveSandboxDriver(sandboxDriver) : sandboxDriver)
       : new WorktreeDriver();
@@ -1164,11 +1178,12 @@ export class ControlledRemediationSession {
               }
             }
           }
+          const isBatchOrCmd = process.platform === "win32" && /\.(cmd|bat)$/i.test(cmd);
           const hostRes = spawnSync(cmd, args, {
             cwd: runnerCwd,
             encoding: "utf8",
             windowsHide: true,
-            shell: process.platform === "win32",
+            shell: isBatchOrCmd,
             timeout: runner.timeout || undefined
           });
           testRes = {

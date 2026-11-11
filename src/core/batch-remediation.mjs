@@ -196,10 +196,19 @@ export class BatchRemediationSession {
       });
       session.finding = f;
       if (f.testRunner) {
-        if (typeof f.testRunner === "object" && typeof f.testRunner.command === "string") {
-          const cmd = f.testRunner.command.trim();
-          if (/[\s;&|`$><]/.test(cmd)) {
-            throw new BatchValidationError(`Finding '${f.id}' provides invalid testRunner command containing forbidden shell metacharacters: '${cmd}'`);
+        if (typeof f.testRunner === "object" && f.testRunner !== null) {
+          if (typeof f.testRunner.command === "string") {
+            const cmd = f.testRunner.command.trim();
+            if (/[\s;&|`$><\r\n\t%^]/.test(cmd)) {
+              throw new BatchValidationError(`Finding '${f.id}' provides invalid testRunner command containing forbidden shell metacharacters: '${cmd}'`);
+            }
+          }
+          if (Array.isArray(f.testRunner.args)) {
+            for (const arg of f.testRunner.args) {
+              if (typeof arg !== "string" || /[;&|`$><\r\n\t\0%^]/.test(arg)) {
+                throw new BatchValidationError(`Finding '${f.id}' provides invalid testRunner argument containing forbidden shell metacharacters: '${arg}'`);
+              }
+            }
           }
         }
         session.testRunner = f.testRunner;
@@ -413,11 +422,12 @@ export class BatchRemediationSession {
                 }
               }
             }
+            const isBatchOrCmd = process.platform === "win32" && /\.(cmd|bat)$/i.test(cmd);
             const hostRes = spawnSync(cmd, args, {
               cwd: runnerCwd,
               encoding: "utf8",
               windowsHide: true,
-              shell: process.platform === "win32",
+              shell: isBatchOrCmd,
               timeout: activeRunner.timeout || undefined
             });
             testRes = {

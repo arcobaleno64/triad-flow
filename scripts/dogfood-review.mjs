@@ -153,7 +153,10 @@ export function parseArgs(argv = process.argv.slice(2)) {
     patchExclusions: [],
     repoDir: null,
     agyStreamJson: false,
-    stagedConcurrency: 2
+    stagedConcurrency: 2,
+    agyModel: null,
+    codexModel: null,
+    claudeModel: null
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -251,6 +254,27 @@ export function parseArgs(argv = process.argv.slice(2)) {
         throw new Error(`Invalid --staged-concurrency value: '${arg}'. Must be a positive integer.`);
       }
       options.stagedConcurrency = Number(rawVal);
+    } else if (arg === "--agy-model") {
+      if (i + 1 >= argv.length || argv[i + 1].startsWith("-")) {
+        throw new Error("Missing value for --agy-model");
+      }
+      options.agyModel = argv[++i];
+    } else if (arg.startsWith("--agy-model=")) {
+      options.agyModel = arg.slice("--agy-model=".length);
+    } else if (arg === "--codex-model") {
+      if (i + 1 >= argv.length || argv[i + 1].startsWith("-")) {
+        throw new Error("Missing value for --codex-model");
+      }
+      options.codexModel = argv[++i];
+    } else if (arg.startsWith("--codex-model=")) {
+      options.codexModel = arg.slice("--codex-model=".length);
+    } else if (arg === "--claude-model") {
+      if (i + 1 >= argv.length || argv[i + 1].startsWith("-")) {
+        throw new Error("Missing value for --claude-model");
+      }
+      options.claudeModel = argv[++i];
+    } else if (arg.startsWith("--claude-model=")) {
+      options.claudeModel = arg.slice("--claude-model=".length);
     } else {
       throw new Error(`Unknown argument: '${arg}'`);
     }
@@ -281,6 +305,9 @@ Options:
   --timeout <ms>      Per-provider timeout in milliseconds (default: 300000 live / 30000 mock)
   --patch-objective <text>  Stated patch objective used only for independent objective-relevance verification
   --agy-stream-json   Enable agy stream-json transport via stdin (bypasses Windows argv limit)
+  --agy-model <name>  Google agy model name (default: gemini-4-argon-medium)
+  --codex-model <name> OpenAI codex model name (default: gpt-6.1-terra)
+  --claude-model <name> Anthropic claude model name (default: claude-5.5-sonnet)
   --staged-concurrency <n> Bounded concurrency for staged chunk review (default: 2)
   --help, -h          Show this help message
 `);
@@ -779,31 +806,43 @@ export async function runDogfoodReview(userOptions = {}) {
         ];
       }
 
+      const codexModel = userOptions.codexModel || "gpt-6.1-terra";
+      const baseCodexArgs = Array.isArray(codexArgs)
+        ? [...codexArgs]
+        : [...(codexProfile?.args || ["exec", "--sandbox=read-only", "--ephemeral", "--color", "never"])];
+      if (!baseCodexArgs.includes("-m") && !baseCodexArgs.includes("--model")) {
+        baseCodexArgs.push("-m", codexModel);
+      }
+
       const codexAdapter = new CliReviewAdapter({
         command: codexCommand,
-        args: codexArgs,
+        args: baseCodexArgs,
         providerName: "codex",
-        modelName: "gpt-6.1-sol",
-        actualModel: { value: "gpt-6.1-sol", source: "reported" },
+        modelName: codexModel,
+        actualModel: { value: codexModel, source: "reported" },
         inputChannel: "stdin",
         supportsStdin: true,
         useStdin: true
       });
       codexAdapter.profile = codexProfile;
 
+      const agyModel = userOptions.agyModel || "gemini-4-argon-medium";
+      const agyArgs = ["--model=" + agyModel];
+
       reviewAdapters = {
         agy: new CliReviewAdapter({
           command: "agy",
+          args: agyArgs,
           providerName: "agy",
-          modelName: "gemini-3.8-flash",
-          actualModel: { value: "gemini-3.8-flash", source: "reported" },
+          modelName: agyModel,
+          actualModel: { value: agyModel, source: "reported" },
           streamJson: Boolean(userOptions.agyStreamJson)
         }),
         claude: new CliReviewAdapter({
           command: "claude",
           providerName: "claude",
-          modelName: "claude-5.5-sonnet",
-          actualModel: { value: "claude-5.5-sonnet", source: "reported" }
+          modelName: userOptions.claudeModel || "claude-5.5-sonnet",
+          actualModel: { value: userOptions.claudeModel || "claude-5.5-sonnet", source: "reported" }
         }),
         codex: codexAdapter
       };

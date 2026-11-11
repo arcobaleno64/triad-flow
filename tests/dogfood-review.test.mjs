@@ -25,6 +25,8 @@ import { EXECUTION_STATUS } from "../src/adapters/provider-contract.mjs";
 import { CliVerifierAdapter, createMockVerifierAdapter } from "../src/core/independent-verifier.mjs";
 import { ContainerDriver } from "../src/core/sandbox-driver.mjs";
 import { ControlledRemediationSession } from "../src/core/controlled-remediation.mjs";
+import { MockProviderSandbox } from "../src/adapters/mock-provider-sandbox.mjs";
+import { BatchRemediationSession } from "../src/core/batch-remediation.mjs";
 
 test("Dogfood Contract 1: parseArgs correctly parses flags", () => {
   const def = parseArgs([]);
@@ -1467,4 +1469,88 @@ test("Dogfood Contract 31: Remediation of dogfood live scan findings (containmen
   assert.equal(containerRes.status, 124);
   assert.equal(cleanedContainers.length, 1, "Must forcibly invoke docker rm -f on execution timeout");
   assert.match(cleanedContainers[0], /^tf-jail-/, "Must clean up the specifically named container");
+});
+
+test("Dogfood Contract 32: Remediation of Codex HIGH findings (custom baseDir deletion prevention, prototype pollution, testRunner shell injection)", () => {
+  // 1. Custom baseDir deletion prevention in MockProviderSandbox
+  const customBaseDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-custom-caller-dir-"));
+  const keepFile = path.join(customBaseDir, "caller-keep.txt");
+  fs.writeFileSync(keepFile, "keep me safe", "utf8");
+
+  const sandbox = new MockProviderSandbox({ baseDir: customBaseDir });
+  sandbox.init();
+
+  assert.ok(fs.existsSync(sandbox.binDir), "Sandbox binDir must exist");
+  assert.ok(fs.existsSync(sandbox.stateFile), "Sandbox stateFile must exist");
+
+  sandbox.cleanup();
+
+  assert.ok(fs.existsSync(customBaseDir), "Caller custom baseDir must NOT be deleted by cleanup");
+  assert.ok(fs.existsSync(keepFile), "Files in caller baseDir must be preserved");
+  assert.ok(!fs.existsSync(sandbox.stateFile), "Sandbox stateFile must be cleaned up");
+
+  try { fs.rmSync(customBaseDir, { recursive: true, force: true }); } catch {}
+
+  // 2. Prototype pollution prevention in MockProviderSandbox
+  const autoSandbox = new MockProviderSandbox();
+  autoSandbox.init();
+  try {
+    assert.throws(
+      () => autoSandbox.setScenario("__proto__", "malformed_output"),
+      /Invalid or dangerous provider name/
+    );
+    assert.throws(
+      () => autoSandbox.setSequence("constructor", ["clean_pass"]),
+      /Invalid or dangerous provider name/
+    );
+    assert.throws(
+      () => autoSandbox.setCustomPayload("prototype", { evil: true }),
+      /Invalid or dangerous provider name/
+    );
+  } finally {
+    autoSandbox.cleanup();
+  }
+
+  // 3. Command and argument shell injection prevention in BatchRemediationSession
+  assert.throws(
+    () => new BatchRemediationSession("BATCH-001", [
+      {
+        id: "FINDING-EVIL-ARG",
+        targetFiles: ["src/index.js"],
+        testRunner: {
+          command: "node",
+          args: ["test.js", "& calc.exe"]
+        }
+      }
+    ]),
+    /forbidden shell metacharacters/
+  );
+
+  assert.throws(
+    () => new BatchRemediationSession("BATCH-002", [
+      {
+        id: "FINDING-EVIL-PIPE",
+        targetFiles: ["src/index.js"],
+        testRunner: {
+          command: "node",
+          args: ["test.js", "| powershell -c echo pwned"]
+        }
+      }
+    ]),
+    /forbidden shell metacharacters/
+  );
+
+  assert.throws(
+    () => new BatchRemediationSession("BATCH-003", [
+      {
+        id: "FINDING-EVIL-CMD",
+        targetFiles: ["src/index.js"],
+        testRunner: {
+          command: "node; rm -rf /",
+          args: ["test.js"]
+        }
+      }
+    ]),
+    /forbidden shell metacharacters/
+  );
 });
