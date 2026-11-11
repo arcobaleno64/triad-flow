@@ -191,6 +191,10 @@ export class CliReviewAdapter {
     this.useStdin = this.streamJson ? true : (options.useStdin !== undefined ? Boolean(options.useStdin) : null);
     this.env = options.env || null;
     this.cwd = options.cwd || null;
+    this.spawnCommand = options.spawnCommand || options.execCommand || null;
+    this.prefixArgs = Array.isArray(options.prefixArgs)
+      ? options.prefixArgs
+      : (this.profile?.nativeResolution?.prefixArgs || []);
     const assembledArgs = assembleProviderArgs(profile, options.args);
     if (this.streamJson && (profile?.id === "agy" || this.command === "agy")) {
       const streamFlags = ["--input-format=stream-json", "--output-format=stream-json"];
@@ -447,8 +451,8 @@ export class CliReviewAdapter {
           useStdin = true;
         }
         const injectedArgs = tempOutputFile
-          ? [...this.args, this.profile.outputFileFlag, tempOutputFile, ...(useStdin ? [] : [prompt])]
-          : (useStdin ? [...this.args] : [...this.args, prompt]);
+          ? [...this.prefixArgs, ...this.args, this.profile.outputFileFlag, tempOutputFile, ...(useStdin ? [] : [prompt])]
+          : (useStdin ? [...this.prefixArgs, ...this.args] : [...this.prefixArgs, ...this.args, prompt]);
         const stdinPayload = (this.streamJson && (this.profile?.id === "agy" || this.command === "agy"))
           ? JSON.stringify({ event: "user", message: { content: prompt } }) + "\n"
           : (useStdin ? prompt : undefined);
@@ -520,9 +524,12 @@ export class CliReviewAdapter {
         childArgs.push(this.profile.outputFileFlag, tempOutputFile);
       }
 
+      const effectiveCommand = this.spawnCommand || this.profile?.nativeResolution?.command || this.command;
+      const finalArgs = [...this.prefixArgs, ...childArgs];
+
       let child;
       try {
-        child = spawn(this.command, childArgs, {
+        child = spawn(effectiveCommand, finalArgs, {
           cwd: effectiveCwd,
           shell: false,
           windowsHide: true,
