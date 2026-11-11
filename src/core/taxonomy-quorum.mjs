@@ -351,7 +351,7 @@ export class TaxonomyQuorumCalibrator {
    * @param {Map<string, object>} healthyReportsMap
    * @returns {{ calibratedFindings: Array<object>, blockingFindings: Array<object>, domainCounts: Record<string, number> }}
    */
-  calibrateFindings(rawFindings = [], healthyReportsMap = new Map()) {
+  calibrateFindings(rawFindings = [], healthyReportsMap = new Map(), physicalProof = null) {
     if (!Array.isArray(rawFindings) || rawFindings.length === 0) {
       return { calibratedFindings: [], blockingFindings: [], domainCounts: {} };
     }
@@ -408,11 +408,26 @@ export class TaxonomyQuorumCalibrator {
       }
 
       const totalWeightForDomain = totalDomainWeights[domain] || 1.0;
-      const weightedConfidence = parseFloat(Math.min(1.0, findingWeightSum / totalWeightForDomain).toFixed(4));
-      const isConfirmed = weightedConfidence >= this.findingAcceptanceThreshold;
+      let weightedConfidence = parseFloat(Math.min(1.0, findingWeightSum / totalWeightForDomain).toFixed(4));
+      let isConfirmed = weightedConfidence >= this.findingAcceptanceThreshold;
 
       const severity = String(raw.severity || "info").toLowerCase().trim();
-      const isBlocking = isConfirmed && BLOCKING_SEVERITIES.has(severity);
+      let isBlocking = isConfirmed && BLOCKING_SEVERITIES.has(severity);
+      let physicalProofOverride = false;
+
+      // RFC-028-04 Section 4: Physical Proof Override (Machine proof trumps LLM consensus)
+      if (physicalProof && typeof physicalProof === "object") {
+        const proofCwe = normalizeCwe(physicalProof.cwe);
+        const matchesCwe = normCwe && proofCwe && normCwe === proofCwe;
+        const isVerifiedPoC = physicalProof.verified === true || physicalProof.status === "PATCH_INEFFECTIVE";
+
+        if (matchesCwe && isVerifiedPoC) {
+          physicalProofOverride = true;
+          weightedConfidence = 1.0;
+          isConfirmed = true;
+          isBlocking = true;
+        }
+      }
 
       calibratedFindings.push({
         ...raw,
@@ -423,7 +438,8 @@ export class TaxonomyQuorumCalibrator {
         weightedConfidence,
         corroboratingFamilies: Array.from(corroboratingFamilies),
         isConfirmed,
-        isBlocking
+        isBlocking,
+        ...(physicalProofOverride ? { physicalProofOverride: true, proofDigest: physicalProof.digest || null } : {})
       });
     }
 
@@ -448,7 +464,7 @@ export class TaxonomyQuorumCalibrator {
    */
   calibrateQuorum(input = {}) {
     const safeInput = input && typeof input === "object" ? input : {};
-    const { reports, files = [], policyOptions = {} } = safeInput;
+    const { reports, files = [], policyOptions = {}, physicalProof = null } = safeInput;
 
     // 1. Normalize reports into validated Map
     const normalizedReports = this._normalizeReports(reports);
@@ -535,7 +551,8 @@ export class TaxonomyQuorumCalibrator {
 
     const { calibratedFindings, blockingFindings, domainCounts } = this.calibrateFindings(
       aggregatedRawFindings,
-      healthyReportsMap
+      healthyReportsMap,
+      physicalProof
     );
 
     const detectedDomains = Object.keys(domainCounts);

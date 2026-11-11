@@ -94,6 +94,27 @@ export const DEFAULT_POOL_OPTIONS = Object.freeze({
 });
 
 /**
+ * Dangerous environment variables strictly disallowed from container injection (PR-024).
+ */
+export const DANGEROUS_CONTAINER_ENV_VARS = Object.freeze(new Set([
+  "LD_PRELOAD",
+  "LD_LIBRARY_PATH",
+  "LD_AUDIT",
+  "NODE_OPTIONS",
+  "PYTHONSTARTUP",
+  "PYTHONPATH",
+  "PYTHONHOME",
+  "BASH_ENV",
+  "ENV",
+  "PROMPT_COMMAND",
+  "PERL5OPT",
+  "PERL5LIB",
+  "RUBYOPT",
+  "SUDO_COMMAND",
+  "SUDO_USER"
+]));
+
+/**
  * Pool-specific error hierarchy.
  */
 export class PoolError extends Error {
@@ -922,6 +943,12 @@ export class ContainerSandboxPool extends EventEmitter {
     // Additional explicitly supplied env variables
     if (options.env && typeof options.env === "object") {
       for (const [key, val] of Object.entries(options.env)) {
+        if (!key || typeof key !== "string" || key.includes("=") || key.includes("\0") || key.includes("\n") || key.includes("\r")) {
+          throw new DaemonExecutionError(`Invalid environment variable key: '${key}'.`);
+        }
+        if (DANGEROUS_CONTAINER_ENV_VARS.has(key.toUpperCase())) {
+          throw new DaemonExecutionError(`Security violation: dangerous environment variable '${key}' is disallowed in container sandbox.`);
+        }
         execArgs.push("-e", `${key}=${val}`);
       }
     }
@@ -1030,6 +1057,12 @@ export class ContainerSandboxPool extends EventEmitter {
 
     if (options.env && typeof options.env === "object") {
       for (const [key, val] of Object.entries(options.env)) {
+        if (!key || typeof key !== "string" || key.includes("=") || key.includes("\0") || key.includes("\n") || key.includes("\r")) {
+          throw new DaemonExecutionError(`Invalid environment variable key: '${key}'.`);
+        }
+        if (DANGEROUS_CONTAINER_ENV_VARS.has(key.toUpperCase())) {
+          throw new DaemonExecutionError(`Security violation: dangerous environment variable '${key}' is disallowed in container sandbox.`);
+        }
         execArgs.push("-e", `${key}=${val}`);
       }
     }
@@ -1407,6 +1440,9 @@ export class ContainerSandboxPool extends EventEmitter {
   _spawnDaemonSync(spec = {}) {
     const language = spec.language || this.options.defaultLanguage;
     const image = spec.image || resolveLanguageContainerImage(language);
+    if (typeof image !== "string" || image.startsWith("-") || !/^[a-zA-Z0-9_.\/:-]+$/.test(image)) {
+      throw new PoolError(`Security violation: Invalid or dangerous container image identifier: '${image}'.`);
+    }
     const slotId = crypto.randomBytes(6).toString("hex");
     const containerName = `${this.options.containerPrefix}-${this.poolId}-${language}-${slotId}`;
 

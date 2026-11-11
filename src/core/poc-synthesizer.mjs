@@ -69,7 +69,7 @@ export const TEST_FRAMEWORKS = Object.freeze({
   STANDALONE: "standalone"
 });
 
-export const DEFAULT_POC_TIMEOUT_MS = 5000;
+export const DEFAULT_POC_TIMEOUT_MS = 15000;
 
 /**
  * Custom error hierarchy.
@@ -271,12 +271,15 @@ export class PoCHarness {
 
   _generateNodeTestBody() {
     const fnName = this.targetFunction || "target";
+    const targetExpr = `(targetPkg[${JSON.stringify(fnName)}] || targetPkg.default || targetPkg)`;
+    const assertExpr = `assert.equal(typeof target, "function", "Target function " + ${JSON.stringify(fnName)} + " must be defined");`;
+
     if (this.cwe === CWE_TAXONOMY.CWE_1321) {
       const markerKey = this.metadata.markerKey || "polluted";
       const markerVal = this.metadata.markerVal || "tf_compromised";
       return [
-        `const target = targetPkg.${fnName} || targetPkg.default || targetPkg;`,
-        `assert.equal(typeof target, "function", "Target function '${fnName}' must be defined");`,
+        `const target = ${targetExpr};`,
+        assertExpr,
         `delete Object.prototype[${JSON.stringify(markerKey)}];`,
         `try {`,
         `  const payload = JSON.parse(${JSON.stringify(JSON.stringify(this.payload))});`,
@@ -294,8 +297,8 @@ export class PoCHarness {
 
     if (this.cwe === CWE_TAXONOMY.CWE_22) {
       return [
-        `const target = targetPkg.${fnName} || targetPkg.default || targetPkg;`,
-        `assert.equal(typeof target, "function", "Target function '${fnName}' must be defined");`,
+        `const target = ${targetExpr};`,
+        assertExpr,
         `const path = await import("node:path");`,
         `const os = await import("node:os");`,
         `const baseDir = path.resolve(os.tmpdir(), "tf_regression_sandbox");`,
@@ -319,8 +322,8 @@ export class PoCHarness {
 
     if (this.cwe === CWE_TAXONOMY.CWE_89) {
       return [
-        `const target = targetPkg.${fnName} || targetPkg.default || targetPkg;`,
-        `assert.equal(typeof target, "function", "Target function '${fnName}' must be defined");`,
+        `const target = ${targetExpr};`,
+        assertExpr,
         `let result = null;`,
         `let caught = null;`,
         `try {`,
@@ -341,8 +344,8 @@ export class PoCHarness {
 
     if (this.cwe === CWE_TAXONOMY.CWE_78) {
       return [
-        `const target = targetPkg.${fnName} || targetPkg.default || targetPkg;`,
-        `assert.equal(typeof target, "function", "Target function '${fnName}' must be defined");`,
+        `const target = ${targetExpr};`,
+        assertExpr,
         `let result = null;`,
         `let caught = null;`,
         `try {`,
@@ -363,8 +366,8 @@ export class PoCHarness {
 
     if (this.cwe === CWE_TAXONOMY.CWE_79) {
       return [
-        `const target = targetPkg.${fnName} || targetPkg.default || targetPkg;`,
-        `assert.equal(typeof target, "function", "Target function '${fnName}' must be defined");`,
+        `const target = ${targetExpr};`,
+        assertExpr,
         `let result = null;`,
         `let caught = null;`,
         `try {`,
@@ -381,8 +384,8 @@ export class PoCHarness {
 
     if (this.cwe === CWE_TAXONOMY.CWE_20) {
       return [
-        `const target = targetPkg.${fnName} || targetPkg.default || targetPkg;`,
-        `assert.equal(typeof target, "function", "Target function '${fnName}' must be defined");`,
+        `const target = ${targetExpr};`,
+        assertExpr,
         `let result = null;`,
         `let caught = null;`,
         `try {`,
@@ -399,8 +402,8 @@ export class PoCHarness {
 
     if (this.cwe === CWE_TAXONOMY.CWE_125) {
       return [
-        `const target = targetPkg.${fnName} || targetPkg.default || targetPkg;`,
-        `assert.equal(typeof target, "function", "Target function '${fnName}' must be defined");`,
+        `const target = ${targetExpr};`,
+        assertExpr,
         `const smallBuf = Buffer.alloc(32);`,
         `let result = null;`,
         `let caught = null;`,
@@ -416,8 +419,8 @@ export class PoCHarness {
     }
 
     return [
-      `const target = targetPkg.${fnName} || targetPkg.default || targetPkg;`,
-      `assert.equal(typeof target, "function", "Target must be defined");`,
+      `const target = ${targetExpr};`,
+      assertExpr,
       `target(${JSON.stringify(this.payload)});`
     ].join("\n");
   }
