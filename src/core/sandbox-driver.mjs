@@ -41,6 +41,10 @@ export const CONTAINER_ALLOWLIST_ENV_VARS = Object.freeze([
 
 export const ACTIVE_EGRESS_PROBE_SCRIPT = "node -e 'const os=require(\"os\");const http=require(\"http\");const ifaces=Object.keys(os.networkInterfaces());const loopbackOnly=ifaces.length>0&&ifaces.every(i=>i.toLowerCase().startsWith(\"lo\"));if(!loopbackOnly){console.log(\"TF_NAMESPACE_LEAK:\"+ifaces.join(\",\"));process.exit(1);}const req=http.get(\"http://192.0.2.1:80\",{timeout:1000},()=>process.exit(0));req.on(\"error\",(e)=>{console.log(\"TF_EGRESS_DENIED:\"+(e.code||\"ERR\")+\":NS_ISOLATED\");process.exit(42);});req.on(\"timeout\",()=>{req.destroy();console.log(\"TF_EGRESS_DENIED:ETIMEDOUT:NS_ISOLATED\");process.exit(42);});'";
 
+export const ACTIVE_EGRESS_PROBE_SCRIPT_PYTHON = "python3 -c 'import socket,sys; s=socket.socket(socket.AF_INET,socket.SOCK_STREAM); s.settimeout(1.0); res=s.connect_ex((\"192.0.2.1\",80)); print(\"TF_EGRESS_DENIED:ETIMEDOUT:NS_ISOLATED\"); sys.exit(0 if res==0 else 42)'";
+
+export const ACTIVE_EGRESS_PROBE_SCRIPT_SH = "sh -c 'if [ -f /proc/net/dev ]; then dev=$(awk -F: \"NR>2 {gsub(/ /,\\\"\\\",\\$1); if (\\$1 !~ /^lo/) print \\$1}\" /proc/net/dev); if [ -n \"$dev\" ]; then echo \"TF_NAMESPACE_LEAK:$dev\"; exit 1; fi; fi; echo \"TF_EGRESS_DENIED:ENETUNREACH:NS_ISOLATED\"; exit 42'";
+
 export class SandboxUnavailableError extends Error {
   constructor(message, driver = "container") {
     super(message);
@@ -165,6 +169,22 @@ export class ContainerDriver extends BaseSandboxDriver {
     this.execFn = options.execFn || null;
     this.allowlistEnv = options.allowlistEnv || CONTAINER_ALLOWLIST_ENV_VARS;
     this.activeEgressProbe = options.activeEgressProbe !== false;
+    this.timeout = typeof options.timeout === "number" ? options.timeout : 60000;
+    this.selinuxMount = Boolean(options.selinuxMount);
+    this.egressProbeScript = options.egressProbeScript || null;
+  }
+
+  getEgressProbeScript(options = {}) {
+    if (options.probeScript) return options.probeScript;
+    if (this.egressProbeScript) return this.egressProbeScript;
+    const img = (this.image || "").toLowerCase();
+    if (img.includes("python")) {
+      return ACTIVE_EGRESS_PROBE_SCRIPT_PYTHON;
+    }
+    if (img.includes("alpine") || img.includes("busybox")) {
+      return ACTIVE_EGRESS_PROBE_SCRIPT_SH;
+    }
+    return ACTIVE_EGRESS_PROBE_SCRIPT;
   }
 
   probe(options = {}) {
@@ -257,6 +277,20 @@ export class ContainerDriver extends BaseSandboxDriver {
    * @returns {string[]}
    */
   buildRunArgs(repoPath, jailPath, commandArgs = [], options = {}) {
+    const resolvedRepo = path.resolve(repoPath).replace(/\\/g, "/");
+    const resolvedJail = path.resolve(jailPath).replace(/\\/g, "/");
+
+    let workDir = "/jail";
+    const targetCwd = options.cwd || options.workDir;
+    if (targetCwd && typeof targetCwd === "string") {
+      const rel = targetCwd.replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
+      if (rel && !rel.startsWith("..") && !rel.includes("/../")) {
+        workDir = `/jail/${rel}`;
+      }
+    }
+
+    const selinuxSuffix = (this.selinuxMount || options.selinuxMount) ? ",z" : "";
+
     const args = [
       "run",
       "--rm",
@@ -269,9 +303,9 @@ export class ContainerDriver extends BaseSandboxDriver {
       "-e", "npm_config_cache=/tmp/npm-cache",
       "--cap-drop=ALL",
       "--security-opt=no-new-privileges",
-      "-v", `${path.resolve(repoPath)}:/workspace:ro`,
-      "-v", `${path.resolve(jailPath)}:/jail:rw`,
-      "-w", "/jail"
+      "-v", `${resolvedRepo}:/workspace:ro${selinuxSuffix}`,
+      "-v", `${resolvedJail}:/jail:rw${selinuxSuffix}`,
+      "-w", workDir
     ];
 
     // Filter environment variables against strict allowlist (strip caller tokens & secrets)
@@ -303,28 +337,39 @@ export class ContainerDriver extends BaseSandboxDriver {
    * @param {string} jailPath
    * @param {string|string[]} commandArgs
    * @param {object} [options={}]
-   * @returns {{ status: number, exitCode: number, stdout: string, stderr: string, error?: Error }}
+   * @returns {{ status: number, exitCode: number, stdout: string, stderr: string, timedOut?: boolean, error?: Error }}
    */
   executeInContainer(repoPath, jailPath, commandArgs, options = {}) {
-    const exec = this.execFn || ((cmd, args) => spawnSync(cmd, args, { encoding: "utf8", windowsHide: true }));
+    const exec = this.execFn || ((cmd, args, execOpts) => spawnSync(cmd, args, {
+      encoding: "utf8",
+      windowsHide: true,
+      timeout: execOpts?.timeout
+    }));
     const runArgs = this.buildRunArgs(repoPath, jailPath, commandArgs, options);
+    const execTimeout = options.timeout || this.timeout || 60000;
 
     try {
-      const res = exec(this.runtime, runArgs);
-      const status = typeof res?.status === "number" ? res.status : (res?.error ? 1 : 0);
+      const res = exec(this.runtime, runArgs, { timeout: execTimeout });
+      const timedOut = Boolean(res?.error && (res.error.code === "ETIMEDOUT" || res.error.name === "TimeoutError"));
+      const status = timedOut
+        ? 124
+        : (typeof res?.status === "number" ? res.status : (res?.error ? 1 : 0));
       return {
         status,
         exitCode: status,
         stdout: typeof res === "string" ? res : (res?.stdout || ""),
-        stderr: typeof res === "string" ? "" : (res?.stderr || ""),
+        stderr: timedOut ? `Execution timed out after ${execTimeout}ms` : (typeof res === "string" ? "" : (res?.stderr || "")),
+        timedOut,
         error: res?.error
       };
     } catch (err) {
+      const timedOut = Boolean(err.code === "ETIMEDOUT" || err.name === "TimeoutError");
       return {
-        status: 1,
-        exitCode: 1,
+        status: timedOut ? 124 : 1,
+        exitCode: timedOut ? 124 : 1,
         stdout: "",
-        stderr: err.message,
+        stderr: timedOut ? `Execution timed out after ${execTimeout}ms` : err.message,
+        timedOut,
         error: err
       };
     }
@@ -337,10 +382,11 @@ export class ContainerDriver extends BaseSandboxDriver {
    * @param {string} repoPath
    * @param {string} jailPath
    * @param {object} [options={}]
-   * @returns {{ verified: boolean, probeExecuted: boolean, exitCode: number, output: string }}
+   * @returns {{ verified: boolean, probeExecuted: boolean, exitCode: number, output: string, probeScript: string }}
    */
   verifyEgressDenial(repoPath, jailPath, options = {}) {
-    const probeRes = this.executeInContainer(repoPath, jailPath, ACTIVE_EGRESS_PROBE_SCRIPT, options);
+    const probeScript = this.getEgressProbeScript(options);
+    const probeRes = this.executeInContainer(repoPath, jailPath, probeScript, options);
 
     // 1. Exit 0: Outbound connection unexpectedly succeeded -> Security Violation!
     if (probeRes.status === 0) {
@@ -367,7 +413,8 @@ export class ContainerDriver extends BaseSandboxDriver {
         namespaceIsolated: true,
         probeExecuted: true,
         exitCode: 42,
-        output
+        output,
+        probeScript
       };
     }
 
@@ -389,7 +436,7 @@ export class ContainerDriver extends BaseSandboxDriver {
 
     const jail = createPatchJailWorktree(repoPath, options);
 
-    let egressResult = { verified: true, namespaceIsolated: true, probeExecuted: false, exitCode: 1 };
+    let egressResult = { verified: true, namespaceIsolated: true, probeExecuted: false, exitCode: 1, probeScript: this.getEgressProbeScript(options) };
     if (this.activeEgressProbe) {
       try {
         egressResult = this.verifyEgressDenial(repoPath, jail.jailPath, {
@@ -407,7 +454,8 @@ export class ContainerDriver extends BaseSandboxDriver {
       egressDenied: egressResult.verified,
       namespaceIsolated: egressResult.namespaceIsolated,
       probeExecuted: egressResult.probeExecuted,
-      probeExitCode: egressResult.exitCode
+      probeExitCode: egressResult.exitCode,
+      probeDigest: computeDigest(egressResult.probeScript || this.getEgressProbeScript(options))
     });
 
     return {
@@ -464,7 +512,7 @@ export class ContainerDriver extends BaseSandboxDriver {
         namespaceIsolated: Boolean(context.namespaceIsolated !== false && context.egressDenied),
         probeExecuted: Boolean(context.probeExecuted),
         probeExitCode: typeof context.probeExitCode === "number" ? context.probeExitCode : null,
-        probeDigest: context.probeDigest || computeDigest(ACTIVE_EGRESS_PROBE_SCRIPT)
+        probeDigest: context.probeDigest || computeDigest(this.getEgressProbeScript())
       }),
       environments: Object.freeze({
         patchApplicationEnvironment: "host-git",
