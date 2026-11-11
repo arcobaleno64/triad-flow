@@ -225,17 +225,27 @@ export function synthesizeUnifiedDiff({
   hunkLines.push(`+++ b/${normPath}`);
   hunkLines.push(`@@ -${hunkOrigStart},${hunkOrigCount} +${hunkNewStart},${hunkNewCount} @@`);
 
+  const origEndsWithNewline = originalContent.endsWith("\n") || originalContent.endsWith("\r\n");
+  const replEndsWithNewline = typeof replacementText === "string" ? (replacementText.endsWith("\n") || replacementText.endsWith("\r\n")) : origEndsWithNewline;
+  const isAtEof = postContext.length === 0 && eLine >= origLines.length;
+
   for (const line of preContext) {
     hunkLines.push(` ${line}`);
   }
   for (const line of deletedLines) {
     hunkLines.push(`-${line}`);
   }
+  if (isAtEof && !origEndsWithNewline && deletedLines.length > 0 && addedLines.length > 0) {
+    hunkLines.push("\\ No newline at end of file");
+  }
   for (const line of addedLines) {
     hunkLines.push(`+${line}`);
   }
   for (const line of postContext) {
     hunkLines.push(` ${line}`);
+  }
+  if (isAtEof && (!replEndsWithNewline || (!origEndsWithNewline && addedLines.length === 0))) {
+    hunkLines.push("\\ No newline at end of file");
   }
 
   const diff = hunkLines.join("\n") + "\n";
