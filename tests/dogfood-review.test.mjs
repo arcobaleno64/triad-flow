@@ -1372,3 +1372,45 @@ test("G5-P2-03: runDogfoodReview dynamically derives Clean Challenge verifier id
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 });
+
+test("Dogfood Contract 30: Case-insensitive / normalized path matching for sentry file coverage prevents false INSUFFICIENT_PRODUCER_COVERAGE", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-test-coverage-norm-"));
+  const tmpOut = path.join(tmpDir, "dogfood-run.json");
+  const headSha = getCurrentCommitSha();
+
+  try {
+    const report = await runDogfoodReview({
+      mock: true,
+      changeSet: {
+        ok: true,
+        schemaVersion: "1.0.0",
+        scopeMode: "working-tree",
+        repository: {
+          name: "arcobaleno64/triad-flow",
+          root: process.cwd(),
+          hasHead: true,
+          headSha,
+          commitSha: headSha
+        },
+        files: [
+          { path: "CHANGELOG.md", additions: 5, deletions: 0, binary: false }
+        ],
+        diffHunks: "diff --git a/CHANGELOG.md b/CHANGELOG.md\n+## [2.11.0]\n",
+        contentDigest: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        totalAdditions: 5,
+        totalDeletions: 0
+      },
+      out: tmpOut,
+      log: false
+    });
+
+    assert.equal(report.gate.decision, "approve");
+    assert.equal(report.isExecutionComplete, true);
+    assert.equal(report.verificationRecord?.overallStatus, "CLEAN");
+    const gap = (report.verificationRecord?.contextGaps || []).find(g => g.code === "INSUFFICIENT_PRODUCER_COVERAGE");
+    assert.equal(gap, undefined, "Must not report false-positive INSUFFICIENT_PRODUCER_COVERAGE for uppercase files");
+    assert.notEqual(report.gate.reason?.includes("INSUFFICIENT_PRODUCER_COVERAGE"), true);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});

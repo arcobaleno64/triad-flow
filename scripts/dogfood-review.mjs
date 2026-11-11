@@ -1487,8 +1487,9 @@ export async function runDogfoodReview(userOptions = {}) {
     const sentryCoverageIncomplete = sentryCoverageManifest.some(s => {
       if (!s.isDeclared) return true;
       if (s.omittedFiles.length > 0) return true;
-      const expectedFiles = (changeSet?.files || []).map(f => typeof f === "string" ? f : f?.path).filter(Boolean);
-      return expectedFiles.some(f => !s.coveredFiles.includes(f));
+      const coveredSet = new Set((s.coveredFiles || []).map(f => normalizeCanonicalPath(f)));
+      const expectedFiles = (changeSet?.files || []).map(f => normalizeCanonicalPath(typeof f === "string" ? f : f?.path)).filter(Boolean);
+      return expectedFiles.some(f => !coveredSet.has(f));
     });
 
     if (sentryCoverageIncomplete) {
