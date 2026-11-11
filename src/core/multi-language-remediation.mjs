@@ -62,6 +62,29 @@ export const LANGUAGE_FILE_EXTENSIONS = Object.freeze({
   ".cts": SUPPORTED_LANGUAGES.TYPESCRIPT
 });
 
+export const DEFAULT_LANGUAGE_CONTAINER_IMAGES = Object.freeze({
+  [SUPPORTED_LANGUAGES.JAVASCRIPT]: "node:20-slim",
+  [SUPPORTED_LANGUAGES.TYPESCRIPT]: "node:20-slim",
+  [SUPPORTED_LANGUAGES.PYTHON]: "python:3.11-slim",
+  [SUPPORTED_LANGUAGES.GO]: "golang:1.22-alpine",
+  [SUPPORTED_LANGUAGES.RUST]: "rust:1.75-slim",
+  [SUPPORTED_LANGUAGES.C]: "gcc:13",
+  [SUPPORTED_LANGUAGES.CPP]: "gcc:13",
+  [SUPPORTED_LANGUAGES.UNKNOWN]: "node:20-slim"
+});
+
+/**
+ * Resolves the appropriate container image identity for a target programming language.
+ *
+ * @param {string} language
+ * @param {object} [overrides={}]
+ * @returns {string} Pinned or tagged container image identity
+ */
+export function resolveLanguageContainerImage(language, overrides = {}) {
+  const norm = String(language || "unknown").toLowerCase();
+  return overrides[norm] || DEFAULT_LANGUAGE_CONTAINER_IMAGES[norm] || DEFAULT_LANGUAGE_CONTAINER_IMAGES[SUPPORTED_LANGUAGES.UNKNOWN];
+}
+
 /**
  * Detects the programming language for a given file path.
  *
@@ -285,18 +308,31 @@ export class MultiLanguageRemediationOrchestrator {
   constructor(batchId, findings = [], options = {}) {
     this.batchId = batchId;
     this.options = options;
+    const langImages = options.languageContainerImages || {};
 
-    // Enrich findings with language detection if missing
+    // Enrich findings with language detection and container image resolution if missing
     this.findings = findings.map(f => {
       const primaryTarget = f.targetFiles?.[0] || "";
       const lang = f.language || detectLanguage(primaryTarget);
+      const containerImage = f.containerImage || f.image || resolveLanguageContainerImage(lang, langImages);
       return {
         ...f,
-        language: lang
+        language: lang,
+        containerImage
       };
     });
 
     this.batchSession = new BatchRemediationSession(this.batchId, this.findings, options);
+  }
+
+  getLanguageForFinding(findingId) {
+    const f = this.findings.find(item => item.id === findingId);
+    return f ? f.language : null;
+  }
+
+  getContainerImageForFinding(findingId) {
+    const f = this.findings.find(item => item.id === findingId);
+    return f ? f.containerImage : null;
   }
 
   get status() {

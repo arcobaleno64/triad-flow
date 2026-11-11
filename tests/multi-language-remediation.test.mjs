@@ -25,12 +25,18 @@ import { execFileSync } from "node:child_process";
 
 import {
   SUPPORTED_LANGUAGES,
+  DEFAULT_LANGUAGE_CONTAINER_IMAGES,
+  resolveLanguageContainerImage,
   detectLanguage,
   detectLanguageTestRunner,
   synthesizeUnifiedDiff,
   synthesizeMultiLanguagePatch,
   MultiLanguageRemediationOrchestrator
 } from "../src/core/multi-language-remediation.mjs";
+
+import {
+  ContainerDriver
+} from "../src/core/sandbox-driver.mjs";
 
 import {
   scanStructuralAntiEvasionViolations,
@@ -516,4 +522,157 @@ test("Contract 12: Ephemeral jail preserves immutable authority repository durin
   } finally {
     ws.cleanup();
   }
+});
+
+test("Contract 13: DEFAULT_LANGUAGE_CONTAINER_IMAGES and resolveLanguageContainerImage across 7 languages", () => {
+  assert.equal(DEFAULT_LANGUAGE_CONTAINER_IMAGES[SUPPORTED_LANGUAGES.PYTHON], "python:3.11-slim");
+  assert.equal(DEFAULT_LANGUAGE_CONTAINER_IMAGES[SUPPORTED_LANGUAGES.RUST], "rust:1.75-slim");
+  assert.equal(DEFAULT_LANGUAGE_CONTAINER_IMAGES[SUPPORTED_LANGUAGES.GO], "golang:1.22-alpine");
+  assert.equal(DEFAULT_LANGUAGE_CONTAINER_IMAGES[SUPPORTED_LANGUAGES.C], "gcc:13");
+  assert.equal(DEFAULT_LANGUAGE_CONTAINER_IMAGES[SUPPORTED_LANGUAGES.CPP], "gcc:13");
+  assert.equal(DEFAULT_LANGUAGE_CONTAINER_IMAGES[SUPPORTED_LANGUAGES.JAVASCRIPT], "node:20-slim");
+  assert.equal(DEFAULT_LANGUAGE_CONTAINER_IMAGES[SUPPORTED_LANGUAGES.TYPESCRIPT], "node:20-slim");
+
+  // Default resolution
+  assert.equal(resolveLanguageContainerImage("python"), "python:3.11-slim");
+  assert.equal(resolveLanguageContainerImage("rust"), "rust:1.75-slim");
+  assert.equal(resolveLanguageContainerImage("go"), "golang:1.22-alpine");
+  assert.equal(resolveLanguageContainerImage("c"), "gcc:13");
+  assert.equal(resolveLanguageContainerImage("unknown"), "node:20-slim");
+
+  // Custom overrides
+  assert.equal(
+    resolveLanguageContainerImage("python", { python: "custom-python:3.12-alpine" }),
+    "custom-python:3.12-alpine"
+  );
+});
+
+test("Contract 14: MultiLanguageRemediationOrchestrator container jail execution with ContainerDriver and per-language image dispatch", () => {
+  const selectedCaseIds = ["TF-OSS-203", "TF-OSS-206"]; // Rust (hyper) & Python (cpython)
+  const selectedCases = TF_OSS_CORPUS_V2_CASES.filter(c => selectedCaseIds.includes(c.id));
+  assert.equal(selectedCases.length, 2);
+
+  const multiWs = createOssV2MultiCaseWorkspace(selectedCases);
+
+  const containerInvocations = [];
+  const mockExecFn = (cmd, args) => {
+    if (args.includes("--version")) return { status: 0, stdout: "Docker version 27.0.3\n" };
+    if (args.includes("info")) return { status: 0, stdout: "27.0.3\n" };
+    if (args.includes("inspect")) return { status: 0, stdout: "sha256:d8a2bc4e7a4b89e5c9f5653b47c0b05b38234857ef129994c50259e5a8c2efec\n" };
+    if (args.includes("sh") && args.some(a => String(a).includes("192.0.2.1"))) {
+      return { status: 42, stdout: "TF_EGRESS_DENIED:ENETUNREACH\n", stderr: "" };
+    }
+    if (args.includes("node") && args.includes("test/test.js")) {
+      const wIdx = args.indexOf("-w");
+      const workDir = wIdx !== -1 ? args[wIdx + 1] : null;
+      // Image is the arg right before "node"
+      const nodeIdx = args.indexOf("node");
+      const imageUsed = nodeIdx > 0 ? args[nodeIdx - 1] : null;
+      containerInvocations.push({ workDir, imageUsed, args });
+      return { status: 0, stdout: "container test oracle passed\n" };
+    }
+    return { status: 0, stdout: "" };
+  };
+
+  const containerDriver = new ContainerDriver({
+    containerRuntime: "docker",
+    execFn: mockExecFn
+  });
+
+  try {
+    const findings = selectedCases.map(c => ({
+      id: c.id,
+      targetFiles: c.targetFiles.map(tf => `${c.name}/${tf}`),
+      testRunner: { command: "node", args: ["test/test.js"], cwd: c.name }
+    }));
+
+    const orchestrator = new MultiLanguageRemediationOrchestrator("BATCH-MULTI-CONTAINER", findings, {
+      languageContainerImages: {
+        rust: "rust:1.75-slim",
+        python: "python:3.11-slim"
+      }
+    });
+
+    assert.equal(orchestrator.getLanguageForFinding("TF-OSS-203"), SUPPORTED_LANGUAGES.RUST);
+    assert.equal(orchestrator.getLanguageForFinding("TF-OSS-206"), SUPPORTED_LANGUAGES.PYTHON);
+    assert.equal(orchestrator.getContainerImageForFinding("TF-OSS-203"), "rust:1.75-slim");
+    assert.equal(orchestrator.getContainerImageForFinding("TF-OSS-206"), "python:3.11-slim");
+
+    // 1. Propose fixes
+    for (const c of selectedCases) {
+      const patchedDiff = c.patchDiff.replaceAll(c.targetFiles[0], `${c.name}/${c.targetFiles[0]}`);
+      orchestrator.proposeFix(c.id, {
+        diff: patchedDiff,
+        rationale: `Fix ${c.name} vulnerability in container sandbox`
+      });
+    }
+
+    // 2. Authorize all patches
+    orchestrator.authorizeAll({ identity: "sec-auditor@triad.flow", type: "human" });
+
+    // 3. Execute in Jail Worktree with ContainerDriver
+    const trial = orchestrator.executeInJail(multiWs.dir, {
+      baseSha: multiWs.baseSha,
+      sandboxDriver: containerDriver
+    });
+
+    assert.equal(trial.executionResults.length, 2);
+    assert.equal(containerInvocations.length, 2);
+
+    // Verify per-language CWD and container image dispatch
+    const rustInv = containerInvocations.find(inv => inv.workDir?.includes("rustls"));
+    const pyInv = containerInvocations.find(inv => inv.workDir?.includes("cpython"));
+    assert.ok(rustInv, "Rust container invocation with rustls workDir should exist");
+    assert.ok(pyInv, "Python container invocation with cpython workDir should exist");
+    assert.equal(rustInv.imageUsed, "rust:1.75-slim");
+    assert.equal(pyInv.imageUsed, "python:3.11-slim");
+
+    // 4. Record Closure Verification
+    for (const c of selectedCases) {
+      const session = orchestrator.batchSession.getSession(c.id);
+      session.recordClosureVerification({
+        verifier: { providerName: "claude" },
+        verificationRecord: createMockVerificationRecord(c.id, `${c.name}/${c.targetFiles[0]}`)
+      });
+      assert.equal(session.status, REMEDIATION_STATES.CLOSED);
+    }
+
+    // 5. Finalize and validate
+    const { receipt, summary } = orchestrator.finalize();
+    assert.equal(receipt.status, BATCH_REMEDIATION_STATES.COMPLETED);
+    assert.equal(receipt.verdict, BATCH_VERDICTS.ALL_CLOSED);
+    assert.equal(summary.closedCount, 2);
+    assert.equal(receipt.sandbox.driver, "container");
+    assert.equal(receipt.sandbox.capabilities.filesystemIsolation, "container");
+    assert.equal(receipt.sandbox.capabilities.networkEgressDenial, "verified");
+    assert.equal(validateBatchReceipt(receipt), true);
+
+    multiWs.assertImmutability();
+  } finally {
+    multiWs.cleanup();
+  }
+});
+
+test("Contract 15: detectLanguageTestRunner auto-detects Makefile and package.json", () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-detect-extra-"));
+  try {
+    // Makefile with C target
+    fs.writeFileSync(path.join(tmpDir, "Makefile"), "test:\n\t@echo ok\n");
+    const cRunner = detectLanguageTestRunner(tmpDir, ["src/main.c"]);
+    assert.deepEqual(cRunner, { command: "make", args: ["test"] });
+
+    // package.json with JS target
+    fs.unlinkSync(path.join(tmpDir, "Makefile"));
+    fs.writeFileSync(path.join(tmpDir, "package.json"), '{"name":"test"}\n');
+    const jsRunner = detectLanguageTestRunner(tmpDir, ["lib/index.js"]);
+    assert.deepEqual(jsRunner, { command: "npm", args: ["test"] });
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("Contract 16: MultiLanguageRemediationOrchestrator getters return null for nonexistent finding", () => {
+  const orchestrator = new MultiLanguageRemediationOrchestrator("BATCH-NULL-TEST", []);
+  assert.equal(orchestrator.getLanguageForFinding("NON_EXISTENT"), null);
+  assert.equal(orchestrator.getContainerImageForFinding("NON_EXISTENT"), null);
 });

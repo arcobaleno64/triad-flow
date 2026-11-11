@@ -284,9 +284,14 @@ export class BatchRemediationSession {
       : new WorktreeDriver();
     this.sandboxDriver = driver;
 
+    const allFindingsHaveTypedCommand = this.findings.length > 0 && this.findings.every(f => {
+      const r = f.testRunner || this.sessions.get(f.id)?.testRunner;
+      return Boolean(r && typeof r === "object" && typeof r.command === "string" && r.command.trim().length > 0);
+    });
+
     // Container sandbox execution authority enforcement: container mode strictly requires typed command runner.
     // Arbitrary host callback functions are prohibited under container driver.
-    if (driver.name === "container" && !isTypedCommand) {
+    if (driver.name === "container" && (isFunction || (!isTypedCommand && !allFindingsHaveTypedCommand))) {
       throw new BatchValidationError(
         "Container sandbox execution requires a typed command runner ({ command, args }) to enforce isolated container execution. Arbitrary host callback functions are prohibited under container driver."
       );
@@ -363,9 +368,11 @@ export class BatchRemediationSession {
           if (driver.name === "container") {
             const cmd = activeRunner?.command;
             const args = Array.isArray(activeRunner?.args) ? activeRunner.args : [];
+            const findingImage = activeRunner?.containerImage || activeRunner?.image || session.finding?.containerImage || session.finding?.image || null;
             const containerRes = jail.runInContainer([cmd, ...args], {
               cwd: activeRunner?.cwd || null,
-              timeout: activeRunner?.timeout || null
+              timeout: activeRunner?.timeout || null,
+              image: findingImage
             });
             testRes = {
               testCommand: `${cmd} ${args.join(" ")}`.trim(),
