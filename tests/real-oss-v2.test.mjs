@@ -305,3 +305,52 @@ test("Contract 7: CLI invocation supports triad-flow benchmark --corpus=v2", asy
   assert.ok(out.includes("TF-OSS-202"), "Output must contain TF-OSS-202");
   assert.ok(out.includes("100.0%"), "Recall rate should be 100.0%");
 });
+
+test("Contract 8: Active PoC Differential Verification on real-world multi-language OSS cases", async () => {
+  const caseDef = getOssV2CaseById("TF-OSS-208");
+  assert.ok(caseDef, "Case TF-OSS-208 must exist");
+
+  const workspace = createOssV2CaseWorkspace(caseDef);
+  try {
+    workspace.assertImmutability();
+
+    const session = new ControlledRemediationSession(
+      `FINDING-${caseDef.cve}`,
+      caseDef.targetFiles
+    );
+
+    session.proposeFix({
+      diff: caseDef.patchDiff,
+      rationale: `Remediate ${caseDef.cve} in ${caseDef.name}`,
+      synthesizer: { providerName: "codex", modelName: "gpt-4o" }
+    });
+    session.authorizePatch({
+      authorizer: { identity: "sec-auditor@enterprise.org", type: "human" }
+    });
+
+    // Provide explicit prePatch and postPatch target functions for TF-OSS-208 (CWE-20/CWE-79)
+    session.executeInJailWorktree(workspace.dir, {
+      testRunner: caseDef.testRunner,
+      pocConfig: {
+        cwe: "CWE-20",
+        required: true,
+        prePatch: (input) => `var ${input} = __append;`,
+        postPatch: (input) => {
+          if (!/^[a-zA-Z_$][0-9a-zA-Z_$]*$/.test(input)) throw new Error("Invalid outputFunctionName");
+          return `var ${input} = __append;`;
+        }
+      }
+    });
+
+    assert.strictEqual(session.status, REMEDIATION_STATES.FIXED_PENDING_VERIFY);
+    const receipt = session.toReceipt();
+    assert.ok(receipt.deterministicChecks.pocVerification, "PoC verification receipt must be attached under deterministicChecks");
+    assert.strictEqual(receipt.deterministicChecks.pocVerification.verified, true);
+    assert.strictEqual(receipt.deterministicChecks.pocVerification.status, "DIFFERENTIAL_VERIFIED");
+    assert.ok(receipt.deterministicChecks.pocVerification.digest.startsWith("sha256:"));
+
+    workspace.assertImmutability();
+  } finally {
+    workspace.cleanup();
+  }
+});

@@ -65,6 +65,9 @@ test("Contract 2: Synthesis for Built-in CWE Taxonomies", () => {
   assert.ok(supported.includes("CWE-22"));
   assert.ok(supported.includes("CWE-89"));
   assert.ok(supported.includes("CWE-78"));
+  assert.ok(supported.includes("CWE-79"));
+  assert.ok(supported.includes("CWE-20"));
+  assert.ok(supported.includes("CWE-125"));
 
   // 1. Synthesize CWE-1321 (Prototype Pollution)
   const h1321 = synthesizer.synthesize({
@@ -262,6 +265,91 @@ test("Contract 4.3: Differential Verification - CWE-78 OS Command Injection", as
     harness: { cwe: "CWE-78", targetFunction: "showLog" },
     prePatch: prePatchCmd,
     postPatch: postPatchCmd
+  });
+
+  assert.equal(result.status, VERIFICATION_STATUS.DIFFERENTIAL_VERIFIED);
+  assert.equal(result.verified, true);
+  assert.equal(result.prePatch.passed, false);
+  assert.equal(result.postPatch.passed, true);
+});
+
+test("Contract 4.4: Differential Verification - CWE-79 Cross-Site Scripting", async () => {
+  const synthesizer = new ActivePoCSynthesizer();
+
+  // Vulnerable Pre-Patch: Raw reflection
+  function prePatchRender(input) {
+    return `<div>Hello, ${input}</div>`;
+  }
+
+  // Remediated Post-Patch: HTML Entity Escaping
+  function postPatchRender(input) {
+    const escaped = String(input)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+    return `<div>Hello, ${escaped}</div>`;
+  }
+
+  const result = await synthesizer.verifyDifferential({
+    harness: { cwe: "CWE-79", targetFunction: "render" },
+    prePatch: prePatchRender,
+    postPatch: postPatchRender
+  });
+
+  assert.equal(result.status, VERIFICATION_STATUS.DIFFERENTIAL_VERIFIED);
+  assert.equal(result.verified, true);
+  assert.equal(result.prePatch.passed, false);
+  assert.equal(result.postPatch.passed, true);
+});
+
+test("Contract 4.5: Differential Verification - CWE-20 Improper Input Validation", async () => {
+  const synthesizer = new ActivePoCSynthesizer();
+
+  // Vulnerable Pre-Patch: Accepts any protocol string
+  function prePatchValidate(url) {
+    return url;
+  }
+
+  // Remediated Post-Patch: Rejects javascript: protocol
+  function postPatchValidate(url) {
+    if (String(url).toLowerCase().startsWith("javascript:")) {
+      throw new Error("Dangerous protocol blocked");
+    }
+    return url;
+  }
+
+  const result = await synthesizer.verifyDifferential({
+    harness: { cwe: "CWE-20", targetFunction: "validateUrl" },
+    prePatch: prePatchValidate,
+    postPatch: postPatchValidate
+  });
+
+  assert.equal(result.status, VERIFICATION_STATUS.DIFFERENTIAL_VERIFIED);
+  assert.equal(result.verified, true);
+  assert.equal(result.prePatch.passed, false);
+  assert.equal(result.postPatch.passed, true);
+});
+
+test("Contract 4.6: Differential Verification - CWE-125 Buffer Bounds", async () => {
+  const synthesizer = new ActivePoCSynthesizer();
+
+  // Vulnerable Pre-Patch: No bounds check
+  function prePatchRead(buf, offset, length) {
+    return { data: "raw_read_without_check", length };
+  }
+
+  // Remediated Post-Patch: Strict buffer length bounds check
+  function postPatchRead(buf, offset, length) {
+    if (offset + length > buf.length) {
+      throw new RangeError("Offset and length exceed buffer boundary");
+    }
+    return { data: "safe_slice", length };
+  }
+
+  const result = await synthesizer.verifyDifferential({
+    harness: { cwe: "CWE-125", targetFunction: "read" },
+    prePatch: prePatchRead,
+    postPatch: postPatchRead
   });
 
   assert.equal(result.status, VERIFICATION_STATUS.DIFFERENTIAL_VERIFIED);

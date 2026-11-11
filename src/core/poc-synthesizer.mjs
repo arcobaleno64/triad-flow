@@ -32,7 +32,10 @@ export const CWE_TAXONOMY = Object.freeze({
   CWE_78: "CWE-78",     // OS Command Injection
   CWE_79: "CWE-79",     // Cross-Site Scripting (XSS)
   CWE_1333: "CWE-1333", // ReDoS (Regular Expression Denial of Service)
-  CWE_416: "CWE-416"    // Use After Free / Resource Lifecycle
+  CWE_416: "CWE-416",   // Use After Free / Resource Lifecycle
+  CWE_125: "CWE-125",   // Out-of-bounds Read
+  CWE_190: "CWE-190",   // Integer Overflow
+  CWE_20: "CWE-20"      // Improper Input Validation
 });
 
 /**
@@ -354,6 +357,60 @@ export class PoCHarness {
         `    const cmd = String(result);`,
         `    assert.ok(!cmd.includes("; echo TF_PWNED"), "Shell metacharacters must be sanitized");`,
         `  }`,
+        `}`
+      ].join("\n");
+    }
+
+    if (this.cwe === CWE_TAXONOMY.CWE_79) {
+      return [
+        `const target = targetPkg.${fnName} || targetPkg.default || targetPkg;`,
+        `assert.equal(typeof target, "function", "Target function '${fnName}' must be defined");`,
+        `let result = null;`,
+        `let caught = null;`,
+        `try {`,
+        `  result = target(${JSON.stringify(this.payload)});`,
+        `} catch (err) {`,
+        `  caught = err;`,
+        `}`,
+        `if (!caught) {`,
+        `  const out = String(result);`,
+        `  assert.ok(!out.includes("<script>") && !out.includes("onerror=") && !out.includes("javascript:"), "Output must be HTML sanitized");`,
+        `}`
+      ].join("\n");
+    }
+
+    if (this.cwe === CWE_TAXONOMY.CWE_20) {
+      return [
+        `const target = targetPkg.${fnName} || targetPkg.default || targetPkg;`,
+        `assert.equal(typeof target, "function", "Target function '${fnName}' must be defined");`,
+        `let result = null;`,
+        `let caught = null;`,
+        `try {`,
+        `  result = target(${JSON.stringify(this.payload)});`,
+        `} catch (err) {`,
+        `  caught = err;`,
+        `}`,
+        `if (!caught && result !== null && result !== undefined && result !== false) {`,
+        `  const resStr = String(result?.url || result?.protocol || result);`,
+        `  assert.ok(!resStr.startsWith("javascript:"), "Dangerous protocol must be rejected");`,
+        `}`
+      ].join("\n");
+    }
+
+    if (this.cwe === CWE_TAXONOMY.CWE_125) {
+      return [
+        `const target = targetPkg.${fnName} || targetPkg.default || targetPkg;`,
+        `assert.equal(typeof target, "function", "Target function '${fnName}' must be defined");`,
+        `const smallBuf = Buffer.alloc(32);`,
+        `let result = null;`,
+        `let caught = null;`,
+        `try {`,
+        `  result = target(smallBuf, ${this.payload?.offset || 100}, ${this.payload?.length || 50});`,
+        `} catch (err) {`,
+        `  caught = err;`,
+        `}`,
+        `if (!caught) {`,
+        `  assert.ok(result === null || result === undefined || result === false, "Out of bounds read must return safe sentinel");`,
         `}`
       ].join("\n");
     }
@@ -684,6 +741,196 @@ const BUILTIN_TEMPLATES = {
         metadata: {
           taxonomy: "OS Command Injection",
           severity: "critical",
+          ...spec.metadata
+        }
+      });
+    }
+  },
+
+  [CWE_TAXONOMY.CWE_79]: {
+    generate(spec) {
+      const fnName = spec.targetFunction || "renderHtml";
+      const mod = spec.targetModule ? JSON.stringify(spec.targetModule) : null;
+      const xssPayload = spec.xssPayload || "<script>alert(1)</script>";
+
+      const script = [
+        `// CWE-79 Cross-Site Scripting (XSS) Minimal Repro Test`,
+        `const assert = require("node:assert/strict");`,
+        mod ? `const targetModule = require(${mod});` : `// Target function provided via context`,
+        `const target = ${mod ? `(targetModule.${fnName} || targetModule.default || targetModule)` : `globalThis.${fnName}`};`,
+        `assert.equal(typeof target, "function", "Target function '${fnName}' must be defined and callable");`,
+        ``,
+        `const attackVector = ${JSON.stringify(xssPayload)};`,
+        `let result = null;`,
+        `let caughtError = null;`,
+        `try {`,
+        `  result = target(attackVector);`,
+        `} catch (err) {`,
+        `  caughtError = err;`,
+        `}`,
+        ``,
+        `if (caughtError) {`,
+        `  console.log("SAFE: Target rejected XSS payload: " + caughtError.message);`,
+        `  process.exit(0);`,
+        `}`,
+        ``,
+        `const outputStr = typeof result === "string" ? result : String(result);`,
+        `const isVulnerable = outputStr.includes("<script>") || outputStr.includes("onerror=") || outputStr.includes("javascript:");`,
+        ``,
+        `if (isVulnerable) {`,
+        `  console.error("VULNERABILITY CONFIRMED: Raw unescaped HTML/script tag reflected in output: " + outputStr);`,
+        `  process.exit(1);`,
+        `}`,
+        ``,
+        `console.log("SAFE: Output properly HTML-escaped or sanitized");`,
+        `process.exit(0);`
+      ].join("\n");
+
+      return new PoCHarness({
+        cwe: CWE_TAXONOMY.CWE_79,
+        language: HARNESS_LANGUAGES.JAVASCRIPT,
+        targetModule: spec.targetModule,
+        targetFunction: fnName,
+        payload: xssPayload,
+        script,
+        expectedPrePatchFailure: {
+          exitCode: 1,
+          description: "Raw unescaped script tags in output"
+        },
+        expectedPostPatchSuccess: {
+          exitCode: 0,
+          description: "Output properly sanitized or escaped"
+        },
+        metadata: {
+          taxonomy: "Cross-Site Scripting",
+          severity: "high",
+          ...spec.metadata
+        }
+      });
+    }
+  },
+
+  [CWE_TAXONOMY.CWE_20]: {
+    generate(spec) {
+      const fnName = spec.targetFunction || "validateInput";
+      const mod = spec.targetModule ? JSON.stringify(spec.targetModule) : null;
+      const attackVector = spec.attackVector || "javascript://%0aalert(1)";
+
+      const script = [
+        `// CWE-20 Improper Input Validation Minimal Repro Test`,
+        `const assert = require("node:assert/strict");`,
+        mod ? `const targetModule = require(${mod});` : `// Target function provided via context`,
+        `const target = ${mod ? `(targetModule.${fnName} || targetModule.default || targetModule)` : `globalThis.${fnName}`};`,
+        `assert.equal(typeof target, "function", "Target function '${fnName}' must be defined and callable");`,
+        ``,
+        `const vector = ${JSON.stringify(attackVector)};`,
+        `let result = null;`,
+        `let caughtError = null;`,
+        `try {`,
+        `  result = target(vector);`,
+        `} catch (err) {`,
+        `  caughtError = err;`,
+        `}`,
+        ``,
+        `if (caughtError) {`,
+        `  console.log("SAFE: Input rejected by validation: " + caughtError.message);`,
+        `  process.exit(0);`,
+        `}`,
+        ``,
+        `if (result === false || result === null || result === undefined) {`,
+        `  console.log("SAFE: Validator safely returned false/null for invalid input");`,
+        `  process.exit(0);`,
+        `}`,
+        ``,
+        `const resultStr = typeof result === "string" ? result : (result?.url || result?.protocol || String(result));`,
+        `if (result === true || (typeof resultStr === "string" && (resultStr.startsWith("javascript:") || resultStr.includes("alert(1)")))) {`,
+        `  console.error("VULNERABILITY CONFIRMED: Dangerous unvalidated input accepted: " + resultStr);`,
+        `  process.exit(1);`,
+        `}`,
+        ``,
+        `console.log("SAFE: Input safely normalized or rejected");`,
+        `process.exit(0);`
+      ].join("\n");
+
+      return new PoCHarness({
+        cwe: CWE_TAXONOMY.CWE_20,
+        language: HARNESS_LANGUAGES.JAVASCRIPT,
+        targetModule: spec.targetModule,
+        targetFunction: fnName,
+        payload: attackVector,
+        script,
+        expectedPrePatchFailure: {
+          exitCode: 1,
+          description: "Dangerous unvalidated input accepted"
+        },
+        expectedPostPatchSuccess: {
+          exitCode: 0,
+          description: "Dangerous input rejected or normalized"
+        },
+        metadata: {
+          taxonomy: "Improper Input Validation",
+          severity: "medium",
+          ...spec.metadata
+        }
+      });
+    }
+  },
+
+  [CWE_TAXONOMY.CWE_125]: {
+    generate(spec) {
+      const fnName = spec.targetFunction || "readBuffer";
+      const mod = spec.targetModule ? JSON.stringify(spec.targetModule) : null;
+      const offset = spec.offset || 100;
+      const length = spec.length || 50;
+
+      const script = [
+        `// CWE-125 Out-of-bounds Read Minimal Repro Test`,
+        `const assert = require("node:assert/strict");`,
+        mod ? `const targetModule = require(${mod});` : `// Target function provided via context`,
+        `const target = ${mod ? `(targetModule.${fnName} || targetModule.default || targetModule)` : `globalThis.${fnName}`};`,
+        `assert.equal(typeof target, "function", "Target function '${fnName}' must be defined and callable");`,
+        ``,
+        `const smallBuf = Buffer.alloc(32);`,
+        `let result = null;`,
+        `let caughtError = null;`,
+        `try {`,
+        `  result = target(smallBuf, ${offset}, ${length});`,
+        `} catch (err) {`,
+        `  caughtError = err;`,
+        `}`,
+        ``,
+        `if (caughtError) {`,
+        `  console.log("SAFE: Bounds check successfully triggered error: " + caughtError.message);`,
+        `  process.exit(0);`,
+        `}`,
+        ``,
+        `if (result === null || result === undefined || result === false) {`,
+        `  console.log("SAFE: Function returned safe sentinel for out-of-bounds request");`,
+        `  process.exit(0);`,
+        `}`,
+        ``,
+        `console.error("VULNERABILITY CONFIRMED: Out-of-bounds read permitted without bounds check.");`,
+        `process.exit(1);`
+      ].join("\n");
+
+      return new PoCHarness({
+        cwe: CWE_TAXONOMY.CWE_125,
+        language: HARNESS_LANGUAGES.JAVASCRIPT,
+        targetModule: spec.targetModule,
+        targetFunction: fnName,
+        payload: { offset, length },
+        script,
+        expectedPrePatchFailure: {
+          exitCode: 1,
+          description: "Out-of-bounds read allowed"
+        },
+        expectedPostPatchSuccess: {
+          exitCode: 0,
+          description: "Bounds check enforced"
+        },
+        metadata: {
+          taxonomy: "Out-of-bounds Read",
+          severity: "high",
           ...spec.metadata
         }
       });
@@ -1134,6 +1381,85 @@ export class ActivePoCSynthesizer {
             stdoutBuffer.push("SAFE: Command arguments sanitized");
             exitCode = 0;
           }
+        }
+      } else if (harness.cwe === CWE_TAXONOMY.CWE_79) {
+        // XSS check
+        let renderResult = null;
+        let caughtErr = null;
+        try {
+          renderResult = fn(harness.payload);
+        } catch (err) {
+          caughtErr = err;
+        }
+
+        if (caughtErr) {
+          if (caughtErr instanceof TypeError || caughtErr instanceof ReferenceError || caughtErr instanceof RangeError) {
+            stderrBuffer.push("CRASH: " + caughtErr.message);
+            exitCode = 1;
+            errorMsg = caughtErr.message;
+          } else {
+            stdoutBuffer.push("SAFE: Dangerous HTML rejected: " + caughtErr.message);
+            exitCode = 0;
+          }
+        } else {
+          const out = String(renderResult);
+          const isVulnerable = out.includes("<script>") || out.includes("onerror=") || out.includes("javascript:");
+          if (isVulnerable) {
+            stderrBuffer.push("VULNERABILITY CONFIRMED: Raw unescaped script tag in output");
+            exitCode = 1;
+          } else {
+            stdoutBuffer.push("SAFE: Output properly HTML-escaped");
+            exitCode = 0;
+          }
+        }
+      } else if (harness.cwe === CWE_TAXONOMY.CWE_20) {
+        // Input validation check
+        let valResult = null;
+        let caughtErr = null;
+        try {
+          valResult = fn(harness.payload);
+        } catch (err) {
+          caughtErr = err;
+        }
+
+        if (caughtErr) {
+          stdoutBuffer.push("SAFE: Input rejected by validation: " + caughtErr.message);
+          exitCode = 0;
+        } else if (valResult === false || valResult === null || valResult === undefined) {
+          stdoutBuffer.push("SAFE: Input validator returned false/null");
+          exitCode = 0;
+        } else {
+          const resStr = String(valResult?.url || valResult?.protocol || valResult);
+          if (valResult === true || resStr.startsWith("javascript:") || resStr.includes("alert(1)")) {
+            stderrBuffer.push("VULNERABILITY CONFIRMED: Dangerous unvalidated input accepted");
+            exitCode = 1;
+          } else {
+            stdoutBuffer.push("SAFE: Input validated");
+            exitCode = 0;
+          }
+        }
+      } else if (harness.cwe === CWE_TAXONOMY.CWE_125) {
+        // Buffer bounds check
+        const offset = harness.payload?.offset ?? 100;
+        const length = harness.payload?.length ?? 50;
+        const smallBuf = Buffer.alloc(32);
+        let readResult = null;
+        let caughtErr = null;
+        try {
+          readResult = fn(smallBuf, offset, length);
+        } catch (err) {
+          caughtErr = err;
+        }
+
+        if (caughtErr) {
+          stdoutBuffer.push("SAFE: Bounds check triggered error: " + caughtErr.message);
+          exitCode = 0;
+        } else if (readResult === null || readResult === undefined || readResult === false) {
+          stdoutBuffer.push("SAFE: Function returned safe sentinel for out-of-bounds");
+          exitCode = 0;
+        } else {
+          stderrBuffer.push("VULNERABILITY CONFIRMED: Out-of-bounds read permitted without check");
+          exitCode = 1;
         }
       } else {
         // Generic invocation
