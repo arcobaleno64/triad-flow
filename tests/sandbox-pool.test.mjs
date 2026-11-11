@@ -30,6 +30,9 @@ import {
   ContainerSandboxPool,
   PoolContainerDriver,
   ContainerDaemon,
+  ContainerOrphanReconciler,
+  reconcileOrphanContainers,
+  POOL_CONTAINER_LABELS,
   POOL_CONTAINER_STATES,
   DEFAULT_RESOURCE_LIMITS,
   DEFAULT_POOL_OPTIONS,
@@ -44,13 +47,19 @@ import {
 import {
   SandboxUnavailableError,
   SandboxSecurityViolationError,
-  BaseSandboxDriver
+  BaseSandboxDriver,
+  resolveSandboxDriver,
+  SANDBOX_DRIVERS
 } from "../src/core/sandbox-driver.mjs";
 
 import {
   ControlledRemediationSession,
   REMEDIATION_STATES
 } from "../src/core/controlled-remediation.mjs";
+
+import {
+  BatchRemediationSession
+} from "../src/core/batch-remediation.mjs";
 
 import {
   SUPPORTED_LANGUAGES,
@@ -212,6 +221,9 @@ test("Contract 3: Multi-language warm daemon spawning with strict security isola
       assert.ok(call.args.includes("--security-opt=no-new-privileges"), "Must enforce no-new-privileges");
       assert.ok(call.args.includes("/tmp:rw,noexec,nosuid,size=64m"), "Must mount scratch tmpfs");
       assert.ok(call.args.includes("tail"), "Must run daemon command");
+      assert.ok(call.args.some(a => String(a).includes("triad-flow-pool=true")), "Must include label triad-flow-pool=true");
+      assert.ok(call.args.some(a => String(a).includes("triad-flow-pool-id=")), "Must include label triad-flow-pool-id");
+      assert.ok(call.args.some(a => String(a).includes("triad-flow-created-at=")), "Must include label triad-flow-created-at");
     }
   } finally {
     await pool.drain();
@@ -673,3 +685,469 @@ test("Contract 15: ControlledRemediationSession integration with PoolContainerDr
     fs.rmSync(tmpRepo, { recursive: true, force: true });
   }
 });
+
+test("Contract 16: Background Container Reconciler scans and reclaims expired orphan containers by label & TTL", () => {
+  const removedContainers = [];
+  const now = Date.now();
+  const expiredTime = now - 3700000; // 1 hour + 100s ago (TTL expired)
+  const freshTime = now - 10000; // 10s ago (fresh)
+
+  const mockPsOutput = [
+    `c101\ttf-pool-old-js-1\ttriad-flow-pool=true,triad-flow-pool-id=oldpool,triad-flow-created-at=${expiredTime},triad-flow-ttl-ms=1800000\tUp 1 hour\t1 hour ago`,
+    `c102\ttf-pool-active-py-2\ttriad-flow-pool=true,triad-flow-pool-id=activepool,triad-flow-created-at=${freshTime},triad-flow-ttl-ms=1800000\tUp 10 seconds\t10 seconds ago`,
+    `c103\ttf-pool-dead-go-3\ttriad-flow-pool=true,triad-flow-pool-id=otherpool,triad-flow-created-at=${freshTime},triad-flow-ttl-ms=1800000\tExited (137) 5 seconds ago\t5 seconds ago`
+  ].join("\n");
+
+  const mockExecFn = (cmd, args = []) => {
+    if (args.includes("ps")) {
+      return { status: 0, stdout: mockPsOutput, stderr: "" };
+    }
+    if (args.includes("rm")) {
+      const target = args[args.length - 1];
+      removedContainers.push(target);
+      return { status: 0, stdout: `${target}\n`, stderr: "" };
+    }
+    return { status: 0, stdout: "" };
+  };
+
+  const reconciler = new ContainerOrphanReconciler({
+    runtime: "docker",
+    execFn: mockExecFn,
+    poolId: "activepool"
+  });
+
+  const res = reconciler.reconcile();
+  assert.equal(res.scanned, 3);
+  // c101 (expired TTL) and c103 (exited/dead) must be reclaimed; c102 (fresh & up) must be preserved
+  assert.equal(res.reclaimed, 2);
+  assert.ok(removedContainers.includes("tf-pool-old-js-1") || removedContainers.includes("c101"));
+  assert.ok(removedContainers.includes("tf-pool-dead-go-3") || removedContainers.includes("c103"));
+  assert.ok(!removedContainers.includes("tf-pool-active-py-2"));
+  assert.ok(!removedContainers.includes("c102"));
+});
+
+test("Contract 17: Background Container Reconciler cleans orphaned host workspace directories in os.tmpdir()", () => {
+  const tmpDir = os.tmpdir();
+  const orphanWsDir = path.join(tmpDir, `tf-pool-ws-orphan-${Date.now()}-slot1`);
+  fs.mkdirSync(orphanWsDir, { recursive: true });
+  fs.writeFileSync(path.join(orphanWsDir, "garbage.txt"), "leftover from crashed process");
+  assert.ok(fs.existsSync(orphanWsDir));
+
+  // Set mtime to 2 hours ago to guarantee TTL expiration
+  const twoHoursAgo = new Date(Date.now() - 7200000);
+  fs.utimesSync(orphanWsDir, twoHoursAgo, twoHoursAgo);
+
+  const mockExecFn = (cmd, args = []) => {
+    if (args.includes("ps")) return { status: 0, stdout: "", stderr: "" };
+    return { status: 0, stdout: "" };
+  };
+
+  const reconciler = new ContainerOrphanReconciler({
+    runtime: "docker",
+    execFn: mockExecFn,
+    ttlMs: 3600000
+  });
+
+  const res = reconciler.reconcile({ sweepWorkspaces: true });
+  assert.ok(!fs.existsSync(orphanWsDir), "Orphaned workspace directory must be swept and deleted");
+  assert.ok(res.reclaimedWorkspaces.some(w => orphanWsDir.includes(w)));
+});
+
+test("Contract 18: forceReleaseByTaskId immediately cleans and releases/scrubs container slot or queued task", async () => {
+  const { mockExecFn } = createMockDocker();
+  const pool = new ContainerSandboxPool({
+    execFn: mockExecFn,
+    maxCapacity: 1,
+    autoRegisterSignalHandlers: false,
+    reapIntervalMs: 0
+  });
+
+  try {
+    const daemon = await pool.acquire({ taskId: "task-stuck-123" });
+    assert.equal(daemon.currentTaskId, "task-stuck-123");
+    assert.equal(daemon.status, POOL_CONTAINER_STATES.BUSY);
+
+    // Write file in workspace to verify scrub
+    fs.writeFileSync(path.join(daemon.hostWorkspaceDir, "file.txt"), "hello");
+
+    const released = pool.forceReleaseByTaskId("task-stuck-123", { scrub: true });
+    assert.equal(released, true);
+    assert.equal(daemon.status, POOL_CONTAINER_STATES.IDLE);
+    assert.equal(daemon.currentTaskId, null);
+    assert.deepEqual(fs.readdirSync(daemon.hostWorkspaceDir), []);
+
+    // Non-existent task returns false
+    assert.equal(pool.forceReleaseByTaskId("no-such-task"), false);
+  } finally {
+    await pool.drain();
+  }
+});
+
+test("Contract 19: acquire with AbortSignal aborts gracefully without slot leakage", async () => {
+  const { mockExecFn } = createMockDocker();
+  const pool = new ContainerSandboxPool({
+    execFn: mockExecFn,
+    maxCapacity: 1,
+    autoRegisterSignalHandlers: false,
+    reapIntervalMs: 0
+  });
+
+  try {
+    const d1 = await pool.acquire({ taskId: "d1" });
+
+    // Try acquiring d2 with an AbortSignal that aborts after 50ms
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(new Error("Circuit breaker tripped")), 50);
+
+    await assert.rejects(
+      async () => await pool.acquire({ taskId: "d2", signal: controller.signal, timeoutMs: 5000 }),
+      /aborted/i
+    );
+
+    // Queue must be empty after abort
+    assert.equal(pool.getStats().queueLength, 0);
+
+    // Release d1
+    await pool.release(d1);
+    assert.equal(pool.getStats().busyDaemons, 0);
+  } finally {
+    await pool.drain();
+  }
+});
+
+test("Contract 20: executeAsync streams output and respects execution timeout", async () => {
+  const pool = new ContainerSandboxPool({
+    autoRegisterSignalHandlers: false,
+    reapIntervalMs: 0
+  });
+
+  const mockDaemon = new ContainerDaemon({
+    id: "async-slot-1",
+    containerName: "tf-mock-async-daemon",
+    status: POOL_CONTAINER_STATES.IDLE
+  });
+  pool.daemons.set(mockDaemon.id, mockDaemon);
+
+  // Use custom execAsyncFn to simulate async execution
+  const res = await pool.executeAsync(mockDaemon, ["echo", "hello"], {
+    execAsyncFn: async (daemon, args) => {
+      return {
+        status: 0,
+        exitCode: 0,
+        stdout: "async-hello\n",
+        stderr: "",
+        timedOut: false,
+        durationMs: 4,
+        containerName: daemon.containerName
+      };
+    }
+  });
+
+  assert.equal(res.exitCode, 0);
+  assert.equal(res.stdout.trim(), "async-hello");
+  assert.equal(res.timedOut, false);
+});
+
+test("Contract 21: Machine verification of vulnerability causal features (forbidden, required, exitCode)", () => {
+  const tmpRepo = fs.mkdtempSync(path.join(os.tmpdir(), "tf-causal-test-"));
+  try {
+    execFileSync("git", ["init"], { cwd: tmpRepo, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "Causal Test"], { cwd: tmpRepo, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "causal@triadflow.dev"], { cwd: tmpRepo, stdio: "ignore" });
+    fs.writeFileSync(path.join(tmpRepo, "service.js"), 'const port = 8080;\n');
+    execFileSync("git", ["add", "."], { cwd: tmpRepo, stdio: "ignore" });
+    execFileSync("git", ["commit", "-m", "init"], { cwd: tmpRepo, stdio: "ignore" });
+
+    const session = new ControlledRemediationSession("FINDING-CAUSAL-01", ["service.js"]);
+    session.proposeFix({
+      diff: "--- a/service.js\n+++ b/service.js\n@@ -1,1 +1,1 @@\n-const port = 8080;\n+const port = 8081;\n",
+      rationale: "Change port"
+    });
+    session.authorizePatch({ authorizer: { identity: "security-auditor", type: "human" } });
+
+    // 1. Runner where forbidden pattern appears (vulnerability symptom reproduces)
+    const failingRunner = {
+      command: "node",
+      args: ["-e", "console.error('CRITICAL_VULNERABILITY_LEAK: token_123')"],
+      causalFeatures: {
+        forbiddenPatterns: ["CRITICAL_VULNERABILITY_LEAK"],
+        expectedExitCode: 0
+      }
+    };
+
+    const jailResFail = session.executeInJailWorktree(tmpRepo, {
+      testRunner: failingRunner
+    });
+
+    assert.equal(jailResFail.checkResult.regressionDetected, true, "Regression must be flagged when forbidden causal pattern is detected");
+    assert.equal(jailResFail.checkResult.causalVerification.verified, false);
+    assert.deepEqual(jailResFail.checkResult.causalVerification.matchedForbidden, ["CRITICAL_VULNERABILITY_LEAK"]);
+    assert.equal(session.status, REMEDIATION_STATES.REJECTED_FIX);
+
+    // 2. Successful runner meeting affirmative causal proof
+    const successSession = new ControlledRemediationSession("FINDING-CAUSAL-02", ["service.js"]);
+    successSession.proposeFix({
+      diff: "--- a/service.js\n+++ b/service.js\n@@ -1,1 +1,1 @@\n-const port = 8080;\n+const port = 8081;\n",
+      rationale: "Change port"
+    });
+    successSession.authorizePatch({ authorizer: { identity: "security-auditor", type: "human" } });
+
+    const passingRunner = {
+      command: "node",
+      args: ["-e", "console.log('TF_REMEDIATION_PROOF_AFFIRMED: safe')"],
+      causalFeatures: {
+        requiredPatterns: ["TF_REMEDIATION_PROOF_AFFIRMED"],
+        expectedExitCode: 0
+      }
+    };
+
+    const jailResPass = successSession.executeInJailWorktree(tmpRepo, {
+      testRunner: passingRunner
+    });
+
+    assert.equal(jailResPass.checkResult.regressionDetected, false);
+    assert.equal(jailResPass.checkResult.causalVerification.verified, true);
+    assert.equal(successSession.status, REMEDIATION_STATES.FIXED_PENDING_VERIFY);
+  } finally {
+    fs.rmSync(tmpRepo, { recursive: true, force: true });
+  }
+});
+
+test("Contract 22: resolveSandboxDriver seamlessly resolves pool and container-pool", () => {
+  const { mockExecFn } = createMockDocker();
+
+  // Test 'container-pool'
+  const driver1 = resolveSandboxDriver("container-pool", {
+    execFn: mockExecFn,
+    autoRegisterSignalHandlers: false,
+    reapIntervalMs: 0
+  });
+  assert.equal(driver1.name, "container-pool");
+  assert.equal(driver1.driverType, "container-pool");
+
+  // Test alias 'pool'
+  const driver2 = resolveSandboxDriver("pool", {
+    execFn: mockExecFn,
+    autoRegisterSignalHandlers: false,
+    reapIntervalMs: 0
+  });
+  assert.equal(driver2.name, "container-pool");
+
+  // Verify capabilities include hot-reuse and zeroOrphanGuaranteed
+  const caps = driver1.capabilities();
+  assert.equal(caps.mode, "hot-reuse");
+  assert.equal(caps.zeroOrphanGuaranteed, true);
+});
+
+test("Contract 23: Batch remediation with PoolContainerDriver verifies multi-task hot reuse and scrub-on-release", () => {
+  const { mockExecFn } = createMockDocker({
+    onExec: (args) => {
+      return { status: 0, stdout: "ok\n" };
+    }
+  });
+
+  const pool = new ContainerSandboxPool({
+    execFn: mockExecFn,
+    autoRegisterSignalHandlers: false,
+    reapIntervalMs: 0
+  });
+
+  const driver = new PoolContainerDriver({}, pool);
+
+  const tmpRepo = fs.mkdtempSync(path.join(os.tmpdir(), "tf-batch-pool-test-"));
+  try {
+    execFileSync("git", ["init"], { cwd: tmpRepo, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "Batch Pool Test"], { cwd: tmpRepo, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "batch@triadflow.dev"], { cwd: tmpRepo, stdio: "ignore" });
+    fs.writeFileSync(path.join(tmpRepo, "fileA.js"), 'const a = 1;\n');
+    fs.writeFileSync(path.join(tmpRepo, "fileB.js"), 'const b = 1;\n');
+    execFileSync("git", ["add", "."], { cwd: tmpRepo, stdio: "ignore" });
+    execFileSync("git", ["commit", "-m", "init"], { cwd: tmpRepo, stdio: "ignore" });
+
+    const batch = new BatchRemediationSession("BATCH-POOL-001", [
+      { id: "FINDING-A", targetFiles: ["fileA.js"], severity: "high" },
+      { id: "FINDING-B", targetFiles: ["fileB.js"], severity: "medium" }
+    ]);
+
+    const sessA = batch.getSession("FINDING-A");
+    sessA.proposeFix({ diff: "--- a/fileA.js\n+++ b/fileA.js\n@@ -1,1 +1,1 @@\n-const a = 1;\n+const a = 2;\n", rationale: "Fix A" });
+    sessA.authorizePatch({ authorizer: { identity: "lead", type: "human" } });
+
+    const sessB = batch.getSession("FINDING-B");
+    sessB.proposeFix({ diff: "--- a/fileB.js\n+++ b/fileB.js\n@@ -1,1 +1,1 @@\n-const b = 1;\n+const b = 2;\n", rationale: "Fix B" });
+    sessB.authorizePatch({ authorizer: { identity: "lead", type: "human" } });
+
+    const batchResult = batch.executeBatchInJailWorktree(tmpRepo, {
+      sandboxDriver: driver,
+      testRunner: { command: "node", args: ["--version"] }
+    });
+
+    assert.equal(batchResult.executionResults.length, 2);
+    assert.ok(batchResult.executionResults.every(r => r.testsPassed));
+    assert.ok(batchResult.executionResults.every(r => r.applied));
+
+    const receipt = batch.toBatchReceipt();
+    assert.ok(receipt);
+    assert.equal(receipt.sandbox.driver, "container-pool");
+    assert.equal(receipt.sandbox.capabilities.mode, "hot-reuse");
+    assert.equal(receipt.sandbox.capabilities.zeroOrphanGuaranteed, true);
+  } finally {
+    pool.drain();
+    fs.rmSync(tmpRepo, { recursive: true, force: true });
+  }
+});
+
+test("Contract 24: Reconciler reclaims dead/exited containers in active pool, handles Podman map labels, and cleans leading slashes", () => {
+  const reclaimedContainers = [];
+  const mockExec = (cmd, args) => {
+    if (args.includes("ps")) {
+      return {
+        status: 0,
+        stdout: [
+          // Podman style map[...] labels with leading slash in name and dead status
+          `c-dead-1\t/tf-active-dead-container\tmap[triad-flow-pool:true triad-flow-pool-id:pool-999 triad-flow-slot-id:s1]\tExited (137) 2 minutes ago\t2026-11-11T12:00:00Z`,
+          // Docker style labels with leading slash in name
+          `c-orphan-2\t/tf-old-orphan\ttriad-flow-pool=true,triad-flow-pool-id=other-pool,triad-flow-created-at=${Date.now() - 5000000},triad-flow-ttl-ms=1000\tUp 1 hour\t`
+        ].join("\n")
+      };
+    }
+    if (args.includes("rm")) {
+      reclaimedContainers.push(args[args.length - 1]);
+      return { status: 0, stdout: "" };
+    }
+    return { status: 0, stdout: "" };
+  };
+
+  const activeDaemon = new ContainerDaemon({
+    id: "s1",
+    containerName: "tf-active-dead-container",
+    status: POOL_CONTAINER_STATES.IDLE
+  });
+  const daemons = new Map([["s1", activeDaemon]]);
+
+  const reconciler = new ContainerOrphanReconciler({
+    execFn: mockExec,
+    poolId: "pool-999",
+    ttlMs: 60000
+  });
+
+  const res = reconciler.reconcile({ activeDaemons: daemons, sweepWorkspaces: false });
+
+  assert.equal(res.scanned, 2);
+  assert.equal(res.reclaimed, 2);
+  // Must clean leading slashes when passing to docker rm
+  assert.ok(reclaimedContainers.includes("tf-active-dead-container"));
+  assert.ok(reclaimedContainers.includes("tf-old-orphan"));
+  // Active daemon must be marked as crashed
+  assert.equal(activeDaemon.status, POOL_CONTAINER_STATES.CRASHED);
+});
+
+test("Contract 25: Queued acquire strictly respects runtime language compatibility on daemon release", async () => {
+  const { mockExecFn } = createMockDocker();
+  const pool = new ContainerSandboxPool({
+    execFn: mockExecFn,
+    maxCapacity: 1,
+    autoRegisterSignalHandlers: false,
+    reapIntervalMs: 0
+  });
+
+  try {
+    // Acquire the only slot with javascript
+    const dJs = await pool.acquire({ language: SUPPORTED_LANGUAGES.JAVASCRIPT });
+    assert.equal(dJs.language, SUPPORTED_LANGUAGES.JAVASCRIPT);
+
+    // Queue an acquire for PYTHON while pool is at capacity (maxCapacity = 1)
+    let pythonResolved = false;
+    let pythonDaemon = null;
+    const pythonPromise = pool.acquire({ language: SUPPORTED_LANGUAGES.PYTHON, timeoutMs: 500 }).then(d => {
+      pythonResolved = true;
+      pythonDaemon = d;
+      return d;
+    });
+
+    // Release the JavaScript daemon. It must NOT be given to the Python request!
+    await pool.release(dJs);
+
+    // Python request should NOT be resolved with JavaScript daemon
+    assert.equal(pythonResolved, false, "JavaScript daemon must not be handed to a Python acquire request");
+    assert.equal(dJs.status, POOL_CONTAINER_STATES.IDLE);
+
+    // Now drain and clean up
+    await assert.rejects(async () => await pythonPromise, /timed out/i);
+  } finally {
+    await pool.drain();
+  }
+});
+
+test("Contract 26: PoolContainerDriver fails closed on image switching, cleans up on acquire error, and supports runInContainerAsync", async () => {
+  const { mockExecFn } = createMockDocker();
+  const pool = new ContainerSandboxPool({
+    execFn: mockExecFn,
+    maxCapacity: 1,
+    autoRegisterSignalHandlers: false,
+    reapIntervalMs: 0
+  });
+  const driver = new PoolContainerDriver({}, pool);
+  assert.equal(driver.runtime, "docker");
+
+  const tmpRepo = fs.mkdtempSync(path.join(os.tmpdir(), "tf-driver-cleanup-test-"));
+  try {
+    execFileSync("git", ["init"], { cwd: tmpRepo, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "Driver Test"], { cwd: tmpRepo, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "driver@triadflow.dev"], { cwd: tmpRepo, stdio: "ignore" });
+    fs.writeFileSync(path.join(tmpRepo, "index.js"), 'console.log("ok");\n');
+    execFileSync("git", ["add", "."], { cwd: tmpRepo, stdio: "ignore" });
+    execFileSync("git", ["commit", "-m", "init"], { cwd: tmpRepo, stdio: "ignore" });
+
+    // 1. Successful creation and runInContainerAsync
+    const jail = driver.create(tmpRepo);
+    assert.ok(typeof jail.runInContainerAsync === "function");
+
+    // Switching image on warm daemon must fail closed
+    assert.throws(
+      () => jail.runInContainer(["echo", "hi"], { image: "different-image:latest" }),
+      /Cannot switch container image/
+    );
+
+    jail.cleanup();
+
+    // 2. Fail-closed on acquire failure: fill capacity then attempt another create
+    const d1 = await pool.acquire();
+    assert.throws(
+      () => driver.create(tmpRepo),
+      /capacity exhausted/i
+    );
+    await pool.release(d1);
+  } finally {
+    await pool.drain();
+    fs.rmSync(tmpRepo, { recursive: true, force: true });
+  }
+});
+
+test("Contract 27: forceReleaseByTaskId sweeps multiple matching slots and queued requests", async () => {
+  const { mockExecFn } = createMockDocker();
+  const pool = new ContainerSandboxPool({
+    execFn: mockExecFn,
+    maxCapacity: 2,
+    autoRegisterSignalHandlers: false,
+    reapIntervalMs: 0
+  });
+
+  try {
+    const d1 = await pool.acquire({ taskId: "batch-task-shared" });
+    const d2 = await pool.acquire({ taskId: "batch-task-shared" });
+
+    assert.equal(d1.currentTaskId, "batch-task-shared");
+    assert.equal(d2.currentTaskId, "batch-task-shared");
+
+    const released = pool.forceReleaseByTaskId("batch-task-shared");
+    assert.equal(released, true);
+    assert.equal(d1.status, POOL_CONTAINER_STATES.IDLE);
+    assert.equal(d2.status, POOL_CONTAINER_STATES.IDLE);
+    assert.equal(d1.currentTaskId, null);
+    assert.equal(d2.currentTaskId, null);
+  } finally {
+    await pool.drain();
+  }
+});
+

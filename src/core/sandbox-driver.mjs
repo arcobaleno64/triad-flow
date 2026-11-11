@@ -25,7 +25,8 @@ import {
 
 export const SANDBOX_DRIVERS = Object.freeze({
   WORKTREE: "worktree",
-  CONTAINER: "container"
+  CONTAINER: "container",
+  CONTAINER_POOL: "container-pool"
 });
 
 export const DEFAULT_CONTAINER_IMAGE = "node:20-slim";
@@ -560,6 +561,30 @@ export class ContainerDriver extends BaseSandboxDriver {
   }
 }
 
+const DRIVER_REGISTRY = new Map();
+
+/**
+ * Registers an external sandbox driver class under a canonical name.
+ *
+ * @param {string} name
+ * @param {typeof BaseSandboxDriver} driverClass
+ */
+export function registerSandboxDriver(name, driverClass) {
+  if (!name || typeof name !== "string") {
+    throw new TypeError("Driver name must be a non-empty string.");
+  }
+  DRIVER_REGISTRY.set(name.toLowerCase(), driverClass);
+}
+
+/**
+ * Returns a copy of all registered sandbox driver classes.
+ *
+ * @returns {Map<string, typeof BaseSandboxDriver>}
+ */
+export function getRegisteredSandboxDrivers() {
+  return new Map(DRIVER_REGISTRY);
+}
+
 /**
  * Resolves sandbox driver by name adhering strictly to ADR-024-02 (no silent fallback).
  *
@@ -572,6 +597,19 @@ export function resolveSandboxDriver(driverName = "worktree", options = {}) {
 
   if (norm === SANDBOX_DRIVERS.WORKTREE || norm === "default" || !norm) {
     return new WorktreeDriver(options);
+  }
+
+  const RegisteredDriver = DRIVER_REGISTRY.get(norm);
+  if (RegisteredDriver) {
+    const driver = new RegisteredDriver(options);
+    const probe = driver.probe(options);
+    if (!probe.available) {
+      throw new SandboxUnavailableError(
+        `Requested sandbox driver '${norm}' is unavailable on this host: ${probe.reason}. Silent downgrade is prohibited by ADR-024-02.`,
+        driver.runtime || driver.pool?.runtime || "container"
+      );
+    }
+    return driver;
   }
 
   if (norm === SANDBOX_DRIVERS.CONTAINER || norm === "docker" || norm === "podman") {
@@ -592,5 +630,5 @@ export function resolveSandboxDriver(driverName = "worktree", options = {}) {
     return driver;
   }
 
-  throw new Error(`Unsupported sandbox driver: '${driverName}'. Supported drivers: 'worktree', 'container'.`);
+  throw new Error(`Unsupported sandbox driver: '${driverName}'. Supported drivers: 'worktree', 'container', 'container-pool'.`);
 }

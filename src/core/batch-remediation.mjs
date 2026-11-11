@@ -362,6 +362,9 @@ export class BatchRemediationSession {
           // Patch application or scope violation in jail -> roll back uncommitted changes
           gitExec(["reset", "--hard", "HEAD"]);
           gitExec(["clean", "-fd"]);
+          if (isContainer && typeof jail.runInContainer === "function") {
+            try { jail.runInContainer("rm -rf /tmp/* /tmp/.[!.]*", { timeout: 5000 }); } catch {}
+          }
           session._recordTransition(REMEDIATION_STATES.REJECTED_FIX, orchestrator, {
             error: err.message,
             actorType: "orchestrator"
@@ -399,6 +402,9 @@ export class BatchRemediationSession {
             testRes = {
               testCommand: `${cmd} ${args.join(" ")}`.trim(),
               exitCode: containerRes.exitCode,
+              stdout: containerRes.stdout || "",
+              stderr: containerRes.stderr || "",
+              durationMs: containerRes.durationMs || 0,
               passedCount: containerRes.exitCode === 0 ? 1 : 0,
               failedCount: containerRes.exitCode === 0 ? 0 : 1,
               regressionDetected: containerRes.exitCode !== 0,
@@ -435,6 +441,8 @@ export class BatchRemediationSession {
             testRes = {
               testCommand: `${cmd} ${args.join(" ")}`.trim(),
               exitCode: typeof hostRes.status === "number" ? hostRes.status : 1,
+              stdout: typeof hostRes.stdout === "string" ? hostRes.stdout : "",
+              stderr: typeof hostRes.stderr === "string" ? hostRes.stderr : "",
               passedCount: hostRes.status === 0 ? 1 : 0,
               failedCount: hostRes.status === 0 ? 0 : 1,
               regressionDetected: hostRes.status !== 0,
@@ -454,6 +462,8 @@ export class BatchRemediationSession {
             testRes = {
               testCommand: "missing-runner",
               exitCode: 1,
+              stdout: "",
+              stderr: `No test runner available for finding '${findingId}'`,
               passedCount: 0,
               failedCount: 1,
               regressionDetected: true,
@@ -466,6 +476,8 @@ export class BatchRemediationSession {
           testRes = {
             testCommand: activeIsTypedCommand ? `${activeRunner.command} ${(activeRunner.args || []).join(" ")}`.trim() : "custom-testRunnerFn",
             exitCode: 1,
+            stdout: "",
+            stderr: err.message,
             passedCount: 0,
             failedCount: 1,
             regressionDetected: true,
@@ -475,10 +487,56 @@ export class BatchRemediationSession {
           };
         }
 
+        // Machine-enforced Vulnerability Causal Feature Verification
+        const causalConfig = (activeRunner && typeof activeRunner === "object" ? (activeRunner.causalFeatures || activeRunner.vulnerabilityCausality) : null)
+          || session.finding?.causalFeatures
+          || session.finding?.vulnerabilityCausality
+          || null;
+        let causalVerification = null;
+        let causalViolation = false;
+
+        if (causalConfig && typeof causalConfig === "object") {
+          const fullOutput = `${testRes?.stdout || ""} ${testRes?.stderr || ""}`;
+          const matchedForbidden = [];
+          const missingRequired = [];
+
+          if (typeof causalConfig.expectedExitCode === "number" && testRes.exitCode !== causalConfig.expectedExitCode) {
+            causalViolation = true;
+          }
+
+          if (Array.isArray(causalConfig.forbiddenPatterns)) {
+            for (const pattern of causalConfig.forbiddenPatterns) {
+              const re = typeof pattern === "string" ? new RegExp(pattern) : pattern;
+              if (re.test(fullOutput)) {
+                matchedForbidden.push(String(pattern));
+                causalViolation = true;
+              }
+            }
+          }
+
+          if (Array.isArray(causalConfig.requiredPatterns)) {
+            for (const pattern of causalConfig.requiredPatterns) {
+              const re = typeof pattern === "string" ? new RegExp(pattern) : pattern;
+              if (!re.test(fullOutput)) {
+                missingRequired.push(String(pattern));
+                causalViolation = true;
+              }
+            }
+          }
+
+          causalVerification = {
+            verified: !causalViolation && testRes.exitCode === (causalConfig.expectedExitCode ?? 0),
+            matchedForbidden,
+            missingRequired,
+            expectedExitCode: causalConfig.expectedExitCode ?? 0,
+            actualExitCode: testRes.exitCode
+          };
+        }
+
         const exitCode = typeof testRes?.exitCode === "number" ? testRes.exitCode : (testRes ? 0 : 1);
         const passedCount = typeof testRes?.passedCount === "number" ? testRes.passedCount : (exitCode === 0 ? 1 : 0);
         const failedCount = typeof testRes?.failedCount === "number" ? testRes.failedCount : (exitCode === 0 ? 0 : 1);
-        const regressionDetected = exitCode !== 0 || failedCount > 0 || Boolean(testRes?.regressionDetected);
+        const regressionDetected = exitCode !== 0 || failedCount > 0 || causalViolation || Boolean(testRes?.regressionDetected);
 
         session.recordDeterministicChecks({
           executed: true,
@@ -487,6 +545,9 @@ export class BatchRemediationSession {
           passedCount,
           failedCount,
           regressionDetected,
+          stdout: testRes?.stdout ? String(testRes.stdout).slice(0, 4096) : "",
+          stderr: testRes?.stderr ? String(testRes.stderr).slice(0, 4096) : "",
+          causalVerification,
           postTestTreeDigest: jailResult.postPatchTreeDigest,
           runner: testRes?.runner || (isContainer ? "container-runner" : "worktree-runner"),
           executionEnvironment: testRes?.executionEnvironment || (isContainer ? "container" : "host")
@@ -508,18 +569,23 @@ export class BatchRemediationSession {
             applied: true,
             prePatchTreeDigest: jailResult.prePatchTreeDigest,
             postPatchTreeDigest: jailResult.postPatchTreeDigest,
-            testsPassed: true
+            testsPassed: true,
+            causalVerification
           });
         } else {
           // Roll back uncommitted changes from this failed patch
           gitExec(["reset", "--hard", "HEAD"]);
           gitExec(["clean", "-fd"]);
+          if (isContainer && typeof jail.runInContainer === "function") {
+            try { jail.runInContainer("rm -rf /tmp/* /tmp/.[!.]*", { timeout: 5000 }); } catch {}
+          }
 
           executionResults.push({
             findingId,
             status: session.status,
             applied: true,
-            testsPassed: false
+            testsPassed: false,
+            causalVerification
           });
         }
       }

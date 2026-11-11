@@ -132,7 +132,7 @@ Options:
   --batch                     Run batch remediation mode across multiple cases
   --report=<file>             Input findings report to remediate
   --diff=<file>               Candidate patch diff file to verify
-  --sandbox=<driver>          Sandbox driver: worktree or container (default: worktree)
+  --sandbox=<driver>          Sandbox driver: worktree, container, or pool (default: worktree)
   --test-cmd=<cmd>            Test command to execute in Patch Jail (e.g. "npm test")
   --container-image=<image>   Container image identity (default: node:20-slim)
   --container-runtime=<rt>    Container runtime: docker or podman (default: docker)
@@ -878,7 +878,7 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
   }
 
   if (hasSandboxFlag && (!sandboxArg || !sandboxArg.trim())) {
-    io.stderr.write(`✖ [USAGE ERROR] Option '--sandbox' requires a <driver> argument (e.g. --sandbox=worktree or --sandbox=container).\n`);
+    io.stderr.write(`✖ [USAGE ERROR] Option '--sandbox' requires a <driver> argument (e.g. --sandbox=worktree, --sandbox=container, or --sandbox=pool).\n`);
     return EXIT_CODES.USAGE_ERROR;
   }
 
@@ -2206,7 +2206,7 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
     }
 
     default: {
-      io.stderr.write(`Usage: triad-flow [doctor | demo | review | factory | benchmark | remediate] [--format=sarif|json] [--strict] [--staged] [--base=<ref>] [--head=<ref>] [--report=<file>] [--receipt=<file>] [--manifest[=<file>]] [--verify-with=<cmd>] [--verification-report=<file>] [--macro-cmd=<cmd>] [--micro-cmd=<cmd>] [--macro-args=<csv>] [--micro-args=<csv>] [--mode=<mode>] [--case=<id>] [--cases=<ids>] [--limit=<n>] [--live] [--virtual] [--diff=<file>] [--authorizer=<id>] [--synthesizer=<provider>] [--sandbox=worktree|container] [--plan-only] [--batch]\n`);
+      io.stderr.write(`Usage: triad-flow [doctor | demo | review | factory | benchmark | remediate] [--format=sarif|json] [--strict] [--staged] [--base=<ref>] [--head=<ref>] [--report=<file>] [--receipt=<file>] [--manifest[=<file>]] [--verify-with=<cmd>] [--verification-report=<file>] [--macro-cmd=<cmd>] [--micro-cmd=<cmd>] [--macro-args=<csv>] [--micro-args=<csv>] [--mode=<mode>] [--case=<id>] [--cases=<ids>] [--limit=<n>] [--live] [--virtual] [--diff=<file>] [--authorizer=<id>] [--synthesizer=<provider>] [--sandbox=worktree|container|pool] [--plan-only] [--batch]\n`);
       return EXIT_CODES.USAGE_ERROR;
     }
   }

@@ -11,7 +11,7 @@
  * - Zero external npm dependencies (pure Node.js native API).
  */
 
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -30,13 +30,27 @@ import {
   CONTAINER_ALLOWLIST_ENV_VARS,
   ACTIVE_EGRESS_PROBE_SCRIPT,
   ACTIVE_EGRESS_PROBE_SCRIPT_PYTHON,
-  ACTIVE_EGRESS_PROBE_SCRIPT_SH
+  ACTIVE_EGRESS_PROBE_SCRIPT_SH,
+  registerSandboxDriver
 } from "./sandbox-driver.mjs";
 import {
   SUPPORTED_LANGUAGES,
   DEFAULT_LANGUAGE_CONTAINER_IMAGES,
   resolveLanguageContainerImage
 } from "./multi-language-remediation.mjs";
+
+/**
+ * Docker / Podman label specifications for Background Container Reconciler.
+ */
+export const POOL_CONTAINER_LABELS = Object.freeze({
+  ROOT_KEY: "triad-flow-pool",
+  ROOT_VALUE: "true",
+  POOL_ID_KEY: "triad-flow-pool-id",
+  CREATED_AT_KEY: "triad-flow-created-at",
+  TTL_MS_KEY: "triad-flow-ttl-ms",
+  SLOT_ID_KEY: "triad-flow-slot-id",
+  LANGUAGE_KEY: "triad-flow-language"
+});
 
 /**
  * Lifecycle states of an individual container daemon inside the pool.
@@ -73,7 +87,10 @@ export const DEFAULT_POOL_OPTIONS = Object.freeze({
   selinuxMount: false,
   scrubOnRelease: true,
   defaultLanguage: SUPPORTED_LANGUAGES.JAVASCRIPT,
-  resourceLimits: DEFAULT_RESOURCE_LIMITS
+  resourceLimits: DEFAULT_RESOURCE_LIMITS,
+  orphanTtlMs: 1800000, // 30 minutes default orphan TTL
+  autoReconcileOrphans: true,
+  reconcileIntervalMs: 60000
 });
 
 /**
@@ -170,6 +187,253 @@ export class ContainerDaemon {
 }
 
 /**
+ * Background Container Reconciler & Orphan Collector.
+ *
+ * Scans container runtime daemons (Docker / Podman) for orphaned, crashed,
+ * or lingering containers matching label `triad-flow-pool=true` and TTL limits.
+ * Operates without relying on external processes or daemons (Zero Orphan Containers).
+ */
+export class ContainerOrphanReconciler {
+  constructor(options = {}) {
+    this.runtime = (options.runtime || "docker").toLowerCase();
+    this.execFn = options.execFn || null;
+    this.poolId = options.poolId || null;
+    this.ttlMs = typeof options.ttlMs === "number" ? options.ttlMs : (options.orphanTtlMs || 1800000);
+    this.orphanedWsPrefix = options.orphanedWsPrefix || "tf-pool-ws-";
+    this.logger = options.logger || null;
+  }
+
+  /**
+   * Scans container runtime for orphaned triad-flow-pool containers and reclaims them.
+   *
+   * @param {object} [options={}]
+   * @returns {{ scanned: number, reclaimed: number, reclaimedIds: string[], reclaimedNames: string[], reclaimedWorkspaces: string[], errors: string[] }}
+   */
+  reconcile(options = {}) {
+    const exec = this.execFn || ((cmd, args) => spawnSync(cmd, args, { encoding: "utf8", windowsHide: true, timeout: 15000 }));
+    const forceAll = Boolean(options.forceAll);
+    const targetPoolId = options.matchPoolId || null;
+    const ttlMs = typeof options.ttlMs === "number" ? options.ttlMs : this.ttlMs;
+    const activeDaemons = options.activeDaemons || new Map();
+    const activeContainerNames = new Set();
+    for (const d of activeDaemons.values()) {
+      if (d && d.containerName && d.status !== POOL_CONTAINER_STATES.CRASHED && d.status !== POOL_CONTAINER_STATES.DRAINED) {
+        activeContainerNames.add(d.containerName);
+      }
+    }
+
+    const result = {
+      scanned: 0,
+      reclaimed: 0,
+      reclaimedIds: [],
+      reclaimedNames: [],
+      reclaimedWorkspaces: [],
+      errors: []
+    };
+
+    // 1. Query containers matching label triad-flow-pool
+    let psRes;
+    try {
+      psRes = exec(this.runtime, [
+        "ps", "-a",
+        "--filter", `label=${POOL_CONTAINER_LABELS.ROOT_KEY}=${POOL_CONTAINER_LABELS.ROOT_VALUE}`,
+        "--format", "{{.ID}}\t{{.Names}}\t{{.Labels}}\t{{.Status}}\t{{.CreatedAt}}"
+      ]);
+    } catch (err) {
+      result.errors.push(`Container ps inspection failed: ${err.message}`);
+      return result;
+    }
+
+    if (psRes && psRes.status !== 0 && typeof psRes !== "string") {
+      const errMsg = (psRes.stderr || psRes.error?.message || "ps command failed").trim();
+      result.errors.push(`Container ps returned non-zero (${psRes.status}): ${errMsg}`);
+      return result;
+    }
+
+    const psOutput = typeof psRes === "string" ? psRes : (psRes?.stdout || "");
+    const lines = psOutput.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    result.scanned = lines.length;
+
+    const now = Date.now();
+    const candidatesToReclaim = [];
+
+    for (const line of lines) {
+      const parts = line.split("\t");
+      const id = parts[0] ? parts[0].trim() : "";
+      let name = parts[1] ? parts[1].trim() : "";
+      if (name.startsWith("/")) name = name.slice(1);
+      const labelsRaw = parts[2] ? parts[2].trim() : "";
+      const status = parts[3] ? parts[3].trim().toLowerCase() : "";
+      const createdAtRaw = parts[4] ? parts[4].trim() : "";
+
+      if (!id && !name) continue;
+
+      // Parse labels supporting Docker (k=v,k=v) and Podman (map[k:v k:v]) formats
+      const labels = {};
+      if (labelsRaw.startsWith("map[") && labelsRaw.endsWith("]")) {
+        const inner = labelsRaw.slice(4, -1).trim();
+        const pairs = inner.split(/\s+/);
+        for (const pair of pairs) {
+          const colonIdx = pair.indexOf(":");
+          if (colonIdx !== -1) {
+            labels[pair.slice(0, colonIdx).trim()] = pair.slice(colonIdx + 1).trim();
+          }
+        }
+      } else {
+        const labelPairs = labelsRaw.split(/[,;\n]/);
+        for (const pair of labelPairs) {
+          const eqIdx = pair.indexOf("=");
+          if (eqIdx !== -1) {
+            const k = pair.slice(0, eqIdx).trim();
+            const v = pair.slice(eqIdx + 1).trim();
+            labels[k] = v;
+          }
+        }
+      }
+
+      const containerPoolId = labels[POOL_CONTAINER_LABELS.POOL_ID_KEY] || "";
+      let containerCreatedAt = Number(labels[POOL_CONTAINER_LABELS.CREATED_AT_KEY]) || 0;
+      if (!containerCreatedAt && createdAtRaw) {
+        const parsed = Date.parse(createdAtRaw);
+        if (!isNaN(parsed)) containerCreatedAt = parsed;
+      }
+      const containerTtl = Number(labels[POOL_CONTAINER_LABELS.TTL_MS_KEY]) || ttlMs;
+      const slotId = labels[POOL_CONTAINER_LABELS.SLOT_ID_KEY] || "";
+
+      let isOrphan = false;
+      let reason = "";
+
+      const ageMs = containerCreatedAt > 0 ? now - containerCreatedAt : (status.includes("up") ? 0 : Infinity);
+      const isDeadOrExited = status.includes("exited") || status.includes("dead");
+
+      if (forceAll) {
+        isOrphan = true;
+        reason = "forceAll";
+      } else if (targetPoolId && containerPoolId === targetPoolId) {
+        isOrphan = true;
+        reason = `matchedTargetPoolId:${targetPoolId}`;
+      } else if (this.poolId && containerPoolId === this.poolId && options.activeDaemons) {
+        // Container belongs to our pool instance: check if it's currently actively tracked and alive
+        if (!activeContainerNames.has(name) && !activeContainerNames.has(id)) {
+          isOrphan = true;
+          reason = "untrackedInActivePool";
+        } else if (isDeadOrExited) {
+          isOrphan = true;
+          reason = `exitedOrDeadInActivePool:${status}`;
+          // Mark active daemon as crashed so pool can replenish
+          for (const d of activeDaemons.values()) {
+            if (d && (d.containerName === name || d.id === id)) {
+              d.markCrashed();
+            }
+          }
+        } else if (ageMs > containerTtl) {
+          isOrphan = true;
+          reason = `ttlExpiredInActivePool:${Math.round(ageMs / 1000)}s>${Math.round(containerTtl / 1000)}s`;
+          for (const d of activeDaemons.values()) {
+            if (d && (d.containerName === name || d.id === id)) {
+              d.markCrashed();
+            }
+          }
+        }
+      } else {
+        // Container belongs to a different pool or previous dead process
+        if (ageMs > containerTtl) {
+          isOrphan = true;
+          reason = `ttlExpired:${Math.round(ageMs / 1000)}s>${Math.round(containerTtl / 1000)}s`;
+        } else if (isDeadOrExited) {
+          isOrphan = true;
+          reason = `exitedOrDead:${status}`;
+        }
+      }
+
+      if (isOrphan) {
+        candidatesToReclaim.push({ id, name, containerPoolId, slotId, reason });
+      }
+    }
+
+    // 2. Reclaim identified candidate containers
+    for (const candidate of candidatesToReclaim) {
+      const rmTarget = candidate.name || candidate.id;
+      try {
+        const rmRes = exec(this.runtime, ["rm", "-f", rmTarget]);
+        if (!rmRes || rmRes.status === 0 || (typeof rmRes === "string" && !rmRes.includes("Error"))) {
+          result.reclaimed++;
+          if (candidate.id) result.reclaimedIds.push(candidate.id);
+          if (candidate.name) result.reclaimedNames.push(candidate.name);
+        } else {
+          result.errors.push(`Failed to remove container ${rmTarget}: ${rmRes.stderr || rmRes.error?.message}`);
+        }
+      } catch (err) {
+        result.errors.push(`Failed to remove container ${rmTarget}: ${err.message}`);
+      }
+
+      // Clean corresponding workspace if slotId or poolId is known
+      if (candidate.containerPoolId || candidate.slotId) {
+        try {
+          const tmpDir = os.tmpdir();
+          const entries = fs.readdirSync(tmpDir);
+          for (const entry of entries) {
+            if (entry.startsWith(this.orphanedWsPrefix)) {
+              const matchesPool = candidate.containerPoolId && entry.includes(candidate.containerPoolId);
+              const matchesSlot = candidate.slotId && entry.includes(candidate.slotId);
+              if (matchesPool || matchesSlot) {
+                const fullPath = path.join(tmpDir, entry);
+                try {
+                  fs.rmSync(fullPath, { recursive: true, force: true });
+                  if (!result.reclaimedWorkspaces.includes(entry)) {
+                    result.reclaimedWorkspaces.push(entry);
+                  }
+                } catch {}
+              }
+            }
+          }
+        } catch {}
+      }
+    }
+
+    // 3. Sweep orphaned workspace directories in tmpdir with expired TTL or matching dead pool
+    if (options.sweepWorkspaces !== false) {
+      try {
+        const tmpDir = os.tmpdir();
+        const entries = fs.readdirSync(tmpDir);
+        for (const entry of entries) {
+          if (entry.startsWith(this.orphanedWsPrefix)) {
+            const fullPath = path.join(tmpDir, entry);
+            try {
+              const stat = fs.statSync(fullPath);
+              const dirAgeMs = now - stat.mtimeMs;
+              if (dirAgeMs > ttlMs || forceAll || (targetPoolId && entry.includes(targetPoolId))) {
+                fs.rmSync(fullPath, { recursive: true, force: true });
+                if (!result.reclaimedWorkspaces.includes(entry)) {
+                  result.reclaimedWorkspaces.push(entry);
+                }
+              }
+            } catch {}
+          }
+        }
+      } catch {}
+    }
+
+    return result;
+  }
+
+  async reconcileAsync(options = {}) {
+    return this.reconcile(options);
+  }
+}
+
+/**
+ * Standalone helper to reconcile and clean orphan containers.
+ *
+ * @param {object} [options={}]
+ * @returns {{ scanned: number, reclaimed: number, reclaimedIds: string[], reclaimedNames: string[], reclaimedWorkspaces: string[], errors: string[] }}
+ */
+export function reconcileOrphanContainers(options = {}) {
+  const reconciler = new ContainerOrphanReconciler(options);
+  return reconciler.reconcile(options);
+}
+
+/**
  * ContainerSandboxPool: High-Performance Warm Container Daemon Pool Manager.
  */
 export class ContainerSandboxPool extends EventEmitter {
@@ -227,6 +491,22 @@ export class ContainerSandboxPool extends EventEmitter {
       process.once("exit", this._boundProcessExit);
       process.once("SIGINT", this._boundSigInt);
       process.once("SIGTERM", this._boundSigTerm);
+    }
+
+    // Background Container Orphan Reconciler
+    this.reconciler = new ContainerOrphanReconciler({
+      runtime: this.runtime,
+      execFn: this.execFn,
+      poolId: this.poolId,
+      ttlMs: this.options.orphanTtlMs
+    });
+
+    if (this.options.autoReconcileOrphans && !options.skipInitialReconcile) {
+      try {
+        this.reconcileOrphans();
+      } catch {
+        // Non-fatal on startup
+      }
     }
   }
 
@@ -366,12 +646,12 @@ export class ContainerSandboxPool extends EventEmitter {
     const targetImage = options.image || resolveLanguageContainerImage(language);
     const taskId = options.taskId || null;
 
-    // 1. Check for an existing idle daemon matching language / image
+    // 1. Check for an existing idle daemon matching language and image requirements
     for (const daemon of this.daemons.values()) {
       if (daemon.isAvailable()) {
-        const langMatches = daemon.language === language;
-        const imgMatches = daemon.image === targetImage;
-        if (langMatches || imgMatches) {
+        const langMatches = !options.language || daemon.language === language;
+        const imgMatches = !options.image || daemon.image === targetImage;
+        if (langMatches && imgMatches) {
           daemon.markBusy(taskId);
           this.stats.totalAcquires++;
           return daemon;
@@ -394,7 +674,7 @@ export class ContainerSandboxPool extends EventEmitter {
 
   /**
    * Acquires an idle warm container daemon from the pool, or creates one if under capacity.
-   * Enqueues when at capacity.
+   * Enqueues when at capacity. Supports AbortSignal for graceful cancellation.
    *
    * @param {object} [options={}]
    * @returns {Promise<ContainerDaemon>}
@@ -404,8 +684,17 @@ export class ContainerSandboxPool extends EventEmitter {
       throw new PoolDisposedError();
     }
 
+    if (options.signal?.aborted) {
+      throw new Error(`The acquire operation was aborted: ${options.signal.reason || "aborted"}`);
+    }
+
     try {
-      return this.acquireSync(options);
+      const daemon = this.acquireSync(options);
+      if (options.signal?.aborted) {
+        this.releaseSync(daemon, { scrub: true });
+        throw new Error(`The acquire operation was aborted: ${options.signal.reason || "aborted"}`);
+      }
+      return daemon;
     } catch (err) {
       if (!(err instanceof PoolCapacityExceededError)) {
         throw err;
@@ -416,29 +705,60 @@ export class ContainerSandboxPool extends EventEmitter {
     const targetImage = options.image || resolveLanguageContainerImage(language);
     const taskId = options.taskId || null;
     const timeoutMs = typeof options.timeoutMs === "number" ? options.timeoutMs : this.options.acquireTimeoutMs;
+    const signal = options.signal || null;
 
-    // Pool is at capacity: enqueue acquire request with timeout
+    // Pool is at capacity: enqueue acquire request with timeout and signal
     return new Promise((resolve, reject) => {
       let timeoutHandle = null;
+      let abortHandler = null;
+
+      const cleanupListeners = () => {
+        if (timeoutHandle) {
+          clearTimeout(timeoutHandle);
+          timeoutHandle = null;
+        }
+        if (signal && abortHandler) {
+          try { signal.removeEventListener("abort", abortHandler); } catch {}
+          abortHandler = null;
+        }
+      };
 
       const queueItem = {
         language,
         image: targetImage,
         taskId,
         resolve: (daemon) => {
-          if (timeoutHandle) clearTimeout(timeoutHandle);
+          cleanupListeners();
+          if (signal?.aborted) {
+            this.releaseSync(daemon, { scrub: true });
+            reject(new Error(`The acquire operation was aborted: ${signal.reason || "aborted"}`));
+            return;
+          }
           daemon.markBusy(taskId);
           this.stats.totalAcquires++;
           resolve(daemon);
         },
         reject: (err) => {
-          if (timeoutHandle) clearTimeout(timeoutHandle);
+          cleanupListeners();
           reject(err);
         }
       };
 
+      if (signal) {
+        abortHandler = () => {
+          cleanupListeners();
+          const idx = this.acquireQueue.indexOf(queueItem);
+          if (idx !== -1) {
+            this.acquireQueue.splice(idx, 1);
+          }
+          reject(new Error(`The acquire operation was aborted: ${signal.reason || "aborted"}`));
+        };
+        signal.addEventListener("abort", abortHandler, { once: true });
+      }
+
       if (timeoutMs > 0) {
         timeoutHandle = setTimeout(() => {
+          cleanupListeners();
           const idx = this.acquireQueue.indexOf(queueItem);
           if (idx !== -1) {
             this.acquireQueue.splice(idx, 1);
@@ -449,6 +769,33 @@ export class ContainerSandboxPool extends EventEmitter {
 
       this.acquireQueue.push(queueItem);
     });
+  }
+
+  /**
+   * Forces the release and cleanup of any container daemon occupied by taskId.
+   * Useful when an orchestrator aborts a task or hits circuit breaker.
+   *
+   * @param {string} taskId
+   * @param {object} [options={}]
+   * @returns {boolean} true if a daemon or queued request was released
+   */
+  forceReleaseByTaskId(taskId, options = {}) {
+    if (!taskId) return false;
+    let released = false;
+    for (const daemon of this.daemons.values()) {
+      if (daemon.currentTaskId === taskId) {
+        this.releaseSync(daemon, { scrub: options.scrub !== false });
+        released = true;
+      }
+    }
+    for (let i = this.acquireQueue.length - 1; i >= 0; i--) {
+      if (this.acquireQueue[i].taskId === taskId) {
+        const req = this.acquireQueue.splice(i, 1)[0];
+        req.reject(new PoolError(`Acquire for task '${taskId}' cancelled by forceReleaseByTaskId.`));
+        released = true;
+      }
+    }
+    return released;
   }
 
   /**
@@ -488,22 +835,32 @@ export class ContainerSandboxPool extends EventEmitter {
 
     this.stats.totalReleases++;
 
-    // 3. Check if there are waiting acquire requests in queue
+    // 3. Check if there are waiting acquire requests in queue matching this daemon
     if (this.acquireQueue.length > 0) {
-      let matchIdx = this.acquireQueue.findIndex(
-        req => req.language === daemon.language || req.image === daemon.image
+      const matchIdx = this.acquireQueue.findIndex(
+        req => (!req.language || req.language === daemon.language) &&
+               (!req.image || req.image === daemon.image)
       );
-      if (matchIdx === -1) {
-        matchIdx = 0;
+      if (matchIdx !== -1) {
+        const nextReq = this.acquireQueue.splice(matchIdx, 1)[0];
+        nextReq.resolve(daemon);
+        return;
       }
-
-      const nextReq = this.acquireQueue.splice(matchIdx, 1)[0];
-      nextReq.resolve(daemon);
-      return;
     }
 
     // 4. Mark idle
     daemon.markIdle();
+
+    // 5. Try to satisfy any queued requests if pool is below maximum capacity
+    if (this.acquireQueue.length > 0 && this.daemons.size < this.options.maxCapacity) {
+      const req = this.acquireQueue.shift();
+      try {
+        const newDaemon = this._spawnDaemonSync({ language: req.language, image: req.image });
+        req.resolve(newDaemon);
+      } catch (err) {
+        req.reject(err);
+      }
+    }
   }
 
   /**
@@ -630,6 +987,151 @@ export class ContainerSandboxPool extends EventEmitter {
   }
 
   /**
+   * Asynchronously executes a command inside the designated warm daemon via child_process.spawn.
+   *
+   * @param {ContainerDaemon|string} daemonOrId
+   * @param {string|string[]} commandArgs
+   * @param {object} [options={}]
+   * @returns {Promise<{ status: number, exitCode: number, stdout: string, stderr: string, timedOut: boolean, durationMs: number, error?: Error, containerName: string }>}
+   */
+  async executeAsync(daemonOrId, commandArgs, options = {}) {
+    const daemon = typeof daemonOrId === "string" ? this.daemons.get(daemonOrId) : daemonOrId;
+    if (!daemon) {
+      throw new PoolError(`Cannot execute: daemon not found in pool.`);
+    }
+
+    if (daemon.status === POOL_CONTAINER_STATES.DRAINED || daemon.status === POOL_CONTAINER_STATES.CRASHED) {
+      throw new DaemonExecutionError(`Cannot execute in daemon with state '${daemon.status}'.`);
+    }
+
+    if (options.execAsyncFn) {
+      return options.execAsyncFn(daemon, commandArgs, options);
+    }
+
+    // Build exec command arguments
+    const execArgs = ["exec"];
+
+    let workDir = "/jail";
+    const targetCwd = options.cwd || options.workDir;
+    if (targetCwd && typeof targetCwd === "string") {
+      const normalized = path.posix.normalize(targetCwd.replace(/\\/g, "/")).replace(/^\/+|\/+$/g, "");
+      if (normalized && !normalized.startsWith("..") && normalized !== ".") {
+        workDir = `/jail/${normalized}`;
+      }
+    }
+    execArgs.push("-w", workDir);
+
+    const allowlist = options.allowlistEnv || this.allowlistEnv;
+    for (const varName of allowlist) {
+      if (process.env[varName] !== undefined && varName !== "HOME") {
+        execArgs.push("-e", `${varName}=${process.env[varName]}`);
+      }
+    }
+
+    if (options.env && typeof options.env === "object") {
+      for (const [key, val] of Object.entries(options.env)) {
+        execArgs.push("-e", `${key}=${val}`);
+      }
+    }
+
+    execArgs.push(daemon.containerName);
+
+    if (Array.isArray(commandArgs)) {
+      execArgs.push(...commandArgs);
+    } else if (typeof commandArgs === "string" && commandArgs.trim()) {
+      execArgs.push("sh", "-c", commandArgs);
+    } else {
+      throw new DaemonExecutionError("Command arguments must be a non-empty string or array.");
+    }
+
+    const timeout = typeof options.timeout === "number" ? options.timeout : 60000;
+    const startTime = Date.now();
+
+    return new Promise((resolve) => {
+      let timedOut = false;
+      let timeoutHandle = null;
+      let stdout = "";
+      let stderr = "";
+
+      const child = spawn(this.runtime, execArgs, {
+        windowsHide: true,
+        stdio: ["ignore", "pipe", "pipe"]
+      });
+
+      if (options.signal) {
+        if (options.signal.aborted) {
+          try { child.kill("SIGKILL"); } catch {}
+        } else {
+          options.signal.addEventListener("abort", () => {
+            try { child.kill("SIGKILL"); } catch {}
+          }, { once: true });
+        }
+      }
+
+      if (timeout > 0) {
+        timeoutHandle = setTimeout(() => {
+          timedOut = true;
+          try { child.kill("SIGKILL"); } catch {}
+        }, timeout);
+      }
+
+      if (child.stdout) {
+        child.stdout.setEncoding("utf8");
+        child.stdout.on("data", chunk => {
+          stdout += chunk;
+          if (typeof options.onStdout === "function") options.onStdout(chunk);
+        });
+      }
+
+      if (child.stderr) {
+        child.stderr.setEncoding("utf8");
+        child.stderr.on("data", chunk => {
+          stderr += chunk;
+          if (typeof options.onStderr === "function") options.onStderr(chunk);
+        });
+      }
+
+      child.on("error", (err) => {
+        if (timeoutHandle) clearTimeout(timeoutHandle);
+        const durationMs = Date.now() - startTime;
+        daemon.executionCount++;
+        daemon.totalDurationMs += durationMs;
+        this.stats.totalExecutions++;
+        this.stats.totalExecDurationMs += durationMs;
+        resolve({
+          status: timedOut ? 124 : 1,
+          exitCode: timedOut ? 124 : 1,
+          stdout,
+          stderr: timedOut ? `Execution timed out after ${timeout}ms` : (stderr || err.message),
+          timedOut,
+          durationMs,
+          error: err,
+          containerName: daemon.containerName
+        });
+      });
+
+      child.on("close", (code) => {
+        if (timeoutHandle) clearTimeout(timeoutHandle);
+        const durationMs = Date.now() - startTime;
+        const finalStatus = timedOut ? 124 : (typeof code === "number" ? code : 1);
+        daemon.executionCount++;
+        daemon.totalDurationMs += durationMs;
+        this.stats.totalExecutions++;
+        this.stats.totalExecDurationMs += durationMs;
+        resolve({
+          status: finalStatus,
+          exitCode: finalStatus,
+          stdout,
+          stderr: timedOut ? `Execution timed out after ${timeout}ms` : stderr,
+          timedOut,
+          durationMs,
+          containerName: daemon.containerName
+        });
+      });
+    });
+  }
+
+  /**
    * Synchronously scrubs the host workspace directory and volatile container scratch spaces (Workspace Scrubbing).
    *
    * @param {ContainerDaemon} daemon
@@ -637,7 +1139,16 @@ export class ContainerSandboxPool extends EventEmitter {
   scrubWorkspaceSync(daemon) {
     if (!daemon || !daemon.hostWorkspaceDir) return;
 
-    // 1. Scrub host workspace directory
+    // 1. Scrub volatile container scratch spaces and in-container jail if alive
+    if (daemon.status !== POOL_CONTAINER_STATES.DRAINED && daemon.status !== POOL_CONTAINER_STATES.CRASHED) {
+      try {
+        this.execute(daemon, "rm -rf /jail/* /jail/.[!.]* /tmp/* /tmp/.[!.]*", { timeout: 5000 });
+      } catch {
+        // Non-fatal if tmp/jail scrub command times out
+      }
+    }
+
+    // 2. Scrub host workspace directory
     try {
       if (fs.existsSync(daemon.hostWorkspaceDir)) {
         const entries = fs.readdirSync(daemon.hostWorkspaceDir);
@@ -648,15 +1159,6 @@ export class ContainerSandboxPool extends EventEmitter {
       }
     } catch (err) {
       throw new DaemonExecutionError(`Failed to scrub host workspace directory: ${err.message}`);
-    }
-
-    // 2. Scrub volatile in-container scratch spaces if daemon is alive
-    if (daemon.status !== POOL_CONTAINER_STATES.DRAINED && daemon.status !== POOL_CONTAINER_STATES.CRASHED) {
-      try {
-        this.execute(daemon, "rm -rf /tmp/* /tmp/.[!.]*", { timeout: 5000 });
-      } catch {
-        // Non-fatal if tmp scrub command times out
-      }
     }
   }
 
@@ -739,6 +1241,33 @@ export class ContainerSandboxPool extends EventEmitter {
         this.evictSync(daemon);
       }
     }
+
+    if (this.reconciler && this.options.autoReconcileOrphans !== false) {
+      try {
+        this.reconcileOrphans();
+      } catch {}
+    }
+  }
+
+  /**
+   * Reconciles orphan containers in container runtime matching label triad-flow-pool=true and TTL limits.
+   *
+   * @param {object} [options={}]
+   * @returns {{ scanned: number, reclaimed: number, reclaimedIds: string[], reclaimedNames: string[], reclaimedWorkspaces: string[], errors: string[] }}
+   */
+  reconcileOrphans(options = {}) {
+    if (!this.reconciler) {
+      return { scanned: 0, reclaimed: 0, reclaimedIds: [], reclaimedNames: [], reclaimedWorkspaces: [], errors: [] };
+    }
+    return this.reconciler.reconcile({
+      activeDaemons: this.daemons,
+      ttlMs: this.options.orphanTtlMs,
+      ...options
+    });
+  }
+
+  async reconcileOrphansAsync(options = {}) {
+    return this.reconcileOrphans(options);
   }
 
   /**
@@ -802,6 +1331,13 @@ export class ContainerSandboxPool extends EventEmitter {
       this.evictSync(daemon);
     }
 
+    // Run final orphan sweep for this pool
+    if (this.reconciler) {
+      try {
+        this.reconcileOrphans({ matchPoolId: this.poolId });
+      } catch {}
+    }
+
     // Unregister signal handlers
     if (this.options.autoRegisterSignalHandlers) {
       try {
@@ -860,6 +1396,7 @@ export class ContainerSandboxPool extends EventEmitter {
       networkEgressDenial: "verified",
       processIsolation: "warm-daemon-exec",
       workspaceScrubbing: "enforced",
+      backgroundReconciler: "enabled",
       zeroOrphanGuaranteed: true,
       sub150msDispatch: true
     });
@@ -902,6 +1439,12 @@ export class ContainerSandboxPool extends EventEmitter {
       "run",
       "-d",
       "--name", containerName,
+      "--label", `${POOL_CONTAINER_LABELS.ROOT_KEY}=${POOL_CONTAINER_LABELS.ROOT_VALUE}`,
+      "--label", `${POOL_CONTAINER_LABELS.POOL_ID_KEY}=${this.poolId}`,
+      "--label", `${POOL_CONTAINER_LABELS.CREATED_AT_KEY}=${daemon.createdAt}`,
+      "--label", `${POOL_CONTAINER_LABELS.TTL_MS_KEY}=${this.options.orphanTtlMs || 1800000}`,
+      "--label", `${POOL_CONTAINER_LABELS.SLOT_ID_KEY}=${slotId}`,
+      "--label", `${POOL_CONTAINER_LABELS.LANGUAGE_KEY}=${language}`,
       "--pull=never",
       "--network=none",
       "--read-only",
@@ -971,6 +1514,12 @@ export class ContainerSandboxPool extends EventEmitter {
         }
       } catch {}
     }
+    // Also sweep any containers tagged with this poolId
+    try {
+      if (this.reconciler) {
+        this.reconciler.reconcile({ matchPoolId: this.poolId, sweepWorkspaces: false });
+      }
+    } catch {}
   }
 }
 
@@ -985,6 +1534,7 @@ export class PoolContainerDriver extends BaseSandboxDriver {
     super(options.name || "container-pool");
     this.driverType = "container-pool";
     this.pool = poolInstance || new ContainerSandboxPool(options);
+    this.runtime = this.pool.runtime;
     this.options = options;
   }
 
@@ -1003,16 +1553,25 @@ export class PoolContainerDriver extends BaseSandboxDriver {
 
     // 1. Create patch jail worktree
     const jail = createPatchJailWorktree(repoPath, options);
+    let daemon = null;
 
-    // 2. Acquire warm daemon from pool synchronously
-    const daemon = this.pool.acquireSync({
-      language: options.language,
-      image: options.image,
-      taskId: options.taskId
-    });
+    try {
+      // 2. Acquire warm daemon from pool synchronously
+      daemon = this.pool.acquireSync({
+        language: options.language,
+        image: options.image,
+        taskId: options.taskId
+      });
 
-    // 3. Hot-mount: copy worktree contents to daemon workspace
-    _syncDirectoryContents(jail.jailPath, daemon.hostWorkspaceDir);
+      // 3. Hot-mount: copy worktree contents to daemon workspace
+      _syncDirectoryContents(jail.jailPath, daemon.hostWorkspaceDir);
+    } catch (err) {
+      if (daemon) {
+        try { this.pool.releaseSync(daemon, { scrub: true }); } catch {}
+      }
+      try { jail.cleanup(); } catch {}
+      throw err;
+    }
 
     const caps = this.capabilities();
 
@@ -1031,7 +1590,16 @@ export class PoolContainerDriver extends BaseSandboxDriver {
         }
       },
       runInContainer: (commandArgs, runOpts = {}) => {
+        if (runOpts.image && daemon.image && runOpts.image !== daemon.image) {
+          throw new DaemonExecutionError(`Cannot switch container image from '${daemon.image}' to '${runOpts.image}' on warm daemon.`);
+        }
         return this.pool.execute(daemon, commandArgs, runOpts);
+      },
+      runInContainerAsync: (commandArgs, runOpts = {}) => {
+        if (runOpts.image && daemon.image && runOpts.image !== daemon.image) {
+          throw new DaemonExecutionError(`Cannot switch container image from '${daemon.image}' to '${runOpts.image}' on warm daemon.`);
+        }
+        return this.pool.executeAsync(daemon, commandArgs, runOpts);
       }
     };
   }
@@ -1065,3 +1633,8 @@ function _syncDirectoryContents(src, dest) {
     }
   }
 }
+
+// Canonical Driver Registration (RFC-028-01 & ADR-024-02)
+registerSandboxDriver("container-pool", PoolContainerDriver);
+registerSandboxDriver("pool", PoolContainerDriver);
+

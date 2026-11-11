@@ -535,11 +535,14 @@ export function validateRemediationTransition(fromState, toState, context = {}) 
       );
     }
     const checks = context.deterministicChecks;
-    if (!checks || !checks.executed || checks.exitCode !== 0 || checks.regressionDetected) {
+    const expectedExitCode = typeof checks?.causalVerification?.expectedExitCode === "number"
+      ? checks.causalVerification.expectedExitCode
+      : 0;
+    if (!checks || !checks.executed || checks.exitCode !== expectedExitCode || checks.regressionDetected) {
       throw new RemediationTransitionError(
         fromState,
         toState,
-        "FIXED_PENDING_VERIFY requires affirmative execution of deterministic tests with exit code 0 and zero regressions."
+        `FIXED_PENDING_VERIFY requires affirmative execution of deterministic tests with exit code ${expectedExitCode} and zero regressions.`
       );
     }
   }
@@ -837,9 +840,9 @@ export function buildRemediationReceipt(params = {}) {
     driver: params.jail?.driver || "worktree",
     capabilities: params.jail?.capabilities || {
       driver: params.jail?.driver || "worktree",
-      filesystemIsolation: params.jail?.driver === "container" ? "container-unverified" : "git-worktree",
-      networkEgressDenial: "unavailable",
-      processIsolation: "none",
+      filesystemIsolation: params.jail?.driver === "container-pool" ? "container-hot-mount" : (params.jail?.driver === "container" ? "container-unverified" : "git-worktree"),
+      networkEgressDenial: params.jail?.driver === "container-pool" ? "verified" : "unavailable",
+      processIsolation: params.jail?.driver === "container-pool" ? "warm-daemon-exec" : "none",
       hostFilesystemWriteRestriction: "unenforced"
     },
     worktreeSha: params.jail?.worktreeSha || null,
@@ -858,7 +861,7 @@ export function buildRemediationReceipt(params = {}) {
     timedOut: Boolean(params.deterministicChecks?.timedOut),
     postTestTreeDigest: params.deterministicChecks?.postTestTreeDigest || null,
     runner: params.deterministicChecks?.runner || "test-runner",
-    executionEnvironment: params.deterministicChecks?.executionEnvironment || (params.jail?.driver === "container" ? "container" : "host")
+    executionEnvironment: params.deterministicChecks?.executionEnvironment || (Boolean(params.jail?.driver === "container" || params.jail?.driver === "container-pool") ? "container" : "host")
   };
 
   const closureVerification = {
@@ -1155,6 +1158,9 @@ export class ControlledRemediationSession {
           testRes = {
             testCommand: `${cmd} ${args.join(" ")}`.trim(),
             exitCode: containerRes.exitCode,
+            stdout: containerRes.stdout || "",
+            stderr: containerRes.stderr || "",
+            durationMs: containerRes.durationMs || 0,
             passedCount: containerRes.exitCode === 0 ? 1 : 0,
             failedCount: containerRes.exitCode === 0 ? 0 : 1,
             regressionDetected: containerRes.exitCode !== 0,
@@ -1191,6 +1197,8 @@ export class ControlledRemediationSession {
           testRes = {
             testCommand: `${cmd} ${args.join(" ")}`.trim(),
             exitCode: typeof hostRes.status === "number" ? hostRes.status : 1,
+            stdout: typeof hostRes.stdout === "string" ? hostRes.stdout : "",
+            stderr: typeof hostRes.stderr === "string" ? hostRes.stderr : "",
             passedCount: hostRes.status === 0 ? 1 : 0,
             failedCount: hostRes.status === 0 ? 0 : 1,
             regressionDetected: hostRes.status !== 0,
@@ -1209,6 +1217,8 @@ export class ControlledRemediationSession {
         testRes = {
           testCommand: isTypedCommand ? `${runner.command} ${(runner.args || []).join(" ")}`.trim() : "custom-testRunnerFn",
           exitCode: 1,
+          stdout: "",
+          stderr: err.message,
           passedCount: 0,
           failedCount: 1,
           regressionDetected: true,
@@ -1244,10 +1254,58 @@ export class ControlledRemediationSession {
         }
       }
 
+      // Machine-enforced Vulnerability Causal Feature Verification
+      const causalConfig = (runner && typeof runner === "object" ? (runner.causalFeatures || runner.vulnerabilityCausality) : null)
+        || this.causalFeatures
+        || null;
+      let causalVerification = null;
+      let causalViolation = false;
+
+      if (causalConfig && typeof causalConfig === "object") {
+        const fullOutput = `${testRes?.stdout || ""} ${testRes?.stderr || ""}`;
+        const matchedForbidden = [];
+        const missingRequired = [];
+
+        // 1. Verify expected exit code if specified
+        if (typeof causalConfig.expectedExitCode === "number" && testRes.exitCode !== causalConfig.expectedExitCode) {
+          causalViolation = true;
+        }
+
+        // 2. Check forbidden patterns (symptoms of vulnerability reproducing or leaking)
+        if (Array.isArray(causalConfig.forbiddenPatterns)) {
+          for (const pattern of causalConfig.forbiddenPatterns) {
+            const re = typeof pattern === "string" ? new RegExp(pattern) : pattern;
+            if (re.test(fullOutput)) {
+              matchedForbidden.push(String(pattern));
+              causalViolation = true;
+            }
+          }
+        }
+
+        // 3. Check required patterns (affirmative proofs of defense / assertion execution)
+        if (Array.isArray(causalConfig.requiredPatterns)) {
+          for (const pattern of causalConfig.requiredPatterns) {
+            const re = typeof pattern === "string" ? new RegExp(pattern) : pattern;
+            if (!re.test(fullOutput)) {
+              missingRequired.push(String(pattern));
+              causalViolation = true;
+            }
+          }
+        }
+
+        causalVerification = {
+          verified: !causalViolation && testRes.exitCode === (causalConfig.expectedExitCode ?? 0),
+          matchedForbidden,
+          missingRequired,
+          expectedExitCode: causalConfig.expectedExitCode ?? 0,
+          actualExitCode: testRes.exitCode
+        };
+      }
+
       const exitCode = typeof testRes?.exitCode === "number" ? testRes.exitCode : (testRes ? 0 : 1);
       const passedCount = typeof testRes?.passedCount === "number" ? testRes.passedCount : (exitCode === 0 ? 1 : 0);
       const failedCount = typeof testRes?.failedCount === "number" ? testRes.failedCount : (exitCode === 0 ? 0 : 1);
-      const regressionDetected = exitCode !== 0 || failedCount > 0 || dirtyLeakDetected || Boolean(testRes?.regressionDetected);
+      const regressionDetected = exitCode !== 0 || failedCount > 0 || dirtyLeakDetected || causalViolation || Boolean(testRes?.regressionDetected);
 
       const checkResult = {
         executed: true,
@@ -1260,8 +1318,11 @@ export class ControlledRemediationSession {
         dirtyLeakDetected,
         dirtyLeakFile,
         postTestTreeDigest,
-        runner: testRes?.runner || (driver.name === "container" ? "container-runner" : "worktree-runner"),
-        executionEnvironment: testRes?.executionEnvironment || (driver.name === "container" ? "container" : "host")
+        stdout: testRes?.stdout ? String(testRes.stdout).slice(0, 4096) : "",
+        stderr: testRes?.stderr ? String(testRes.stderr).slice(0, 4096) : "",
+        causalVerification,
+        runner: testRes?.runner || (isContainer ? "container-runner" : "worktree-runner"),
+        executionEnvironment: testRes?.executionEnvironment || (isContainer ? "container" : "host")
       };
 
       this.recordDeterministicChecks(checkResult);
