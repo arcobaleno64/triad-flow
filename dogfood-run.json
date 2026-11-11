@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.1.0",
-  "runId": "dogfood-1794366685926-c4bda58f-e467-4748-9533-46dccd4eee4c",
+  "runId": "dogfood-1794367783813-e640ea38-8485-454b-98be-7cc33588a296",
   "gate": {
     "decision": "approve",
     "reason": "Clean Challenge passed: zero findings and zero verified omissions."
@@ -11,30 +11,30 @@
   },
   "isExecutionComplete": true,
   "executionMode": "mock",
-  "runStartedAt": "2026-11-11T03:11:25.926Z",
-  "timestamp": "2026-11-11T03:11:29.609Z",
+  "runStartedAt": "2026-11-11T03:29:43.812Z",
+  "timestamp": "2026-11-11T03:29:48.325Z",
   "track": "Track D1: SHADOW_DOGFOOD",
   "authority": "NONE (ADVISORY_ONLY)",
   "triadFlowVersion": "2.10.0",
   "runContext": {
-    "runId": "dogfood-1794366685926-c4bda58f-e467-4748-9533-46dccd4eee4c",
-    "headSha": "77c25dbcfe61b3f39e719ff23b000803094322a2",
-    "contentDigest": "12388affdbf59a3dcc6d9105da05e28c3bd7572d3a8c029ce854a84c6822282c",
+    "runId": "dogfood-1794367783813-e640ea38-8485-454b-98be-7cc33588a296",
+    "headSha": "36a70c466d57d74832df487326ef5a82e36581ef",
+    "contentDigest": "f78e81e38210caab5f5fa01c82436a17af1b608d0879d186df57df7244fb720d",
     "patchObjective": "",
     "objectiveContract": null,
     "exclusions": []
   },
   "repository": {
     "name": "arcobaleno64/triad-flow",
-    "commitSha": "77c25dbcfe61b3f39e719ff23b000803094322a2",
-    "branch": "fix/dogfood-callee-and-class-ast-hardening",
+    "commitSha": "36a70c466d57d74832df487326ef5a82e36581ef",
+    "branch": "main",
     "base": "5b033be",
     "head": "HEAD"
   },
   "changeSetSummary": {
-    "totalFiles": 9,
-    "totalAdditions": 2273,
-    "totalDeletions": 33,
+    "totalFiles": 10,
+    "totalAdditions": 2491,
+    "totalDeletions": 129,
     "riskTier": 1,
     "files": [
       {
@@ -63,8 +63,14 @@
       },
       {
         "path": "src/core/context-builder.mjs",
-        "additions": 38,
-        "deletions": 0,
+        "additions": 161,
+        "deletions": 29,
+        "riskTier": 1
+      },
+      {
+        "path": "src/core/controlled-remediation.mjs",
+        "additions": 17,
+        "deletions": 66,
         "riskTier": 1
       },
       {
@@ -75,8 +81,8 @@
       },
       {
         "path": "tests/context-builder.test.mjs",
-        "additions": 19,
-        "deletions": 0,
+        "additions": 97,
+        "deletions": 1,
         "riskTier": 2
       },
       {
@@ -92,7 +98,9 @@
         "riskTier": 2
       }
     ],
-    "excludedFiles": []
+    "excludedFiles": [
+      "dogfood-run.json"
+    ]
   },
   "providerTelemetry": {
     "agy": {
@@ -141,12 +149,12 @@
     "mergeBlockedInProduction": false
   },
   "telemetryMetrics": {
-    "totalDurationMs": 2856,
-    "reviewerPhaseDurationMs": 2842,
+    "totalDurationMs": 3669,
+    "reviewerPhaseDurationMs": 3655,
     "avgProviderLatencyMs": 3,
     "executionComplete": true,
     "cleanChallengeAttempted": true,
-    "cleanChallengeDurationMs": 11,
+    "cleanChallengeDurationMs": 12,
     "cleanChallengeStatus": "SUCCESS",
     "malformedOutputCount": 0,
     "reviewerTimeoutCount": 0,
@@ -163,7 +171,7 @@
       "platform": "win32",
       "transport": "argv",
       "budgetAllocatedMs": 30000,
-      "globalDeadlineRemainingMs": 27158,
+      "globalDeadlineRemainingMs": 26345,
       "stagedFallbackUsed": false,
       "chunkCount": null,
       "maxConcurrency": 1,
@@ -175,10 +183,10 @@
   },
   "verificationRecord": {
     "schemaVersion": "1.0.0",
-    "verifiedAt": "2026-11-11T03:11:29.608Z",
-    "changeSetDigest": "sha256:12388affdbf59a3dcc6d9105da05e28c3bd7572d3a8c029ce854a84c6822282c",
-    "headSha": "77c25dbcfe61b3f39e719ff23b000803094322a2",
-    "runId": "dogfood-1794366685926-c4bda58f-e467-4748-9533-46dccd4eee4c",
+    "verifiedAt": "2026-11-11T03:29:48.323Z",
+    "changeSetDigest": "sha256:f78e81e38210caab5f5fa01c82436a17af1b608d0879d186df57df7244fb720d",
+    "headSha": "36a70c466d57d74832df487326ef5a82e36581ef",
+    "runId": "dogfood-1794367783813-e640ea38-8485-454b-98be-7cc33588a296",
     "exclusions": [],
     "verificationMode": "clean_challenge",
     "overallStatus": "CLEAN",
