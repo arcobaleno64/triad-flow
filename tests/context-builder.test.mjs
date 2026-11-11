@@ -1056,6 +1056,24 @@ test("AST Hardening: findSymbolDefinitionsInSource and resolveCrossFileSymbol de
   assert.equal(res.callee.symbol, "StructuralAntiEvasionError");
 });
 
+test("AST Hardening: BUILTIN_OBJECT_METHODS requires security category receiver to be candidate", () => {
+  const diffHunks = [
+    "@@ -1,5 +1,7 @@",
+    " function process() {",
+    "+  permissions.has(user);",
+    "+  seenSpans.add(span);",
+    "+  dataRange.has(val);",
+    "+  items.push(x);",
+    " }"
+  ].join("\n");
+
+  const candidates = extractCandidateCallSymbols(diffHunks);
+  assert.equal(candidates.length, 1);
+  assert.equal(candidates[0].symbol, "has");
+  assert.equal(candidates[0].qualifier, "permissions");
+  assert.equal(candidates[0].category, "security");
+});
+
 
 
 
