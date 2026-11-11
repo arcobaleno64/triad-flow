@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" fill="none">
+  <title>Triad-Flow - Option 8: Minimalist Tri-Chrono (極簡 CLI / Favicon 徽記)</title>
+  <defs>
+    <radialGradient id="bg-opt8" cx="64" cy="64" r="60" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0F172A" />
+      <stop offset="100%" stop-color="#020617" />
+    </radialGradient>
+    <linearGradient id="blade-1" x1="44" y1="24" x2="84" y2="44" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFE55C" />
+      <stop offset="100%" stop-color="#FF9500" />
+    </linearGradient>
+    <linearGradient id="blade-2" x1="74" y1="64" x2="98" y2="98" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#00F5FF" />
+      <stop offset="100%" stop-color="#0066FF" />
+    </linearGradient>
+    <linearGradient id="blade-3" x1="54" y1="64" x2="30" y2="98" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#D946EF" />
+      <stop offset="100%" stop-color="#8B5CF6" />
+    </linearGradient>
+  </defs>
+
+  <rect x="8" y="8" width="112" height="112" rx="28" fill="url(#bg-opt8)" stroke="#1E293B" stroke-width="1.5" />
+
+  <!-- 極簡三弧流動風刃 (在 16x16 / 32x32 小尺寸下仍清晰無比) -->
+  <g stroke-linecap="round" stroke-linejoin="round">
+    <!-- 頂葉 (North Blade) -->
+    <path d="M 64 26 C 76 26 84 38 78 50 C 72 46 64 46 60 52 C 58 40 60 26 64 26 Z" fill="url(#blade-1)" />
+
+    <!-- 右下葉 (East Blade) -->
+    <path d="M 96 82 C 90 92 76 96 68 86 C 72 82 72 74 66 68 C 78 70 92 74 96 82 Z" fill="url(#blade-2)" />
+
+    <!-- 左下葉 (West Blade) -->
+    <path d="M 32 82 C 36 72 50 68 62 68 C 56 74 56 82 60 86 C 48 94 36 90 32 82 Z" fill="url(#blade-3)" />
+
+    <!-- 中心負空間核心透鏡 -->
+    <circle cx="64" cy="65" r="4.5" fill="#FFFFFF" />
+  </g>
+</svg>

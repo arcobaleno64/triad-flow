@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" fill="none">
+  <title>Triad-Flow - Option 1: Tri-Flow Mobius Loop (OODA 閉環)</title>
+  <defs>
+    <radialGradient id="bg-opt1" cx="64" cy="64" r="60" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0F172A" />
+      <stop offset="100%" stop-color="#020617" />
+    </radialGradient>
+    <!-- 三段交織漸層：7sec暖金 -> triad紫霓虹 -> 3lens冰藍 -->
+    <linearGradient id="flow-warm" x1="30" y1="90" x2="64" y2="30" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FF3B30" />
+      <stop offset="60%" stop-color="#FF9500" />
+      <stop offset="100%" stop-color="#FFE55C" />
+    </linearGradient>
+    <linearGradient id="flow-cyber" x1="64" y1="30" x2="98" y2="90" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFE55C" />
+      <stop offset="50%" stop-color="#D946EF" />
+      <stop offset="100%" stop-color="#8B5CF6" />
+    </linearGradient>
+    <linearGradient id="flow-cool" x1="98" y1="90" x2="30" y2="90" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#8B5CF6" />
+      <stop offset="50%" stop-color="#00F5FF" />
+      <stop offset="100%" stop-color="#0066FF" />
+    </linearGradient>
+  </defs>
+
+  <rect x="8" y="8" width="112" height="112" rx="28" fill="url(#bg-opt1)" stroke="#1E293B" stroke-width="1.5" />
+
+  <!-- 莫比烏斯三元閉環 (Triad Loop) -->
+  <g stroke-linecap="round" stroke-linejoin="round">
+    <!-- 頂點向上流動弧 (左底 -> 頂峰) -->
+    <path d="M 38 88 C 28 66 42 36 64 28" stroke="url(#flow-warm)" stroke-width="6.5" />
+    <!-- 頂峰向下流動弧 (頂峰 -> 右底) -->
+    <path d="M 64 28 C 86 36 100 66 90 88" stroke="url(#flow-cyber)" stroke-width="6.5" />
+    <!-- 底部回流環 (右底 -> 左底) -->
+    <path d="M 90 88 C 76 102 52 102 38 88" stroke="url(#flow-cool)" stroke-width="6.5" />
+
+    <!-- 內核負空間三位一體微導流 -->
+    <path d="M 50 68 Q 64 48 78 68 Q 64 78 50 68 Z" stroke="#38BDF8" stroke-width="1.5" fill="#38BDF8" fill-opacity="0.08" />
+
+    <!-- 三個節點透鏡 (3lens 氣泡語言) -->
+    <circle cx="64" cy="28" r="5" fill="#FFE55C" />
+    <circle cx="64" cy="28" r="8" stroke="#FFE55C" stroke-width="1.5" opacity="0.4" />
+    <circle cx="62" cy="26" r="1.5" fill="#FFFFFF" />
+
+    <circle cx="90" cy="88" r="5" fill="#8B5CF6" />
+    <circle cx="90" cy="88" r="8" stroke="#8B5CF6" stroke-width="1.5" opacity="0.4" />
+    <circle cx="88" cy="86" r="1.5" fill="#FFFFFF" />
+
+    <circle cx="38" cy="88" r="5" fill="#00F5FF" />
+    <circle cx="38" cy="88" r="8" stroke="#00F5FF" stroke-width="1.5" opacity="0.4" />
+    <circle cx="36" cy="86" r="1.5" fill="#FFFFFF" />
+  </g>
+</svg>

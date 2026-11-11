@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" fill="none">
+  <title>Triad-Flow - Option 3: Delta Harness Gate (安全夾具門)</title>
+  <defs>
+    <radialGradient id="bg-opt3" cx="64" cy="64" r="60" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0F172A" />
+      <stop offset="100%" stop-color="#020617" />
+    </radialGradient>
+    <linearGradient id="harness-frame" x1="28" y1="28" x2="100" y2="100" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#38BDF8" />
+      <stop offset="50%" stop-color="#6366F1" />
+      <stop offset="100%" stop-color="#A855F7" />
+    </linearGradient>
+    <linearGradient id="flow-pulse" x1="24" y1="64" x2="104" y2="64" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFE55C" />
+      <stop offset="50%" stop-color="#FF9500" />
+      <stop offset="100%" stop-color="#FF3B30" />
+    </linearGradient>
+  </defs>
+
+  <rect x="8" y="8" width="112" height="112" rx="28" fill="url(#bg-opt3)" stroke="#1E293B" stroke-width="1.5" />
+
+  <!-- 外部強固三角安全夾具 (Delta Harness) -->
+  <g stroke-linecap="round" stroke-linejoin="round">
+    <!-- 三角主夾具框架 -->
+    <path d="M 64 26 L 98 88 L 30 88 Z" stroke="url(#harness-frame)" stroke-width="4.5" fill="#6366F1" fill-opacity="0.05" />
+
+    <!-- 內部穿越的動態 S 型波浪流 (Flow)，象徵程式碼與資料流 -->
+    <path d="M 24 64 C 42 46 54 82 72 64 C 84 52 92 64 104 64" stroke="url(#flow-pulse)" stroke-width="5.5" />
+
+    <!-- 三頂點安全栓 (Fail-Closed Quorum Pins) -->
+    <circle cx="64" cy="26" r="6" stroke="#38BDF8" stroke-width="2" fill="#0F172A" />
+    <circle cx="64" cy="26" r="2.5" fill="#38BDF8" />
+
+    <circle cx="98" cy="88" r="6" stroke="#A855F7" stroke-width="2" fill="#0F172A" />
+    <circle cx="98" cy="88" r="2.5" fill="#A855F7" />
+
+    <circle cx="30" cy="88" r="6" stroke="#38BDF8" stroke-width="2" fill="#0F172A" />
+    <circle cx="30" cy="88" r="2.5" fill="#38BDF8" />
+
+    <!-- 門禁通過光斑 (Pass Bubble) -->
+    <circle cx="72" cy="64" r="4" fill="#FFE55C" />
+    <circle cx="71" cy="63" r="1.2" fill="#FFFFFF" />
+  </g>
+</svg>

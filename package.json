@@ -29,6 +29,8 @@
     "check-version": "node scripts/bump-version.mjs --check",
     "manifest:generate": "node scripts/generate-manifest-bundle.mjs",
     "manifest:verify": "node scripts/verify-artifact-manifest.mjs",
+    "post-remediation": "node scripts/post-remediation-hook.mjs",
+    "acceptance:runbook": "node scripts/post-remediation-hook.mjs",
     "sbom:generate": "npm sbom --sbom-format=spdx",
     "evidence:0002": "node scripts/assemble-evidence-0002.mjs",
     "evidence:0003": "node scripts/assemble-evidence-0003.mjs",

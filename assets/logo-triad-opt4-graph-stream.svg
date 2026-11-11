@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" fill="none">
+  <title>Triad-Flow - Option 4: Delta Graph Network (拓撲自適應分流)</title>
+  <defs>
+    <radialGradient id="bg-opt4" cx="64" cy="64" r="60" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0F172A" />
+      <stop offset="100%" stop-color="#020617" />
+    </radialGradient>
+    <linearGradient id="main-in" x1="20" y1="64" x2="52" y2="64" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFE55C" />
+      <stop offset="100%" stop-color="#FF9500" />
+    </linearGradient>
+    <linearGradient id="branch-up" x1="52" y1="64" x2="96" y2="34" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FF9500" />
+      <stop offset="50%" stop-color="#00F5FF" />
+      <stop offset="100%" stop-color="#0066FF" />
+    </linearGradient>
+    <linearGradient id="branch-mid" x1="52" y1="64" x2="102" y2="64" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FF9500" />
+      <stop offset="50%" stop-color="#A855F7" />
+      <stop offset="100%" stop-color="#EC4899" />
+    </linearGradient>
+    <linearGradient id="branch-down" x1="52" y1="64" x2="96" y2="94" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FF9500" />
+      <stop offset="50%" stop-color="#38BDF8" />
+      <stop offset="100%" stop-color="#0284C7" />
+    </linearGradient>
+  </defs>
+
+  <rect x="8" y="8" width="112" height="112" rx="28" fill="url(#bg-opt4)" stroke="#1E293B" stroke-width="1.5" />
+
+  <!-- 自適應拓撲分流 (Graph Engineering) -->
+  <g stroke-linecap="round" stroke-linejoin="round">
+    <!-- 主輸入流 (單代理快路徑入口) -->
+    <path d="M 22 64 L 52 64" stroke="url(#main-in)" stroke-width="6" />
+
+    <!-- 拓撲分流支線 (Fan-out) -->
+    <!-- 上分支：Claude 主控視角 -->
+    <path d="M 52 64 C 68 64 74 34 96 34" stroke="url(#branch-up)" stroke-width="4.5" />
+    <!-- 中分支：Gemini 巨觀雷達 -->
+    <path d="M 52 64 L 102 64" stroke="url(#branch-mid)" stroke-width="4.5" />
+    <!-- 下分支：Codex 微觀仲裁 -->
+    <path d="M 52 64 C 68 64 74 94 96 94" stroke="url(#branch-down)" stroke-width="4.5" />
+
+    <!-- 核心分發節點 (Router Hub) -->
+    <circle cx="52" cy="64" r="7" stroke="#FFE55C" stroke-width="2.5" fill="#FF9500" />
+    <circle cx="50" cy="62" r="1.8" fill="#FFFFFF" />
+
+    <!-- 三大終端透鏡泡泡 -->
+    <circle cx="96" cy="34" r="8" stroke="#00F5FF" stroke-width="2.5" fill="#00F5FF" fill-opacity="0.15" />
+    <circle cx="94" cy="32" r="2" fill="#FFFFFF" />
+
+    <circle cx="102" cy="64" r="8" stroke="#EC4899" stroke-width="2.5" fill="#EC4899" fill-opacity="0.15" />
+    <circle cx="100" cy="62" r="2" fill="#FFFFFF" />
+
+    <circle cx="96" cy="94" r="8" stroke="#38BDF8" stroke-width="2.5" fill="#38BDF8" fill-opacity="0.15" />
+    <circle cx="94" cy="92" r="2" fill="#FFFFFF" />
+  </g>
+</svg>

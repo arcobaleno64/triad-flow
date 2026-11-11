@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" fill="none">
+  <title>Triad-Flow - Option 7: Prismatic Lens Core (稜鏡光學折射流)</title>
+  <defs>
+    <radialGradient id="bg-opt7" cx="64" cy="64" r="60" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0F172A" />
+      <stop offset="100%" stop-color="#020617" />
+    </radialGradient>
+    <linearGradient id="prism-gold-in" x1="20" y1="52" x2="52" y2="58" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFE55C" />
+      <stop offset="100%" stop-color="#FF9500" />
+    </linearGradient>
+    <linearGradient id="ray-cyan" x1="68" y1="54" x2="104" y2="34" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#38BDF8" />
+      <stop offset="100%" stop-color="#00F5FF" />
+    </linearGradient>
+    <linearGradient id="ray-magenta" x1="72" y1="62" x2="106" y2="62" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#F43F5E" />
+      <stop offset="100%" stop-color="#FB7185" />
+    </linearGradient>
+    <linearGradient id="ray-violet" x1="68" y1="70" x2="104" y2="90" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#8B5CF6" />
+      <stop offset="100%" stop-color="#A78BFA" />
+    </linearGradient>
+  </defs>
+
+  <rect x="8" y="8" width="112" height="112" rx="28" fill="url(#bg-opt7)" stroke="#1E293B" stroke-width="1.5" />
+
+  <!-- 正三角光學稜鏡核心 (Triad Prism) -->
+  <g stroke-linecap="round" stroke-linejoin="round">
+    <!-- 玻璃稜鏡實體 -->
+    <polygon points="64,28 88,78 40,78" stroke="#38BDF8" stroke-width="3.5" fill="#0EA5E9" fill-opacity="0.1" />
+
+    <!-- 7sec 金色入射光束 (未分流的代碼變更) -->
+    <path d="M 22 56 L 52 61" stroke="url(#prism-gold-in)" stroke-width="5" />
+    <circle cx="22" cy="56" r="3" fill="#FFE55C" />
+
+    <!-- 稜鏡折射分解出的三色光譜流 (3lens 檢驗光束) -->
+    <path d="M 72 50 L 102 34" stroke="url(#ray-cyan)" stroke-width="4" />
+    <path d="M 76 62 L 106 62" stroke="url(#ray-magenta)" stroke-width="4" />
+    <path d="M 72 74 L 102 90" stroke="url(#ray-violet)" stroke-width="4" />
+
+    <!-- 三道光束末端的感光透鏡泡泡 -->
+    <circle cx="102" cy="34" r="5" fill="#00F5FF" />
+    <circle cx="106" cy="62" r="5" fill="#FB7185" />
+    <circle cx="102" cy="90" r="5" fill="#A78BFA" />
+
+    <!-- 稜鏡頂點高光 -->
+    <circle cx="64" cy="28" r="2.5" fill="#FFFFFF" />
+  </g>
+</svg>

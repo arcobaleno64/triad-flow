@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" fill="none">
+  <title>Triad-Flow - Option 2: Tri-Vortex Lenses (旋流透鏡)</title>
+  <defs>
+    <radialGradient id="bg-opt2" cx="64" cy="64" r="60" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0F172A" />
+      <stop offset="100%" stop-color="#020617" />
+    </radialGradient>
+    <linearGradient id="vortex-1" x1="64" y1="20" x2="88" y2="60" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#00F5FF" />
+      <stop offset="100%" stop-color="#0066FF" />
+    </linearGradient>
+    <linearGradient id="vortex-2" x1="88" y1="60" x2="48" y2="96" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFE55C" />
+      <stop offset="100%" stop-color="#FF3B30" />
+    </linearGradient>
+    <linearGradient id="vortex-3" x1="48" y1="96" x2="40" y2="40" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#C084FC" />
+      <stop offset="100%" stop-color="#4F46E5" />
+    </linearGradient>
+  </defs>
+
+  <rect x="8" y="8" width="112" height="112" rx="28" fill="url(#bg-opt2)" stroke="#1E293B" stroke-width="1.5" />
+
+  <!-- 三向離心/向心旋渦流線 (120度角對稱) -->
+  <g stroke-linecap="round" stroke-linejoin="round">
+    <!-- 旋臂 1 -->
+    <path d="M 64 24 C 84 24 96 44 88 64 C 82 78 68 76 64 64" stroke="url(#vortex-1)" stroke-width="5" />
+    <!-- 旋臂 2 -->
+    <path d="M 98 84 C 84 98 60 98 48 84 C 38 72 48 60 64 64" stroke="url(#vortex-2)" stroke-width="5" />
+    <!-- 旋臂 3 -->
+    <path d="M 30 64 C 28 42 46 26 64 42 C 72 50 68 62 64 64" stroke="url(#vortex-3)" stroke-width="5" />
+
+    <!-- 三顆旋流核心透鏡泡泡 -->
+    <circle cx="64" cy="24" r="8" stroke="url(#vortex-1)" stroke-width="2.5" fill="#00F5FF" fill-opacity="0.15" />
+    <circle cx="62" cy="22" r="2" fill="#FFFFFF" opacity="0.8" />
+
+    <circle cx="98" cy="84" r="8" stroke="url(#vortex-2)" stroke-width="2.5" fill="#FF9500" fill-opacity="0.15" />
+    <circle cx="96" cy="82" r="2" fill="#FFFFFF" opacity="0.8" />
+
+    <circle cx="30" cy="64" r="8" stroke="url(#vortex-3)" stroke-width="2.5" fill="#C084FC" fill-opacity="0.15" />
+    <circle cx="28" cy="62" r="2" fill="#FFFFFF" opacity="0.8" />
+
+    <!-- 中心匯流中樞點 -->
+    <circle cx="64" cy="64" r="3.5" fill="#FFFFFF" />
+  </g>
+</svg>

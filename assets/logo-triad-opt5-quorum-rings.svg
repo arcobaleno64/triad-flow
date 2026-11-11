@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" fill="none">
+  <title>Triad-Flow - Option 5: Borromean Quorum (三環共振結)</title>
+  <defs>
+    <radialGradient id="bg-opt5" cx="64" cy="64" r="60" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0F172A" />
+      <stop offset="100%" stop-color="#020617" />
+    </radialGradient>
+    <linearGradient id="ring-gold" x1="44" y1="20" x2="84" y2="60" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFE55C" />
+      <stop offset="100%" stop-color="#FF9500" />
+    </linearGradient>
+    <linearGradient id="ring-blue" x1="28" y1="56" x2="68" y2="96" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#00F5FF" />
+      <stop offset="100%" stop-color="#0066FF" />
+    </linearGradient>
+    <linearGradient id="ring-purple" x1="60" y1="56" x2="100" y2="96" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#D946EF" />
+      <stop offset="100%" stop-color="#8B5CF6" />
+    </linearGradient>
+  </defs>
+
+  <rect x="8" y="8" width="112" height="112" rx="28" fill="url(#bg-opt5)" stroke="#1E293B" stroke-width="1.5" />
+
+  <!-- 三位一體互鎖環 (Borromean Rings: 缺一不可 / Fail-Closed 共識) -->
+  <g stroke-linecap="round" stroke-linejoin="round">
+    <!-- 上環 (Master / 暖金) -->
+    <circle cx="64" cy="46" r="22" stroke="url(#ring-gold)" stroke-width="4.5" fill="#FFE55C" fill-opacity="0.06" />
+    <!-- 左下環 (Radar / 青藍) -->
+    <circle cx="48" cy="74" r="22" stroke="url(#ring-blue)" stroke-width="4.5" fill="#00F5FF" fill-opacity="0.06" />
+    <!-- 右下環 (Arbiter / 紫霓) -->
+    <circle cx="80" cy="74" r="22" stroke="url(#ring-purple)" stroke-width="4.5" fill="#8B5CF6" fill-opacity="0.06" />
+
+    <!-- 中心共識焦點 (三環重疊的核心 Quorum 仲裁點) -->
+    <circle cx="64" cy="65" r="5" fill="#FFFFFF" opacity="0.9" />
+    <circle cx="64" cy="65" r="8" stroke="#FFFFFF" stroke-width="1" opacity="0.5" />
+
+    <!-- 3lens 水滴高光裝飾 -->
+    <circle cx="60" cy="38" r="2.5" fill="#FFFFFF" opacity="0.8" />
+    <circle cx="42" cy="68" r="2.5" fill="#FFFFFF" opacity="0.8" />
+    <circle cx="76" cy="68" r="2.5" fill="#FFFFFF" opacity="0.8" />
+  </g>
+</svg>

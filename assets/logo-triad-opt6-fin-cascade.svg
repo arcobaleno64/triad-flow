@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" fill="none">
+  <title>Triad-Flow - Option 6: Flowing Fin &amp; Triple Cascade (金魚鰭刃與激流透鏡)</title>
+  <defs>
+    <radialGradient id="bg-opt6" cx="64" cy="64" r="60" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0F172A" />
+      <stop offset="100%" stop-color="#020617" />
+    </radialGradient>
+    <linearGradient id="fin-flow" x1="24" y1="36" x2="74" y2="96" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFE55C" />
+      <stop offset="45%" stop-color="#FF9500" />
+      <stop offset="100%" stop-color="#FF3B30" />
+    </linearGradient>
+    <linearGradient id="stream-flow" x1="40" y1="40" x2="104" y2="88" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#38BDF8" />
+      <stop offset="50%" stop-color="#818CF8" />
+      <stop offset="100%" stop-color="#C084FC" />
+    </linearGradient>
+  </defs>
+
+  <rect x="8" y="8" width="112" height="112" rx="28" fill="url(#bg-opt6)" stroke="#1E293B" stroke-width="1.5" />
+
+  <!-- 7sec 金魚流線背鰭 + 3lens 三階激流透鏡 -->
+  <g stroke-linecap="round" stroke-linejoin="round">
+    <!-- 金魚背脊主刃 (7 的律動形體) -->
+    <path d="M 28 42 C 28 26 44 24 56 24 L 78 24 C 78 52 56 76 34 88" stroke="url(#fin-flow)" stroke-width="6.5" />
+
+    <!-- 魚嘴向外噴薄的三向激流 (Flow Wave) -->
+    <path d="M 78 24 C 92 24 102 38 96 52 C 90 66 74 74 84 88" stroke="url(#stream-flow)" stroke-width="4.5" />
+
+    <!-- 三階放大透鏡泡泡 (呈三角動態階梯) -->
+    <!-- 透鏡 1 (頂點微距鏡) -->
+    <circle cx="86" cy="36" r="6" stroke="#00F5FF" stroke-width="2" fill="#00F5FF" fill-opacity="0.15" />
+    <circle cx="84" cy="34" r="1.5" fill="#FFFFFF" />
+
+    <!-- 透鏡 2 (中央觀測鏡) -->
+    <circle cx="100" cy="58" r="9" stroke="#818CF8" stroke-width="2.5" fill="#818CF8" fill-opacity="0.15" />
+    <circle cx="98" cy="55" r="2.2" fill="#FFFFFF" />
+
+    <!-- 透鏡 3 (底座深焦鏡) -->
+    <circle cx="82" cy="94" r="12" stroke="#C084FC" stroke-width="3" fill="#C084FC" fill-opacity="0.15" />
+    <circle cx="78" cy="90" r="3" fill="#FFFFFF" />
+  </g>
+</svg>

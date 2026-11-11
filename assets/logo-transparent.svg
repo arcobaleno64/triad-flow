@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" fill="none">
+  <title>Triad-Flow Official Logo - Transparent Vector</title>
+  <defs>
+    <linearGradient id="tf-trans-warm" x1="30" y1="90" x2="64" y2="28" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FF3B30" />
+      <stop offset="60%" stop-color="#FF9500" />
+      <stop offset="100%" stop-color="#FFE55C" />
+    </linearGradient>
+    <linearGradient id="tf-trans-cyber" x1="64" y1="28" x2="92" y2="90" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFE55C" />
+      <stop offset="50%" stop-color="#D946EF" />
+      <stop offset="100%" stop-color="#8B5CF6" />
+    </linearGradient>
+    <linearGradient id="tf-trans-cool" x1="92" y1="90" x2="38" y2="90" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#8B5CF6" />
+      <stop offset="50%" stop-color="#00F5FF" />
+      <stop offset="100%" stop-color="#0066FF" />
+    </linearGradient>
+  </defs>
+
+  <!-- 莫比烏斯三元閉環 (透明背景版) -->
+  <g stroke-linecap="round" stroke-linejoin="round">
+    <path d="M 38 88 C 28 66 42 36 64 28" stroke="url(#tf-trans-warm)" stroke-width="6.5" />
+    <path d="M 64 28 C 86 36 100 66 90 88" stroke="url(#tf-trans-cyber)" stroke-width="6.5" />
+    <path d="M 90 88 C 76 102 52 102 38 88" stroke="url(#tf-trans-cool)" stroke-width="6.5" />
+
+    <path d="M 50 68 Q 64 48 78 68 Q 64 78 50 68 Z" stroke="#38BDF8" stroke-width="1.5" fill="#38BDF8" fill-opacity="0.12" />
+
+    <circle cx="64" cy="28" r="5" fill="#FFE55C" />
+    <circle cx="64" cy="28" r="8" stroke="#FFE55C" stroke-width="1.5" opacity="0.4" />
+    <circle cx="62" cy="26" r="1.5" fill="#FFFFFF" />
+
+    <circle cx="90" cy="88" r="5" fill="#8B5CF6" />
+    <circle cx="90" cy="88" r="8" stroke="#8B5CF6" stroke-width="1.5" opacity="0.4" />
+    <circle cx="88" cy="86" r="1.5" fill="#FFFFFF" />
+
+    <circle cx="38" cy="88" r="5" fill="#00F5FF" />
+    <circle cx="38" cy="88" r="8" stroke="#00F5FF" stroke-width="1.5" opacity="0.4" />
+    <circle cx="36" cy="86" r="1.5" fill="#FFFFFF" />
+  </g>
+</svg>
