@@ -68,7 +68,10 @@ export function formatRunbookMarkdown(data) {
         lines.push(`   ${step.description}`);
       }
       if (step.command) {
-        lines.push(`   \`\`\`bash\n   ${step.command}\n   \`\`\``);
+        const cmdStr = String(step.command);
+        const maxTicks = (cmdStr.match(/`+/g) || []).reduce((max, m) => Math.max(max, m.length), 0);
+        const fence = "`".repeat(Math.max(3, maxTicks + 1));
+        lines.push(`   ${fence}bash\n   ${cmdStr}\n   ${fence}`);
       }
       if (step.expectedOutput) {
         lines.push(`   *預期結果*: \`${step.expectedOutput}\``);
