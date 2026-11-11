@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.1.0",
-  "runId": "dogfood-1794368972522-189bab14-601b-4029-ac47-abb83977aecd",
+  "runId": "dogfood-1794369527431-410cb50c-9062-4f85-b99c-11c82d4c60dc",
   "gate": {
     "decision": "approve",
     "reason": "Clean Challenge passed: zero findings and zero verified omissions."
@@ -11,66 +11,64 @@
   },
   "isExecutionComplete": true,
   "executionMode": "mock",
-  "runStartedAt": "2026-11-11T03:49:32.522Z",
-  "timestamp": "2026-11-11T03:49:34.450Z",
+  "runStartedAt": "2026-11-11T03:58:47.431Z",
+  "timestamp": "2026-11-11T03:58:48.855Z",
   "track": "Track D1: SHADOW_DOGFOOD",
   "authority": "NONE (ADVISORY_ONLY)",
   "triadFlowVersion": "2.10.0",
   "runContext": {
-    "runId": "dogfood-1794368972522-189bab14-601b-4029-ac47-abb83977aecd",
-    "headSha": "ef17d8dd5f1e903fe744d7296d53f4008daba3ee",
-    "contentDigest": "38e7bd5df2c0a71f524e2fa4dacc19ec03b3c7f50218e9362762b0b464090002",
+    "runId": "dogfood-1794369527431-410cb50c-9062-4f85-b99c-11c82d4c60dc",
+    "headSha": "fc747d866e36b5c80f2417935032cda9499a6c48",
+    "contentDigest": "1fdd81b4970938829e42054f27b6312d733051899e3e9d818f954412e38966e6",
     "patchObjective": "",
     "objectiveContract": null,
     "exclusions": []
   },
   "repository": {
     "name": "arcobaleno64/triad-flow",
-    "commitSha": "ef17d8dd5f1e903fe744d7296d53f4008daba3ee",
-    "branch": "main",
-    "base": "971855c",
+    "commitSha": "fc747d866e36b5c80f2417935032cda9499a6c48",
+    "branch": "feat/phase-5-multi-language-remediation-alignment",
+    "base": "4e71265",
     "head": "HEAD"
   },
   "changeSetSummary": {
     "totalFiles": 5,
-    "totalAdditions": 393,
-    "totalDeletions": 25,
+    "totalAdditions": 211,
+    "totalDeletions": 6,
     "riskTier": 1,
     "files": [
       {
-        "path": "src/cli.mjs",
-        "additions": 78,
-        "deletions": 3,
-        "riskTier": 2
-      },
-      {
         "path": "src/core/batch-remediation.mjs",
-        "additions": 5,
-        "deletions": 1,
+        "additions": 9,
+        "deletions": 2,
         "riskTier": 1
       },
       {
         "path": "src/core/controlled-remediation.mjs",
-        "additions": 14,
-        "deletions": 3,
+        "additions": 3,
+        "deletions": 1,
+        "riskTier": 1
+      },
+      {
+        "path": "src/core/multi-language-remediation.mjs",
+        "additions": 38,
+        "deletions": 2,
         "riskTier": 1
       },
       {
         "path": "src/core/sandbox-driver.mjs",
-        "additions": 65,
-        "deletions": 17,
+        "additions": 2,
+        "deletions": 1,
         "riskTier": 1
       },
       {
-        "path": "tests/sandbox-driver.test.mjs",
-        "additions": 231,
-        "deletions": 1,
+        "path": "tests/multi-language-remediation.test.mjs",
+        "additions": 159,
+        "deletions": 0,
         "riskTier": 2
       }
     ],
-    "excludedFiles": [
-      "dogfood-run.json"
-    ]
+    "excludedFiles": []
   },
   "providerTelemetry": {
     "agy": {
@@ -99,7 +97,7 @@
       "model": "gpt-6.1-sol",
       "executionStatus": "empty",
       "findingsCount": 0,
-      "latencyMs": 2,
+      "latencyMs": 3,
       "stagedFallbackUsed": false,
       "stagedTimeoutCount": 0
     }
@@ -119,12 +117,12 @@
     "mergeBlockedInProduction": false
   },
   "telemetryMetrics": {
-    "totalDurationMs": 1040,
-    "reviewerPhaseDurationMs": 1026,
-    "avgProviderLatencyMs": 3,
+    "totalDurationMs": 555,
+    "reviewerPhaseDurationMs": 541,
+    "avgProviderLatencyMs": 4,
     "executionComplete": true,
     "cleanChallengeAttempted": true,
-    "cleanChallengeDurationMs": 11,
+    "cleanChallengeDurationMs": 12,
     "cleanChallengeStatus": "SUCCESS",
     "malformedOutputCount": 0,
     "reviewerTimeoutCount": 0,
@@ -141,7 +139,7 @@
       "platform": "win32",
       "transport": "argv",
       "budgetAllocatedMs": 30000,
-      "globalDeadlineRemainingMs": 28974,
+      "globalDeadlineRemainingMs": 29459,
       "stagedFallbackUsed": false,
       "chunkCount": null,
       "maxConcurrency": 1,
@@ -153,10 +151,10 @@
   },
   "verificationRecord": {
     "schemaVersion": "1.0.0",
-    "verifiedAt": "2026-11-11T03:49:34.448Z",
-    "changeSetDigest": "sha256:38e7bd5df2c0a71f524e2fa4dacc19ec03b3c7f50218e9362762b0b464090002",
-    "headSha": "ef17d8dd5f1e903fe744d7296d53f4008daba3ee",
-    "runId": "dogfood-1794368972522-189bab14-601b-4029-ac47-abb83977aecd",
+    "verifiedAt": "2026-11-11T03:58:48.853Z",
+    "changeSetDigest": "sha256:1fdd81b4970938829e42054f27b6312d733051899e3e9d818f954412e38966e6",
+    "headSha": "fc747d866e36b5c80f2417935032cda9499a6c48",
+    "runId": "dogfood-1794369527431-410cb50c-9062-4f85-b99c-11c82d4c60dc",
     "exclusions": [],
     "verificationMode": "clean_challenge",
     "overallStatus": "CLEAN",
