@@ -661,11 +661,13 @@ export function verifyCoverageCompleteness(changeSet, receipts = []) {
   for (const rcpt of receipts) {
     if (rcpt.status === CHUNK_STATUS.UNINSPECTED_CHUNK) {
       for (const f of rcpt.targetFiles || []) {
-        uninspectedFiles.add(f);
+        const norm = normalizeCanonicalPath(f);
+        if (norm) uninspectedFiles.add(norm);
       }
     } else {
       for (const f of rcpt.coverage?.coveredFiles || []) {
-        coveredFiles.add(f);
+        const norm = normalizeCanonicalPath(f);
+        if (norm) coveredFiles.add(norm);
       }
       for (const o of rcpt.coverage?.omittedFiles || []) {
         omittedFiles.push(o);
@@ -1105,9 +1107,11 @@ export class DistributedSwarmOrchestrator {
       runId,
       findings: allFindings,
       coverage: {
+        complete: coverageEval.complete,
         coveredFiles: coverageEval.coveredFiles,
         omittedFiles: coverageEval.omittedFiles,
-        uninspectedFiles: coverageEval.uninspectedFiles
+        uninspectedFiles: coverageEval.uninspectedFiles,
+        missingFiles: coverageEval.missingFiles
       },
       receiptChain: receipts,
       rootReceiptHash: chainVerification.rootHash,

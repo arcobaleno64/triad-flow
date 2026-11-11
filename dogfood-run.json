@@ -1,45 +1,297 @@
 {
   "schemaVersion": "1.1.0",
-  "runId": "dogfood-1794372728882-d860e38a-37d2-4c4c-a1c3-cef92e44106e",
+  "runId": "dogfood-1794405944634-03c795d8-4864-45e4-bd5d-baeb2e62cb58",
   "gate": {
-    "decision": "approve",
-    "reason": "Clean Challenge passed: zero findings and zero verified omissions."
+    "decision": "block",
+    "reason": "Tier 1 high-risk policy: Unresolved security context gap (GLOBAL_AST_CONTEXT_CEILING_EXCEEDED) blocks merge."
   },
   "summary": {
-    "cleanChallengeStatus": "SUCCESS",
-    "decision": "approve"
+    "cleanChallengeStatus": "UNCERTAIN",
+    "decision": "block"
   },
-  "isExecutionComplete": true,
+  "isExecutionComplete": false,
   "executionMode": "mock",
-  "runStartedAt": "2026-11-11T04:52:08.881Z",
-  "timestamp": "2026-11-11T04:52:09.910Z",
+  "runStartedAt": "2026-11-11T14:05:44.633Z",
+  "timestamp": "2026-11-11T14:05:56.322Z",
   "track": "Track D1: SHADOW_DOGFOOD",
   "authority": "NONE (ADVISORY_ONLY)",
   "triadFlowVersion": "2.11.0",
   "runContext": {
-    "runId": "dogfood-1794372728882-d860e38a-37d2-4c4c-a1c3-cef92e44106e",
-    "headSha": "0fdb6bffbaa1e395d573ff2af6b71f0ea14bde4b",
-    "contentDigest": "b88294585124dca3f01f102c310b20dc106685fa8dda28ab9879ff6ce93172b4",
+    "runId": "dogfood-1794405944634-03c795d8-4864-45e4-bd5d-baeb2e62cb58",
+    "headSha": "88a574639c89373814e0ffdf4c4f515f64650194",
+    "contentDigest": "d3bca7cda7387377566bad42043d440240b9f05767ba0a582d484a3dfb757485",
     "patchObjective": "",
     "objectiveContract": null,
     "exclusions": []
   },
   "repository": {
     "name": "arcobaleno64/triad-flow",
-    "commitSha": "0fdb6bffbaa1e395d573ff2af6b71f0ea14bde4b",
+    "commitSha": "88a574639c89373814e0ffdf4c4f515f64650194",
     "branch": "main",
-    "base": "2875c4f",
+    "base": "origin/main",
     "head": "HEAD"
   },
   "changeSetSummary": {
-    "totalFiles": 1,
-    "totalAdditions": 119,
-    "totalDeletions": 0,
+    "totalFiles": 43,
+    "totalAdditions": 11913,
+    "totalDeletions": 118,
     "riskTier": 1,
     "files": [
       {
+        "path": ".gitignore",
+        "additions": 1,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "assets/logo-transparent.svg",
+        "additions": 41,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "assets/logo-triad-opt1-mobius.svg",
+        "additions": 53,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "assets/logo-triad-opt2-vortex.svg",
+        "additions": 46,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "assets/logo-triad-opt3-delta-harness.svg",
+        "additions": 44,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "assets/logo-triad-opt4-graph-stream.svg",
+        "additions": 58,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "assets/logo-triad-opt5-quorum-rings.svg",
+        "additions": 42,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "assets/logo-triad-opt6-fin-cascade.svg",
+        "additions": 43,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "assets/logo-triad-opt7-prism-refract.svg",
+        "additions": 50,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "assets/logo-triad-opt8-minimal-badge.svg",
+        "additions": 38,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "assets/logo.svg",
+        "additions": 59,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "docs/rfcs/rfc-028-01-container-sandbox-pool.md",
+        "additions": 253,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "docs/rfcs/rfc-028-02-distributed-swarm-orchestrator.md",
+        "additions": 248,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "docs/rfcs/rfc-028-03-active-poc-synthesizer.md",
+        "additions": 196,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "docs/rfcs/rfc-028-04-taxonomy-quorum-calibration.md",
+        "additions": 244,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
         "path": "docs/roadmap/v2.12-milestone-roadmap.md",
+        "additions": 25,
+        "deletions": 21,
+        "riskTier": 2
+      },
+      {
+        "path": "package.json",
+        "additions": 2,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "scripts/dogfood-review.mjs",
+        "additions": 47,
+        "deletions": 8,
+        "riskTier": 2
+      },
+      {
+        "path": "scripts/post-remediation-hook.mjs",
+        "additions": 284,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "src/adapters/cli-transport.mjs",
+        "additions": 33,
+        "deletions": 22,
+        "riskTier": 1
+      },
+      {
+        "path": "src/adapters/mock-provider-sandbox.mjs",
+        "additions": 38,
+        "deletions": 11,
+        "riskTier": 1
+      },
+      {
+        "path": "src/cli.mjs",
+        "additions": 535,
+        "deletions": 4,
+        "riskTier": 2
+      },
+      {
+        "path": "src/core/acceptance-runbook.mjs",
+        "additions": 148,
+        "deletions": 0,
+        "riskTier": 1
+      },
+      {
+        "path": "src/core/batch-remediation.mjs",
+        "additions": 118,
+        "deletions": 14,
+        "riskTier": 1
+      },
+      {
+        "path": "src/core/controlled-remediation.mjs",
+        "additions": 195,
+        "deletions": 24,
+        "riskTier": 1
+      },
+      {
+        "path": "src/core/multi-language-remediation.mjs",
+        "additions": 13,
+        "deletions": 0,
+        "riskTier": 1
+      },
+      {
+        "path": "src/core/poc-synthesizer.mjs",
+        "additions": 1635,
+        "deletions": 0,
+        "riskTier": 1
+      },
+      {
+        "path": "src/core/sandbox-driver.mjs",
+        "additions": 87,
+        "deletions": 13,
+        "riskTier": 1
+      },
+      {
+        "path": "src/core/sandbox-pool.mjs",
+        "additions": 1640,
+        "deletions": 0,
+        "riskTier": 1
+      },
+      {
+        "path": "src/core/swarm-orchestrator.mjs",
+        "additions": 1125,
+        "deletions": 0,
+        "riskTier": 1
+      },
+      {
+        "path": "src/core/taxonomy-quorum.mjs",
+        "additions": 754,
+        "deletions": 0,
+        "riskTier": 1
+      },
+      {
+        "path": "tests/acceptance-runbook.test.mjs",
+        "additions": 68,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "tests/cli-phase4.test.mjs",
         "additions": 119,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "tests/controlled-remediation.test.mjs",
+        "additions": 93,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "tests/dogfood-review.test.mjs",
+        "additions": 140,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "tests/e2e-four-pillars.test.mjs",
+        "additions": 305,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "tests/multi-language-remediation.test.mjs",
+        "additions": 1,
+        "deletions": 1,
+        "riskTier": 2
+      },
+      {
+        "path": "tests/poc-synthesizer.test.mjs",
+        "additions": 590,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "tests/post-remediation-hook.test.mjs",
+        "additions": 167,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "tests/real-oss-v2.test.mjs",
+        "additions": 49,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "tests/sandbox-pool.test.mjs",
+        "additions": 1153,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "tests/swarm-orchestrator.test.mjs",
+        "additions": 684,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "tests/taxonomy-quorum.test.mjs",
+        "additions": 449,
         "deletions": 0,
         "riskTier": 2
       }
@@ -53,7 +305,7 @@
       "model": "gemini-3.8-flash",
       "executionStatus": "empty",
       "findingsCount": 0,
-      "latencyMs": 5,
+      "latencyMs": 12,
       "stagedFallbackUsed": false,
       "stagedTimeoutCount": 0
     },
@@ -63,7 +315,7 @@
       "model": "claude-5.5-sonnet",
       "executionStatus": "empty",
       "findingsCount": 0,
-      "latencyMs": 2,
+      "latencyMs": 8,
       "stagedFallbackUsed": false,
       "stagedTimeoutCount": 0
     },
@@ -73,7 +325,7 @@
       "model": "gpt-6.1-sol",
       "executionStatus": "empty",
       "findingsCount": 0,
-      "latencyMs": 2,
+      "latencyMs": 5,
       "stagedFallbackUsed": false,
       "stagedTimeoutCount": 0
     }
@@ -85,20 +337,20 @@
     "findings": []
   },
   "advisoryGate": {
-    "decision": "approve",
-    "reason": "Clean Challenge passed: zero findings and zero verified omissions.",
+    "decision": "block",
+    "reason": "Tier 1 high-risk policy: Unresolved security context gap (GLOBAL_AST_CONTEXT_CEILING_EXCEEDED) blocks merge.",
     "preVerificationDecision": "block",
     "effectiveMergeAuthority": "NONE",
-    "simulatedGateBlock": false,
+    "simulatedGateBlock": true,
     "mergeBlockedInProduction": false
   },
   "telemetryMetrics": {
-    "totalDurationMs": 212,
-    "reviewerPhaseDurationMs": 205,
-    "avgProviderLatencyMs": 3,
-    "executionComplete": true,
+    "totalDurationMs": 10640,
+    "reviewerPhaseDurationMs": 10604,
+    "avgProviderLatencyMs": 8,
+    "executionComplete": false,
     "cleanChallengeAttempted": true,
-    "cleanChallengeDurationMs": 4,
+    "cleanChallengeDurationMs": 33,
     "cleanChallengeStatus": "SUCCESS",
     "malformedOutputCount": 0,
     "reviewerTimeoutCount": 0,
@@ -115,7 +367,7 @@
       "platform": "win32",
       "transport": "argv",
       "budgetAllocatedMs": 30000,
-      "globalDeadlineRemainingMs": 29795,
+      "globalDeadlineRemainingMs": 19396,
       "stagedFallbackUsed": false,
       "chunkCount": null,
       "maxConcurrency": 1,
@@ -127,13 +379,309 @@
   },
   "verificationRecord": {
     "schemaVersion": "1.0.0",
-    "verifiedAt": "2026-11-11T04:52:09.909Z",
-    "changeSetDigest": "sha256:b88294585124dca3f01f102c310b20dc106685fa8dda28ab9879ff6ce93172b4",
-    "headSha": "0fdb6bffbaa1e395d573ff2af6b71f0ea14bde4b",
-    "runId": "dogfood-1794372728882-d860e38a-37d2-4c4c-a1c3-cef92e44106e",
+    "verifiedAt": "2026-11-11T14:05:56.315Z",
+    "changeSetDigest": "sha256:d3bca7cda7387377566bad42043d440240b9f05767ba0a582d484a3dfb757485",
+    "headSha": "88a574639c89373814e0ffdf4c4f515f64650194",
+    "runId": "dogfood-1794405944634-03c795d8-4864-45e4-bd5d-baeb2e62cb58",
     "exclusions": [],
     "verificationMode": "clean_challenge",
-    "overallStatus": "CLEAN",
+    "overallStatus": "UNCERTAIN",
+    "contextGaps": [
+      {
+        "symbol": "verifyDifferentialSync",
+        "file": "src/core/poc-synthesizer.mjs",
+        "reason": "GLOBAL_AST_CONTEXT_CEILING_EXCEEDED",
+        "category": "input_validation",
+        "impact": "Global 8 KB AST context ceiling reached (7346 bytes used); sensitive callee omitted."
+      },
+      {
+        "symbol": "DifferentialVerificationError",
+        "file": "src/core/poc-synthesizer.mjs",
+        "reason": "GLOBAL_AST_CONTEXT_CEILING_EXCEEDED",
+        "category": "error_handling",
+        "impact": "Global 8 KB AST context ceiling reached (7346 bytes used); sensitive callee omitted."
+      },
+      {
+        "symbol": "PoCExecutionTimeoutError",
+        "file": "src/core/poc-synthesizer.mjs",
+        "reason": "GLOBAL_AST_CONTEXT_CEILING_EXCEEDED",
+        "category": "error_handling",
+        "impact": "Global 8 KB AST context ceiling reached (7346 bytes used); sensitive callee omitted."
+      },
+      {
+        "symbol": "verifyEgressDenial",
+        "file": "src/core/sandbox-driver.mjs",
+        "reason": "GLOBAL_AST_CONTEXT_CEILING_EXCEEDED",
+        "category": "input_validation",
+        "impact": "Global 8 KB AST context ceiling reached (7346 bytes used); sensitive callee omitted."
+      },
+      {
+        "symbol": "SandboxSecurityViolationError",
+        "file": "src/core/sandbox-driver.mjs",
+        "reason": "GLOBAL_AST_CONTEXT_CEILING_EXCEEDED",
+        "category": "error_handling",
+        "impact": "Global 8 KB AST context ceiling reached (7346 bytes used); sensitive callee omitted."
+      },
+      {
+        "symbol": "SandboxUnavailableError",
+        "file": "src/core/sandbox-driver.mjs",
+        "reason": "GLOBAL_AST_CONTEXT_CEILING_EXCEEDED",
+        "category": "error_handling",
+        "impact": "Global 8 KB AST context ceiling reached (7346 bytes used); sensitive callee omitted."
+      },
+      {
+        "symbol": "PoolDisposedError",
+        "file": "src/core/sandbox-pool.mjs",
+        "reason": "GLOBAL_AST_CONTEXT_CEILING_EXCEEDED",
+        "category": "error_handling",
+        "impact": "Global 8 KB AST context ceiling reached (7346 bytes used); sensitive callee omitted."
+      },
+      {
+        "symbol": "PoolCapacityExceededError",
+        "file": "src/core/sandbox-pool.mjs",
+        "reason": "GLOBAL_AST_CONTEXT_CEILING_EXCEEDED",
+        "category": "error_handling",
+        "impact": "Global 8 KB AST context ceiling reached (7346 bytes used); sensitive callee omitted."
+      },
+      {
+        "symbol": "PoolAcquireTimeoutError",
+        "file": "src/core/sandbox-pool.mjs",
+        "reason": "GLOBAL_AST_CONTEXT_CEILING_EXCEEDED",
+        "category": "error_handling",
+        "impact": "Global 8 KB AST context ceiling reached (7346 bytes used); sensitive callee omitted."
+      },
+      {
+        "symbol": "PoolError",
+        "file": "src/core/sandbox-pool.mjs",
+        "reason": "GLOBAL_AST_CONTEXT_CEILING_EXCEEDED",
+        "category": "error_handling",
+        "impact": "Global 8 KB AST context ceiling reached (7346 bytes used); sensitive callee omitted."
+      },
+      {
+        "symbol": "getSafeChunkLimit",
+        "file": "src/core/chunk-manager.mjs",
+        "reason": "GLOBAL_AST_CONTEXT_CEILING_EXCEEDED",
+        "category": "input_validation",
+        "impact": "Global 8 KB AST context ceiling reached (7346 bytes used); sensitive callee omitted."
+      },
+      {
+        "symbol": "ReceiptChainTamperedError",
+        "file": "src/core/swarm-orchestrator.mjs",
+        "reason": "GLOBAL_AST_CONTEXT_CEILING_EXCEEDED",
+        "category": "error_handling",
+        "impact": "Global 8 KB AST context ceiling reached (7346 bytes used); sensitive callee omitted."
+      },
+      {
+        "symbol": "recordFailure",
+        "file": "src/core/swarm-orchestrator.mjs",
+        "reason": "GLOBAL_AST_CONTEXT_CEILING_EXCEEDED",
+        "category": "error_handling",
+        "impact": "Global 8 KB AST context ceiling reached (7346 bytes used); sensitive callee omitted."
+      },
+      {
+        "symbol": "CircuitBreakerOpenError",
+        "file": "src/core/swarm-orchestrator.mjs",
+        "reason": "GLOBAL_AST_CONTEXT_CEILING_EXCEEDED",
+        "category": "error_handling",
+        "impact": "Global 8 KB AST context ceiling reached (7346 bytes used); sensitive callee omitted."
+      },
+      {
+        "symbol": "SwarmTimeoutError",
+        "file": "src/core/swarm-orchestrator.mjs",
+        "reason": "GLOBAL_AST_CONTEXT_CEILING_EXCEEDED",
+        "category": "error_handling",
+        "impact": "Global 8 KB AST context ceiling reached (7346 bytes used); sensitive callee omitted."
+      },
+      {
+        "symbol": "extractCweTokens",
+        "file": "src/core/scoring.mjs",
+        "reason": "GLOBAL_AST_CONTEXT_CEILING_EXCEEDED",
+        "category": "security",
+        "impact": "Global 8 KB AST context ceiling reached (7346 bytes used); sensitive callee omitted."
+      },
+      {
+        "symbol": "createQuorumPolicy",
+        "file": "src/core/taxonomy-quorum.mjs",
+        "reason": "GLOBAL_AST_CONTEXT_CEILING_EXCEEDED",
+        "category": "security",
+        "impact": "Global 8 KB AST context ceiling reached (7346 bytes used); sensitive callee omitted."
+      },
+      {
+        "symbol": "map",
+        "qualifier": "envAllowlist",
+        "reason": "EXTERNAL_CALLEE_UNRESOLVED",
+        "file": "src/adapters/cli-transport.mjs",
+        "line": 313,
+        "category": "security",
+        "impact": "Referenced qualified callee 'envAllowlist.map' definition not found in modified file on sensitive execution path"
+      },
+      {
+        "symbol": "has",
+        "qualifier": "allowedSet",
+        "reason": "EXTERNAL_CALLEE_UNRESOLVED",
+        "file": "src/adapters/cli-transport.mjs",
+        "line": 319,
+        "category": "security",
+        "impact": "Referenced qualified callee 'allowedSet.has' definition not found in modified file on sensitive execution path"
+      },
+      {
+        "symbol": "some",
+        "qualifier": "AUTH_ERROR_PATTERNS",
+        "reason": "EXTERNAL_CALLEE_UNRESOLVED",
+        "file": "src/adapters/cli-transport.mjs",
+        "line": 383,
+        "category": "security",
+        "impact": "Referenced qualified callee 'AUTH_ERROR_PATTERNS.some' definition not found in modified file on sensitive execution path"
+      },
+      {
+        "symbol": "validateProviderOutput",
+        "reason": "CALLEE_TRUNCATED_ELIDED",
+        "category": "input_validation",
+        "file": "src/adapters/provider-contract.mjs",
+        "line": 236,
+        "impact": "Sensitive callee 'validateProviderOutput' body was truncated (signature_and_guards) due to budget limits; implementation completeness unverified on sensitive execution path"
+      },
+      {
+        "symbol": "verifyDifferentialSync",
+        "qualifier": "synthesizer",
+        "reason": "CALLEE_TRUNCATED_ELIDED",
+        "category": "input_validation",
+        "file": "src/core/poc-synthesizer.mjs",
+        "line": 1122,
+        "impact": "Sensitive callee 'synthesizer.verifyDifferentialSync' body was truncated (signature_and_guards) due to budget limits; implementation completeness unverified on sensitive execution path"
+      },
+      {
+        "symbol": "recordDeterministicChecks",
+        "qualifier": "session",
+        "reason": "CALLEE_TRUNCATED_ELIDED",
+        "category": "input_validation",
+        "file": "src/core/controlled-remediation.mjs",
+        "line": 1418,
+        "impact": "Sensitive callee 'session.recordDeterministicChecks' body was truncated (signature_and_guards) due to budget limits; implementation completeness unverified on sensitive execution path"
+      },
+      {
+        "symbol": "verifyEgressDenial",
+        "qualifier": "this",
+        "reason": "CALLEE_TRUNCATED_ELIDED",
+        "category": "input_validation",
+        "file": "src/core/sandbox-driver.mjs",
+        "line": 414,
+        "impact": "Sensitive callee 'this.verifyEgressDenial' body was truncated (signature_and_guards) due to budget limits; implementation completeness unverified on sensitive execution path"
+      },
+      {
+        "symbol": "reject",
+        "reason": "UNRESOLVED_SYMBOL",
+        "file": "src/core/sandbox-pool.mjs",
+        "line": 734,
+        "category": "error_handling",
+        "impact": "Referenced callee definition not found in modified file on sensitive execution path"
+      },
+      {
+        "symbol": "reject",
+        "qualifier": "req",
+        "reason": "EXTERNAL_CALLEE_UNRESOLVED",
+        "file": "src/core/sandbox-pool.mjs",
+        "line": 794,
+        "category": "error_handling",
+        "impact": "Referenced qualified callee 'req.reject' definition not found in modified file on sensitive execution path"
+      },
+      {
+        "symbol": "DaemonExecutionError",
+        "reason": "EXTRACTION_QUOTA_EXCEEDED",
+        "category": "error_handling",
+        "file": "src/core/sandbox-pool.mjs",
+        "line": 891,
+        "impact": "Extraction quota exceeded; sensitive callee 'DaemonExecutionError' on critical execution path not extracted."
+      },
+      {
+        "symbol": "verifyEgress",
+        "reason": "EXTRACTION_QUOTA_EXCEEDED",
+        "category": "input_validation",
+        "file": "src/core/sandbox-pool.mjs",
+        "line": 1181,
+        "impact": "Extraction quota exceeded; sensitive callee 'verifyEgress' on critical execution path not extracted."
+      },
+      {
+        "symbol": "SandboxSecurityViolationError",
+        "reason": "EXTRACTION_QUOTA_EXCEEDED",
+        "category": "error_handling",
+        "file": "src/core/sandbox-pool.mjs",
+        "line": 1197,
+        "impact": "Extraction quota exceeded; sensitive callee 'SandboxSecurityViolationError' on critical execution path not extracted."
+      },
+      {
+        "symbol": "verify",
+        "qualifier": "crypto",
+        "reason": "EXTERNAL_CALLEE_UNRESOLVED",
+        "file": "src/core/swarm-orchestrator.mjs",
+        "line": 625,
+        "category": "input_validation",
+        "impact": "External imported callee definition unavailable on sensitive execution path"
+      },
+      {
+        "symbol": "reject",
+        "reason": "UNRESOLVED_SYMBOL",
+        "file": "src/core/swarm-orchestrator.mjs",
+        "line": 763,
+        "category": "error_handling",
+        "impact": "Referenced callee definition not found in modified file on sensitive execution path"
+      },
+      {
+        "symbol": "recordFailure",
+        "qualifier": "this",
+        "reason": "EXTRACTION_QUOTA_EXCEEDED",
+        "category": "error_handling",
+        "file": "src/core/swarm-orchestrator.mjs",
+        "line": 785,
+        "impact": "Extraction quota exceeded; sensitive callee 'recordFailure' on critical execution path not extracted."
+      },
+      {
+        "symbol": "getCircuitBreakerStatus",
+        "reason": "EXTRACTION_QUOTA_EXCEEDED",
+        "category": "error_handling",
+        "file": "src/core/swarm-orchestrator.mjs",
+        "line": 856,
+        "impact": "Extraction quota exceeded; sensitive callee 'getCircuitBreakerStatus' on critical execution path not extracted."
+      },
+      {
+        "symbol": "verifyReceiptChain",
+        "reason": "EXTRACTION_QUOTA_EXCEEDED",
+        "category": "input_validation",
+        "file": "src/core/swarm-orchestrator.mjs",
+        "line": 1009,
+        "impact": "Extraction quota exceeded; sensitive callee 'verifyReceiptChain' on critical execution path not extracted."
+      },
+      {
+        "symbol": "verifyCoverageCompleteness",
+        "reason": "EXTRACTION_QUOTA_EXCEEDED",
+        "category": "input_validation",
+        "file": "src/core/swarm-orchestrator.mjs",
+        "line": 1015,
+        "impact": "Extraction quota exceeded; sensitive callee 'verifyCoverageCompleteness' on critical execution path not extracted."
+      },
+      {
+        "symbol": "createQuorumPolicy",
+        "reason": "CALLEE_TRUNCATED_ELIDED",
+        "category": "security",
+        "file": "src/core/taxonomy-quorum.mjs",
+        "line": 649,
+        "impact": "Sensitive callee 'createQuorumPolicy' body was truncated (signature_and_guards) due to budget limits; implementation completeness unverified on sensitive execution path"
+      },
+      {
+        "symbol": "validateProviderOutput",
+        "file": "src/adapters/provider-contract.mjs",
+        "reason": "GLOBAL_AST_CONTEXT_CEILING_EXCEEDED",
+        "category": "input_validation",
+        "impact": "Global 8 KB AST context ceiling reached; sensitive callee omitted during budget allocation."
+      },
+      {
+        "symbol": "_validateProviderKey",
+        "file": "src/adapters/mock-provider-sandbox.mjs",
+        "reason": "GLOBAL_AST_CONTEXT_CEILING_EXCEEDED",
+        "category": "input_validation",
+        "impact": "Global 8 KB AST context ceiling reached; sensitive callee omitted during budget allocation."
+      }
+    ],
     "producer": {
       "providerName": "tri-party-quorum",
       "findingsCount": 0,
