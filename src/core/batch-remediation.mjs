@@ -387,10 +387,21 @@ export class BatchRemediationSession {
           } else if (activeIsTypedCommand) {
             const cmd = activeRunner.command;
             const args = Array.isArray(activeRunner.args) ? activeRunner.args : [];
-            const rawCwd = activeRunner.cwd ? path.resolve(jail.jailPath, activeRunner.cwd) : jail.jailPath;
-            const relCwd = path.relative(jail.jailPath, rawCwd);
-            const isContained = !relCwd.startsWith("..") && !path.isAbsolute(relCwd);
-            const runnerCwd = isContained ? rawCwd : jail.jailPath;
+            let runnerCwd = jail.jailPath;
+            if (activeRunner.cwd) {
+              const rawCwd = path.resolve(jail.jailPath, activeRunner.cwd);
+              const relCwd = path.relative(jail.jailPath, rawCwd);
+              if (!relCwd.startsWith("..") && !path.isAbsolute(relCwd)) {
+                let realCwd = rawCwd;
+                let realJail = jail.jailPath;
+                try { realCwd = fs.realpathSync(rawCwd); } catch {}
+                try { realJail = fs.realpathSync(jail.jailPath); } catch {}
+                const realRel = path.relative(realJail, realCwd);
+                if (!realRel.startsWith("..") && !path.isAbsolute(realRel)) {
+                  runnerCwd = rawCwd;
+                }
+              }
+            }
             const hostRes = spawnSync(cmd, args, {
               cwd: runnerCwd,
               encoding: "utf8",

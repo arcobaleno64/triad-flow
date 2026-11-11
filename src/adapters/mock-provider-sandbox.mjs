@@ -225,7 +225,7 @@ async function main() {
   if (state.strictSafetyArgs !== false) {
     if (providerName === "agy") {
       const isStream = cliArgs.includes("--input-format=stream-json") || cliArgs.includes("--output-format=stream-json");
-      const hasPlan = cliArgs.some(a => a === "--mode=plan" || a.startsWith("--mode=plan"));
+      const hasPlan = cliArgs.includes("--mode=plan");
       const hasNoSlash = cliArgs.includes("--disable-slash-commands");
       const hasPrint = cliArgs.includes("--print") || isStream;
       if (!hasPlan || !hasNoSlash || !hasPrint) {
@@ -235,7 +235,7 @@ async function main() {
       }
     } else if (providerName === "claude") {
       const hasP = cliArgs.includes("-p");
-      const hasTools = cliArgs.some(a => a === "--tools=" || a.startsWith("--tools="));
+      const hasTools = cliArgs.includes("--tools=");
       if (!hasP || !hasTools) {
         process.stderr.write("[mock-error] Missing mandatory safety arguments for claude (-p, --tools=)\\n");
         appendLedger({ provider: providerName, argv: cliArgs, scenario: "mandatory_args_missing", exitCode: 2 });
@@ -243,7 +243,7 @@ async function main() {
       }
     } else if (providerName === "codex") {
       const hasExec = cliArgs.includes("exec");
-      const hasSandbox = cliArgs.some(a => a === "--sandbox=read-only" || a.startsWith("--sandbox="));
+      const hasSandbox = cliArgs.includes("--sandbox=read-only");
       if (!hasExec || !hasSandbox) {
         process.stderr.write("[mock-error] Missing mandatory safety arguments for codex (exec, --sandbox=read-only)\\n");
         appendLedger({ provider: providerName, argv: cliArgs, scenario: "mandatory_args_missing", exitCode: 2 });

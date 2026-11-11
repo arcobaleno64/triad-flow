@@ -140,6 +140,9 @@ export function detectLanguageTestRunner(repoDir, targetFiles = []) {
     if (fs.existsSync(path.join(repoDir, "test_suite.py"))) {
       return { command: "python", args: ["test_suite.py"] };
     }
+    if (fs.existsSync(path.join(repoDir, "pytest.ini"))) {
+      return { command: "python", args: ["-m", "pytest"] };
+    }
     return { command: "python", args: ["-m", "unittest"] };
   }
 

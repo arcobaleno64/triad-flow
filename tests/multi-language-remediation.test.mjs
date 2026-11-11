@@ -134,7 +134,7 @@ test("Contract 2: detectLanguageTestRunner resolves proper test commands for var
     // 3. Python project with pytest.ini
     fs.writeFileSync(path.join(tmpDir, "pytest.ini"), "[pytest]\n", "utf8");
     const pyRunner = detectLanguageTestRunner(tmpDir, ["app/main.py"]);
-    assert.deepEqual(pyRunner, { command: "python", args: ["-m", "unittest"] });
+    assert.deepEqual(pyRunner, { command: "python", args: ["-m", "pytest"] });
     fs.rmSync(path.join(tmpDir, "pytest.ini"));
 
     // 4. Custom test oracle script in workspace
