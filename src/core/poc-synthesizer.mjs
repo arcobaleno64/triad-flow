@@ -799,7 +799,15 @@ export class ActivePoCSynthesizer {
    * @param {number} [options.timeoutMs]
    * @returns {Promise<{ passed: boolean, exitCode: number, stdout: string, stderr: string, durationMs: number, error?: string }>}
    */
-  async executeHarness(harness, targetContext, options = {}) {
+  /**
+   * Executes a PoCHarness synchronously against a specified target.
+   *
+   * @param {PoCHarness} harness
+   * @param {any} targetContext
+   * @param {object} [options={}]
+   * @returns {{ passed: boolean, exitCode: number, stdout: string, stderr: string, durationMs: number, error?: string }}
+   */
+  executeHarnessSync(harness, targetContext, options = {}) {
     if (!(harness instanceof PoCHarness)) {
       throw new PoCSynthesisError("ActivePoCSynthesizer.executeHarness requires a valid PoCHarness instance");
     }
@@ -829,7 +837,19 @@ export class ActivePoCSynthesizer {
   }
 
   /**
-   * Performs differential verification across Pre-Patch and Post-Patch states.
+   * Executes a PoCHarness asynchronously against a specified target.
+   *
+   * @param {PoCHarness} harness
+   * @param {any} targetContext
+   * @param {object} [options={}]
+   * @returns {Promise<{ passed: boolean, exitCode: number, stdout: string, stderr: string, durationMs: number, error?: string }>}
+   */
+  async executeHarness(harness, targetContext, options = {}) {
+    return this.executeHarnessSync(harness, targetContext, options);
+  }
+
+  /**
+   * Performs differential verification synchronously across Pre-Patch and Post-Patch states.
    *
    * Invariant:
    * - Pre-Patch execution: MUST FAIL (ExitCode != 0 or error) proving the vulnerability exists.
@@ -840,7 +860,7 @@ export class ActivePoCSynthesizer {
    * @param {any} params.prePatch - Pre-patch target (function, code string, or path)
    * @param {any} params.postPatch - Post-patch target (function, code string, or path)
    * @param {object} [params.options]
-   * @returns {Promise<{
+   * @returns {{
    *   status: string,
    *   verified: boolean,
    *   cwe: string,
@@ -850,9 +870,9 @@ export class ActivePoCSynthesizer {
    *   durationMs: number,
    *   digest: string,
    *   timestamp: string
-   * }>}
+   * }}
    */
-  async verifyDifferential({ harness, prePatch, postPatch, options = {} }) {
+  verifyDifferentialSync({ harness, prePatch, postPatch, options = {} }) {
     if (!prePatch) {
       throw new DifferentialVerificationError("Missing required 'prePatch' target for differential verification");
     }
@@ -865,7 +885,7 @@ export class ActivePoCSynthesizer {
     const overallStart = performance.now();
 
     // Step 1: Pre-Patch Execution
-    const preResult = await this.executeHarness(actualHarness, prePatch, options);
+    const preResult = this.executeHarnessSync(actualHarness, prePatch, options);
 
     // In a physical vulnerability PoC, Pre-Patch MUST trigger the vulnerability (red light / failure)
     const preReproduced = !preResult.passed || preResult.exitCode !== 0;
@@ -888,7 +908,7 @@ export class ActivePoCSynthesizer {
     }
 
     // Step 2: Post-Patch Execution
-    const postResult = await this.executeHarness(actualHarness, postPatch, options);
+    const postResult = this.executeHarnessSync(actualHarness, postPatch, options);
     const postRemediated = postResult.passed && postResult.exitCode === 0;
 
     const durationMs = Math.round(performance.now() - overallStart);
@@ -926,6 +946,13 @@ export class ActivePoCSynthesizer {
     const digest = computeSha256(JSON.stringify(payload));
 
     return Object.freeze({ ...payload, digest });
+  }
+
+  /**
+   * Performs differential verification across Pre-Patch and Post-Patch states.
+   */
+  async verifyDifferential({ harness, prePatch, postPatch, options = {} }) {
+    return this.verifyDifferentialSync({ harness, prePatch, postPatch, options });
   }
 
   /**
@@ -971,7 +998,7 @@ export class ActivePoCSynthesizer {
    *
    * @private
    */
-  async _executeFunctionTarget(harness, fn, timeoutMs, startTime) {
+  _executeFunctionTarget(harness, fn, timeoutMs, startTime) {
     let stdoutBuffer = [];
     let stderrBuffer = [];
     let exitCode = 0;
@@ -1141,7 +1168,7 @@ export class ActivePoCSynthesizer {
    *
    * @private
    */
-  async _executeCodeStringTarget(harness, codeString, timeoutMs, startTime) {
+  _executeCodeStringTarget(harness, codeString, timeoutMs, startTime) {
     const sandbox = {
       console: {
         log: (...args) => stdout.push(args.join(" ")),
@@ -1209,7 +1236,7 @@ export class ActivePoCSynthesizer {
    *
    * @private
    */
-  async _executeSubprocessTarget(harness, targetPath, timeoutMs, startTime, options = {}) {
+  _executeSubprocessTarget(harness, targetPath, timeoutMs, startTime, options = {}) {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-poc-runner-"));
     const harnessFilePath = path.join(tempDir, "poc-harness.cjs");
 

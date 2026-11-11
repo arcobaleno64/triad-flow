@@ -1256,3 +1256,96 @@ test("Contract 21: Multi-Defect Generalization - BENCH-REAL-003 (CWE-22 Path Tra
   }
 });
 
+test("Contract 13: Phase 2 ActivePoCSynthesizer Differential Verification & Asset Hardening in Patch Jail", () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-rem-poc-"));
+  const subRepo = path.join(tmpDir, "repo");
+  fs.mkdirSync(path.join(subRepo, "src"), { recursive: true });
+
+  try {
+    execFileSync("git", ["init"], { cwd: subRepo, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "Test"], { cwd: subRepo, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@test.local"], { cwd: subRepo, stdio: "ignore" });
+
+    // Vulnerable pre-patch code (Prototype Pollution in merge)
+    const vulnCode = [
+      "function deepMerge(target, src) {",
+      "  for (const k of Object.keys(src)) {",
+      "    if (typeof src[k] === 'object' && src[k] !== null) {",
+      "      if (!target[k]) target[k] = {};",
+      "      deepMerge(target[k], src[k]);",
+      "    } else {",
+      "      target[k] = src[k];",
+      "    }",
+      "  }",
+      "  return target;",
+      "}",
+      "module.exports = { deepMerge };"
+    ].join("\n") + "\n";
+    fs.writeFileSync(path.join(subRepo, "src", "merge.js"), vulnCode, "utf8");
+
+    execFileSync("git", ["add", "."], { cwd: subRepo, stdio: "ignore" });
+    execFileSync("git", ["commit", "-m", "initial vulnerable commit"], { cwd: subRepo, stdio: "ignore" });
+    const headSha = execFileSync("git", ["rev-parse", "HEAD"], { cwd: subRepo, encoding: "utf8" }).trim();
+
+    // 1. Propose remediation
+    const session = new ControlledRemediationSession("FINDING-PP-001", ["src/merge.js"]);
+    const safeDiff = [
+      "diff --git a/src/merge.js b/src/merge.js",
+      "--- a/src/merge.js",
+      "+++ b/src/merge.js",
+      "@@ -1,5 +1,6 @@",
+      " function deepMerge(target, src) {",
+      "   for (const k of Object.keys(src)) {",
+      "+    if (k === '__proto__' || k === 'prototype' || k === 'constructor') continue;",
+      "     if (typeof src[k] === 'object' && src[k] !== null) {",
+      "       if (!target[k]) target[k] = {};",
+      "       deepMerge(target[k], src[k]);"
+    ].join("\n") + "\n";
+
+    session.proposeFix({
+      diff: safeDiff,
+      rationale: "Guard __proto__ to prevent prototype pollution"
+    });
+    session.authorizePatch({
+      authorizer: { identity: "lead@triad.flow", type: "human" }
+    });
+
+    // 2. Execute in Jail with ActivePoCSynthesizer Differential Verification
+    const hardenRelPath = "tests/merge.regression.test.mjs";
+    const trial = session.executeInJailWorktree(subRepo, {
+      baseSha: headSha,
+      pocVerification: {
+        cwe: "CWE-1321",
+        targetFile: "src/merge.js",
+        targetFunction: "deepMerge",
+        hardenRegressionPath: hardenRelPath,
+        required: true
+      },
+      testRunnerFn: (jailDir) => {
+        return {
+          testCommand: "node --test",
+          exitCode: 0,
+          passedCount: 1,
+          failedCount: 0
+        };
+      }
+    });
+
+    assert.equal(session.status, REMEDIATION_STATES.FIXED_PENDING_VERIFY);
+    assert.ok(trial.checkResult.pocVerification);
+    assert.equal(trial.checkResult.pocVerification.verified, true);
+    assert.equal(trial.checkResult.pocVerification.status, "DIFFERENTIAL_VERIFIED");
+    assert.ok(trial.checkResult.pocVerification.digest);
+    assert.ok(trial.checkResult.pocVerification.hardenedFile);
+
+    // 3. Receipt verification
+    const receipt = session.toReceipt();
+    assert.ok(receipt.deterministicChecks.pocVerification);
+    assert.equal(receipt.deterministicChecks.pocVerification.verified, true);
+    assert.equal(receipt.deterministicChecks.pocVerification.cwe, "CWE-1321");
+  } finally {
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+  }
+});
+
+

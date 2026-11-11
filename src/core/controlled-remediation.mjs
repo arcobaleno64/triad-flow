@@ -45,6 +45,11 @@ import {
   SilentDowngradeProhibitedError,
   SANDBOX_DRIVERS
 } from "./sandbox-driver.mjs";
+import {
+  ActivePoCSynthesizer,
+  VERIFICATION_STATUS,
+  CWE_TAXONOMY
+} from "./poc-synthesizer.mjs";
 
 export {
   scanStructuralAntiEvasionViolations,
@@ -861,7 +866,9 @@ export function buildRemediationReceipt(params = {}) {
     timedOut: Boolean(params.deterministicChecks?.timedOut),
     postTestTreeDigest: params.deterministicChecks?.postTestTreeDigest || null,
     runner: params.deterministicChecks?.runner || "test-runner",
-    executionEnvironment: params.deterministicChecks?.executionEnvironment || (Boolean(params.jail?.driver === "container" || params.jail?.driver === "container-pool") ? "container" : "host")
+    executionEnvironment: params.deterministicChecks?.executionEnvironment || (Boolean(params.jail?.driver === "container" || params.jail?.driver === "container-pool") ? "container" : "host"),
+    ...(params.deterministicChecks?.causalVerification ? { causalVerification: params.deterministicChecks.causalVerification } : {}),
+    ...(params.deterministicChecks?.pocVerification ? { pocVerification: params.deterministicChecks.pocVerification } : {})
   };
 
   const closureVerification = {
@@ -1077,13 +1084,17 @@ export class ControlledRemediationSession {
     return this.status;
   }
 
-  executeInJailWorktree(repoPath, {
-    baseSha = "HEAD",
-    testRunnerFn = null,
-    testRunner = null,
-    orchestrator = "jail-orchestrator",
-    sandboxDriver = null
-  } = {}) {
+  executeInJailWorktree(repoPath, options = {}) {
+    const {
+      baseSha = "HEAD",
+      testRunnerFn = null,
+      testRunner = null,
+      orchestrator = "jail-orchestrator",
+      sandboxDriver = null,
+      pocVerification: optPocVerification = null,
+      pocConfig: optPocConfig = null,
+      pocSynthesizer: optPocSynthesizer = null
+    } = options;
     if (this.status !== REMEDIATION_STATES.PATCH_AUTHORIZED) {
       throw new RemediationTransitionError(
         this.status,
@@ -1302,10 +1313,76 @@ export class ControlledRemediationSession {
         };
       }
 
+      // Phase 2: Active PoC Differential Verification & Asset Hardening
+      let pocVerification = null;
+      const pocConfig = optPocVerification || optPocConfig || options.pocVerification || options.pocConfig || this.options?.pocVerification || null;
+      let pocViolation = false;
+
+      if (pocConfig && typeof pocConfig === "object") {
+        const pocSynthesizer = optPocSynthesizer || options.pocSynthesizer || new ActivePoCSynthesizer();
+        const cwe = pocConfig.cwe || this.finding?.cwe || pocConfig.cweId;
+        if (cwe) {
+          const prePatchTarget = pocConfig.prePatch
+            || (pocConfig.prePatchFunction || pocConfig.prePatchCode)
+            || path.resolve(repoPath, pocConfig.targetFile || this.targetFiles[0] || "");
+          const postPatchTarget = pocConfig.postPatch
+            || (pocConfig.postPatchFunction || pocConfig.postPatchCode)
+            || path.resolve(jail.jailPath, pocConfig.targetFile || this.targetFiles[0] || "");
+
+          const harnessSpec = {
+            cwe,
+            targetModule: typeof postPatchTarget === "string" ? postPatchTarget : undefined,
+            targetFunction: pocConfig.targetFunction || undefined,
+            payload: pocConfig.payload || undefined,
+            metadata: { findingId: this.findingId, ...(pocConfig.metadata || {}) }
+          };
+          const harness = pocSynthesizer.synthesize(harnessSpec);
+
+          let diffReceipt = null;
+          try {
+            diffReceipt = pocSynthesizer.verifyDifferentialSync({
+              harness,
+              prePatch: prePatchTarget,
+              postPatch: postPatchTarget,
+              options: pocConfig.options || {}
+            });
+          } catch (pocErr) {
+            diffReceipt = {
+              status: VERIFICATION_STATUS.REPRODUCTION_FAILED,
+              verified: false,
+              reason: `PoC execution error: ${pocErr.message}`,
+              digest: null,
+              error: pocErr.message
+            };
+          }
+
+          // Asset Hardening: Write permanent regression test file if requested
+          let hardenedFile = null;
+          if (pocConfig.hardenRegressionPath && diffReceipt?.verified) {
+            const hardenDest = path.isAbsolute(pocConfig.hardenRegressionPath)
+              ? pocConfig.hardenRegressionPath
+              : path.resolve(jail.jailPath, pocConfig.hardenRegressionPath);
+            hardenedFile = pocSynthesizer.writeRegressionTestFile(harness, hardenDest, {
+              testFramework: pocConfig.testFramework,
+              advisoryId: pocConfig.advisoryId || this.findingId
+            });
+          }
+
+          pocVerification = {
+            ...diffReceipt,
+            hardenedFile: hardenedFile?.filePath || null
+          };
+
+          if (pocConfig.required && (!diffReceipt || !diffReceipt.verified)) {
+            pocViolation = true;
+          }
+        }
+      }
+
       const exitCode = typeof testRes?.exitCode === "number" ? testRes.exitCode : (testRes ? 0 : 1);
       const passedCount = typeof testRes?.passedCount === "number" ? testRes.passedCount : (exitCode === 0 ? 1 : 0);
       const failedCount = typeof testRes?.failedCount === "number" ? testRes.failedCount : (exitCode === 0 ? 0 : 1);
-      const regressionDetected = exitCode !== 0 || failedCount > 0 || dirtyLeakDetected || causalViolation || Boolean(testRes?.regressionDetected);
+      const regressionDetected = exitCode !== 0 || failedCount > 0 || dirtyLeakDetected || causalViolation || pocViolation || Boolean(testRes?.regressionDetected);
 
       const checkResult = {
         executed: true,
@@ -1321,6 +1398,7 @@ export class ControlledRemediationSession {
         stdout: testRes?.stdout ? String(testRes.stdout).slice(0, 4096) : "",
         stderr: testRes?.stderr ? String(testRes.stderr).slice(0, 4096) : "",
         causalVerification,
+        pocVerification,
         runner: testRes?.runner || (isContainer ? "container-runner" : "worktree-runner"),
         executionEnvironment: testRes?.executionEnvironment || (isContainer ? "container" : "host")
       };
@@ -1356,7 +1434,9 @@ export class ControlledRemediationSession {
       dirtyLeakFile: checks.dirtyLeakFile || null,
       postTestTreeDigest: checks.postTestTreeDigest || null,
       runner: checks.runner || "test-runner",
-      executionEnvironment: checks.executionEnvironment || (this.jail?.driver === "container" ? "container" : "host")
+      executionEnvironment: checks.executionEnvironment || (this.jail?.driver === "container" ? "container" : "host"),
+      causalVerification: checks.causalVerification || null,
+      pocVerification: checks.pocVerification || null
     };
 
     const runner = checks.runner || "test-runner";
