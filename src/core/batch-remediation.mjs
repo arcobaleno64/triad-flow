@@ -363,13 +363,17 @@ export class BatchRemediationSession {
           if (driver.name === "container") {
             const cmd = activeRunner?.command;
             const args = Array.isArray(activeRunner?.args) ? activeRunner.args : [];
-            const containerRes = jail.runInContainer([cmd, ...args]);
+            const containerRes = jail.runInContainer([cmd, ...args], {
+              cwd: activeRunner?.cwd || null,
+              timeout: activeRunner?.timeout || null
+            });
             testRes = {
               testCommand: `${cmd} ${args.join(" ")}`.trim(),
               exitCode: containerRes.exitCode,
               passedCount: containerRes.exitCode === 0 ? 1 : 0,
               failedCount: containerRes.exitCode === 0 ? 0 : 1,
               regressionDetected: containerRes.exitCode !== 0,
+              timedOut: Boolean(containerRes.timedOut),
               runner: "container-runner",
               executionEnvironment: "container"
             };

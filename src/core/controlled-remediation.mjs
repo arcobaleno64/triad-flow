@@ -855,6 +855,7 @@ export function buildRemediationReceipt(params = {}) {
     passedCount: typeof params.deterministicChecks?.passedCount === "number" ? params.deterministicChecks.passedCount : 0,
     failedCount: typeof params.deterministicChecks?.failedCount === "number" ? params.deterministicChecks.failedCount : 0,
     regressionDetected: Boolean(params.deterministicChecks?.regressionDetected),
+    timedOut: Boolean(params.deterministicChecks?.timedOut),
     postTestTreeDigest: params.deterministicChecks?.postTestTreeDigest || null,
     runner: params.deterministicChecks?.runner || "test-runner",
     executionEnvironment: params.deterministicChecks?.executionEnvironment || (params.jail?.driver === "container" ? "container" : "host")
@@ -1129,24 +1130,31 @@ export class ControlledRemediationSession {
           // Strictly enforced container execution via jail.runInContainer
           const cmd = runner.command;
           const args = Array.isArray(runner.args) ? runner.args : [];
-          const containerRes = jail.runInContainer([cmd, ...args]);
+          const containerRes = jail.runInContainer([cmd, ...args], {
+            cwd: runner.cwd || null,
+            timeout: runner.timeout || null
+          });
           testRes = {
             testCommand: `${cmd} ${args.join(" ")}`.trim(),
             exitCode: containerRes.exitCode,
             passedCount: containerRes.exitCode === 0 ? 1 : 0,
             failedCount: containerRes.exitCode === 0 ? 0 : 1,
             regressionDetected: containerRes.exitCode !== 0,
+            timedOut: Boolean(containerRes.timedOut),
             runner: "container-runner",
             executionEnvironment: "container"
           };
         } else if (isTypedCommand) {
           const cmd = runner.command;
           const args = Array.isArray(runner.args) ? runner.args : [];
+          const rawCwd = runner.cwd ? path.resolve(jail.jailPath, runner.cwd) : jail.jailPath;
+          const runnerCwd = rawCwd.startsWith(jail.jailPath) ? rawCwd : jail.jailPath;
           const hostRes = spawnSync(cmd, args, {
-            cwd: jail.jailPath,
+            cwd: runnerCwd,
             encoding: "utf8",
             windowsHide: true,
-            shell: process.platform === "win32"
+            shell: process.platform === "win32",
+            timeout: runner.timeout || undefined
           });
           testRes = {
             testCommand: `${cmd} ${args.join(" ")}`.trim(),
@@ -1154,6 +1162,7 @@ export class ControlledRemediationSession {
             passedCount: hostRes.status === 0 ? 1 : 0,
             failedCount: hostRes.status === 0 ? 0 : 1,
             regressionDetected: hostRes.status !== 0,
+            timedOut: Boolean(hostRes.error && hostRes.error.code === "ETIMEDOUT"),
             runner: "worktree-runner",
             executionEnvironment: "host"
           };
@@ -1215,6 +1224,7 @@ export class ControlledRemediationSession {
         passedCount,
         failedCount,
         regressionDetected,
+        timedOut: Boolean(testRes?.timedOut),
         dirtyLeakDetected,
         dirtyLeakFile,
         postTestTreeDigest,
@@ -1248,6 +1258,7 @@ export class ControlledRemediationSession {
       passedCount,
       failedCount,
       regressionDetected,
+      timedOut: Boolean(checks.timedOut),
       dirtyLeakDetected: Boolean(checks.dirtyLeakDetected),
       dirtyLeakFile: checks.dirtyLeakFile || null,
       postTestTreeDigest: checks.postTestTreeDigest || null,

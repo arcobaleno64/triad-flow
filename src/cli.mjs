@@ -133,6 +133,10 @@ Options:
   --report=<file>             Input findings report to remediate
   --diff=<file>               Candidate patch diff file to verify
   --sandbox=<driver>          Sandbox driver: worktree or container (default: worktree)
+  --test-cmd=<cmd>            Test command to execute in Patch Jail (e.g. "npm test")
+  --container-image=<image>   Container image identity (default: node:20-slim)
+  --container-runtime=<rt>    Container runtime: docker or podman (default: docker)
+  --pinned-image-digest=<sha> Expected container image sha256 digest
   --synthesizer=<provider>    Provider to generate patch candidate
   --authorizer=<id>           Authorized human or gate entity ID
   --receipt=<file>            Save cryptographic remediation receipt
@@ -655,6 +659,7 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
     if (sandboxIdx !== -1) {
       if (argv[sandboxIdx + 1] && !argv[sandboxIdx + 1].startsWith("--")) {
         sandboxArg = argv[sandboxIdx + 1];
+        consumedArgsIndices.add(sandboxIdx + 1);
       } else {
         sandboxArg = "";
       }
@@ -664,6 +669,54 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
   const hasSandboxFlag = hasSandboxExplicit || argv.includes("--sandbox");
   if (!hasSandboxFlag) {
     sandboxArg = options.sandbox || "worktree";
+  }
+
+  let testCmdArg = null;
+  const testCmdExplicit = argv.find(a => a.startsWith("--test-cmd=") || a.startsWith("--test-command="));
+  if (testCmdExplicit) {
+    testCmdArg = testCmdExplicit.replace(/^--(?:test-cmd|test-command)=/, "");
+  } else {
+    const testCmdIdx = argv.findIndex(a => a === "--test-cmd" || a === "--test-command");
+    if (testCmdIdx !== -1 && argv[testCmdIdx + 1] && !argv[testCmdIdx + 1].startsWith("--")) {
+      testCmdArg = argv[testCmdIdx + 1];
+      consumedArgsIndices.add(testCmdIdx + 1);
+    }
+  }
+
+  let containerImageArg = null;
+  const imageExplicit = argv.find(a => a.startsWith("--container-image=") || a.startsWith("--image="));
+  if (imageExplicit) {
+    containerImageArg = imageExplicit.replace(/^--(?:container-image|image)=/, "");
+  } else {
+    const imageIdx = argv.findIndex(a => a === "--container-image" || a === "--image");
+    if (imageIdx !== -1 && argv[imageIdx + 1] && !argv[imageIdx + 1].startsWith("--")) {
+      containerImageArg = argv[imageIdx + 1];
+      consumedArgsIndices.add(imageIdx + 1);
+    }
+  }
+
+  let containerRuntimeArg = null;
+  const runtimeExplicit = argv.find(a => a.startsWith("--container-runtime=") || a.startsWith("--runtime="));
+  if (runtimeExplicit) {
+    containerRuntimeArg = runtimeExplicit.replace(/^--(?:container-runtime|runtime)=/, "");
+  } else {
+    const runtimeIdx = argv.findIndex(a => a === "--container-runtime" || a === "--runtime");
+    if (runtimeIdx !== -1 && argv[runtimeIdx + 1] && !argv[runtimeIdx + 1].startsWith("--")) {
+      containerRuntimeArg = argv[runtimeIdx + 1];
+      consumedArgsIndices.add(runtimeIdx + 1);
+    }
+  }
+
+  let pinnedDigestArg = null;
+  const pinnedExplicit = argv.find(a => a.startsWith("--pinned-image-digest="));
+  if (pinnedExplicit) {
+    pinnedDigestArg = pinnedExplicit.slice("--pinned-image-digest=".length);
+  } else {
+    const pinnedIdx = argv.indexOf("--pinned-image-digest");
+    if (pinnedIdx !== -1 && argv[pinnedIdx + 1] && !argv[pinnedIdx + 1].startsWith("--")) {
+      pinnedDigestArg = argv[pinnedIdx + 1];
+      consumedArgsIndices.add(pinnedIdx + 1);
+    }
   }
 
   let tierArg = null;
@@ -731,6 +784,13 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
     if (arg.startsWith("--authorizer=") || arg === "--authorizer") return true;
     if (arg.startsWith("--synthesizer=") || arg === "--synthesizer") return true;
     if (arg.startsWith("--sandbox=") || arg === "--sandbox") return true;
+    if (arg.startsWith("--test-cmd=") || arg === "--test-cmd") return true;
+    if (arg.startsWith("--test-command=") || arg === "--test-command") return true;
+    if (arg.startsWith("--container-image=") || arg === "--container-image") return true;
+    if (arg.startsWith("--image=") || arg === "--image") return true;
+    if (arg.startsWith("--container-runtime=") || arg === "--container-runtime") return true;
+    if (arg.startsWith("--runtime=") || arg === "--runtime") return true;
+    if (arg.startsWith("--pinned-image-digest=") || arg === "--pinned-image-digest") return true;
     if (arg.startsWith("--corpus=") || arg === "--corpus") return true;
     if (arg === "--live" || arg === "--virtual") return true;
     if (arg === "--help" || arg === "-h") return true;
@@ -1744,11 +1804,26 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
       let sandboxDriverInstance;
       try {
         sandboxDriverInstance = resolveSandboxDriver(sandboxArg, {
-          execFn: options.sandboxExecFn || options.execFn || null
+          execFn: options.sandboxExecFn || options.execFn || null,
+          image: containerImageArg || options.image || undefined,
+          containerRuntime: containerRuntimeArg || options.containerRuntime || undefined,
+          pinnedImageDigest: pinnedDigestArg || options.pinnedImageDigest || undefined
         });
       } catch (err) {
         io.stderr.write(`✖ [USAGE ERROR] ${err.message}\n`);
         return EXIT_CODES.USAGE_ERROR;
+      }
+
+      let cliTestRunner = null;
+      if (testCmdArg && typeof testCmdArg === "string" && testCmdArg.trim()) {
+        const parts = testCmdArg.trim().match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) || [];
+        const cleanParts = parts.map(p => p.replace(/^["']|["']$/g, ""));
+        if (cleanParts.length > 0) {
+          cliTestRunner = {
+            command: cleanParts[0],
+            args: cleanParts.slice(1)
+          };
+        }
       }
 
       if (isBatch) {
@@ -1889,7 +1964,7 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
 
           const anyAuthorized = Array.from(batch.sessions.values()).some(s => s.status === REMEDIATION_STATES.PATCH_AUTHORIZED);
           if (anyAuthorized) {
-            const batchRunner = opts.testRunner || opts.testRunnerFn;
+            const batchRunner = opts.testRunner || opts.testRunnerFn || cliTestRunner;
             const validRunner = typeof batchRunner === "function" || (batchRunner && typeof batchRunner === "object" && batchRunner.command);
             if (validRunner) {
               io.stderr.write(`[3/4] Executing batch sequential trials in ephemeral Patch Jail worktree...\n`);
@@ -2051,7 +2126,7 @@ export async function runCli(argv = process.argv.slice(2), io = { stdout: proces
         }
 
         if (session.status === REMEDIATION_STATES.PATCH_AUTHORIZED) {
-          const singleRunner = opts.testRunner || opts.testRunnerFn;
+          const singleRunner = opts.testRunner || opts.testRunnerFn || cliTestRunner;
           const validRunner = typeof singleRunner === "function" || (singleRunner && typeof singleRunner === "object" && singleRunner.command);
           if (validRunner) {
             io.stderr.write(`[3/4] Executing trial inside ephemeral Patch Jail worktree...\n`);

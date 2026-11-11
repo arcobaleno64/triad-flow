@@ -30,7 +30,9 @@ import {
   SandboxSecurityViolationError,
   SANDBOX_DRIVERS,
   DEFAULT_CONTAINER_IMAGE,
-  ACTIVE_EGRESS_PROBE_SCRIPT
+  ACTIVE_EGRESS_PROBE_SCRIPT,
+  ACTIVE_EGRESS_PROBE_SCRIPT_PYTHON,
+  ACTIVE_EGRESS_PROBE_SCRIPT_SH
 } from "../src/core/sandbox-driver.mjs";
 
 import {
@@ -941,5 +943,233 @@ test("Contract 20: WorktreeDriver supports typed command runner and records work
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
+});
+
+test("Contract 21: Podman runtime support and selinuxMount (:z) volume option", () => {
+  const driver = new ContainerDriver({
+    containerRuntime: "podman",
+    selinuxMount: true
+  });
+  assert.equal(driver.runtime, "podman");
+
+  const runArgs = driver.buildRunArgs("/host/repo", "/tmp/jail", ["cargo", "test"]);
+  assert.ok(runArgs.some(a => a.includes("/workspace:ro,z")));
+  assert.ok(runArgs.some(a => a.includes("/jail:rw,z")));
+  assert.ok(runArgs.includes("cargo"));
+  assert.ok(runArgs.includes("test"));
+});
+
+test("Contract 22: Working directory (cwd) forwarding in container execution (-w /jail/<cwd>)", () => {
+  const driver = new ContainerDriver({
+    containerRuntime: "docker"
+  });
+
+  // 1. Direct buildRunArgs verification
+  const runArgs = driver.buildRunArgs("/host/repo", "/tmp/jail", ["npm", "test"], { cwd: "packages/core" });
+  const wIdx = runArgs.indexOf("-w");
+  assert.notEqual(wIdx, -1);
+  assert.equal(runArgs[wIdx + 1], "/jail/packages/core");
+
+  // Path traversal guard
+  const traversalArgs = driver.buildRunArgs("/host/repo", "/tmp/jail", ["npm", "test"], { cwd: "../../../etc" });
+  const wTravIdx = traversalArgs.indexOf("-w");
+  assert.equal(traversalArgs[wTravIdx + 1], "/jail");
+
+  // 2. ControlledRemediationSession cwd forwarding
+  let capturedRunOpts = null;
+  const mockExecFn = (cmd, args) => {
+    if (args.includes("--version")) return { status: 0, stdout: "Docker version 27.0.3\n" };
+    if (args.includes("info")) return { status: 0, stdout: "27.0.3\n" };
+    if (args.includes("inspect")) return { status: 0, stdout: "sha256:d8a2bc4e7a4b89e5c9f5653b47c0b05b38234857ef129994c50259e5a8c2efec\n" };
+    if (args.includes("sh") && args.some(a => String(a).includes("192.0.2.1"))) {
+      return { status: 42, stdout: "TF_EGRESS_DENIED:ENETUNREACH\n", stderr: "" };
+    }
+    // Inspect runner command
+    if (args.includes("node") && args.includes("sub-test.js")) {
+      const wPos = args.indexOf("-w");
+      capturedRunOpts = { workDir: args[wPos + 1] };
+      return { status: 0, stdout: "sub-test passed\n" };
+    }
+    return { status: 0, stdout: "" };
+  };
+
+  const cDriver = new ContainerDriver({
+    containerRuntime: "docker",
+    execFn: mockExecFn
+  });
+
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-cwd-test-"));
+  try {
+    execFileSync("git", ["init"], { cwd: tmpDir, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "Triad Test"], { cwd: tmpDir, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@triadflow.dev"], { cwd: tmpDir, stdio: "ignore" });
+    fs.mkdirSync(path.join(tmpDir, "subpkg"), { recursive: true });
+    fs.writeFileSync(path.join(tmpDir, "subpkg", "index.js"), 'console.log("sub");\n');
+    execFileSync("git", ["add", "."], { cwd: tmpDir, stdio: "ignore" });
+    execFileSync("git", ["commit", "-m", "init"], { cwd: tmpDir, stdio: "ignore" });
+
+    const session = new ControlledRemediationSession("F-CWD", ["subpkg/index.js"]);
+    session.proposeFix({
+      diff: "diff --git a/subpkg/index.js b/subpkg/index.js\n--- a/subpkg/index.js\n+++ b/subpkg/index.js\n@@ -1 +1 @@\n-console.log(\"sub\");\n+console.log(\"fixed\");\n",
+      rationale: "Fix sub"
+    });
+    session.authorizePatch({ authorizer: { identity: "sec-lead", type: "human" } });
+
+    session.executeInJailWorktree(tmpDir, {
+      sandboxDriver: cDriver,
+      testRunnerFn: { command: "node", args: ["sub-test.js"], cwd: "subpkg" }
+    });
+
+    assert.equal(session.status, REMEDIATION_STATES.FIXED_PENDING_VERIFY);
+    assert.equal(capturedRunOpts?.workDir, "/jail/subpkg");
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("Contract 23: Python and Shell active egress probe support with getEgressProbeScript", () => {
+  const nodeDriver = new ContainerDriver({ image: "node:20-slim" });
+  assert.equal(nodeDriver.getEgressProbeScript(), ACTIVE_EGRESS_PROBE_SCRIPT);
+
+  const pythonDriver = new ContainerDriver({ image: "python:3.11-slim" });
+  assert.equal(pythonDriver.getEgressProbeScript(), ACTIVE_EGRESS_PROBE_SCRIPT_PYTHON);
+
+  const alpineDriver = new ContainerDriver({ image: "alpine:3.19" });
+  assert.equal(alpineDriver.getEgressProbeScript(), ACTIVE_EGRESS_PROBE_SCRIPT_SH);
+
+  const customDriver = new ContainerDriver({
+    image: "custom:latest",
+    egressProbeScript: "custom-probe-cmd"
+  });
+  assert.equal(customDriver.getEgressProbeScript(), "custom-probe-cmd");
+  assert.equal(customDriver.getEgressProbeScript({ probeScript: "override-cmd" }), "override-cmd");
+});
+
+test("Contract 24: Execution timeout handling in container runner", () => {
+  const timeoutExecFn = (cmd, args, opts) => {
+    if (args.includes("--version")) return { status: 0, stdout: "Docker version 27.0.3\n" };
+    if (args.includes("info")) return { status: 0, stdout: "27.0.3\n" };
+    if (args.includes("inspect")) return { status: 0, stdout: "sha256:d8a2bc4e7a4b89e5c9f5653b47c0b05b38234857ef129994c50259e5a8c2efec\n" };
+    if (args.includes("sh") && args.some(a => String(a).includes("192.0.2.1"))) {
+      return { status: 42, stdout: "TF_EGRESS_DENIED:ENETUNREACH\n", stderr: "" };
+    }
+    // Simulate hanging test that triggers timeout
+    const err = new Error("spawnSync ETIMEDOUT");
+    err.code = "ETIMEDOUT";
+    return { status: null, error: err };
+  };
+
+  const driver = new ContainerDriver({
+    containerRuntime: "docker",
+    execFn: timeoutExecFn,
+    timeout: 5000
+  });
+
+  const res = driver.executeInContainer("/repo", "/jail", ["npm", "test"]);
+  assert.equal(res.status, 124);
+  assert.equal(res.exitCode, 124);
+  assert.equal(res.timedOut, true);
+  assert.match(res.stderr, /timed out after 5000ms/);
+
+  // ControlledRemediationSession timeout recording
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tf-timeout-test-"));
+  try {
+    execFileSync("git", ["init"], { cwd: tmpDir, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "Triad Test"], { cwd: tmpDir, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@triadflow.dev"], { cwd: tmpDir, stdio: "ignore" });
+    fs.writeFileSync(path.join(tmpDir, "index.js"), 'console.log("base");\n');
+    execFileSync("git", ["add", "."], { cwd: tmpDir, stdio: "ignore" });
+    execFileSync("git", ["commit", "-m", "init"], { cwd: tmpDir, stdio: "ignore" });
+
+    const session = new ControlledRemediationSession("F-TIMEOUT", ["index.js"]);
+    session.proposeFix({
+      diff: "diff --git a/index.js b/index.js\n--- a/index.js\n+++ b/index.js\n@@ -1 +1 @@\n-console.log(\"base\");\n+console.log(\"fixed\");\n",
+      rationale: "Fix"
+    });
+    session.authorizePatch({ authorizer: { identity: "sec-lead", type: "human" } });
+
+    session.executeInJailWorktree(tmpDir, {
+      sandboxDriver: driver,
+      testRunnerFn: { command: "node", args: ["infinite-loop.js"] }
+    });
+
+    assert.equal(session.status, REMEDIATION_STATES.REJECTED_FIX);
+    assert.equal(session.deterministicChecks.exitCode, 124);
+    assert.equal(session.deterministicChecks.timedOut, true);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("Contract 25: CLI parsing of --test-cmd, --container-image, --container-runtime, and --pinned-image-digest", async () => {
+  const containerCommandsRan = [];
+  const mockExecFn = (cmd, args) => {
+    if (args.includes("--version")) return { status: 0, stdout: "Docker version 27.0.3\n" };
+    if (args.includes("info")) return { status: 0, stdout: "27.0.3\n" };
+    if (args.includes("inspect")) return { status: 0, stdout: "sha256:d8a2bc4e7a4b89e5c9f5653b47c0b05b38234857ef129994c50259e5a8c2efec\n" };
+    if (args.includes("sh") && args.some(a => String(a).includes("192.0.2.1"))) {
+      return { status: 42, stdout: "TF_EGRESS_DENIED:ENETUNREACH\n", stderr: "" };
+    }
+    if (args.includes("npm") && args.includes("test")) {
+      containerCommandsRan.push(args);
+      return { status: 0, stdout: "all tests pass\n" };
+    }
+    return { status: 0, stdout: "" };
+  };
+
+  const stdoutChunks = [];
+  const stderrChunks = [];
+  const io = {
+    stdout: { write: (msg) => stdoutChunks.push(msg) },
+    stderr: { write: (msg) => stderrChunks.push(msg) }
+  };
+
+  const tmpReceipt = path.join(os.tmpdir(), `tf-cli-container-${Date.now()}.json`);
+  try {
+    const exitCode = await runCli(
+      [
+        "remediate",
+        "--case=BENCH-REAL-001",
+        "--authorizer=sec-lead@triad.flow",
+        "--sandbox=container",
+        "--test-cmd=npm test",
+        "--container-image=node:20-slim",
+        "--container-runtime=docker",
+        "--pinned-image-digest=sha256:d8a2bc4e7a4b89e5c9f5653b47c0b05b38234857ef129994c50259e5a8c2efec",
+        `--receipt=${tmpReceipt}`
+      ],
+      io,
+      {
+        sandboxExecFn: mockExecFn,
+        closureVerifierFn: (session) => createMockVerificationRecord(session.findingId)
+      }
+    );
+
+    assert.equal(exitCode, EXIT_CODES.SUCCESS);
+    assert.equal(containerCommandsRan.length, 1);
+    assert.ok(fs.existsSync(tmpReceipt));
+
+    const receipt = JSON.parse(fs.readFileSync(tmpReceipt, "utf8"));
+    assert.equal(receipt.deterministicChecks.runner, "container-runner");
+    assert.equal(receipt.deterministicChecks.executionEnvironment, "container");
+    assert.equal(receipt.jail.driver, "container");
+    assert.equal(receipt.jail.capabilities.environments.testExecutionEnvironment, "container");
+  } finally {
+    if (fs.existsSync(tmpReceipt)) fs.unlinkSync(tmpReceipt);
+  }
+});
+
+test("Contract 26: Cross-platform Windows volume path normalization in buildRunArgs", () => {
+  const driver = new ContainerDriver({ containerRuntime: "docker" });
+  const runArgs = driver.buildRunArgs("C:\\workspace\\project", "C:\\Users\\temp\\jail", ["npm", "test"]);
+
+  const wsMount = runArgs.find(a => typeof a === "string" && a.endsWith(":/workspace:ro"));
+  const jailMount = runArgs.find(a => typeof a === "string" && a.endsWith(":/jail:rw"));
+
+  // Ensure volume mount strings do not contain backslashes
+  assert.ok(wsMount, "Workspace mount should exist");
+  assert.ok(jailMount, "Jail mount should exist");
+  assert.ok(!wsMount.includes("\\"), `Workspace mount must use POSIX slashes: ${wsMount}`);
+  assert.ok(!jailMount.includes("\\"), `Jail mount must use POSIX slashes: ${jailMount}`);
 });
 
