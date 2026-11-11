@@ -196,6 +196,12 @@ export class BatchRemediationSession {
       });
       session.finding = f;
       if (f.testRunner) {
+        if (typeof f.testRunner === "object" && typeof f.testRunner.command === "string") {
+          const cmd = f.testRunner.command.trim();
+          if (/[\s;&|`$><]/.test(cmd)) {
+            throw new BatchValidationError(`Finding '${f.id}' provides invalid testRunner command containing forbidden shell metacharacters: '${cmd}'`);
+          }
+        }
         session.testRunner = f.testRunner;
       }
       this.sessions.set(f.id, session);
@@ -366,8 +372,13 @@ export class BatchRemediationSession {
         let testRes;
         try {
           if (driver.name === "container") {
-            const cmd = activeRunner?.command;
-            const args = Array.isArray(activeRunner?.args) ? activeRunner.args : [];
+            if (!activeIsTypedCommand) {
+              throw new BatchValidationError(
+                `Container driver requires a typed command runner for finding '${findingId}'. Host function callbacks are strictly prohibited.`
+              );
+            }
+            const cmd = activeRunner.command;
+            const args = Array.isArray(activeRunner.args) ? activeRunner.args : [];
             const findingImage = activeRunner?.containerImage || activeRunner?.image || session.finding?.containerImage || session.finding?.image || null;
             const containerRes = jail.runInContainer([cmd, ...args], {
               cwd: activeRunner?.cwd || null,

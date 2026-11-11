@@ -43,7 +43,7 @@ export const ACTIVE_EGRESS_PROBE_SCRIPT = "node -e 'const os=require(\"os\");con
 
 export const ACTIVE_EGRESS_PROBE_SCRIPT_PYTHON = "python3 -c 'import os,socket,sys; devs=[l.split(\":\")[0].strip() for l in open(\"/proc/net/dev\").readlines()[2:]] if os.path.exists(\"/proc/net/dev\") else []; leaks=[d for d in devs if d and not d.startswith(\"lo\")]; (print(\"TF_NAMESPACE_LEAK:\"+\",\".join(leaks)), sys.exit(1)) if leaks else None; s=socket.socket(socket.AF_INET,socket.SOCK_STREAM); s.settimeout(1.0); res=s.connect_ex((\"192.0.2.1\",80)); print(\"TF_EGRESS_DENIED:ETIMEDOUT:NS_ISOLATED\"); sys.exit(0 if res==0 else 42)'";
 
-export const ACTIVE_EGRESS_PROBE_SCRIPT_SH = "sh -c 'if [ -f /proc/net/dev ]; then dev=$(awk -F: \"NR>2 {gsub(/ /,\\\"\\\",\\$1); if (\\$1 !~ /^lo/) print \\$1}\" /proc/net/dev); if [ -n \"$dev\" ]; then echo \"TF_NAMESPACE_LEAK:$dev\"; exit 1; fi; fi; if command -v nc >/dev/null 2>&1; then nc -w 1 -z 192.0.2.1 80 2>/dev/null && { echo \"TF_EGRESS_BREACH:192.0.2.1:80\"; exit 0; }; elif command -v wget >/dev/null 2>&1; then wget -q -T 1 -O /dev/null http://192.0.2.1:80 2>/dev/null && { echo \"TF_EGRESS_BREACH:192.0.2.1:80\"; exit 0; }; fi; echo \"TF_EGRESS_DENIED:ENETUNREACH:NS_ISOLATED\"; exit 42'";
+export const ACTIVE_EGRESS_PROBE_SCRIPT_SH = "sh -c 'if [ -f /proc/net/dev ]; then dev=$(awk -F: \"NR>2 {gsub(/ /,\\\"\\\",\\$1); if (\\$1 !~ /^lo/) print \\$1}\" /proc/net/dev); if [ -n \"$dev\" ]; then echo \"TF_NAMESPACE_LEAK:$dev\"; exit 1; fi; fi; if command -v nc >/dev/null 2>&1; then nc -w 1 -z 192.0.2.1 80 2>/dev/null && { echo \"TF_EGRESS_BREACH:192.0.2.1:80\"; exit 0; }; elif command -v wget >/dev/null 2>&1; then wget -q -T 1 -O /dev/null http://192.0.2.1:80 2>/dev/null && { echo \"TF_EGRESS_BREACH:192.0.2.1:80\"; exit 0; }; else echo \"TF_PROBE_TOOL_MISSING:no_egress_test_tool_available\"; exit 1; fi; echo \"TF_EGRESS_DENIED:ENETUNREACH:NS_ISOLATED\"; exit 42'";
 
 export class SandboxUnavailableError extends Error {
   constructor(message, driver = "container") {
@@ -177,7 +177,7 @@ export class ContainerDriver extends BaseSandboxDriver {
   getEgressProbeScript(options = {}) {
     if (options.probeScript) return options.probeScript;
     if (this.egressProbeScript) return this.egressProbeScript;
-    const img = (this.image || "").toLowerCase();
+    const img = (options.image || options.imageIdentity || this.image || "").toLowerCase();
     if (img.includes("python")) {
       return ACTIVE_EGRESS_PROBE_SCRIPT_PYTHON;
     }
