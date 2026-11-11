@@ -17,6 +17,7 @@ import { canonicalJsonStringify, computeDigest } from "./canonical-digest.mjs";
 import { classifyFileRisk, RISK_TIERS } from "./graph-router.mjs";
 import { normalizeCanonicalPath } from "./scoring.mjs";
 import { splitDiffByFiles, getSafeChunkLimit } from "./chunk-manager.mjs";
+import { TaxonomyQuorumCalibrator } from "./taxonomy-quorum.mjs";
 
 /**
  * Genesis receipt hash constant (64 zeros prefixed with sha256:).
@@ -445,7 +446,9 @@ export function createIntermediateReceipt({
   workerId,
   sequenceNumber,
   status = CHUNK_STATUS.INSPECTED,
-  timestamp = new Date().toISOString()
+  timestamp = new Date().toISOString(),
+  hmacKey = null,
+  privateKey = null
 }) {
   if (!partition || typeof partition !== "object") {
     throw new TypeError("Partition is required to create intermediate receipt.");
@@ -493,6 +496,17 @@ export function createIntermediateReceipt({
   };
   const receiptHash = computeDigest(chainPayload);
 
+  // Cryptographic signature (HMAC-SHA256 or Ed25519)
+  let signature = null;
+  let signatureAlgorithm = null;
+  if (hmacKey) {
+    signatureAlgorithm = "hmac-sha256";
+    signature = crypto.createHmac("sha256", hmacKey).update(receiptHash).digest("hex");
+  } else if (privateKey) {
+    signatureAlgorithm = "ed25519";
+    signature = crypto.sign(null, Buffer.from(receiptHash), privateKey).toString("hex");
+  }
+
   return Object.freeze({
     receiptId,
     sequenceNumber,
@@ -505,9 +519,12 @@ export function createIntermediateReceipt({
     resultDigest,
     previousReceiptHash,
     receiptHash,
+    signature,
+    signatureAlgorithm,
     timestamp,
     findings: sanitizedResult.findings,
     coverage: sanitizedResult.coverage,
+    providerIdentity: sanitizedResult.providerIdentity,
     error: sanitizedResult.error
   });
 }
@@ -516,10 +533,11 @@ export function createIntermediateReceipt({
  * Validates the cryptographic integrity and anti-tamper guarantee of a receipt chain.
  *
  * @param {Array<object>} receipts - Array of intermediate receipts
+ * @param {object} [options={}] - Verification options (optional hmacKey or publicKey)
  * @returns {{ valid: boolean, chainLength: number, rootHash: string }}
  * @throws {ReceiptChainTamperedError} If any receipt is corrupted, reordered or hash invalid
  */
-export function verifyReceiptChain(receipts) {
+export function verifyReceiptChain(receipts, options = {}) {
   if (!Array.isArray(receipts)) {
     throw new ReceiptChainTamperedError("Receipt chain must be an array.");
   }
@@ -580,6 +598,37 @@ export function verifyReceiptChain(receipts) {
           actualHash: rcpt.receiptHash
         }
       );
+    }
+
+    // Verify optional cryptographic signature (HMAC-SHA256 or Ed25519)
+    if (options.hmacKey) {
+      if (!rcpt.signature) {
+        throw new ReceiptChainTamperedError(
+          `Missing HMAC signature at receipt ${rcpt.receiptId}: HMAC verification required.`,
+          { receiptId: rcpt.receiptId }
+        );
+      }
+      const expectedSig = crypto.createHmac("sha256", options.hmacKey).update(expectedReceiptHash).digest("hex");
+      if (rcpt.signature !== expectedSig) {
+        throw new ReceiptChainTamperedError(
+          `Tampered receipt signature at ${rcpt.receiptId}: HMAC signature verification failed.`,
+          { receiptId: rcpt.receiptId, expectedSig, actualSig: rcpt.signature }
+        );
+      }
+    } else if (options.publicKey) {
+      if (!rcpt.signature) {
+        throw new ReceiptChainTamperedError(
+          `Missing Ed25519 signature at receipt ${rcpt.receiptId}: public key verification required.`,
+          { receiptId: rcpt.receiptId }
+        );
+      }
+      const verified = crypto.verify(null, Buffer.from(expectedReceiptHash), options.publicKey, Buffer.from(rcpt.signature, "hex"));
+      if (!verified) {
+        throw new ReceiptChainTamperedError(
+          `Tampered receipt signature at ${rcpt.receiptId}: Ed25519 public key verification failed.`,
+          { receiptId: rcpt.receiptId }
+        );
+      }
     }
 
     expectedPreviousHash = rcpt.receiptHash;
@@ -947,7 +996,9 @@ export class DistributedSwarmOrchestrator {
         previousReceiptHash: prevHash,
         workerId: exec.workerId,
         sequenceNumber: seqNum,
-        status: exec.status
+        status: exec.status,
+        hmacKey: options.hmacKey || null,
+        privateKey: options.privateKey || null
       });
 
       receipts.push(receipt);
@@ -955,7 +1006,10 @@ export class DistributedSwarmOrchestrator {
     }
 
     // Step 4: Verify the cryptographic receipt chain
-    const chainVerification = verifyReceiptChain(receipts);
+    const chainVerification = verifyReceiptChain(receipts, {
+      hmacKey: options.hmacKey,
+      publicKey: options.publicKey
+    });
 
     // Step 5: Verify coverage completeness
     const coverageEval = verifyCoverageCompleteness(changeSet, receipts);
@@ -1009,6 +1063,36 @@ export class DistributedSwarmOrchestrator {
       }
     }
 
+    // Step 7: Taxonomy Quorum Calibration with Domain Weights & Physical Proof Override
+    let quorumDecision = null;
+    if (options.calibrateQuorum !== false && (options.taxonomyCalibrator || options.calibrateQuorum || options.physicalProof)) {
+      const calibrator = options.taxonomyCalibrator || new TaxonomyQuorumCalibrator();
+      const reports = receipts.map(rcpt => ({
+        id: rcpt.workerId,
+        provider: rcpt.workerId,
+        family: rcpt.providerIdentity?.family || (rcpt.workerId.includes("claude") ? "anthropic" : (rcpt.workerId.includes("agy") ? "google" : (rcpt.workerId.includes("codex") ? "openai" : undefined))),
+        status: rcpt.status === CHUNK_STATUS.INSPECTED ? "SUCCESS" : "ERROR",
+        healthy: rcpt.status === CHUNK_STATUS.INSPECTED,
+        findings: rcpt.findings || [],
+        receiptHash: rcpt.receiptHash
+      }));
+
+      quorumDecision = calibrator.calibrateQuorum({
+        reports,
+        files: changeSet.files || [],
+        physicalProof: options.physicalProof || null,
+        riskTier: options.riskTier
+      });
+
+      if (!quorumDecision.quorumReached || quorumDecision.verdict === "error") {
+        verdict = SWARM_VERDICTS.ERROR;
+        ok = false;
+      } else if (quorumDecision.verdict === "needs-attention" && verdict !== SWARM_VERDICTS.ERROR) {
+        verdict = SWARM_VERDICTS.NEEDS_ATTENTION;
+        ok = false;
+      }
+    }
+
     // Snapshot circuit breaker states
     const cbStates = {};
     for (const [id, cb] of this.circuitBreakers.entries()) {
@@ -1027,6 +1111,8 @@ export class DistributedSwarmOrchestrator {
       },
       receiptChain: receipts,
       rootReceiptHash: chainVerification.rootHash,
+      quorumDecision: quorumDecision || null,
+      consensusProof: quorumDecision?.consensusProof || null,
       stats: {
         totalPartitions: partitions.length,
         inspectedPartitions: partitions.length - uninspectedChunkCount,

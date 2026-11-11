@@ -560,3 +560,125 @@ test("Contract: Zero external npm dependencies in swarm-orchestrator", async () 
   }
 });
 
+test("Contract: HMAC-SHA256 and Ed25519 digital signatures on intermediate receipts fail closed on forgery", () => {
+  const hmacKey = "secret-orchestrator-hmac-key";
+
+  const partition = {
+    partitionId: "chunk-001",
+    targetFiles: ["src/auth.js"],
+    diffHunks: "+const a = 1;"
+  };
+
+  const receipt = createIntermediateReceipt({
+    partition,
+    workerResult: { findings: [], coverage: { coveredFiles: ["src/auth.js"], omittedFiles: [] } },
+    previousReceiptHash: GENESIS_RECEIPT_HASH,
+    workerId: "worker-1",
+    sequenceNumber: 1,
+    hmacKey
+  });
+
+  assert.ok(receipt.signature);
+  assert.equal(receipt.signatureAlgorithm, "hmac-sha256");
+
+  // Pristine HMAC verification passes
+  const res = verifyReceiptChain([receipt], { hmacKey });
+  assert.equal(res.valid, true);
+
+  // Wrong HMAC key fails closed
+  assert.throws(
+    () => verifyReceiptChain([receipt], { hmacKey: "wrong-key" }),
+    /ReceiptChainTamperedError/
+  );
+
+  // Ed25519 asymmetric signature test
+  const { privateKey, publicKey } = crypto.generateKeyPairSync("ed25519");
+  const edReceipt = createIntermediateReceipt({
+    partition,
+    workerResult: { findings: [], coverage: { coveredFiles: ["src/auth.js"], omittedFiles: [] } },
+    previousReceiptHash: GENESIS_RECEIPT_HASH,
+    workerId: "worker-1",
+    sequenceNumber: 1,
+    privateKey
+  });
+
+  assert.ok(edReceipt.signature);
+  assert.equal(edReceipt.signatureAlgorithm, "ed25519");
+
+  // Pristine Ed25519 verification passes
+  const edRes = verifyReceiptChain([edReceipt], { publicKey });
+  assert.equal(edRes.valid, true);
+
+  // Forged signature fails closed
+  const forgedEdReceipt = { ...edReceipt, signature: "0".repeat(128) };
+  assert.throws(
+    () => verifyReceiptChain([forgedEdReceipt], { publicKey }),
+    /ReceiptChainTamperedError/
+  );
+});
+
+test("Contract: Phase 3 DistributedSwarmOrchestrator integrates TaxonomyQuorumCalibrator with Physical Proof Override", async () => {
+  const orchestrator = new DistributedSwarmOrchestrator({
+    workers: [
+      {
+        id: "worker-agy",
+        executeReview: async (p) => ({
+          findings: [
+            {
+              id: "FINDING-PP-01",
+              cwe: "CWE-1321",
+              title: "Prototype pollution in deepMerge",
+              file: "src/merge.js",
+              severity: "high"
+            }
+          ],
+          coverage: { coveredFiles: p.targetFiles, omittedFiles: [] }
+        })
+      },
+      {
+        id: "worker-claude",
+        executeReview: async (p) => ({
+          findings: [
+            {
+              id: "FINDING-PP-01",
+              cwe: "CWE-1321",
+              title: "Prototype pollution in deepMerge",
+              file: "src/merge.js",
+              severity: "high"
+            }
+          ],
+          coverage: { coveredFiles: p.targetFiles, omittedFiles: [] }
+        })
+      }
+    ]
+  });
+
+  const changeSet = {
+    files: [
+      { path: "src/merge.js", additions: 10, deletions: 1 },
+      { path: "src/util.js", additions: 5, deletions: 0 }
+    ],
+    diffHunks: "diff --git a/src/merge.js b/src/merge.js\n+function deepMerge() {}\ndiff --git a/src/util.js b/src/util.js\n+function util() {}"
+  };
+
+  // Dispatch with physicalProof override from ActivePoCSynthesizer
+  const physicalProof = {
+    verified: true,
+    cwe: "CWE-1321",
+    digest: "sha256:" + "f".repeat(64)
+  };
+
+  const result = await orchestrator.dispatch(changeSet, {
+    calibrateQuorum: true,
+    physicalProof,
+    riskTier: 1
+  });
+
+  assert.ok(result.receiptChain.length >= 1);
+  assert.ok(result.quorumDecision);
+  assert.equal(result.quorumDecision.quorumReached, true);
+  assert.ok(result.consensusProof);
+  assert.equal(typeof result.consensusProof, "string");
+  assert.equal(result.consensusProof.length, 64);
+});
+
