@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.1.0",
-  "runId": "dogfood-1794371355026-95853dd8-bcf1-4595-b659-881d514e2ca3",
+  "runId": "dogfood-1794372728882-d860e38a-37d2-4c4c-a1c3-cef92e44106e",
   "gate": {
     "decision": "approve",
     "reason": "Clean Challenge passed: zero findings and zero verified omissions."
@@ -11,65 +11,35 @@
   },
   "isExecutionComplete": true,
   "executionMode": "mock",
-  "runStartedAt": "2026-11-11T04:29:15.025Z",
-  "timestamp": "2026-11-11T04:29:17.077Z",
+  "runStartedAt": "2026-11-11T04:52:08.881Z",
+  "timestamp": "2026-11-11T04:52:09.910Z",
   "track": "Track D1: SHADOW_DOGFOOD",
   "authority": "NONE (ADVISORY_ONLY)",
   "triadFlowVersion": "2.11.0",
   "runContext": {
-    "runId": "dogfood-1794371355026-95853dd8-bcf1-4595-b659-881d514e2ca3",
-    "headSha": "6cec5a579e7feaf8acf8611c43d5c47001a5ec53",
-    "contentDigest": "e92c7eb12c9a5ef016b1b3d575d907854549c32d7447a8bece4429af83939b66",
+    "runId": "dogfood-1794372728882-d860e38a-37d2-4c4c-a1c3-cef92e44106e",
+    "headSha": "0fdb6bffbaa1e395d573ff2af6b71f0ea14bde4b",
+    "contentDigest": "b88294585124dca3f01f102c310b20dc106685fa8dda28ab9879ff6ce93172b4",
     "patchObjective": "",
     "objectiveContract": null,
     "exclusions": []
   },
   "repository": {
     "name": "arcobaleno64/triad-flow",
-    "commitSha": "6cec5a579e7feaf8acf8611c43d5c47001a5ec53",
+    "commitSha": "0fdb6bffbaa1e395d573ff2af6b71f0ea14bde4b",
     "branch": "main",
-    "base": "85051e2",
+    "base": "2875c4f",
     "head": "HEAD"
   },
   "changeSetSummary": {
-    "totalFiles": 6,
-    "totalAdditions": 76,
-    "totalDeletions": 5,
+    "totalFiles": 1,
+    "totalAdditions": 119,
+    "totalDeletions": 0,
     "riskTier": 1,
     "files": [
       {
-        "path": "CHANGELOG.md",
-        "additions": 28,
-        "deletions": 0,
-        "riskTier": 2
-      },
-      {
-        "path": "package.json",
-        "additions": 1,
-        "deletions": 1,
-        "riskTier": 2
-      },
-      {
-        "path": "scripts/dogfood-review.mjs",
-        "additions": 3,
-        "deletions": 2,
-        "riskTier": 2
-      },
-      {
-        "path": "src/core/harness.mjs",
-        "additions": 1,
-        "deletions": 1,
-        "riskTier": 1
-      },
-      {
-        "path": "src/core/review-run-report.mjs",
-        "additions": 1,
-        "deletions": 1,
-        "riskTier": 1
-      },
-      {
-        "path": "tests/dogfood-review.test.mjs",
-        "additions": 42,
+        "path": "docs/roadmap/v2.12-milestone-roadmap.md",
+        "additions": 119,
         "deletions": 0,
         "riskTier": 2
       }
@@ -83,7 +53,7 @@
       "model": "gemini-3.8-flash",
       "executionStatus": "empty",
       "findingsCount": 0,
-      "latencyMs": 4,
+      "latencyMs": 5,
       "stagedFallbackUsed": false,
       "stagedTimeoutCount": 0
     },
@@ -123,12 +93,12 @@
     "mergeBlockedInProduction": false
   },
   "telemetryMetrics": {
-    "totalDurationMs": 1260,
-    "reviewerPhaseDurationMs": 1246,
+    "totalDurationMs": 212,
+    "reviewerPhaseDurationMs": 205,
     "avgProviderLatencyMs": 3,
     "executionComplete": true,
     "cleanChallengeAttempted": true,
-    "cleanChallengeDurationMs": 10,
+    "cleanChallengeDurationMs": 4,
     "cleanChallengeStatus": "SUCCESS",
     "malformedOutputCount": 0,
     "reviewerTimeoutCount": 0,
@@ -145,7 +115,7 @@
       "platform": "win32",
       "transport": "argv",
       "budgetAllocatedMs": 30000,
-      "globalDeadlineRemainingMs": 28754,
+      "globalDeadlineRemainingMs": 29795,
       "stagedFallbackUsed": false,
       "chunkCount": null,
       "maxConcurrency": 1,
@@ -157,10 +127,10 @@
   },
   "verificationRecord": {
     "schemaVersion": "1.0.0",
-    "verifiedAt": "2026-11-11T04:29:17.075Z",
-    "changeSetDigest": "sha256:e92c7eb12c9a5ef016b1b3d575d907854549c32d7447a8bece4429af83939b66",
-    "headSha": "6cec5a579e7feaf8acf8611c43d5c47001a5ec53",
-    "runId": "dogfood-1794371355026-95853dd8-bcf1-4595-b659-881d514e2ca3",
+    "verifiedAt": "2026-11-11T04:52:09.909Z",
+    "changeSetDigest": "sha256:b88294585124dca3f01f102c310b20dc106685fa8dda28ab9879ff6ce93172b4",
+    "headSha": "0fdb6bffbaa1e395d573ff2af6b71f0ea14bde4b",
+    "runId": "dogfood-1794372728882-d860e38a-37d2-4c4c-a1c3-cef92e44106e",
     "exclusions": [],
     "verificationMode": "clean_challenge",
     "overallStatus": "CLEAN",
