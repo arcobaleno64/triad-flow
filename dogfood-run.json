@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.1.0",
-  "runId": "dogfood-1794369527431-410cb50c-9062-4f85-b99c-11c82d4c60dc",
+  "runId": "dogfood-1794369859674-ee296cac-cb64-451f-a124-0de962e8db95",
   "gate": {
     "decision": "approve",
     "reason": "Clean Challenge passed: zero findings and zero verified omissions."
@@ -11,14 +11,14 @@
   },
   "isExecutionComplete": true,
   "executionMode": "mock",
-  "runStartedAt": "2026-11-11T03:58:47.431Z",
-  "timestamp": "2026-11-11T03:58:48.855Z",
+  "runStartedAt": "2026-11-11T04:04:19.673Z",
+  "timestamp": "2026-11-11T04:04:21.134Z",
   "track": "Track D1: SHADOW_DOGFOOD",
   "authority": "NONE (ADVISORY_ONLY)",
   "triadFlowVersion": "2.10.0",
   "runContext": {
-    "runId": "dogfood-1794369527431-410cb50c-9062-4f85-b99c-11c82d4c60dc",
-    "headSha": "fc747d866e36b5c80f2417935032cda9499a6c48",
+    "runId": "dogfood-1794369859674-ee296cac-cb64-451f-a124-0de962e8db95",
+    "headSha": "8a10ea3a422214120386c69e4ebc54f242bbcb0e",
     "contentDigest": "1fdd81b4970938829e42054f27b6312d733051899e3e9d818f954412e38966e6",
     "patchObjective": "",
     "objectiveContract": null,
@@ -26,8 +26,8 @@
   },
   "repository": {
     "name": "arcobaleno64/triad-flow",
-    "commitSha": "fc747d866e36b5c80f2417935032cda9499a6c48",
-    "branch": "feat/phase-5-multi-language-remediation-alignment",
+    "commitSha": "8a10ea3a422214120386c69e4ebc54f242bbcb0e",
+    "branch": "main",
     "base": "4e71265",
     "head": "HEAD"
   },
@@ -68,7 +68,9 @@
         "riskTier": 2
       }
     ],
-    "excludedFiles": []
+    "excludedFiles": [
+      "dogfood-run.json"
+    ]
   },
   "providerTelemetry": {
     "agy": {
@@ -77,7 +79,7 @@
       "model": "gemini-3.8-flash",
       "executionStatus": "empty",
       "findingsCount": 0,
-      "latencyMs": 5,
+      "latencyMs": 4,
       "stagedFallbackUsed": false,
       "stagedTimeoutCount": 0
     },
@@ -87,7 +89,7 @@
       "model": "claude-5.5-sonnet",
       "executionStatus": "empty",
       "findingsCount": 0,
-      "latencyMs": 3,
+      "latencyMs": 2,
       "stagedFallbackUsed": false,
       "stagedTimeoutCount": 0
     },
@@ -97,7 +99,7 @@
       "model": "gpt-6.1-sol",
       "executionStatus": "empty",
       "findingsCount": 0,
-      "latencyMs": 3,
+      "latencyMs": 2,
       "stagedFallbackUsed": false,
       "stagedTimeoutCount": 0
     }
@@ -117,12 +119,12 @@
     "mergeBlockedInProduction": false
   },
   "telemetryMetrics": {
-    "totalDurationMs": 555,
-    "reviewerPhaseDurationMs": 541,
-    "avgProviderLatencyMs": 4,
+    "totalDurationMs": 569,
+    "reviewerPhaseDurationMs": 556,
+    "avgProviderLatencyMs": 3,
     "executionComplete": true,
     "cleanChallengeAttempted": true,
-    "cleanChallengeDurationMs": 12,
+    "cleanChallengeDurationMs": 10,
     "cleanChallengeStatus": "SUCCESS",
     "malformedOutputCount": 0,
     "reviewerTimeoutCount": 0,
@@ -139,7 +141,7 @@
       "platform": "win32",
       "transport": "argv",
       "budgetAllocatedMs": 30000,
-      "globalDeadlineRemainingMs": 29459,
+      "globalDeadlineRemainingMs": 29444,
       "stagedFallbackUsed": false,
       "chunkCount": null,
       "maxConcurrency": 1,
@@ -151,10 +153,10 @@
   },
   "verificationRecord": {
     "schemaVersion": "1.0.0",
-    "verifiedAt": "2026-11-11T03:58:48.853Z",
+    "verifiedAt": "2026-11-11T04:04:21.133Z",
     "changeSetDigest": "sha256:1fdd81b4970938829e42054f27b6312d733051899e3e9d818f954412e38966e6",
-    "headSha": "fc747d866e36b5c80f2417935032cda9499a6c48",
-    "runId": "dogfood-1794369527431-410cb50c-9062-4f85-b99c-11c82d4c60dc",
+    "headSha": "8a10ea3a422214120386c69e4ebc54f242bbcb0e",
+    "runId": "dogfood-1794369859674-ee296cac-cb64-451f-a124-0de962e8db95",
     "exclusions": [],
     "verificationMode": "clean_challenge",
     "overallStatus": "CLEAN",
