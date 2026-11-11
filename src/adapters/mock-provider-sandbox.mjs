@@ -472,7 +472,7 @@ export class MockProviderSandbox {
 
       // 3. Node script entry (.js) for resolveNativeWindowsBinary fallback
       const jsScriptPath = path.join(this.binDir, `${p}.js`);
-      const jsContent = `import "${path.resolve(this.dispatcherScript).replace(/\\\\/g, "/")}";\n`;
+      const jsContent = `import "${path.resolve(this.dispatcherScript).replace(/\\/g, "/")}";\n`;
       fs.writeFileSync(jsScriptPath, jsContent, "utf8");
     }
   }

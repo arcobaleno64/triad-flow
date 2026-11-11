@@ -23,6 +23,8 @@ import {
 import { CliReviewAdapter } from "../src/adapters/cli-transport.mjs";
 import { EXECUTION_STATUS } from "../src/adapters/provider-contract.mjs";
 import { CliVerifierAdapter, createMockVerifierAdapter } from "../src/core/independent-verifier.mjs";
+import { ContainerDriver } from "../src/core/sandbox-driver.mjs";
+import { ControlledRemediationSession } from "../src/core/controlled-remediation.mjs";
 
 test("Dogfood Contract 1: parseArgs correctly parses flags", () => {
   const def = parseArgs([]);
@@ -1413,4 +1415,56 @@ test("Dogfood Contract 30: Case-insensitive / normalized path matching for sentr
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
+});
+
+test("Dogfood Contract 31: Remediation of dogfood live scan findings (containment, container cleanup, auth non-interference)", async () => {
+  // 1. Verification of auth pattern non-interference when stderr echoes prompt diff containing auth error strings
+  const adapter = new CliReviewAdapter({
+    command: "codex-test",
+    execFn: async () => ({
+      code: 0,
+      stdout: JSON.stringify({
+        findings: [],
+        coverage: { coveredFiles: ["src/core/sandbox-driver.mjs"], omittedFiles: [] }
+      }),
+      stderr: "Reading prompt from stdin... \n+ agy: Error: You are not logged into Antigravity\n"
+    })
+  });
+
+  const res = await adapter.executeReview({
+    runId: "dogfood-contract31-auth",
+    role: "codex",
+    policyId: "SINGLE_SENTRY",
+    changeSet: {
+      schemaVersion: "1.0.0",
+      files: [{ path: "src/core/sandbox-driver.mjs" }],
+      contentDigest: "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+    }
+  });
+
+  assert.equal(res.ok, true);
+  assert.equal(res.executionStatus, EXECUTION_STATUS.EMPTY);
+  assert.notEqual(res.executionStatus, EXECUTION_STATUS.AUTH_FAILURE, "Valid JSON report must not be overridden by echoed stderr auth strings");
+
+  // 2. Verification of container cleanup on execution timeout
+  const cleanedContainers = [];
+  const timeoutDriver = new ContainerDriver({
+    containerRuntime: "docker",
+    execFn: (cmd, args) => {
+      if (args[0] === "rm" && args[1] === "-f") {
+        cleanedContainers.push(args[2]);
+        return { status: 0, stdout: args[2], stderr: "" };
+      }
+      const err = new Error("Execution timed out");
+      err.code = "ETIMEDOUT";
+      return { status: null, error: err, stdout: "", stderr: "" };
+    },
+    timeout: 1000
+  });
+
+  const containerRes = timeoutDriver.executeInContainer("/repo", "/jail", ["npm", "test"]);
+  assert.equal(containerRes.timedOut, true);
+  assert.equal(containerRes.status, 124);
+  assert.equal(cleanedContainers.length, 1, "Must forcibly invoke docker rm -f on execution timeout");
+  assert.match(cleanedContainers[0], /^tf-jail-/, "Must clean up the specifically named container");
 });

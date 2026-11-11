@@ -1150,7 +1150,9 @@ export class ControlledRemediationSession {
           const cmd = runner.command;
           const args = Array.isArray(runner.args) ? runner.args : [];
           const rawCwd = runner.cwd ? path.resolve(jail.jailPath, runner.cwd) : jail.jailPath;
-          const runnerCwd = rawCwd.startsWith(jail.jailPath) ? rawCwd : jail.jailPath;
+          const relCwd = path.relative(jail.jailPath, rawCwd);
+          const isContained = !relCwd.startsWith("..") && !path.isAbsolute(relCwd);
+          const runnerCwd = isContained ? rawCwd : jail.jailPath;
           const hostRes = spawnSync(cmd, args, {
             cwd: runnerCwd,
             encoding: "utf8",

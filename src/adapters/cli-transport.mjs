@@ -307,10 +307,16 @@ export class CliReviewAdapter {
     // Scrub env if envAllowlist is defined
     let effectiveEnv = this.env || process.env;
     if (this.profile?.envAllowlist && Array.isArray(this.profile.envAllowlist)) {
-      const allowedSet = new Set(this.profile.envAllowlist);
+      const isWin = process.platform === "win32";
+      const allowedSet = new Set(
+        isWin
+          ? this.profile.envAllowlist.map(k => k.toUpperCase())
+          : this.profile.envAllowlist
+      );
       effectiveEnv = {};
       for (const [k, v] of Object.entries(this.env || process.env)) {
-        if (allowedSet.has(k)) {
+        const checkKey = isWin ? k.toUpperCase() : k;
+        if (allowedSet.has(checkKey)) {
           effectiveEnv[k] = v;
         }
       }
@@ -371,9 +377,17 @@ export class CliReviewAdapter {
     }
   }
 
-  _resolveStreamJsonPayload(outputToParse, context) {
+  _resolveStreamJsonPayload(outputToParse, context, stderr = "") {
     const streamResult = extractStreamJsonResponse(outputToParse);
     if (!streamResult) {
+      if (stderr && AUTH_ERROR_PATTERNS.some(p => p.test(stderr))) {
+        return {
+          errorResult: validateProviderOutput({
+            executionStatus: EXECUTION_STATUS.AUTH_FAILURE,
+            error: `Authentication failure detected in CLI reviewer output: ${stderr.trim()}`
+          }, context)
+        };
+      }
       if (AUTH_ERROR_PATTERNS.some(p => p.test(outputToParse))) {
         return {
           errorResult: validateProviderOutput({
@@ -663,19 +677,10 @@ export class CliReviewAdapter {
           return;
         }
 
-        // 2. Process exited with 0: check stderr for auth error
-        if (stderr && AUTH_ERROR_PATTERNS.some(p => p.test(stderr))) {
-          resolve(validateProviderOutput({
-            executionStatus: EXECUTION_STATUS.AUTH_FAILURE,
-            error: `Authentication failure detected in CLI reviewer output: ${stderr.trim()}`
-          }, context));
-          return;
-        }
-
-        // 3. Try to extract JSON from fileOutput or stdout
+        // 2. Try to extract JSON from fileOutput or stdout
         let outputToParse = fileOutputContent || stdout;
         if (this.streamJson && !fileOutputContent) {
-          const streamResolved = this._resolveStreamJsonPayload(outputToParse, context);
+          const streamResolved = this._resolveStreamJsonPayload(outputToParse, context, stderr);
           if (streamResolved.errorResult) {
             resolve(streamResolved.errorResult);
             return;
@@ -684,6 +689,13 @@ export class CliReviewAdapter {
         }
         const parsed = extractJsonFromText(outputToParse);
         if (!parsed) {
+          if (stderr && AUTH_ERROR_PATTERNS.some(p => p.test(stderr))) {
+            resolve(validateProviderOutput({
+              executionStatus: EXECUTION_STATUS.AUTH_FAILURE,
+              error: `Authentication failure detected in CLI reviewer output: ${stderr.trim()}`
+            }, context));
+            return;
+          }
           if (AUTH_ERROR_PATTERNS.some(p => p.test(outputToParse))) {
             resolve(validateProviderOutput({
               executionStatus: EXECUTION_STATUS.AUTH_FAILURE,
@@ -773,16 +785,9 @@ export class CliReviewAdapter {
       }, context);
     }
 
-    if (res?.stderr && AUTH_ERROR_PATTERNS.some(p => p.test(res.stderr))) {
-      return validateProviderOutput({
-        executionStatus: EXECUTION_STATUS.AUTH_FAILURE,
-        error: `Authentication failure detected in CLI reviewer output: ${res.stderr.trim()}`
-      }, context);
-    }
-
     let outputToParse = fileContent !== null ? fileContent : (res?.stdout || "");
     if (this.streamJson && fileContent === null) {
-      const streamResolved = this._resolveStreamJsonPayload(outputToParse, context);
+      const streamResolved = this._resolveStreamJsonPayload(outputToParse, context, res?.stderr || "");
       if (streamResolved.errorResult) {
         return streamResolved.errorResult;
       }
@@ -791,6 +796,12 @@ export class CliReviewAdapter {
 
     const parsed = extractJsonFromText(outputToParse);
     if (!parsed) {
+      if (res?.stderr && AUTH_ERROR_PATTERNS.some(p => p.test(res.stderr))) {
+        return validateProviderOutput({
+          executionStatus: EXECUTION_STATUS.AUTH_FAILURE,
+          error: `Authentication failure detected in CLI reviewer output: ${res.stderr.trim()}`
+        }, context);
+      }
       if (AUTH_ERROR_PATTERNS.some(p => p.test(outputToParse))) {
         return validateProviderOutput({
           executionStatus: EXECUTION_STATUS.AUTH_FAILURE,

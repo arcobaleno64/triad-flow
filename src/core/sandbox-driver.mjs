@@ -181,10 +181,10 @@ export class ContainerDriver extends BaseSandboxDriver {
     if (img.includes("python")) {
       return ACTIVE_EGRESS_PROBE_SCRIPT_PYTHON;
     }
-    if (img.includes("alpine") || img.includes("busybox")) {
-      return ACTIVE_EGRESS_PROBE_SCRIPT_SH;
+    if (img.includes("node")) {
+      return ACTIVE_EGRESS_PROBE_SCRIPT;
     }
-    return ACTIVE_EGRESS_PROBE_SCRIPT;
+    return ACTIVE_EGRESS_PROBE_SCRIPT_SH;
   }
 
   probe(options = {}) {
@@ -283,9 +283,9 @@ export class ContainerDriver extends BaseSandboxDriver {
     let workDir = "/jail";
     const targetCwd = options.cwd || options.workDir;
     if (targetCwd && typeof targetCwd === "string") {
-      const rel = targetCwd.replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
-      if (rel && !rel.startsWith("..") && !rel.includes("/../")) {
-        workDir = `/jail/${rel}`;
+      const normalized = path.posix.normalize(targetCwd.replace(/\\/g, "/")).replace(/^\/+|\/+$/g, "");
+      if (normalized && !normalized.startsWith("..") && normalized !== ".") {
+        workDir = `/jail/${normalized}`;
       }
     }
 
@@ -314,6 +314,10 @@ export class ContainerDriver extends BaseSandboxDriver {
       if (process.env[varName] !== undefined && varName !== "HOME") {
         args.push("-e", `${varName}=${process.env[varName]}`);
       }
+    }
+
+    if (options.containerName && typeof options.containerName === "string") {
+      args.push("--name", options.containerName);
     }
 
     // Pinned image identity
@@ -345,12 +349,31 @@ export class ContainerDriver extends BaseSandboxDriver {
       windowsHide: true,
       timeout: execOpts?.timeout
     }));
-    const runArgs = this.buildRunArgs(repoPath, jailPath, commandArgs, options);
+    const containerName = options.containerName || `tf-jail-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const runOpts = { ...options, containerName };
+    const runArgs = this.buildRunArgs(repoPath, jailPath, commandArgs, runOpts);
     const execTimeout = options.timeout || this.timeout || 60000;
+
+    const stopContainer = () => {
+      try {
+        if (typeof exec === "function") {
+          exec(this.runtime, ["rm", "-f", containerName], { timeout: 10000 });
+        } else {
+          spawnSync(this.runtime, ["rm", "-f", containerName], {
+            encoding: "utf8",
+            windowsHide: true,
+            timeout: 10000
+          });
+        }
+      } catch {}
+    };
 
     try {
       const res = exec(this.runtime, runArgs, { timeout: execTimeout });
       const timedOut = Boolean(res?.error && (res.error.code === "ETIMEDOUT" || res.error.name === "TimeoutError"));
+      if (timedOut) {
+        stopContainer();
+      }
       const status = timedOut
         ? 124
         : (typeof res?.status === "number" ? res.status : (res?.error ? 1 : 0));
@@ -364,6 +387,9 @@ export class ContainerDriver extends BaseSandboxDriver {
       };
     } catch (err) {
       const timedOut = Boolean(err.code === "ETIMEDOUT" || err.name === "TimeoutError");
+      if (timedOut) {
+        stopContainer();
+      }
       return {
         status: timedOut ? 124 : 1,
         exitCode: timedOut ? 124 : 1,
@@ -469,7 +495,7 @@ export class ContainerDriver extends BaseSandboxDriver {
       imageDigest: probe.imageDigest,
       capabilities: caps,
       runInContainer: (commandArgs, runOpts = {}) => {
-        const targetImage = runOpts.image || runOpts.imageIdentity || probe.imageDigest || this.image;
+        const targetImage = this.pinnedImageDigest || runOpts.imageIdentity || runOpts.image || probe.imageDigest || this.image;
         return this.executeInContainer(repoPath, jail.jailPath, commandArgs, {
           ...runOpts,
           imageIdentity: targetImage

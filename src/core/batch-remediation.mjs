@@ -388,12 +388,15 @@ export class BatchRemediationSession {
             const cmd = activeRunner.command;
             const args = Array.isArray(activeRunner.args) ? activeRunner.args : [];
             const rawCwd = activeRunner.cwd ? path.resolve(jail.jailPath, activeRunner.cwd) : jail.jailPath;
-            const runnerCwd = rawCwd.startsWith(jail.jailPath) ? rawCwd : jail.jailPath;
+            const relCwd = path.relative(jail.jailPath, rawCwd);
+            const isContained = !relCwd.startsWith("..") && !path.isAbsolute(relCwd);
+            const runnerCwd = isContained ? rawCwd : jail.jailPath;
             const hostRes = spawnSync(cmd, args, {
               cwd: runnerCwd,
               encoding: "utf8",
               windowsHide: true,
-              shell: process.platform === "win32"
+              shell: process.platform === "win32",
+              timeout: activeRunner.timeout || undefined
             });
             testRes = {
               testCommand: `${cmd} ${args.join(" ")}`.trim(),
@@ -401,6 +404,7 @@ export class BatchRemediationSession {
               passedCount: hostRes.status === 0 ? 1 : 0,
               failedCount: hostRes.status === 0 ? 0 : 1,
               regressionDetected: hostRes.status !== 0,
+              timedOut: Boolean(hostRes.error && hostRes.error.code === "ETIMEDOUT"),
               runner: "worktree-runner",
               executionEnvironment: "host"
             };
