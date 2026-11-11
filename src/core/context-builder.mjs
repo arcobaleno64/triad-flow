@@ -2351,7 +2351,7 @@ export function extractCandidateCallSymbols(diffHunks, options = {}) {
       }
 
       if (isQualified && BUILTIN_OBJECT_METHODS.has(sym)) {
-        if (!qualCat) {
+        if (!qualCat || qualCat !== "security") {
           continue;
         }
       }
@@ -3118,13 +3118,13 @@ export function findTypeDefinitions(lines, symbol) {
 export function findSymbolDefinitionsInSource(lines, symbol, options = {}) {
   if (!Array.isArray(lines) || !symbol || typeof symbol !== "string") return [];
   const matches = [];
-  const seenRanges = new Set();
+  const seenSpans = new Set();
 
   // 1. Function definitions (with body)
   const fnDefs = findFunctionDefinitions(lines, symbol);
   for (const fd of fnDefs) {
     const snip = extractBoundedFunctionSnippet(lines, fd.startLine, fd.endLine);
-    seenRanges.add(`${fd.startLine}:${fd.endLine}`);
+    seenSpans.add(`${fd.startLine}:${fd.endLine}`);
     matches.push({
       type: "function",
       startLine: fd.startLine,
@@ -3136,16 +3136,16 @@ export function findSymbolDefinitionsInSource(lines, symbol, options = {}) {
   // 2. Macro definitions (#define symbol ...)
   const macroDefs = findMacroDefinitions(lines, symbol);
   for (const md of macroDefs) {
-    seenRanges.add(`${md.startLine}:${md.endLine}`);
+    seenSpans.add(`${md.startLine}:${md.endLine}`);
     matches.push(md);
   }
 
   // 3. Type definitions (struct, class, enum, typedef, interface, type)
   const typeDefs = findTypeDefinitions(lines, symbol);
   for (const td of typeDefs) {
-    const rangeKey = `${td.startLine}:${td.endLine}`;
-    if (seenRanges.has(rangeKey)) continue;
-    seenRanges.add(rangeKey);
+    const spanKey = `${td.startLine}:${td.endLine}`;
+    if (seenSpans.has(spanKey)) continue;
+    seenSpans.add(spanKey);
     matches.push(td);
   }
 
@@ -3153,9 +3153,9 @@ export function findSymbolDefinitionsInSource(lines, symbol, options = {}) {
   if (matches.length === 0 && options.allowSignature) {
     const decls = findFunctionDeclarations(lines, symbol);
     for (const d of decls) {
-      const rangeKey = `${d.startLine}:${d.endLine}`;
-      if (seenRanges.has(rangeKey)) continue;
-      seenRanges.add(rangeKey);
+      const spanKey = `${d.startLine}:${d.endLine}`;
+      if (seenSpans.has(spanKey)) continue;
+      seenSpans.add(spanKey);
       matches.push(d);
     }
   }
@@ -4034,12 +4034,12 @@ export function allocateContextBudget(rawLayers, config = DEFAULT_BUDGET_CONFIG)
   if (layer1Bytes > maxAstAllowed) {
     layer1 = {
       ...layer1,
-      enclosingFunctions: (layer1.enclosingFunctions || []).slice(0, 5).map(fn => ({
+      enclosingFunctions: (layer1.enclosingFunctions || []).slice(0, 3).map(fn => ({
         ...fn,
         bodySnippet: "/* ... body collapsed for budget ... */"
       })),
       enclosingClasses: (layer1.enclosingClasses || []).slice(0, 2),
-      unresolvedCallees: (layer1.unresolvedCallees || []).slice(0, 15)
+      unresolvedCallees: (layer1.unresolvedCallees || []).slice(0, 5)
     };
     layer1Json = JSON.stringify(layer1);
     layer1Bytes = Buffer.byteLength(layer1Json, "utf8");
