@@ -979,6 +979,25 @@ test("Call Invocations with Statements: return func() and throw func() are treat
   assert.ok(calls.some(c => c.symbol === "checkAccess"));
 });
 
+test("Class Definitions: export class Foo extends Bar is matched as definition", () => {
+  const code = [
+    "/* Header comment */",
+    "export class BatchValidationError extends Error {",
+    "  constructor(message) {",
+    "    super(message);",
+    "    this.name = 'BatchValidationError';",
+    "  }",
+    "}",
+    "export function other() {}"
+  ].join("\n");
+
+  const lines = code.split("\n");
+  const defs = findFunctionDefinitions(lines, "BatchValidationError");
+  assert.equal(defs.length, 1, "Must find class definition");
+  assert.equal(defs[0].startLine, 2);
+  assert.equal(defs[0].endLine, 7);
+});
+
 
 
 
