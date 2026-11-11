@@ -25,7 +25,9 @@ import {
   SAFE_ARGV_THRESHOLD_BYTES,
   findFunctionDeclarations,
   findTypeDefinitions,
-  extractDirectIncludePaths
+  extractDirectIncludePaths,
+  findSymbolDefinitionsInSource,
+  resolveCrossFileSymbol
 } from "../src/core/context-builder.mjs";
 import { getExactHeadFileContent, clearExactHeadCache } from "../src/core/git-collector.mjs";
 import { buildEvidenceReviewPrompt, formatContextPackageXml, formatContextGaps } from "../src/adapters/review-prompts.mjs";
@@ -996,7 +998,64 @@ test("Class Definitions: export class Foo extends Bar is matched as definition",
   assert.equal(defs.length, 1, "Must find class definition");
   assert.equal(defs[0].startLine, 2);
   assert.equal(defs[0].endLine, 7);
+
+  const snippet = extractBoundedFunctionSnippet(lines, defs[0].startLine, defs[0].endLine);
+  assert.equal(snippet.extractionMode, "full_body", "Class definition <= 30 lines must extract as full_body");
+  assert.equal(snippet.lines, 6);
 });
+
+test("AST Hardening: STANDARD_GLOBAL_OBJECT_CALLS ignores JSON.parse and avoids false-positive extraction", () => {
+  const diffHunks = [
+    "@@ -10,3 +10,4 @@",
+    " function parsePayload(raw) {",
+    "+  const data = JSON.parse(raw);",
+    "+  const val = Math.floor(data.num);",
+    "   return data;",
+    " }"
+  ].join("\n");
+
+  const candidateCalls = extractCandidateCallSymbols(diffHunks, {
+    fileContent: "function parsePayload(raw) { const data = JSON.parse(raw); return data; }"
+  });
+
+  const jsonParse = candidateCalls.find(c => c.symbol === "parse" && c.qualifier === "JSON");
+  assert.equal(jsonParse, undefined, "JSON.parse must be ignored by extractCandidateCallSymbols");
+
+  const mathFloor = candidateCalls.find(c => c.symbol === "floor" && c.qualifier === "Math");
+  assert.equal(mathFloor, undefined, "Math.floor must be ignored by extractCandidateCallSymbols");
+});
+
+test("AST Hardening: findSymbolDefinitionsInSource and resolveCrossFileSymbol deduplicate same definition span", () => {
+  const code = [
+    "export class StructuralAntiEvasionError extends Error {",
+    "  constructor(message, violations = []) {",
+    "    super(message);",
+    "    this.name = 'StructuralAntiEvasionError';",
+    "    this.violations = violations;",
+    "  }",
+    "}"
+  ];
+
+  const defs = findSymbolDefinitionsInSource(code, "StructuralAntiEvasionError", { allowSignature: false });
+  assert.equal(defs.length, 1, "Must deduplicate class definition matched by both function and type extractors");
+  assert.equal(defs[0].startLine, 1);
+  assert.equal(defs[0].endLine, 7);
+
+  const res = resolveCrossFileSymbol("StructuralAntiEvasionError", "src/caller.mjs", "throw new StructuralAntiEvasionError();", { symbol: "StructuralAntiEvasionError", isSensitive: true }, {
+    siblingFiles: [
+      {
+        path: "src/anti-evasion-guard.mjs",
+        content: code.join("\n"),
+        diff: "+ export class StructuralAntiEvasionError extends Error {}"
+      }
+    ]
+  });
+
+  assert.equal(res.resolved, true, "Must resolve cleanly to single sibling definition");
+  assert.equal(res.ambiguous, undefined, "Must NOT flag ambiguous on deduplicated sibling definition");
+  assert.equal(res.callee.symbol, "StructuralAntiEvasionError");
+});
+
 
 
 

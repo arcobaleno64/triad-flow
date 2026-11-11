@@ -2045,6 +2045,45 @@ export const UTILITY_CALLEE_SYMBOLS = new Set([
   "includes"
 ]);
 
+export const STANDARD_GLOBAL_OBJECT_CALLS = new Set([
+  "JSON.parse",
+  "JSON.stringify",
+  "Math.floor",
+  "Math.ceil",
+  "Math.round",
+  "Math.max",
+  "Math.min",
+  "Math.abs",
+  "Math.random",
+  "Math.sign",
+  "Math.trunc",
+  "Object.keys",
+  "Object.values",
+  "Object.entries",
+  "Object.freeze",
+  "Object.assign",
+  "Object.create",
+  "Object.defineProperty",
+  "Object.hasOwn",
+  "Object.getPrototypeOf",
+  "Buffer.from",
+  "Buffer.alloc",
+  "Buffer.byteLength",
+  "Buffer.concat",
+  "Buffer.isBuffer",
+  "console.log",
+  "console.warn",
+  "console.error",
+  "console.info",
+  "console.debug",
+  "process.cwd",
+  "process.exit",
+  "process.hrtime",
+  "process.nextTick",
+  "Date.now",
+  "Date.parse"
+]);
+
 export const STANDARD_LIBRARY_CALLEE_SYMBOLS = new Set([
   // C / C++ Standard Library & POSIX
   "memcmp", "memcpy", "memset", "memmove", "memchr", "strlen", "strcmp", "strncmp",
@@ -2320,6 +2359,15 @@ export function extractCandidateCallSymbols(diffHunks, options = {}) {
         continue;
       }
 
+      const receiverKey = isQualified
+        ? (qualifiers.length > 0 ? qualifiers.join(".") : (qualifier || "qualified"))
+        : "";
+      const callKey = receiverKey ? `${receiverKey}.${sym}` : sym;
+
+      if (isQualified && (STANDARD_GLOBAL_OBJECT_CALLS.has(callKey) || (qualifier && STANDARD_GLOBAL_OBJECT_CALLS.has(`${qualifier}.${sym}`)))) {
+        continue;
+      }
+
       const sensitiveCategory = symCat || qualCat;
 
       // For qualified calls, only recognize if sensitive (P1-03)
@@ -2329,11 +2377,6 @@ export function extractCandidateCallSymbols(diffHunks, options = {}) {
 
       const isSensitive = Boolean(sensitiveCategory || isGuardLine);
       const symCategory = isSensitive ? (sensitiveCategory || lineCategory || "input_validation") : null;
-
-      const receiverKey = isQualified
-        ? (qualifiers.length > 0 ? qualifiers.join(".") : (qualifier || "qualified"))
-        : "";
-      const callKey = receiverKey ? `${receiverKey}.${sym}` : sym;
 
       if (!seen.has(callKey)) {
         seen.add(callKey);
@@ -2607,11 +2650,29 @@ export function extractBoundedFunctionSnippet(lines, startLine, endLine) {
   let isClosed = false;
   const startLineText = lines[startLine - 1] || "";
   const isPythonDef = /^\s*(?:async\s+)?def\s+[a-zA-Z0-9_$]+\s*\(/.test(startLineText);
+  const isClassDef = /^\s*(?:export\s+)?(?:default\s+)?class\b/.test(startLineText);
 
   if (isPythonDef) {
     const verifiedEnd = findPythonScopeEnd(lines, startLine - 1);
     if (verifiedEnd !== -1 && verifiedEnd === endLine) {
       isClosed = true;
+    }
+  } else if (isClassDef) {
+    let braceLineIdx = -1;
+    let bodyBraceIdx = 0;
+    for (let j = startLine - 1; j < Math.min(lines.length, startLine + 15); j++) {
+      const idx = lines[j].indexOf("{");
+      if (idx !== -1) {
+        braceLineIdx = j;
+        bodyBraceIdx = idx;
+        break;
+      }
+    }
+    if (braceLineIdx !== -1) {
+      const verifiedEnd = findBraceScopeEnd(lines, braceLineIdx, { failClosed: true, startCharIndex: bodyBraceIdx });
+      if (verifiedEnd !== -1 && verifiedEnd === endLine) {
+        isClosed = true;
+      }
     }
   } else {
     let braceLineIdx = -1;
@@ -3057,11 +3118,13 @@ export function findTypeDefinitions(lines, symbol) {
 export function findSymbolDefinitionsInSource(lines, symbol, options = {}) {
   if (!Array.isArray(lines) || !symbol || typeof symbol !== "string") return [];
   const matches = [];
+  const seenRanges = new Set();
 
   // 1. Function definitions (with body)
   const fnDefs = findFunctionDefinitions(lines, symbol);
   for (const fd of fnDefs) {
     const snip = extractBoundedFunctionSnippet(lines, fd.startLine, fd.endLine);
+    seenRanges.add(`${fd.startLine}:${fd.endLine}`);
     matches.push({
       type: "function",
       startLine: fd.startLine,
@@ -3073,12 +3136,16 @@ export function findSymbolDefinitionsInSource(lines, symbol, options = {}) {
   // 2. Macro definitions (#define symbol ...)
   const macroDefs = findMacroDefinitions(lines, symbol);
   for (const md of macroDefs) {
+    seenRanges.add(`${md.startLine}:${md.endLine}`);
     matches.push(md);
   }
 
   // 3. Type definitions (struct, class, enum, typedef, interface, type)
   const typeDefs = findTypeDefinitions(lines, symbol);
   for (const td of typeDefs) {
+    const rangeKey = `${td.startLine}:${td.endLine}`;
+    if (seenRanges.has(rangeKey)) continue;
+    seenRanges.add(rangeKey);
     matches.push(td);
   }
 
@@ -3086,6 +3153,9 @@ export function findSymbolDefinitionsInSource(lines, symbol, options = {}) {
   if (matches.length === 0 && options.allowSignature) {
     const decls = findFunctionDeclarations(lines, symbol);
     for (const d of decls) {
+      const rangeKey = `${d.startLine}:${d.endLine}`;
+      if (seenRanges.has(rangeKey)) continue;
+      seenRanges.add(rangeKey);
       matches.push(d);
     }
   }
@@ -3228,17 +3298,28 @@ export function resolveCrossFileSymbol(symbol, targetFile, fileContent, candidat
     }
   }
 
-  if (siblingMatches.length > 1) {
+  // Deduplicate siblingMatches by file and definition line span
+  const uniqueSiblingMatches = [];
+  const seenSiblingKeys = new Set();
+  for (const m of siblingMatches) {
+    const key = `${m.file}:${m.startLine}:${m.endLine}`;
+    if (!seenSiblingKeys.has(key)) {
+      seenSiblingKeys.add(key);
+      uniqueSiblingMatches.push(m);
+    }
+  }
+
+  if (uniqueSiblingMatches.length > 1) {
     return {
       resolved: false,
       ambiguous: true,
-      count: siblingMatches.length,
-      matches: siblingMatches
+      count: uniqueSiblingMatches.length,
+      matches: uniqueSiblingMatches
     };
   }
 
-  if (siblingMatches.length === 1) {
-    const match = siblingMatches[0];
+  if (uniqueSiblingMatches.length === 1) {
+    const match = uniqueSiblingMatches[0];
     return {
       resolved: true,
       tier: 2,
@@ -3560,10 +3641,15 @@ export function extractLocalCalleeContext(fileContent, diffHunks, targetFile, op
           }
           continue;
         }
-        callees.push(crossRes.callee);
+        callees.push({
+          ...crossRes.callee,
+          isAdded: candidate.isAdded,
+          isControlFlowModified: candidate.isControlFlowModified,
+          isCandidateImpacted
+        });
         fileCalleesCount++;
         const isHeaderSignature = crossRes.callee.isHeaderCallee === true && crossRes.callee.extractionMode === "signature";
-        if (!isHeaderSignature && crossRes.callee.extractionMode !== "full_body" && candidate.isSensitive) {
+        if (!isHeaderSignature && crossRes.callee.extractionMode !== "full_body" && candidate.isSensitive && isCandidateImpacted) {
           contextGaps.push({
             symbol: candidate.symbol,
             ...(candidate.qualifier ? { qualifier: candidate.qualifier } : {}),
@@ -3674,10 +3760,15 @@ export function extractLocalCalleeContext(fileContent, diffHunks, targetFile, op
       }
 
       if (crossRes.resolved && crossRes.callee) {
-        callees.push(crossRes.callee);
+        callees.push({
+          ...crossRes.callee,
+          isAdded: candidate.isAdded,
+          isControlFlowModified: candidate.isControlFlowModified,
+          isCandidateImpacted
+        });
         fileCalleesCount++;
         const isHeaderSignature = crossRes.callee.isHeaderCallee === true && crossRes.callee.extractionMode === "signature";
-        if (!isHeaderSignature && crossRes.callee.extractionMode !== "full_body" && isSensitive) {
+        if (!isHeaderSignature && crossRes.callee.extractionMode !== "full_body" && isSensitive && isCandidateImpacted) {
           contextGaps.push({
             symbol,
             ...(candidate.qualifier ? { qualifier: candidate.qualifier } : {}),
@@ -3769,12 +3860,15 @@ export function extractLocalCalleeContext(fileContent, diffHunks, targetFile, op
         endLine: match.endLine,
         extractionMode: snippet.extractionMode,
         isSensitive,
-        category
+        category,
+        isAdded: candidate.isAdded,
+        isControlFlowModified: candidate.isControlFlowModified,
+        isCandidateImpacted
       });
       fileCalleesCount++;
 
       // Emit context gap if sensitive callee is truncated or incomplete (C7)
-      if (snippet.extractionMode !== "full_body" && isSensitive) {
+      if (snippet.extractionMode !== "full_body" && isSensitive && isCandidateImpacted) {
         contextGaps.push({
           symbol,
           ...(candidate.qualifier ? { qualifier: candidate.qualifier } : {}),
@@ -3953,9 +4047,9 @@ export function allocateContextBudget(rawLayers, config = DEFAULT_BUDGET_CONFIG)
     if (layer1Bytes > maxAstAllowed) {
       let calleesList = [...(layer1.callees || [])];
       calleesList.sort((a, b) => {
-        if (a.isSensitive && !b.isSensitive) return 1;
-        if (!a.isSensitive && b.isSensitive) return -1;
-        return 0;
+        const aScore = (a.isSensitive ? 2 : 0) + (a.isCandidateImpacted ? 4 : 0);
+        const bScore = (b.isSensitive ? 2 : 0) + (b.isCandidateImpacted ? 4 : 0);
+        return aScore - bScore;
       });
       while (calleesList.length > 0 && Buffer.byteLength(JSON.stringify({ ...layer1, callees: calleesList }), "utf8") > maxAstAllowed) {
         const popped = calleesList.shift();
@@ -4365,9 +4459,9 @@ export function buildContextPackage(changeSet, targetFile, options = {}) {
     }
 
     allCandidateCallees.sort((a, b) => {
-      if (a.isSensitive && !b.isSensitive) return -1;
-      if (!a.isSensitive && b.isSensitive) return 1;
-      return 0;
+      const aScore = (a.isSensitive ? 2 : 0) + (a.isCandidateImpacted ? 4 : 0);
+      const bScore = (b.isSensitive ? 2 : 0) + (b.isCandidateImpacted ? 4 : 0);
+      return bScore - aScore;
     });
 
     const acceptedCalleesSet = new Set();
@@ -4382,7 +4476,7 @@ export function buildContextPackage(changeSet, targetFile, options = {}) {
         aggregatedCallees.push(callee);
         acceptedCalleesSet.add(callee);
         totalCalleeBytes += calleeBytes;
-      } else if (callee.isSensitive) {
+      } else if (callee.isSensitive && callee.isCandidateImpacted !== false) {
         const gap = {
           symbol: callee.symbol || callee.name || "unknown",
           file: callee.file,
@@ -4440,7 +4534,7 @@ export function buildContextPackage(changeSet, targetFile, options = {}) {
 
     if (budgeted.budgetAccounting?.evictedCallees?.length > 0) {
       for (const evicted of budgeted.budgetAccounting.evictedCallees) {
-        if (evicted.isSensitive) {
+        if (evicted.isSensitive && evicted.isCandidateImpacted !== false) {
           const gapEntry = {
             symbol: evicted.symbol || evicted.name || "unknown",
             file: evicted.file || "unknown",
@@ -4457,7 +4551,7 @@ export function buildContextPackage(changeSet, targetFile, options = {}) {
       for (const manifest of fileCoverageManifest) {
         manifest.calleesExtracted = (manifest.calleesExtracted || []).filter(s => retainedSymbols.has(s));
         for (const evicted of budgeted.budgetAccounting.evictedCallees) {
-          if (evicted.isSensitive && evicted.file && (evicted.file === manifest.file || normalizeCanonicalPath(evicted.file) === normalizeCanonicalPath(manifest.file))) {
+          if (evicted.isSensitive && evicted.isCandidateImpacted !== false && evicted.file && (evicted.file === manifest.file || normalizeCanonicalPath(evicted.file) === normalizeCanonicalPath(manifest.file))) {
             manifest.contextGaps.push({
               symbol: evicted.symbol || evicted.name || "unknown",
               file: manifest.file,
@@ -4762,7 +4856,7 @@ export function buildContextPackage(changeSet, targetFile, options = {}) {
 
   if (budgeted.budgetAccounting?.evictedCallees?.length > 0) {
     for (const evicted of budgeted.budgetAccounting.evictedCallees) {
-      if (evicted.isSensitive) {
+      if (evicted.isSensitive && evicted.isCandidateImpacted !== false) {
         contextGaps.push({
           symbol: evicted.symbol || evicted.name || "unknown",
           file: actualFilePath || normTarget,
