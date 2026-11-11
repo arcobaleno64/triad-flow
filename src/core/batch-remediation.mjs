@@ -304,9 +304,11 @@ export class BatchRemediationSession {
       return Boolean(r && typeof r === "object" && typeof r.command === "string" && r.command.trim().length > 0);
     });
 
+    const isContainer = Boolean(driver && (driver.name === "container" || driver.name === "container-pool" || driver.driverType === "container-pool"));
+
     // Container sandbox execution authority enforcement: container mode strictly requires typed command runner.
     // Arbitrary host callback functions are prohibited under container driver.
-    if (driver.name === "container" && (isFunction || (!isTypedCommand && !allFindingsHaveTypedCommand))) {
+    if (isContainer && (isFunction || (!isTypedCommand && !allFindingsHaveTypedCommand))) {
       throw new BatchValidationError(
         "Container sandbox execution requires a typed command runner ({ command, args }) to enforce isolated container execution. Arbitrary host callback functions are prohibited under container driver."
       );
@@ -380,7 +382,7 @@ export class BatchRemediationSession {
 
         let testRes;
         try {
-          if (driver.name === "container") {
+          if (isContainer) {
             if (!activeIsTypedCommand) {
               throw new BatchValidationError(
                 `Container driver requires a typed command runner for finding '${findingId}'. Host function callbacks are strictly prohibited.`
@@ -468,8 +470,8 @@ export class BatchRemediationSession {
             failedCount: 1,
             regressionDetected: true,
             error: err.message,
-            runner: driver.name === "container" ? "container-runner" : "worktree-runner",
-            executionEnvironment: driver.name === "container" ? "container" : "host"
+            runner: isContainer ? "container-runner" : "worktree-runner",
+            executionEnvironment: isContainer ? "container" : "host"
           };
         }
 
@@ -486,8 +488,8 @@ export class BatchRemediationSession {
           failedCount,
           regressionDetected,
           postTestTreeDigest: jailResult.postPatchTreeDigest,
-          runner: testRes?.runner || (driver.name === "container" ? "container-runner" : "worktree-runner"),
-          executionEnvironment: testRes?.executionEnvironment || (driver.name === "container" ? "container" : "host")
+          runner: testRes?.runner || (isContainer ? "container-runner" : "worktree-runner"),
+          executionEnvironment: testRes?.executionEnvironment || (isContainer ? "container" : "host")
         });
 
         if (session.status === REMEDIATION_STATES.FIXED_PENDING_VERIFY) {

@@ -1117,9 +1117,11 @@ export class ControlledRemediationSession {
       ? (typeof sandboxDriver === "string" ? resolveSandboxDriver(sandboxDriver) : sandboxDriver)
       : new WorktreeDriver();
 
+    const isContainer = Boolean(driver && (driver.name === "container" || driver.name === "container-pool" || driver.driverType === "container-pool"));
+
     // Container sandbox execution authority enforcement: container mode strictly requires typed command runner.
     // Arbitrary host callback functions are prohibited under container driver.
-    if (driver.name === "container" && !isTypedCommand) {
+    if (isContainer && !isTypedCommand) {
       throw new RemediationValidationError(
         "Container sandbox execution requires a typed command runner ({ command, args }) to enforce isolated container execution. Arbitrary host callback functions are prohibited under container driver."
       );
@@ -1140,7 +1142,7 @@ export class ControlledRemediationSession {
 
       let testRes;
       try {
-        if (driver.name === "container") {
+        if (isContainer) {
           // Strictly enforced container execution via jail.runInContainer
           const cmd = runner.command;
           const args = Array.isArray(runner.args) ? runner.args : [];
@@ -1211,8 +1213,8 @@ export class ControlledRemediationSession {
           failedCount: 1,
           regressionDetected: true,
           error: err.message,
-          runner: driver.name === "container" ? "container-runner" : "worktree-runner",
-          executionEnvironment: driver.name === "container" ? "container" : "host"
+          runner: isContainer ? "container-runner" : "worktree-runner",
+          executionEnvironment: isContainer ? "container" : "host"
         };
       }
 

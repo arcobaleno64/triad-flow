@@ -10,6 +10,7 @@ coverage/
 # Root transient benchmark outputs
 /benchmark-results.json
 /benchmark-*.json
+/dogfood-live-run*.json
 /audit-receipt*.json
 /remediation-receipt*.json
 /artifact-manifest*.json
