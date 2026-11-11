@@ -629,37 +629,28 @@ export function validateBatchReceipt(receipt) {
   if (!receipt || typeof receipt !== "object") {
     throw new BatchValidationError("Batch receipt must be a non-null object.");
   }
-
   if (receipt.schemaVersion !== BATCH_SCHEMA_VERSION) {
     throw new BatchValidationError(
       `Unsupported batch schema version: '${receipt.schemaVersion}'. Expected '${BATCH_SCHEMA_VERSION}'.`
     );
   }
-
   if (typeof receipt.batchId !== "string" || !receipt.batchId.trim()) {
     throw new BatchValidationError("batchId must be a non-empty string.");
   }
-
   if (!Object.values(BATCH_REMEDIATION_STATES).includes(receipt.status)) {
     throw new BatchValidationError(`Invalid batch status '${receipt.status}'.`);
   }
-
   if (!Object.values(BATCH_VERDICTS).includes(receipt.verdict)) {
     throw new BatchValidationError(`Invalid batch verdict '${receipt.verdict}'.`);
   }
-
   if (!receipt.summary || typeof receipt.summary !== "object") {
     throw new BatchValidationError("summary must be a non-null object.");
   }
-
   if (!Array.isArray(receipt.receipts)) {
     throw new BatchValidationError("receipts must be an array.");
   }
-
-  // Validate every individual receipt
   for (const r of receipt.receipts) {
     validateRemediationReceipt(r);
   }
-
   return true;
 }

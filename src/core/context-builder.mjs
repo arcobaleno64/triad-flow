@@ -881,8 +881,13 @@ export function findFunctionDefinitions(lines, symbol) {
 
   const cleanLines = stripCommentsPreservingLayout(lines);
 
+  const CLASS_DEF_REGEX = new RegExp(
+    `^\\s*(?:export\\s+)?(?:default\\s+)?class\\s+${escapedSym}\\b`
+  );
+
   const HAS_EXPLICIT_DECL_HEADER = new RegExp(
     `(?:` +
+    `^\\s*(?:export\\s+)?(?:default\\s+)?class\\s+${escapedSym}\\b|` +
     `^(?:\\s*(?:[a-zA-Z0-9_<>*&]|::)+[\\s*&]+)+(?:[a-zA-Z0-9_]+::)?${escapedSym}\\s*(?:<[^()]+>\\s*)?\\(|` +
     `^\\s*(?:export\\s+)?(?:default\\s+)?(?:async\\s+)?function(?:\\s+${escapedSym})?\\s*(?:<[^()]+>\\s*)?\\(|` +
     `^\\s*(?:(?:static|async|public|private|protected|virtual|inline|override)\\s+)+${escapedSym}\\s*(?:<[^()]+>\\s*)?\\(|` +
@@ -893,6 +898,7 @@ export function findFunctionDefinitions(lines, symbol) {
 
   const DEF_REGEX = new RegExp(
     `(?:` +
+    `^\\s*(?:export\\s+)?(?:default\\s+)?class\\s+${escapedSym}\\b|` +
     `^(?:\\s*(?:[a-zA-Z0-9_<>*&]|::)+[\\s*&]+)+(?:[a-zA-Z0-9_]+::)?${escapedSym}\\s*(?:<[^()]+>\\s*)?\\(|` +
     `^\\s*(?:export\\s+)?(?:default\\s+)?(?:async\\s+)?function(?:\\s+${escapedSym})?\\s*(?:<[^()]+>\\s*)?\\(|` +
     `^\\s*(?:static\\s+)?(?:async\\s+)?${escapedSym}\\s*(?:<[^()]+>\\s*)?\\(|` +
@@ -913,6 +919,38 @@ export function findFunctionDefinitions(lines, symbol) {
     if (CONTROL_START.test(line)) continue;
     if (PROP_START.test(line)) continue;
     if (!DEF_REGEX.test(line)) continue;
+
+    if (CLASS_DEF_REGEX.test(line)) {
+      let braceDepth = 0;
+      let foundStart = false;
+      let endLine = -1;
+      for (let j = i; j < cleanLines.length; j++) {
+        const cl = cleanLines[j];
+        for (let k = 0; k < cl.length; k++) {
+          if (cl[k] === "{") {
+            braceDepth++;
+            foundStart = true;
+          } else if (cl[k] === "}") {
+            braceDepth--;
+            if (foundStart && braceDepth === 0) {
+              endLine = j + 1;
+              break;
+            }
+          }
+        }
+        if (foundStart && braceDepth === 0) break;
+      }
+      if (endLine !== -1) {
+        matches.push({
+          startLine: i + 1,
+          endLine: endLine
+        });
+        if (endLine > i + 1) {
+          i = endLine - 1;
+        }
+      }
+      continue;
+    }
 
     // Python function definitions use indentation-based scoping instead of braces (G5-P2-05)
     if (PYTHON_DEF_REGEX.test(line)) {
