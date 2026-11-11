@@ -469,9 +469,10 @@ export class ContainerDriver extends BaseSandboxDriver {
       imageDigest: probe.imageDigest,
       capabilities: caps,
       runInContainer: (commandArgs, runOpts = {}) => {
+        const targetImage = runOpts.image || runOpts.imageIdentity || probe.imageDigest || this.image;
         return this.executeInContainer(repoPath, jail.jailPath, commandArgs, {
           ...runOpts,
-          imageIdentity: probe.imageDigest || this.image
+          imageIdentity: targetImage
         });
       }
     };

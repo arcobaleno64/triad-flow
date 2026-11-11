@@ -1130,9 +1130,11 @@ export class ControlledRemediationSession {
           // Strictly enforced container execution via jail.runInContainer
           const cmd = runner.command;
           const args = Array.isArray(runner.args) ? runner.args : [];
+          const findingImage = runner.containerImage || runner.image || null;
           const containerRes = jail.runInContainer([cmd, ...args], {
             cwd: runner.cwd || null,
-            timeout: runner.timeout || null
+            timeout: runner.timeout || null,
+            image: findingImage
           });
           testRes = {
             testCommand: `${cmd} ${args.join(" ")}`.trim(),
