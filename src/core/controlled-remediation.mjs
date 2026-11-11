@@ -902,74 +902,25 @@ export function buildRemediationReceipt(params = {}) {
  * @throws {UnsupportedRemediationSchemaError|RemediationValidationError}
  */
 export function validateRemediationReceipt(receipt) {
-  if (!receipt || typeof receipt !== "object") {
-    throw new RemediationValidationError("Receipt must be a non-null object.");
-  }
-
+  if (!receipt || typeof receipt !== "object") throw new RemediationValidationError("Receipt must be a non-null object.");
   const major = parseSchemaMajorVersion(receipt.schemaVersion);
   if (major !== SUPPORTED_REMEDIATION_SCHEMA_MAJOR) {
-    throw new UnsupportedRemediationSchemaError(
-      receipt.schemaVersion,
-      `Unsupported remediation receipt schema version: "${receipt.schemaVersion}". Major must be ${SUPPORTED_REMEDIATION_SCHEMA_MAJOR}.`
-    );
+    throw new UnsupportedRemediationSchemaError(receipt.schemaVersion, `Unsupported remediation receipt schema version: "${receipt.schemaVersion}". Major must be ${SUPPORTED_REMEDIATION_SCHEMA_MAJOR}.`);
   }
-
-  if (typeof receipt.receiptId !== "string" || !receipt.receiptId.trim()) {
-    throw new RemediationValidationError("receiptId must be a non-empty string.");
-  }
-
-  if (typeof receipt.findingId !== "string" || !receipt.findingId.trim()) {
-    throw new RemediationValidationError("findingId must be a non-empty string.");
-  }
-
-  if (!VALID_REMEDIATION_STATES.has(receipt.status)) {
-    throw new RemediationValidationError(`status "${receipt.status}" is not a recognized remediation state.`);
-  }
-
-  if (!receipt.timestamps || !receipt.timestamps.startedAt || !receipt.timestamps.completedAt) {
-    throw new RemediationValidationError("timestamps must contain startedAt and completedAt ISO strings.");
-  }
-
-  if (!receipt.actors || typeof receipt.actors !== "object") {
-    throw new RemediationValidationError("actors object is required.");
-  }
-
-  if (!receipt.patch || typeof receipt.patch !== "object") {
-    throw new RemediationValidationError("patch object is required.");
-  }
-
-  if (receipt.patch.patchDiffDigest && !SHA256_HEX_REGEX.test(receipt.patch.patchDiffDigest)) {
-    throw new RemediationValidationError(`patchDiffDigest "${receipt.patch.patchDiffDigest}" is not a valid SHA-256 digest.`);
-  }
-
-  if (!receipt.jail || typeof receipt.jail !== "object") {
-    throw new RemediationValidationError("jail object is required.");
-  }
-
-  if (receipt.jail.prePatchTreeDigest && !SHA256_HEX_REGEX.test(receipt.jail.prePatchTreeDigest)) {
-    throw new RemediationValidationError(`prePatchTreeDigest "${receipt.jail.prePatchTreeDigest}" is not a valid SHA-256 digest.`);
-  }
-
-  if (receipt.jail.postPatchTreeDigest && !SHA256_HEX_REGEX.test(receipt.jail.postPatchTreeDigest)) {
-    throw new RemediationValidationError(`postPatchTreeDigest "${receipt.jail.postPatchTreeDigest}" is not a valid SHA-256 digest.`);
-  }
-
-  if (!receipt.deterministicChecks || typeof receipt.deterministicChecks !== "object") {
-    throw new RemediationValidationError("deterministicChecks object is required.");
-  }
-
-  if (receipt.deterministicChecks.postTestTreeDigest && !SHA256_HEX_REGEX.test(receipt.deterministicChecks.postTestTreeDigest)) {
-    throw new RemediationValidationError(`postTestTreeDigest "${receipt.deterministicChecks.postTestTreeDigest}" is not a valid SHA-256 digest.`);
-  }
-
-  if (!receipt.closureVerification || typeof receipt.closureVerification !== "object") {
-    throw new RemediationValidationError("closureVerification object is required.");
-  }
-
-  if (!Array.isArray(receipt.history)) {
-    throw new RemediationValidationError("history must be an array.");
-  }
-
+  if (typeof receipt.receiptId !== "string" || !receipt.receiptId.trim()) throw new RemediationValidationError("receiptId must be a non-empty string.");
+  if (typeof receipt.findingId !== "string" || !receipt.findingId.trim()) throw new RemediationValidationError("findingId must be a non-empty string.");
+  if (!VALID_REMEDIATION_STATES.has(receipt.status)) throw new RemediationValidationError(`status "${receipt.status}" is not a recognized remediation state.`);
+  if (!receipt.timestamps || !receipt.timestamps.startedAt || !receipt.timestamps.completedAt) throw new RemediationValidationError("timestamps must contain startedAt and completedAt ISO strings.");
+  if (!receipt.actors || typeof receipt.actors !== "object") throw new RemediationValidationError("actors object is required.");
+  if (!receipt.patch || typeof receipt.patch !== "object") throw new RemediationValidationError("patch object is required.");
+  if (receipt.patch.patchDiffDigest && !SHA256_HEX_REGEX.test(receipt.patch.patchDiffDigest)) throw new RemediationValidationError(`patchDiffDigest "${receipt.patch.patchDiffDigest}" is not a valid SHA-256 digest.`);
+  if (!receipt.jail || typeof receipt.jail !== "object") throw new RemediationValidationError("jail object is required.");
+  if (receipt.jail.prePatchTreeDigest && !SHA256_HEX_REGEX.test(receipt.jail.prePatchTreeDigest)) throw new RemediationValidationError(`prePatchTreeDigest "${receipt.jail.prePatchTreeDigest}" is not a valid SHA-256 digest.`);
+  if (receipt.jail.postPatchTreeDigest && !SHA256_HEX_REGEX.test(receipt.jail.postPatchTreeDigest)) throw new RemediationValidationError(`postPatchTreeDigest "${receipt.jail.postPatchTreeDigest}" is not a valid SHA-256 digest.`);
+  if (!receipt.deterministicChecks || typeof receipt.deterministicChecks !== "object") throw new RemediationValidationError("deterministicChecks object is required.");
+  if (receipt.deterministicChecks.postTestTreeDigest && !SHA256_HEX_REGEX.test(receipt.deterministicChecks.postTestTreeDigest)) throw new RemediationValidationError(`postTestTreeDigest "${receipt.deterministicChecks.postTestTreeDigest}" is not a valid SHA-256 digest.`);
+  if (!receipt.closureVerification || typeof receipt.closureVerification !== "object") throw new RemediationValidationError("closureVerification object is required.");
+  if (!Array.isArray(receipt.history)) throw new RemediationValidationError("history must be an array.");
   return true;
 }
 

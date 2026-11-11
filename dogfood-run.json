@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.1.0",
-  "runId": "dogfood-1793248599787-74832493-9be4-4ea3-91e9-bfb5f38c3882",
+  "runId": "dogfood-1794366685926-c4bda58f-e467-4748-9533-46dccd4eee4c",
   "gate": {
     "decision": "approve",
     "reason": "Clean Challenge passed: zero findings and zero verified omissions."
@@ -10,58 +10,84 @@
     "decision": "approve"
   },
   "isExecutionComplete": true,
-  "executionMode": "live",
-  "runStartedAt": "2026-10-29T04:36:39.786Z",
-  "timestamp": "2026-10-29T04:38:38.201Z",
+  "executionMode": "mock",
+  "runStartedAt": "2026-11-11T03:11:25.926Z",
+  "timestamp": "2026-11-11T03:11:29.609Z",
   "track": "Track D1: SHADOW_DOGFOOD",
   "authority": "NONE (ADVISORY_ONLY)",
-  "triadFlowVersion": "2.8.0",
+  "triadFlowVersion": "2.10.0",
   "runContext": {
-    "runId": "dogfood-1793248599787-74832493-9be4-4ea3-91e9-bfb5f38c3882",
-    "headSha": "4592e0f0dc8905e0a9465566cecb229e63e93d42",
-    "contentDigest": "5e4c05e41082a7f99879a34a03037b2263cd666cb43da9c31fe28142b9a48b0c",
-    "patchObjective": "Fix TLS session resumption binding for literal-IP wrapped sockets by preserving requested host before connection starts, properly binding session cache keys and checkServerIdentity to the authentic peer IP instead of fallback localhost.",
-    "objectiveContract": {
-      "objective": "Fix TLS session resumption binding for literal-IP wrapped sockets by preserving requested host before connection starts, properly binding session cache keys and checkServerIdentity to the authentic peer IP instead of fallback localhost.",
-      "exclusions": [
-        "Do not alter TLS session caching algorithms or crypto primitives; do not modify general net.Socket connection handling outside literal-IP host preservation; do not alter servername precedence."
-      ],
-      "finalizedBeforeRun": true
-    },
-    "exclusions": [
-      "Do not alter TLS session caching algorithms or crypto primitives; do not modify general net.Socket connection handling outside literal-IP host preservation; do not alter servername precedence."
-    ]
+    "runId": "dogfood-1794366685926-c4bda58f-e467-4748-9533-46dccd4eee4c",
+    "headSha": "77c25dbcfe61b3f39e719ff23b000803094322a2",
+    "contentDigest": "12388affdbf59a3dcc6d9105da05e28c3bd7572d3a8c029ce854a84c6822282c",
+    "patchObjective": "",
+    "objectiveContract": null,
+    "exclusions": []
   },
   "repository": {
-    "name": "nodejs/node",
-    "commitSha": "4592e0f0dc8905e0a9465566cecb229e63e93d42",
-    "branch": null,
-    "base": "1c90519c1a878499d1942f61eeec68dd8de457d7",
-    "head": "4592e0f0dc8905e0a9465566cecb229e63e93d42"
+    "name": "arcobaleno64/triad-flow",
+    "commitSha": "77c25dbcfe61b3f39e719ff23b000803094322a2",
+    "branch": "fix/dogfood-callee-and-class-ast-hardening",
+    "base": "5b033be",
+    "head": "HEAD"
   },
   "changeSetSummary": {
-    "patchObjective": "Fix TLS session resumption binding for literal-IP wrapped sockets by preserving requested host before connection starts, properly binding session cache keys and checkServerIdentity to the authentic peer IP instead of fallback localhost.",
-    "objectiveContract": {
-      "objective": "Fix TLS session resumption binding for literal-IP wrapped sockets by preserving requested host before connection starts, properly binding session cache keys and checkServerIdentity to the authentic peer IP instead of fallback localhost.",
-      "exclusions": [
-        "Do not alter TLS session caching algorithms or crypto primitives; do not modify general net.Socket connection handling outside literal-IP host preservation; do not alter servername precedence."
-      ],
-      "finalizedBeforeRun": true
-    },
-    "totalFiles": 2,
-    "totalAdditions": 101,
-    "totalDeletions": 1,
+    "totalFiles": 9,
+    "totalAdditions": 2273,
+    "totalDeletions": 33,
     "riskTier": 1,
     "files": [
       {
-        "path": "lib/net.js",
-        "additions": 2,
-        "deletions": 1,
+        "path": "src/adapters/cli-transport.mjs",
+        "additions": 10,
+        "deletions": 3,
+        "riskTier": 1
+      },
+      {
+        "path": "src/adapters/mock-provider-sandbox.mjs",
+        "additions": 766,
+        "deletions": 0,
+        "riskTier": 1
+      },
+      {
+        "path": "src/core/anti-evasion-guard.mjs",
+        "additions": 95,
+        "deletions": 10,
+        "riskTier": 1
+      },
+      {
+        "path": "src/core/batch-remediation.mjs",
+        "additions": 33,
+        "deletions": 20,
+        "riskTier": 1
+      },
+      {
+        "path": "src/core/context-builder.mjs",
+        "additions": 38,
+        "deletions": 0,
+        "riskTier": 1
+      },
+      {
+        "path": "src/core/multi-language-remediation.mjs",
+        "additions": 372,
+        "deletions": 0,
+        "riskTier": 1
+      },
+      {
+        "path": "tests/context-builder.test.mjs",
+        "additions": 19,
+        "deletions": 0,
         "riskTier": 2
       },
       {
-        "path": "test/parallel/test-tls-session-reuse-provided-socket.js",
-        "additions": 99,
+        "path": "tests/mock-provider-sandbox.test.mjs",
+        "additions": 421,
+        "deletions": 0,
+        "riskTier": 2
+      },
+      {
+        "path": "tests/multi-language-remediation.test.mjs",
+        "additions": 519,
         "deletions": 0,
         "riskTier": 2
       }
@@ -75,7 +101,7 @@
       "model": "gemini-3.8-flash",
       "executionStatus": "empty",
       "findingsCount": 0,
-      "latencyMs": 37129,
+      "latencyMs": 5,
       "stagedFallbackUsed": false,
       "stagedTimeoutCount": 0
     },
@@ -85,7 +111,7 @@
       "model": "claude-5.5-sonnet",
       "executionStatus": "empty",
       "findingsCount": 0,
-      "latencyMs": 21583,
+      "latencyMs": 3,
       "stagedFallbackUsed": false,
       "stagedTimeoutCount": 0
     },
@@ -95,7 +121,7 @@
       "model": "gpt-6.1-sol",
       "executionStatus": "empty",
       "findingsCount": 0,
-      "latencyMs": 25767,
+      "latencyMs": 2,
       "stagedFallbackUsed": false,
       "stagedTimeoutCount": 0
     }
@@ -115,12 +141,12 @@
     "mergeBlockedInProduction": false
   },
   "telemetryMetrics": {
-    "totalDurationMs": 117786,
-    "reviewerPhaseDurationMs": 95026,
-    "avgProviderLatencyMs": 28160,
+    "totalDurationMs": 2856,
+    "reviewerPhaseDurationMs": 2842,
+    "avgProviderLatencyMs": 3,
     "executionComplete": true,
     "cleanChallengeAttempted": true,
-    "cleanChallengeDurationMs": 22756,
+    "cleanChallengeDurationMs": 11,
     "cleanChallengeStatus": "SUCCESS",
     "malformedOutputCount": 0,
     "reviewerTimeoutCount": 0,
@@ -135,9 +161,9 @@
     "chunkCount": null,
     "phaseMetrics": {
       "platform": "win32",
-      "transport": "stream-json",
-      "budgetAllocatedMs": 300000,
-      "globalDeadlineRemainingMs": 204974,
+      "transport": "argv",
+      "budgetAllocatedMs": 30000,
+      "globalDeadlineRemainingMs": 27158,
       "stagedFallbackUsed": false,
       "chunkCount": null,
       "maxConcurrency": 1,
@@ -149,22 +175,12 @@
   },
   "verificationRecord": {
     "schemaVersion": "1.0.0",
-    "verifiedAt": "2026-10-29T04:38:38.199Z",
-    "changeSetDigest": "sha256:5e4c05e41082a7f99879a34a03037b2263cd666cb43da9c31fe28142b9a48b0c",
-    "headSha": "4592e0f0dc8905e0a9465566cecb229e63e93d42",
-    "runId": "dogfood-1793248599787-74832493-9be4-4ea3-91e9-bfb5f38c3882",
-    "exclusions": [
-      "Do not alter TLS session caching algorithms or crypto primitives; do not modify general net.Socket connection handling outside literal-IP host preservation; do not alter servername precedence."
-    ],
+    "verifiedAt": "2026-11-11T03:11:29.608Z",
+    "changeSetDigest": "sha256:12388affdbf59a3dcc6d9105da05e28c3bd7572d3a8c029ce854a84c6822282c",
+    "headSha": "77c25dbcfe61b3f39e719ff23b000803094322a2",
+    "runId": "dogfood-1794366685926-c4bda58f-e467-4748-9533-46dccd4eee4c",
+    "exclusions": [],
     "verificationMode": "clean_challenge",
-    "patchObjective": "Fix TLS session resumption binding for literal-IP wrapped sockets by preserving requested host before connection starts, properly binding session cache keys and checkServerIdentity to the authentic peer IP instead of fallback localhost.",
-    "objectiveContract": {
-      "objective": "Fix TLS session resumption binding for literal-IP wrapped sockets by preserving requested host before connection starts, properly binding session cache keys and checkServerIdentity to the authentic peer IP instead of fallback localhost.",
-      "exclusions": [
-        "Do not alter TLS session caching algorithms or crypto primitives; do not modify general net.Socket connection handling outside literal-IP host preservation; do not alter servername precedence."
-      ],
-      "finalizedBeforeRun": true
-    },
     "overallStatus": "CLEAN",
     "producer": {
       "providerName": "tri-party-quorum",
@@ -173,16 +189,16 @@
     },
     "verifier": {
       "providerName": "claude",
-      "modelName": "claude-5.5-sonnet",
+      "modelName": "claude-mock",
       "actualModel": {
         "source": "reported",
-        "value": "claude-5.5-sonnet"
+        "value": "claude-5.5-sonnet (independent_verifier_stage)"
       },
       "usage": {
-        "completionTokens": null,
-        "promptTokens": null,
-        "totalTokens": null,
-        "usageSource": "unavailable"
+        "completionTokens": 50,
+        "promptTokens": 100,
+        "totalTokens": 150,
+        "usageSource": "authoritative"
       }
     },
     "evaluations": [],
